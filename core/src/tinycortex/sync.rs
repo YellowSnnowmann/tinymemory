@@ -795,7 +795,7 @@ mod tests {
         }))
         .expect("construct composio source");
 
-        let config = TestHostConfig::default();
+        let config = tinymemory_api::host::test_support::TestHostConfig::default();
         let mut memory_config =
             tinycortex::memory::config::MemoryConfig::new("/tmp/openhuman-test-ws");
 

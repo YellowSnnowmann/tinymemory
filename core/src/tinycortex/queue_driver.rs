@@ -914,7 +914,7 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let mut config = tinymemory_api::host::test_support::TestHostConfig::default();
         config.workspace_dir = tmp.path().to_path_buf();
-        (tmp, HostQueueDelegates::new(config))
+        (tmp, HostQueueDelegates::new(std::sync::Arc::new(config) as std::sync::Arc<crate::Config>))
     }
 
     /// The self-contained `HostQueueDelegates` methods bind to the real host

@@ -586,7 +586,7 @@ pub struct WriteMemoryFileResponse {
 /// Default directory for memory operations. Empty string means the memory
 /// root itself (`<workspace>/memory`); the file-based memory RPCs resolve all
 /// relative paths under that directory.
-fn default_memory_relative_dir() -> String {
+pub(crate) fn default_memory_relative_dir() -> String {
     String::new()
 }
 

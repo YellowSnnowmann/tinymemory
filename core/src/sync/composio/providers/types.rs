@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn usage_handle_is_shared_across_context_clones() {
         let ctx = ProviderContext {
-            config: Arc::new(std::sync::Arc::new(TestHostConfig::default()) as std::sync::Arc<crate::Config>),
+            config: Arc::new(TestHostConfig::default()) as Arc<crate::Config>,
             toolkit: "gmail".to_string(),
             connection_id: None,
             usage: ComposioUsageHandle::default(),
@@ -504,7 +504,7 @@ mod tests {
         config.save().await.expect("save fake config to disk");
 
         let ctx = ProviderContext {
-            config,
+            config: Arc::new(config) as Arc<crate::Config>,
             toolkit: "gmail".to_string(),
             connection_id: None,
             usage: ComposioUsageHandle::default(),
@@ -539,7 +539,7 @@ mod tests {
         config.save().await.expect("save fake config to disk");
 
         let ctx = ProviderContext {
-            config,
+            config: Arc::new(config) as Arc<crate::Config>,
             toolkit: "gmail".to_string(),
             connection_id: None,
             usage: ComposioUsageHandle::default(),
