@@ -22,7 +22,7 @@
 //! 2. **`list(None, ..)` spans every namespace.** The contract says an
 //!    all-`None` list returns everything the driver holds. A typical [`Memory`]
 //!    implementation normalises a `None` namespace to
-//!    [`GLOBAL_NAMESPACE`](tinymemory_api::types::GLOBAL_NAMESPACE), so a naive delegation returns one namespace and
+//!    [`GLOBAL_NAMESPACE`], so a naive delegation returns one namespace and
 //!    calls it "everything". [`list_everything`] composes `namespace_summaries`
 //!    with a per-namespace `list` instead.
 //!
