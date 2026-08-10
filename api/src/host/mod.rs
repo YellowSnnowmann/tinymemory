@@ -50,6 +50,7 @@ pub mod subsystems;
 mod config;
 mod embedding_host;
 mod evidence;
+mod routes;
 mod error_reporter;
 mod usage;
 mod embeddings;
@@ -66,6 +67,7 @@ pub use config::{ComposioMode, MemoryHostConfig, COMPOSIO_MODE_BACKEND, COMPOSIO
 pub use embedding_host::EmbeddingHost;
 pub use error_reporter::ErrorReporter;
 pub use evidence::EvidenceRef;
+pub use routes::EmbeddingRouteConfig;
 pub use usage::UsageInfo;
 pub use embeddings::{format_embedding_signature, EmbeddingProvider, NoopEmbedding};
 pub use events::{

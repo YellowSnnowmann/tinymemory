@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
-use crate::openhuman::config::rpc as config_rpc;
+use crate::config_loader as config_rpc;
 use crate::Config;
 use crate::composio_host::{self, ComposioExecuteResponse};
 

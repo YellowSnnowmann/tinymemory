@@ -32,7 +32,7 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use tokio::time::interval;
 
-use crate::openhuman::config::rpc as config_rpc;
+use crate::config_loader as config_rpc;
 use tinymemory_api::host::DEFAULT_MEMORY_SYNC_INTERVAL_SECS;
 use crate::scheduler_gate::resume_notify;
 use crate::sources::sync::sync_source;

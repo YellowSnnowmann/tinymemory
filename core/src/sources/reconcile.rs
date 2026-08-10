@@ -8,7 +8,7 @@
 //! (`apply_composio_source_caps_migration`) that gives any cap-less Composio
 //! source — enabled or disabled — conservative per-toolkit caps.
 
-use crate::openhuman::config::rpc as config_rpc;
+use crate::config_loader as config_rpc;
 use crate::sources::registry;
 use crate::sources::types::{MemorySourceEntry, SourceKind};
 use crate::sync::composio;
@@ -154,7 +154,7 @@ fn apply_caps_defaults_to_entries(sources: &mut [MemorySourceEntry]) -> u32 {
             _ => {
                 // Use the rpc::apply_kind_defaults helper so the same
                 // conservative values are applied consistently.
-                crate::sources::rpc::apply_kind_defaults(source);
+                crate::sources::apply_kind_defaults(source);
             }
         }
     }

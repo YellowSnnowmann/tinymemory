@@ -45,7 +45,6 @@ pub mod factories;
 /// `pub(crate)` reach (`MemoryClient::profile_conn`, the tree seal helpers)
 /// that an integration test does not have. Not part of the product API.
 #[doc(hidden)]
-pub mod golden;
 mod memory_trait;
 mod recall_policy;
 mod write_gate;

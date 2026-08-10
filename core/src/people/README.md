@@ -62,7 +62,7 @@ Migrations are tracked in `_people_migrations` and applied idempotently in a tra
 
 ## Dependencies
 
-- `crate::core::all::{ControllerFuture, RegisteredController}` — controller registry types for RPC exposure.
+- the host's `core::all::{ControllerFuture, RegisteredController}` — controller registry types, used by the RPC surface that stayed in the host.
 - `crate::core::{ControllerSchema, FieldSchema, TypeSchema}` — controller schema definitions.
 - `crate::rpc::RpcOutcome` — standard RPC result envelope (`RpcOutcome<T>`).
 - External crates: `rusqlite` (storage), `tokio` (async + `spawn_blocking` for sync SQL, `Mutex`), `chrono` (timestamps/scoring), `uuid` (`PersonId`), `serde`; on macOS, `block2` / `objc2` / `objc2-contacts` / `objc2-foundation` for the `CNContactStore` FFI in `address_book.rs`. The global store slot uses `std::sync::{OnceLock, RwLock}`.

@@ -53,14 +53,14 @@
 
 #[cfg(feature = "memory-git")]
 pub mod ops;
-#[cfg(feature = "memory-git")]
-#[cfg(feature = "memory-git")]
-#[cfg(feature = "memory-git")]
-pub mod source;
-#[cfg(feature = "memory-git")]
 
 #[cfg(not(feature = "memory-git"))]
+mod stub;
 #[cfg(not(feature = "memory-git"))]
+pub use stub::ops;
+#[cfg(feature = "memory-git")]
+pub mod source;
+
 
 #[cfg(feature = "memory-git")]
 pub use tinycortex::memory::diff::types::{

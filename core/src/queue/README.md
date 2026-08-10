@@ -34,4 +34,4 @@ scheduler (1 task)       → daily wall-clock tick → `digest_daily(yesterday)`
 - `scheduler.rs` — daily tick at UTC 00:05 that enqueues `digest_daily(yesterday)` + `flush_stale(today)`; `trigger_digest` and `backfill_missing_digests` are manual catch-up helpers.
 - `testing.rs` — `drain_until_idle` for tests that need the pipeline to settle synchronously.
 
-Per-`JobKind` dispatch (the former `handlers/` module) was deleted at the W4 flip: `worker::run_once` now delegates claim → dispatch → settle to `tinycortex::memory::queue::run_once` through `crate::openhuman::memory::tinycortex::HostQueueDelegates`, which bridges each heavy step back to the host `memory_tree`/score/embed engine.
+Per-`JobKind` dispatch (the former `handlers/` module) was deleted at the W4 flip: `worker::run_once` now delegates claim → dispatch → settle to `tinycortex::memory::queue::run_once` through ``tinymemory_core::tinycortex::HostQueueDelegates``, which bridges each heavy step back to the host `memory_tree`/score/embed engine.

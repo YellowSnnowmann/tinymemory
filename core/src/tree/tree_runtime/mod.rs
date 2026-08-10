@@ -10,7 +10,6 @@
 //! [`crate::tree::summarise`], which is only the single-call
 //! LLM fold primitive used during seals.
 
-pub(crate) mod cli;
 pub mod engine;
 pub mod store;
 

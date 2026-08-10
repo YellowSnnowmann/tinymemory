@@ -23,6 +23,7 @@ pub mod sync;
 pub mod types;
 
 pub use registry::{
+    apply_kind_defaults,
     add_source, apply_all_in, get_source, list_enabled_by_kind, list_sources,
     memory_sync_defaults_for_toolkit, remove_composio_source_by_connection_id, remove_source,
     update_source, upsert_composio_source, MemorySourcePatch,

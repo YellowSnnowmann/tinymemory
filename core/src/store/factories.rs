@@ -16,7 +16,7 @@ use parking_lot::Mutex;
 use rusqlite::Connection;
 
 use tinymemory_api::host::MemoryConfig;
-use crate::openhuman::config::{EmbeddingRouteConfig, StorageProviderConfig};
+use tinymemory_api::host::{EmbeddingRouteConfig, StorageProviderConfig};
 use crate::embedding_host::require_embedding_host;
 use tinyagents::harness::embeddings::{DEFAULT_OLLAMA_DIMENSIONS, DEFAULT_OLLAMA_MODEL};
 use tinymemory_api::host::{format_embedding_signature, EmbeddingProvider};
@@ -151,11 +151,22 @@ fn ollama_base_url_for_probe() -> String {
 /// health-gate falls back from Ollama → cloud. Centralised so both the async
 /// and sync gate sites agree if the cloud defaults ever change.
 fn cloud_embedding_fallback() -> (String, String, usize) {
-    (
-        "cloud".to_string(),
-        DEFAULT_CLOUD_EMBEDDING_MODEL.to_string(),
-        DEFAULT_CLOUD_EMBEDDING_DIMENSIONS,
-    )
+    // The cloud defaults are the host's to state — it owns the managed
+    // endpoint. Falling back to the ollama defaults when unwired keeps this
+    // total; a caller with no embedding host has bigger problems than the
+    // fallback tuple being wrong.
+    match require_embedding_host() {
+        Ok(host) => (
+            "cloud".to_string(),
+            host.default_cloud_embedding_model().to_string(),
+            host.default_cloud_embedding_dimensions(),
+        ),
+        Err(_) => (
+            "cloud".to_string(),
+            DEFAULT_OLLAMA_MODEL.to_string(),
+            DEFAULT_OLLAMA_DIMENSIONS,
+        ),
+    }
 }
 
 /// Extracts a low-cardinality `host[:port]` tag from `base_url` for Sentry.
@@ -540,7 +551,7 @@ fn create_unified_memory_full(
     //    the prefix), so `custom_endpoint` stays `None` here. The key is never
     //    logged — the warning carries only provider/model/dims.
     let embedder: Arc<dyn EmbeddingProvider> = Arc::from(
-        embeddings::create_embedding_provider_with_credentials(
+        require_embedding_host()?.create_embedding_provider_with_credentials(
             &provider,
             &model,
             dims,

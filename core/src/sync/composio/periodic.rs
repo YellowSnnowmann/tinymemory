@@ -50,7 +50,7 @@ use std::time::{Duration, Instant};
 
 use tokio::time::interval;
 
-use crate::openhuman::config::rpc as config_rpc;
+use crate::config_loader as config_rpc;
 use tinymemory_api::host::DEFAULT_MEMORY_SYNC_INTERVAL_SECS;
 use crate::scheduler_gate::{current_policy, resume_notify};
 use crate::scheduler_gate::PauseReason;
@@ -401,36 +401,20 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
     // Composio v3 tenant. Mirrors `ops::composio_list_connections` so
     // direct-mode users get periodic sync against their own connections
     // instead of seeing an empty list (#1710).
-    let kind = match create_composio_client(&config) {
-        Ok(kind) => kind,
+    // Mode dispatch lives in the host's `ComposioHost` impl, and so does the
+    // 401 classification that used to happen here: the direct-mode v3
+    // `/connected_accounts` 401 shape is a property of the client, not of this
+    // loop, and the host reports it through the same observability classifier
+    // the UI poll uses. A failure here means "not signed in / no direct key" as
+    // often as it means a real fault, so the tick skips rather than erroring.
+    let connections = match composio_host::list_connections(&config).await {
+        Ok(connections) => connections,
         Err(e) => {
             tracing::debug!(
                 error = %e,
-                "[composio:periodic] no client (not signed in? no direct key?), skipping tick"
+                "[composio:periodic] no connections (not signed in? no direct key?), skipping tick"
             );
             return Ok(());
-        }
-    };
-    let resp = match &kind {
-        ComposioClientKind::Backend(client) => client
-            .list_connections()
-            .await
-            .map_err(|e| format!("list_connections (backend): {e}"))?,
-        ComposioClientKind::Direct(direct) => {
-            direct_list_connections(direct).await.map_err(|e| {
-                // [#1166 / Sentry TAURI-RUST-X9] The server-side periodic
-                // tick re-renders the same v3 `/connected_accounts` 401
-                // shape that `ops::composio_list_connections` emits, so
-                // route it through the observability classifier too.
-                // Without this, the tick-side 401s leak as unclassified
-                // Sentry events even when the UI poll's identical failure
-                // is correctly classified. Render WITH the
-                // `[composio-direct]` anchor so the classifier arm in
-                // `is_provider_user_state_message` actually fires.
-                let rendered = format!("[composio-direct] list_connections (direct): {e:#}");
-                ops::report_composio_op_error("list_connections", &rendered);
-                rendered
-            })?
         }
     };
 
@@ -479,7 +463,7 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
 
     let mut considered = 0usize;
     let mut fired = 0usize;
-    for conn in resp.connections {
+    for conn in connections {
         considered += 1;
 
         // Skip connections that aren't actually live yet.

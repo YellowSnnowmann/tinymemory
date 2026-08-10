@@ -165,7 +165,9 @@ fn resolve_embedder_choice(config: &Config) -> Result<EmbedderChoice> {
     // 3. Local Ollama via the unified workload setting.
     if let Some(model) = config.workload_local_model("embeddings") {
         return Ok(EmbedderChoice::Ollama {
-            endpoint: ollama_base_url(),
+            endpoint: require_embedding_host()
+                .map_err(|e| anyhow::anyhow!(e))?
+                .ollama_base_url(),
             model,
             timeout_ms: tree_cfg.embedding_timeout_ms.unwrap_or(0),
         });
