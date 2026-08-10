@@ -74,6 +74,13 @@ pub trait ComposioHost: Send + Sync + std::fmt::Debug {
     /// The direct-mode Composio API key from the host's credential store, or
     /// `None` when direct mode is not configured.
     fn api_key(&self, config: &Config) -> Option<String>;
+
+    /// Whether *some* viable client resolves for the current config.
+    ///
+    /// The sync layer uses this as its "is the user signed in?" probe. It must
+    /// answer for **either** mode: direct-mode users typically have no backend
+    /// session token, and probing for one alone would falsely skip them.
+    fn is_available(&self, config: &Config) -> bool;
 }
 
 static HOST: RwLock<Option<Arc<dyn ComposioHost>>> = RwLock::new(None);
@@ -137,4 +144,10 @@ pub async fn execute(
 #[must_use]
 pub fn api_key(config: &Config) -> Option<String> {
     composio_host()?.api_key(config)
+}
+
+/// Whether a viable Composio client resolves. `false` when unwired.
+#[must_use]
+pub fn is_available(config: &Config) -> bool {
+    composio_host().is_some_and(|host| host.is_available(config))
 }
