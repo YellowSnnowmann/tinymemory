@@ -69,7 +69,9 @@ impl DriverClass {
             .iter()
             .copied()
             .find(|class| class.as_str() == raw)
-            .ok_or_else(|| DriverClassParseError::Unknown { raw: raw.to_string() })
+            .ok_or_else(|| DriverClassParseError::Unknown {
+                raw: raw.to_string(),
+            })
     }
 }
 

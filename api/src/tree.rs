@@ -193,7 +193,9 @@ pub fn node_id_to_path(node_id: &str) -> PathBuf {
         return PathBuf::from("root.md");
     }
     if node_id.starts_with('/')
-        || node_id.split('/').any(|part| part.is_empty() || !part.chars().all(|c| c.is_ascii_digit()))
+        || node_id
+            .split('/')
+            .any(|part| part.is_empty() || !part.chars().all(|c| c.is_ascii_digit()))
     {
         return PathBuf::from("invalid");
     }
