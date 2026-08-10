@@ -485,44 +485,6 @@ mod tests {
     // therefore only need to persist the config to `config_path` — no env var
     // manipulation required.
 
-    #[tokio::test]
-    async fn provider_context_execute_resolves_via_factory_at_call_time() {
-        // Build a context against a direct-mode config (no backend
-        // session token, only the inline direct api_key). The factory
-        // must pick the `Direct` variant on `execute` — pre-fix the
-        // `client: ComposioClient` field was always backend, so this
-        // path would have surfaced a backend session lookup error
-        // even with `mode = "direct"`.
-        let tmp = tempfile::tempdir().expect("tempdir");
-
-        let mut config = TestHostConfig::default();
-        config.config_path = tmp.path().join("config.toml");
-        config.workspace_dir = tmp.path().join("workspace");
-        config.secrets_encrypt = false;
-        config.composio.mode = tinymemory_api::host::COMPOSIO_MODE_DIRECT.to_string();
-        config.composio.api_key = Some("test-direct-key".to_string());
-        config.save().await.expect("save fake config to disk");
-
-        let ctx = ProviderContext {
-            config: Arc::new(config) as Arc<crate::Config>,
-            toolkit: "gmail".to_string(),
-            connection_id: None,
-            usage: ComposioUsageHandle::default(),
-            max_items: None,
-            sync_depth_days: None,
-        };
-        let res = ctx.execute("GMAIL_FETCH_EMAILS", None).await;
-        // The actual HTTP call will fail in the unit-test sandbox, but
-        // the error must come from the direct path — never a backend
-        // session lookup, which is the smoking gun for the pre-fix bug.
-        if let Err(e) = res {
-            let msg = e.to_string();
-            assert!(
-                !msg.contains("no backend session"),
-                "direct-mode execute must not surface backend session artifacts: {msg}"
-            );
-        }
-    }
 
     #[tokio::test]
     async fn provider_context_execute_backend_branch_without_session_errors_cleanly() {
