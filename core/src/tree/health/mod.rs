@@ -341,7 +341,7 @@ mod tests {
         clear_semantic_recall_degraded();
         mark_local_model_unavailable_if_applicable(&failure);
         assert!(
-            rx.try_recv().is_ok(),
+            !sink.drain().is_empty(),
             "a fresh outage after recovery must broadcast again"
         );
     }
@@ -366,10 +366,7 @@ mod tests {
             }
         });
 
-        let mut published = 0;
-        while rx.try_recv().is_ok() {
-            published += 1;
-        }
+        let published = sink.drain().len();
         assert_eq!(
             published, 1,
             "{THREADS} concurrent failures must yield exactly one announcement"
@@ -401,13 +398,16 @@ mod tests {
         clear_semantic_recall_degraded();
         mark_local_model_unavailable_if_applicable(&failure);
 
-        let event = rx
-            .try_recv()
-            .expect("a client connecting mid-outage must still be told");
+        let recorded = sink.drain();
         assert_eq!(
-            event.error_type.as_deref(),
-            Some(LOCAL_MODEL_UNAVAILABLE_KIND)
+            recorded.len(),
+            1,
+            "a client connecting mid-outage must still be told"
         );
+        assert!(matches!(
+            recorded[0],
+            crate::events::MemoryEvent::LocalModelUnavailable { .. }
+        ));
     }
 
     /// A different active cause must not be mistaken for "already surfaced" —
@@ -424,7 +424,7 @@ mod tests {
         ));
 
         assert!(
-            rx.try_recv().is_ok(),
+            !sink.drain().is_empty(),
             "a cause change into local_model_unavailable is a transition"
         );
     }

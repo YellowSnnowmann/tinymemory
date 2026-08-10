@@ -926,12 +926,15 @@ mod tests {
             "second call must suppress the Sentry report"
         );
 
-        // Both calls must still have reached connected clients.
-        for attempt in 1..=2 {
-            let event = rx
-                .try_recv()
-                .unwrap_or_else(|e| panic!("broadcast {attempt} missing: {e}"));
-            assert_eq!(event.event, "user_error");
+        // Both calls must still have been announced — the Sentry latch
+        // suppresses only the *report*, never the user-facing event.
+        let recorded = sink.drain();
+        assert_eq!(recorded.len(), 2, "both calls must announce: {recorded:?}");
+        for event in &recorded {
+            assert!(matches!(
+                event,
+                crate::events::MemoryEvent::LocalModelUnavailable { .. }
+            ));
             assert_eq!(
                 event.error_type.as_deref(),
                 Some(LOCAL_MODEL_UNAVAILABLE_KIND)
