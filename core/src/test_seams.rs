@@ -12,7 +12,35 @@
 //! itself. The tests that covered that behaviour moved to the host, where the
 //! real implementation is.
 
-use std::sync::Once;
+use std::sync::{Arc, Once};
+
+use async_trait::async_trait;
+
+use crate::config_loader::ConfigLoader;
+use crate::Config;
+
+/// A [`ConfigLoader`] that hands back a default test config.
+///
+/// The background loops reload config on every tick by design; without a loader
+/// they fail with the unwired-seam error before reaching the behaviour under
+/// test.
+#[derive(Debug)]
+struct TestConfigLoader;
+
+#[async_trait]
+impl ConfigLoader for TestConfigLoader {
+    async fn load(&self) -> Result<Box<Config>, String> {
+        Ok(Box::new(
+            tinymemory_api::host::test_support::TestHostConfig::default(),
+        ))
+    }
+
+    async fn reload_snapshot(&self, _snapshot: &Config) -> Result<Arc<Config>, String> {
+        Ok(Arc::new(
+            tinymemory_api::host::test_support::TestHostConfig::default(),
+        ))
+    }
+}
 
 static INIT: Once = Once::new();
 
@@ -20,5 +48,6 @@ static INIT: Once = Once::new();
 pub(crate) fn init() {
     INIT.call_once(|| {
         crate::embedding_host::TestEmbeddingHost::install();
+        crate::config_loader::set_config_loader(Arc::new(TestConfigLoader));
     });
 }

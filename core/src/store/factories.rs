@@ -932,14 +932,20 @@ mod tests {
 
         // Both calls must still have been announced — the Sentry latch
         // suppresses only the *report*, never the user-facing event.
-        let recorded = sink.drain();
-        assert_eq!(recorded.len(), 2, "both calls must announce: {recorded:?}");
-        for event in &recorded {
-            assert!(matches!(
-                event,
-                crate::events::MemoryEvent::LocalModelUnavailable { .. }
-            ));
-        }
+        // Count only the user-facing announcement. The health-gate also emits
+        // `EmbeddingModelUnhealthy` on the first call; that is a different
+        // event with its own latch and is not what this test pins.
+        let announcements = sink
+            .drain()
+            .into_iter()
+            .filter(|event| {
+                matches!(event, crate::events::MemoryEvent::LocalModelUnavailable { .. })
+            })
+            .count();
+        assert_eq!(
+            announcements, 2,
+            "the Sentry latch must suppress the report, never the announcement"
+        );
     }
 
     /// First call to `report_ollama_health_gate_once` fires the report;
