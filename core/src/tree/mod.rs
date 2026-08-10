@@ -26,14 +26,3 @@ pub use tinycortex::memory::tree::{
     TreeWriteOutcome, TreeWriteRequest,
 };
 
-// Re-export controller registries.
-pub use crate::schema::{
-    all_controller_schemas as all_memory_tree_controller_schemas,
-    all_registered_controllers as all_memory_tree_registered_controllers,
-};
-pub use crate::tree::retrieval::{
-    all_retrieval_controller_schemas, all_retrieval_registered_controllers,
-};
-pub use crate::tree::tree_runtime::{
-    all_tree_summarizer_controller_schemas, all_tree_summarizer_registered_controllers,
-};
