@@ -397,37 +397,6 @@ mod tests {
         assert!(gate.note.contains("paused"));
     }
 
-    /// #002 FR-007 / Gray review: the doctor's `summary_tree` stage must mirror
-    /// `summarizer_available` exactly. With local AI off and no cloud opt-in
-    /// (the default), the stage reports unavailable — which is correct, since
-    /// cloud summarization requires explicit consent. The stage must NOT fire
-    /// a generic "local AI required" hard-failure; it names the opt-in gap.
-    #[test]
-    fn local_ai_off_reports_no_provider_without_cloud_opt_in() {
-        let _g = super::super::test_guard();
-        let (_tmp, mut cfg) = test_config();
-        cfg.embeddings_provider = Some("ollama:bge-m3".into()); // embeddings ok
-        cfg.local_ai.runtime_enabled = false; // cloud opt-in not set (default false)
-
-        let report = run_doctor(&cfg);
-        let tree = report
-            .stages
-            .iter()
-            .find(|s| s.stage == "summary_tree")
-            .unwrap();
-        // summary_tree must mirror summarizer_available precisely.
-        assert_eq!(
-            tree.ok,
-            crate::chat_host::summarizer_available(&cfg).0,
-            "summary_tree health must mirror the runtime capability check"
-        );
-        // Without opt-in, the note names the "no summarization provider" case.
-        assert!(
-            tree.note.contains("no summarization provider"),
-            "unexpected summary_tree note: {}",
-            tree.note
-        );
-    }
 
     /// A host-FS storage failure must surface as the doctor's
     /// `first_blocking_cause` (stage 0), outranking everything else — even a

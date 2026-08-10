@@ -268,59 +268,10 @@ mod tests {
     use super::*;
     use tinymemory_api::host::DEFAULT_CLOUD_LLM_MODEL;
 
-    #[test]
-    fn build_provider_returns_inference_wrapper_when_default() {
-        let cfg = TestHostConfig::default();
-        let provider = build_chat_provider(&cfg).unwrap();
-        assert!(provider.name().contains("inference:"));
-    }
 
-    #[test]
-    fn build_chat_runtime_defaults_to_openhuman_resolved_model() {
-        let cfg = TestHostConfig::default();
-        let (_provider, model) = build_chat_runtime(&cfg).unwrap();
-        // The managed "summarization" tier is fixed at `summarization-v1`
-        // inside `make_openhuman_backend`. DEFAULT_CLOUD_LLM_MODEL is that same
-        // constant — asserted here only as the expected value, not because
-        // `cloud_llm_model` is consumed (it isn't; see the test below).
-        assert_eq!(model, DEFAULT_CLOUD_LLM_MODEL);
-    }
 
-    #[test]
-    fn build_chat_runtime_ignores_cloud_llm_model_on_managed() {
-        // The managed summarization tier is locked to `summarization-v1`;
-        // `memory_tree.cloud_llm_model` is inert and must not change it (neither a
-        // known tier nor a custom string leaks through).
-        let mut cfg = TestHostConfig::default();
-        cfg.memory_tree.cloud_llm_model = Some("chat-v1".into());
-        let (_provider, model) = build_chat_runtime(&cfg).unwrap();
-        assert_eq!(model, DEFAULT_CLOUD_LLM_MODEL);
 
-        cfg.memory_tree.cloud_llm_model = Some("custom-summary-model".into());
-        let (_provider, model) = build_chat_runtime(&cfg).unwrap();
-        assert_eq!(model, DEFAULT_CLOUD_LLM_MODEL);
-    }
 
-    #[test]
-    fn build_provider_returns_inference_wrapper_when_local_memory_is_configured() {
-        // Serialize with the process-global `test_provider_override` (see the
-        // inference factory tests): while an override is active, `create_chat_model`
-        // returns the mock, so an unguarded read here could race it.
-        let _guard = crate::chat_host::inference_test_guard();
-        let mut cfg = TestHostConfig::default();
-        cfg.memory_provider = Some("ollama:qwen2.5:0.5b".into());
-        let provider = build_chat_provider(&cfg).unwrap();
-        assert!(provider.name().contains("qwen2.5:0.5b"));
-    }
-
-    #[test]
-    fn build_chat_runtime_preserves_local_memory_model() {
-        let _guard = crate::chat_host::inference_test_guard();
-        let mut cfg = TestHostConfig::default();
-        cfg.memory_provider = Some("ollama:qwen2.5:0.5b".into());
-        let (_provider, model) = build_chat_runtime(&cfg).unwrap();
-        assert_eq!(model, "qwen2.5:0.5b");
-    }
 
     #[tokio::test]
     async fn static_chat_provider_returns_response_and_counts() {

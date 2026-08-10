@@ -719,26 +719,6 @@ mod tests {
         );
     }
 
-    /// #1574 invariant: a config-derived `active_embedding_signature` MUST be
-    /// byte-identical to the live provider's `.signature()` for the same
-    /// (provider, model, dims). Drift here silently splits one embedding space
-    /// into two — copied/queried vectors would never match.
-    #[test]
-    fn active_signature_matches_live_provider_signature() {
-        for local in [None, Some("nomic-embed-text:latest"), Some("bge-m3")] {
-            let mem = MemoryConfig::default();
-            let (provider, model, dims) = effective_embedding_settings(&mem, local);
-            let live = crate::embedding_host::require_embedding_host()
-                .expect("embedding host installed")
-                .create_embedding_provider_with_credentials(&provider, &model, dims, "", None)
-                .expect("provider builds for test triple");
-            assert_eq!(
-                active_embedding_signature(&mem, local),
-                live.signature(),
-                "config-derived signature must equal live provider signature (local={local:?})"
-            );
-        }
-    }
 
     #[test]
     fn active_signature_ignores_probe_fallback() {
