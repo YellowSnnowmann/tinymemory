@@ -275,7 +275,7 @@ pub async fn list_checkpoints_rpc(
 ) -> Result<RpcOutcome<ListCheckpointsResponse>, String> {
     debug!("[memory_diff][rpc] list_checkpoints limit={:?}", req.limit);
     let config = config_rpc::load_config_with_timeout().await?;
-    let workspace_dir = config.workspace_dir.clone();
+    let workspace_dir = config.workspace_dir().clone();
     let limit = req.limit.unwrap_or(20) as u32;
 
     let checkpoints = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<Checkpoint>> {

@@ -553,8 +553,8 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
 
         let mut config = Config::default();
-        config.config_path = tmp.path().join("config.toml");
-        config.workspace_dir = tmp.path().join("workspace");
+        config.config_path() = tmp.path().join("config.toml");
+        config.workspace_dir() = tmp.path().join("workspace");
         config.secrets.encrypt = false;
         config.composio.mode = tinymemory_api::host::COMPOSIO_MODE_DIRECT.to_string();
         config.composio.api_key = Some("test-direct-key".to_string());
@@ -590,8 +590,8 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
 
         let mut config = Config::default();
-        config.config_path = tmp.path().join("config.toml");
-        config.workspace_dir = tmp.path().join("workspace");
+        config.config_path() = tmp.path().join("config.toml");
+        config.workspace_dir() = tmp.path().join("workspace");
         config.secrets.encrypt = false;
         config.save().await.expect("save fake config to disk");
 

@@ -76,7 +76,7 @@ pub async fn reflect_now(
     context: Option<String>,
 ) -> Result<RpcOutcome<ReflectResult>, String> {
     log::info!("[memory_goals] rpc=reflect — running goals agent on demand");
-    let workspace_dir = config.workspace_dir.clone();
+    let workspace_dir = config.workspace_dir().clone();
     let default_nudge = "Review the user's long-term goals against recent memory and the \
                  current conversation. Add, edit, or delete goals as needed.";
     let nudge = context

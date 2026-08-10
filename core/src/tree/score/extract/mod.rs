@@ -55,7 +55,7 @@ pub fn build_summary_extractor(config: &Config) -> Arc<dyn EntityExtractor> {
         LlmExtractorConfig {
             model,
             emit_topics: true,
-            output_language: config.output_language.clone(),
+            output_language: config.output_language().clone(),
             ..Default::default()
         },
         provider,

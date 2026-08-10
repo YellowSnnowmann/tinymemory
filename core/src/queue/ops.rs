@@ -32,7 +32,7 @@ pub fn backfill_in_progress() -> bool {
 pub fn ensure_reembed_backfill(config: &crate::Config) {
     let memory = crate::tinycortex::memory_config_from(
         config,
-        config.workspace_dir.clone(),
+        config.workspace_dir().clone(),
     );
     let delegates = crate::tinycortex::HostQueueDelegates::new(config.clone());
     if let Err(error) = tinycortex::memory::queue::ensure_reembed_backfill(&memory, &delegates) {
@@ -103,7 +103,7 @@ mod tests {
     fn test_config() -> (TempDir, Config) {
         let tmp = TempDir::new().unwrap();
         let mut cfg = Config::default();
-        cfg.workspace_dir = tmp.path().to_path_buf();
+        cfg.workspace_dir() = tmp.path().to_path_buf();
         (tmp, cfg)
     }
 
@@ -194,7 +194,7 @@ mod tests {
         let as_file = tmp.path().join("workspace-is-a-file");
         std::fs::write(&as_file, b"not a directory").unwrap();
         let mut cfg = Config::default();
-        cfg.workspace_dir = as_file;
+        cfg.workspace_dir() = as_file;
 
         let out = requeue_failed_after_provider_change(&cfg);
         assert!(

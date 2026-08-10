@@ -34,7 +34,7 @@ impl SourceReader for GithubReader {
             source,
             &crate::tinycortex::memory_config_from(
                 config,
-                config.workspace_dir.clone(),
+                config.workspace_dir().clone(),
             ),
         )
         .await
@@ -53,7 +53,7 @@ impl SourceReader for GithubReader {
             item_id,
             &crate::tinycortex::memory_config_from(
                 config,
-                config.workspace_dir.clone(),
+                config.workspace_dir().clone(),
             ),
         )
         .await

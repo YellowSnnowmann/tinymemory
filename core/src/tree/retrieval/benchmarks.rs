@@ -33,10 +33,10 @@ use tinycortex::memory::ingest::canonicalize::chat::{ChatBatch, ChatMessage};
 fn bench_config() -> (TempDir, Config) {
     let tmp = TempDir::new().unwrap();
     let mut cfg = Config::default();
-    cfg.workspace_dir = tmp.path().to_path_buf();
-    cfg.memory_tree.embedding_endpoint = None;
-    cfg.memory_tree.embedding_model = None;
-    cfg.memory_tree.embedding_strict = false;
+    cfg.workspace_dir() = tmp.path().to_path_buf();
+    cfg.memory_tree().embedding_endpoint = None;
+    cfg.memory_tree().embedding_model = None;
+    cfg.memory_tree().embedding_strict = false;
     (tmp, cfg)
 }
 

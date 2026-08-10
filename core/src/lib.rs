@@ -22,7 +22,7 @@
 /// side of the seam with no edit at all.
 ///
 /// What did change inside this crate: field reads became method calls
-/// (`config.workspace_dir` → `config.workspace_dir()`), by-value `Config`
+/// (`config.workspace_dir()` → `config.workspace_dir()`), by-value `Config`
 /// parameters became `Arc<Config>`, and `Config::default()` in tests became
 /// [`tinymemory_api::host::test_support::TestHostConfig`], which cannot be built
 /// from a trait object.

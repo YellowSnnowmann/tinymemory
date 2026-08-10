@@ -10,7 +10,7 @@
 //! enabled workspace-kind source whose cadence has elapsed.
 //!
 //! Cadence semantics mirror the Composio loop (#3302):
-//! - `config.memory_sync_interval_secs == Some(0)` → "Manual only", the
+//! - `config.memory_sync_interval_secs() == Some(0)` → "Manual only", the
 //!   loop skips every source.
 //! - `Some(n)` → sync every `max(n, 24h-default)` seconds.
 //! - `None` → the 24h default.
@@ -171,7 +171,7 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
         .await
         .map_err(|e| format!("load_config: {e}"))?;
 
-    let global_interval = config.memory_sync_interval_secs;
+    let global_interval = config.memory_sync_interval_secs();
     let Some(interval_secs) =
         effective_interval_secs(DEFAULT_MEMORY_SYNC_INTERVAL_SECS, global_interval)
     else {

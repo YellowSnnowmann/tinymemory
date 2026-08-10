@@ -28,7 +28,7 @@ pub async fn summarise(
     let Some(prepared) = tinycortex::memory::tree::prepare_summary_prompt(
         inputs,
         context,
-        config.output_language.as_deref(),
+        config.output_language().as_deref(),
     ) else {
         return Ok(SummaryOutput::default());
     };

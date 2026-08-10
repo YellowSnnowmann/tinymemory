@@ -172,23 +172,23 @@ pub async fn apply_composio_source_caps_migration() -> Result<(), String> {
     let _guard = registry::memory_sources_write_guard().await;
     let mut config = config_rpc::load_config_with_timeout().await?;
 
-    if config.composio_source_caps_migration_version >= CURRENT_CAPS_MIGRATION_VERSION {
+    if config.composio_source_caps_migration_version() >= CURRENT_CAPS_MIGRATION_VERSION {
         tracing::debug!(
-            version = config.composio_source_caps_migration_version,
+            version = config.composio_source_caps_migration_version(),
             "[memory_sources:reconcile] caps migration already at current version; skipping"
         );
         return Ok(());
     }
 
     tracing::info!(
-        from_version = config.composio_source_caps_migration_version,
+        from_version = config.composio_source_caps_migration_version(),
         to_version = CURRENT_CAPS_MIGRATION_VERSION,
         "[memory_sources:reconcile] applying composio source caps migration"
     );
 
     let migrated_count = apply_caps_defaults_to_entries(&mut config.memory_sources);
 
-    config.composio_source_caps_migration_version = CURRENT_CAPS_MIGRATION_VERSION;
+    config.composio_source_caps_migration_version() = CURRENT_CAPS_MIGRATION_VERSION;
     config
         .save()
         .await

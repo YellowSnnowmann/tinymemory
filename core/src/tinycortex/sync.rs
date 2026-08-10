@@ -70,7 +70,7 @@ pub fn append_audit_entry(config: &Config, entry: &SyncAuditEntry) {
         items_fetched = entry.items_fetched,
         "[tinycortex:sync] audit append starting"
     );
-    let memory_config = super::memory_config_from(config, config.workspace_dir.clone());
+    let memory_config = super::memory_config_from(config, config.workspace_dir().clone());
     match tinycortex::memory::sync::append_audit_entry(&memory_config, entry) {
         Ok(()) => tracing::debug!(
             source_kind = %entry.source_kind,
@@ -86,7 +86,7 @@ pub fn append_audit_entry(config: &Config, entry: &SyncAuditEntry) {
 /// Read persisted sync audit records while preserving storage failures for fail-closed callers.
 pub fn try_read_audit_log(config: &Config) -> anyhow::Result<Vec<SyncAuditEntry>> {
     tracing::debug!("[tinycortex:sync] audit read starting");
-    let memory_config = super::memory_config_from(config, config.workspace_dir.clone());
+    let memory_config = super::memory_config_from(config, config.workspace_dir().clone());
     let entries = tinycortex::memory::sync::read_audit_log(&memory_config).map_err(|error| {
         tracing::warn!(%error, "[tinycortex:sync] audit read failed");
         error
@@ -115,7 +115,7 @@ pub fn raw_coverage(
     archive_source_id: &str,
 ) -> anyhow::Result<RawCoverage> {
     tracing::debug!("[tinycortex:sync] raw coverage scan starting");
-    let memory_config = super::memory_config_from(config, config.workspace_dir.clone());
+    let memory_config = super::memory_config_from(config, config.workspace_dir().clone());
     let coverage =
         tinycortex::memory::sync::raw_coverage(&memory_config, tree_scope, archive_source_id)
             .map_err(|error| {
@@ -133,7 +133,7 @@ pub fn raw_coverage(
 
 /// Return whether a raw archive contains records absent from its memory tree.
 pub fn needs_rebuild(config: &Config, tree_scope: &str, archive_source_id: &str) -> bool {
-    let memory_config = super::memory_config_from(config, config.workspace_dir.clone());
+    let memory_config = super::memory_config_from(config, config.workspace_dir().clone());
     let required =
         tinycortex::memory::sync::needs_rebuild(&memory_config, tree_scope, archive_source_id);
     tracing::debug!(
@@ -150,7 +150,7 @@ pub async fn rebuild_tree_from_raw(
     archive_source_id: &str,
 ) -> anyhow::Result<RebuildOutcome> {
     tracing::info!("[tinycortex:sync] raw rebuild starting");
-    let memory_config = super::memory_config_from(config, config.workspace_dir.clone());
+    let memory_config = super::memory_config_from(config, config.workspace_dir().clone());
     let summariser = super::HostSummariser::new(config.clone());
     let outcome = tinycortex::memory::sync::rebuild_tree_from_raw(
         &memory_config,
@@ -179,7 +179,7 @@ pub async fn run_github_sync(
     tracing::info!("[tinycortex:sync] GitHub repository sync starting");
     if crate::global::client_if_ready().is_none() {
         tracing::debug!("[tinycortex:sync] GitHub sync initializing memory client");
-        crate::global::init(config.workspace_dir.clone())
+        crate::global::init(config.workspace_dir().clone())
             .map_err(anyhow::Error::msg)
             .map_err(|error| {
                 tracing::warn!(%error, "[tinycortex:sync] GitHub sync memory initialization failed");
@@ -273,8 +273,8 @@ pub async fn run_source_pipeline(
 ) -> Result<SyncOutcome, SourcePipelineFailure> {
     let memory = crate::global::client_if_ready()
         .ok_or_else(|| SourcePipelineFailure::without_usage("memory client is not ready"))?;
-    let mut memory_config = super::memory_config_from(config, config.workspace_dir.clone());
-    memory_config.sync.interval_secs = config.memory_sync_interval_secs;
+    let mut memory_config = super::memory_config_from(config, config.workspace_dir().clone());
+    memory_config.sync.interval_secs = config.memory_sync_interval_secs();
     memory_config.sync.budget.max_items = source.max_items;
     memory_config.sync.budget.max_tokens_per_sync = source.max_tokens_per_sync;
     memory_config.sync.budget.max_cost_per_sync_usd = source.max_cost_per_sync_usd;
@@ -393,7 +393,7 @@ pub async fn run_slack_search_backfill(
 ) -> Result<SyncOutcome, SourcePipelineFailure> {
     let memory = crate::global::client_if_ready()
         .ok_or_else(|| SourcePipelineFailure::without_usage("memory client is not ready"))?;
-    let mut memory_config = super::memory_config_from(config, config.workspace_dir.clone());
+    let mut memory_config = super::memory_config_from(config, config.workspace_dir().clone());
     let composio = composio_config(config).map_err(SourcePipelineFailure::without_usage)?;
     memory_config.sync.composio = Some(composio.clone());
     let pipeline = std::sync::Arc::new(SlackSearchBackfillPipeline::new(
@@ -425,7 +425,7 @@ pub async fn run_gmail_backfill(
 ) -> Result<SyncOutcome, SourcePipelineFailure> {
     let memory = crate::global::client_if_ready()
         .ok_or_else(|| SourcePipelineFailure::without_usage("memory client is not ready"))?;
-    let mut memory_config = super::memory_config_from(config, config.workspace_dir.clone());
+    let mut memory_config = super::memory_config_from(config, config.workspace_dir().clone());
     let composio = composio_config(config).map_err(SourcePipelineFailure::without_usage)?;
     memory_config.sync.composio = Some(composio.clone());
     let pipeline = std::sync::Arc::new(
@@ -554,7 +554,7 @@ fn composio_config(
             .ok_or_else(|| "OpenHuman backend bearer token is not configured".to_string())?;
         Ok(ComposioSyncConfig {
             mode: ComposioMode::Proxied,
-            base_url: crate::api::config::effective_backend_api_url(&config.api_url),
+            base_url: crate::api::config::effective_backend_api_url(&config.api_url()),
             api_key: None,
             bearer_token: Some(SecretString::new(bearer)),
             entity_id: Some(config.composio.entity_id.clone()),
@@ -828,7 +828,7 @@ mod tests {
         std::fs::create_dir_all(&audit_path).expect("create directory at audit file path");
 
         let mut config = Config::default();
-        config.workspace_dir = workspace.path().to_path_buf();
+        config.workspace_dir() = workspace.path().to_path_buf();
 
         let error = try_read_audit_log(&config).expect_err("directory read must fail");
         assert!(

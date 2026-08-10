@@ -30,7 +30,7 @@ impl SelfIdentity for HostSelfIdentity {
 }
 
 fn index(config: &Config) -> Result<EntityIndex> {
-    let memory = memory_config_from(config, config.workspace_dir.clone());
+    let memory = memory_config_from(config, config.workspace_dir().clone());
     let connection = tinycortex::memory::chunks::shared_connection(&memory)?;
     EntityIndex::from_shared_connection(connection, Arc::new(HostSelfIdentity))
 }

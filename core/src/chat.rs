@@ -194,7 +194,7 @@ pub fn build_chat_runtime(config: &Config) -> Result<(Arc<dyn ChatProvider>, Str
     // (each memory `ChatPrompt` carries its own), so the construction temperature
     // is just a default the per-call value overrides.
     let (model, model_id) =
-        create_chat_model_with_model_id("summarization", config, config.default_temperature)?;
+        create_chat_model_with_model_id("summarization", config, config.default_temperature())?;
 
     log::debug!(
         "[memory::chat] built provider route={} model={}",
@@ -292,11 +292,11 @@ mod tests {
         // `memory_tree.cloud_llm_model` is inert and must not change it (neither a
         // known tier nor a custom string leaks through).
         let mut cfg = Config::default();
-        cfg.memory_tree.cloud_llm_model = Some("chat-v1".into());
+        cfg.memory_tree().cloud_llm_model = Some("chat-v1".into());
         let (_provider, model) = build_chat_runtime(&cfg).unwrap();
         assert_eq!(model, DEFAULT_CLOUD_LLM_MODEL);
 
-        cfg.memory_tree.cloud_llm_model = Some("custom-summary-model".into());
+        cfg.memory_tree().cloud_llm_model = Some("custom-summary-model".into());
         let (_provider, model) = build_chat_runtime(&cfg).unwrap();
         assert_eq!(model, DEFAULT_CLOUD_LLM_MODEL);
     }
@@ -308,7 +308,7 @@ mod tests {
         // returns the mock, so an unguarded read here could race it.
         let _guard = crate::openhuman::inference::inference_test_guard();
         let mut cfg = Config::default();
-        cfg.memory_provider = Some("ollama:qwen2.5:0.5b".into());
+        cfg.memory_provider() = Some("ollama:qwen2.5:0.5b".into());
         let provider = build_chat_provider(&cfg).unwrap();
         assert!(provider.name().contains("qwen2.5:0.5b"));
     }
@@ -317,7 +317,7 @@ mod tests {
     fn build_chat_runtime_preserves_local_memory_model() {
         let _guard = crate::openhuman::inference::inference_test_guard();
         let mut cfg = Config::default();
-        cfg.memory_provider = Some("ollama:qwen2.5:0.5b".into());
+        cfg.memory_provider() = Some("ollama:qwen2.5:0.5b".into());
         let (_provider, model) = build_chat_runtime(&cfg).unwrap();
         assert_eq!(model, "qwen2.5:0.5b");
     }

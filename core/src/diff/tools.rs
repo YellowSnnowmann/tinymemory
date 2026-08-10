@@ -129,7 +129,7 @@ impl Tool for MemoryDiffTool {
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 
-        let workspace_dir = config.workspace_dir.clone();
+        let workspace_dir = config.workspace_dir().clone();
         let source_ids: Vec<(String, String, String)> = sources
             .iter()
             .filter(|s| s.enabled)

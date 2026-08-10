@@ -7,7 +7,7 @@ use tempfile::TempDir;
 fn test_config() -> (TempDir, Config) {
     let tmp = TempDir::new().unwrap();
     let mut cfg = Config::default();
-    cfg.workspace_dir = tmp.path().to_path_buf();
+    cfg.workspace_dir() = tmp.path().to_path_buf();
     (tmp, cfg)
 }
 

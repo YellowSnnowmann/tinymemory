@@ -49,7 +49,7 @@ pub async fn extract_query_entities(config: &Config, query: &str) -> Vec<Canonic
         return Vec::new();
     }
 
-    if config.memory_tree.spacy_enabled {
+    if config.memory_tree().spacy_enabled {
         match crate::openhuman::runtime::python_server::extract_spacy(config, trimmed).await {
             Ok(resp) => {
                 let extracted = spacy_to_extracted(&resp);

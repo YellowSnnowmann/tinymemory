@@ -41,7 +41,7 @@ pub fn start(config: Config) {
 fn retry_transient_failures(config: &Config) {
     let memory = crate::tinycortex::memory_config_from(
         config,
-        config.workspace_dir.clone(),
+        config.workspace_dir().clone(),
     );
     match tinycortex::memory::queue::scheduler::self_heal(&memory) {
         Ok(0) => {}
@@ -73,7 +73,7 @@ fn retry_transient_failures(config: &Config) {
 pub(crate) fn enqueue_flush_stale_job(config: &Config) -> Result<bool, String> {
     let memory = crate::tinycortex::memory_config_from(
         config,
-        config.workspace_dir.clone(),
+        config.workspace_dir().clone(),
     );
     match tinycortex::memory::queue::scheduler::enqueue_flush_stale(&memory) {
         Ok(Some(_)) => {
@@ -103,10 +103,10 @@ mod tests {
     fn test_config() -> (TempDir, Config) {
         let tmp = TempDir::new().unwrap();
         let mut cfg = Config::default();
-        cfg.workspace_dir = tmp.path().to_path_buf();
-        cfg.memory_tree.embedding_endpoint = None;
-        cfg.memory_tree.embedding_model = None;
-        cfg.memory_tree.embedding_strict = false;
+        cfg.workspace_dir() = tmp.path().to_path_buf();
+        cfg.memory_tree().embedding_endpoint = None;
+        cfg.memory_tree().embedding_model = None;
+        cfg.memory_tree().embedding_strict = false;
         (tmp, cfg)
     }
 

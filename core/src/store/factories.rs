@@ -558,7 +558,7 @@ fn create_unified_memory_full(
         workspace_dir,
         memory_subdir,
         embedder,
-        config.sqlite_open_timeout_secs,
+        config.sqlite_open_timeout_secs(),
     )
 }
 

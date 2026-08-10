@@ -492,7 +492,7 @@ pub async fn pipeline_status_rpc(
             msg
         })?;
 
-    let is_paused = config.scheduler_gate.mode == SchedulerGateMode::Off;
+    let is_paused = config.scheduler_gate().mode == SchedulerGateMode::Off;
     let is_syncing = pipeline_jobs.running > 0;
 
     // #002: read the process-global degradation snapshot (set by the embed /
@@ -506,7 +506,7 @@ pub async fn pipeline_status_rpc(
 
     let (status, reason) = derive_pipeline_status(
         is_paused,
-        config.scheduler_gate.mode,
+        config.scheduler_gate().mode,
         is_syncing,
         pipeline_jobs.failed,
         failed_unrecoverable,
@@ -1017,7 +1017,7 @@ pub struct SetEnabledResponse {
 
 /// `memory_tree_set_enabled` RPC handler (#1856 Part 1).
 ///
-/// Flips `config.scheduler_gate.mode` to either `Auto` (enabled) or `Off`
+/// Flips `config.scheduler_gate().mode` to either `Auto` (enabled) or `Off`
 /// (paused), persists to disk via `config.save()`, and hot-reloads the
 /// live scheduler-gate state so any in-flight workers immediately observe
 /// the new policy at their next `wait_for_capacity()` await.
@@ -1034,7 +1034,7 @@ pub async fn set_enabled_rpc(
 ) -> Result<RpcOutcome<SetEnabledResponse>, String> {
     use tinymemory_api::host::SchedulerGateMode;
 
-    let prev_mode = config.scheduler_gate.mode;
+    let prev_mode = config.scheduler_gate().mode;
     let new_mode = if req.enabled {
         SchedulerGateMode::Auto
     } else {
@@ -1067,7 +1067,7 @@ pub async fn set_enabled_rpc(
         ));
     }
 
-    config.scheduler_gate.mode = new_mode;
+    config.scheduler_gate().mode = new_mode;
     config.save().await.map_err(|e| {
         let msg = format!("set_enabled: config.save failed: {e}");
         log::warn!("[memory-tree][rpc] {msg}");
@@ -1076,7 +1076,7 @@ pub async fn set_enabled_rpc(
 
     // Hot-reload the live gate state — workers re-poll inside
     // `wait_for_capacity` and pick up the new policy without a restart.
-    crate::openhuman::cron::scheduler_gate::gate::update_config(config.scheduler_gate.clone());
+    crate::openhuman::cron::scheduler_gate::gate::update_config(config.scheduler_gate().clone());
 
     log::info!(
         "[memory-tree][rpc] set_enabled: scheduler_gate.mode {} -> {} (enabled={})",
@@ -1112,10 +1112,10 @@ mod tests {
     fn test_config() -> (TempDir, Config) {
         let tmp = TempDir::new().unwrap();
         let mut cfg = Config::default();
-        cfg.workspace_dir = tmp.path().to_path_buf();
-        cfg.memory_tree.embedding_endpoint = None;
-        cfg.memory_tree.embedding_model = None;
-        cfg.memory_tree.embedding_strict = false;
+        cfg.workspace_dir() = tmp.path().to_path_buf();
+        cfg.memory_tree().embedding_endpoint = None;
+        cfg.memory_tree().embedding_model = None;
+        cfg.memory_tree().embedding_strict = false;
         (tmp, cfg)
     }
 
@@ -2032,7 +2032,7 @@ mod tests {
         use tinymemory_api::host::SchedulerGateMode;
 
         let (_tmp, mut cfg) = test_config();
-        cfg.scheduler_gate.mode = SchedulerGateMode::Off;
+        cfg.scheduler_gate().mode = SchedulerGateMode::Off;
         let out = pipeline_status_rpc(&cfg).await.unwrap().value;
         assert_eq!(out.status, "paused");
         assert!(out.is_paused);
@@ -2109,9 +2109,9 @@ mod tests {
 
         let (tmp, mut cfg) = test_config();
         // Pin config_path inside the tempdir so `save()` stays sandboxed.
-        cfg.config_path = tmp.path().join("config.toml");
+        cfg.config_path() = tmp.path().join("config.toml");
 
-        assert_eq!(cfg.scheduler_gate.mode, SchedulerGateMode::Auto);
+        assert_eq!(cfg.scheduler_gate().mode, SchedulerGateMode::Auto);
 
         let off = set_enabled_rpc(&mut cfg, SetEnabledRequest { enabled: false })
             .await
@@ -2120,7 +2120,7 @@ mod tests {
         assert!(!off.enabled);
         assert!(off.changed);
         assert_eq!(off.mode, "off");
-        assert_eq!(cfg.scheduler_gate.mode, SchedulerGateMode::Off);
+        assert_eq!(cfg.scheduler_gate().mode, SchedulerGateMode::Off);
 
         // Calling with the same value must report no-op.
         let again = set_enabled_rpc(&mut cfg, SetEnabledRequest { enabled: false })
@@ -2137,6 +2137,6 @@ mod tests {
         assert!(on.enabled);
         assert!(on.changed);
         assert_eq!(on.mode, "auto");
-        assert_eq!(cfg.scheduler_gate.mode, SchedulerGateMode::Auto);
+        assert_eq!(cfg.scheduler_gate().mode, SchedulerGateMode::Auto);
     }
 }

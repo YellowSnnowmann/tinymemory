@@ -37,7 +37,7 @@ pub async fn take_snapshot(
     config: &Config,
     trigger: SnapshotTrigger,
 ) -> Result<Snapshot, String> {
-    let workspace_dir = config.workspace_dir.clone();
+    let workspace_dir = config.workspace_dir().clone();
     let config_clone = config.clone();
     let source_owned = source.clone();
     let desc = descriptor(source);
@@ -94,7 +94,7 @@ pub async fn list_snapshots(
     source_id: Option<&str>,
     limit: u32,
 ) -> Result<Vec<Snapshot>, String> {
-    let workspace_dir = config.workspace_dir.clone();
+    let workspace_dir = config.workspace_dir().clone();
     let source_id = source_id.map(str::to_string);
 
     tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<Snapshot>> {
@@ -113,7 +113,7 @@ pub async fn compute_diff(
     to_snapshot_id: &str,
     include_text_diff: bool,
 ) -> Result<DiffResult, String> {
-    let workspace_dir = config.workspace_dir.clone();
+    let workspace_dir = config.workspace_dir().clone();
     let config_clone = config.clone();
     let to_id = to_snapshot_id.to_string();
     let from_id = from_snapshot_id.map(|s| s.to_string());
@@ -133,7 +133,7 @@ pub async fn diff_since_last(
     config: &Config,
     include_text_diff: bool,
 ) -> Result<DiffResult, String> {
-    let workspace_dir = config.workspace_dir.clone();
+    let workspace_dir = config.workspace_dir().clone();
     let config_clone = config.clone();
     let source_id = source.id.clone();
 
@@ -159,7 +159,7 @@ pub async fn diff_since_read(
     include_text_diff: bool,
     commit: bool,
 ) -> Result<DiffResult, String> {
-    let workspace_dir = config.workspace_dir.clone();
+    let workspace_dir = config.workspace_dir().clone();
     let config_clone = config.clone();
     let source_id = source.id.clone();
 
@@ -200,7 +200,7 @@ pub async fn mark_read(config: &Config, source_ids: Option<Vec<String>>) -> Resu
             .collect(),
     };
 
-    let workspace_dir = config.workspace_dir.clone();
+    let workspace_dir = config.workspace_dir().clone();
     let config_clone = config.clone();
     let ids_for_blocking = target_ids.clone();
 
@@ -244,7 +244,7 @@ pub async fn create_checkpoint(label: &str, config: &Config) -> Result<Checkpoin
         .map_err(|e| format!("list sources: {e}"))?;
     let enabled: Vec<MemorySourceEntry> = sources.into_iter().filter(|s| s.enabled).collect();
 
-    let workspace_dir = config.workspace_dir.clone();
+    let workspace_dir = config.workspace_dir().clone();
     let config_clone = config.clone();
     let label_owned = label.to_string();
 
@@ -273,7 +273,7 @@ pub async fn diff_since_checkpoint(
     config: &Config,
     include_text_diff: bool,
 ) -> Result<CrossSourceDiff, String> {
-    let workspace_dir = config.workspace_dir.clone();
+    let workspace_dir = config.workspace_dir().clone();
     let config_clone = config.clone();
     let ckpt_id = checkpoint_id.to_string();
 
@@ -292,7 +292,7 @@ pub async fn diff_since_checkpoint(
 /// delta compression keeps it compact — so cleanup only prunes named baselines.
 /// Returns the number of checkpoints deleted.
 pub async fn cleanup(config: &Config, older_than_days: u32) -> Result<u64, String> {
-    let workspace_dir = config.workspace_dir.clone();
+    let workspace_dir = config.workspace_dir().clone();
     let config_clone = config.clone();
 
     tokio::task::spawn_blocking(move || -> anyhow::Result<u64> {
@@ -312,7 +312,7 @@ mod tests {
     fn test_config() -> Config {
         let dir = tempfile::tempdir().unwrap();
         let mut config = Config::default();
-        config.workspace_dir = dir.path().to_path_buf();
+        config.workspace_dir() = dir.path().to_path_buf();
         // Leak the tempdir so the path stays valid for the test's lifetime.
         std::mem::forget(dir);
         config
@@ -352,7 +352,7 @@ mod tests {
         taken_at_ms: i64,
         items: &[(&str, &str)],
     ) -> Snapshot {
-        let ledger = Ledger::open(&config.workspace_dir).unwrap();
+        let ledger = Ledger::open(&config.workspace_dir()).unwrap();
         let items: Vec<(String, String)> = items
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
@@ -548,7 +548,7 @@ mod tests {
         let a1 = seed(&config, "src_a", 1000, &[("a", "x")]);
         let b1 = seed(&config, "src_b", 1000, &[("b", "y")]);
         {
-            let ledger = Ledger::open(&config.workspace_dir).unwrap();
+            let ledger = Ledger::open(&config.workspace_dir()).unwrap();
             ledger
                 .create_checkpoint("ckpt_1", "base", &[a1.id.clone(), b1.id.clone()], 1500)
                 .unwrap();

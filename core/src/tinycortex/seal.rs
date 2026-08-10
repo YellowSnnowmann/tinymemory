@@ -137,7 +137,7 @@ pub async fn seal_one_level(
         LabelStrategy::Empty => tinycortex::memory::tree::LabelStrategy::Empty,
     };
     tinycortex::memory::tree::seal_one_level_with_services(
-        &memory_config_from(config, config.workspace_dir.clone()),
+        &memory_config_from(config, config.workspace_dir().clone()),
         tree,
         buffer,
         &tinycortex::memory::tree::SealServices {
@@ -180,7 +180,7 @@ pub async fn seal_document_subtree(
         LabelStrategy::Empty => tinycortex::memory::tree::LabelStrategy::Empty,
     };
     tinycortex::memory::tree::seal_document_subtree_with_services(
-        &memory_config_from(config, config.workspace_dir.clone()),
+        &memory_config_from(config, config.workspace_dir().clone()),
         tree,
         doc_id,
         version_ms,
@@ -218,7 +218,7 @@ pub async fn cascade_tree(
         LabelStrategy::Empty => tinycortex::memory::tree::LabelStrategy::Empty,
     };
     tinycortex::memory::tree::cascade_all_from_with_services(
-        &memory_config_from(config, config.workspace_dir.clone()),
+        &memory_config_from(config, config.workspace_dir().clone()),
         tree,
         start_level,
         force,
@@ -254,7 +254,7 @@ pub async fn flush_stale_tree_buffers(
         LabelStrategy::Empty => tinycortex::memory::tree::LabelStrategy::Empty,
     };
     tinycortex::memory::tree::flush_stale_buffers_with_services(
-        &memory_config_from(config, config.workspace_dir.clone()),
+        &memory_config_from(config, config.workspace_dir().clone()),
         max_age,
         &tinycortex::memory::tree::SealServices {
             summariser: &summariser,

@@ -26,7 +26,7 @@ impl SourceReader for WebPageReader {
             source,
             &crate::tinycortex::memory_config_from(
                 config,
-                config.workspace_dir.clone(),
+                config.workspace_dir().clone(),
             ),
         )
         .await
@@ -45,7 +45,7 @@ impl SourceReader for WebPageReader {
             item_id,
             &crate::tinycortex::memory_config_from(
                 config,
-                config.workspace_dir.clone(),
+                config.workspace_dir().clone(),
             ),
         )
         .await

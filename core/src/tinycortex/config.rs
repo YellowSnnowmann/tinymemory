@@ -8,9 +8,9 @@
 //!
 //! Field provenance:
 //! - `workspace` ← the memory workspace root (same root `MemoryClient` opens).
-//! - `embedding.dim` ← `config.memory.embedding_dimensions`.
-//! - `embedding.model` ← `config.memory.embedding_model`.
-//! - `embedding.strict` ← `config.memory_tree.embedding_strict` (when false the
+//! - `embedding.dim` ← `config.memory().embedding_dimensions`.
+//! - `embedding.model` ← `config.memory().embedding_model`.
+//! - `embedding.strict` ← `config.memory_tree().embedding_strict` (when false the
 //!   engine tolerates an inert embedder and falls back to scope+recency rerank).
 //! - `tree` / `retrieval` / `sync_budget` ← crate defaults, which already match
 //!   the host engine's constants (`INPUT_TOKEN_BUDGET = 50_000`,
@@ -37,9 +37,9 @@ pub fn memory_config_from(config: &Config, workspace: PathBuf) -> MemoryConfig {
     let mut mc = MemoryConfig::new(workspace);
     mc.content_root = Some(config.memory_tree_content_root());
     mc.embedding = EmbeddingConfig {
-        dim: config.memory.embedding_dimensions,
-        model: config.memory.embedding_model.clone(),
-        strict: config.memory_tree.embedding_strict,
+        dim: config.memory().embedding_dimensions,
+        model: config.memory().embedding_model.clone(),
+        strict: config.memory_tree().embedding_strict,
     };
     mc
 }
@@ -49,10 +49,10 @@ pub fn memory_config_from(config: &Config, workspace: PathBuf) -> MemoryConfig {
 /// This is the shape ~15 `memory/**` adapter modules each used to re-declare as
 /// a private `fn engine_config` / `fn memory_config` / `fn config`; they were
 /// byte-identical, so they now all call this. Use [`memory_config_from`]
-/// directly only when the workspace root is *not* `config.workspace_dir` (the
+/// directly only when the workspace root is *not* `config.workspace_dir()` (the
 /// sync/rebuild paths that address an alternate root).
 pub fn engine_config(config: &Config) -> MemoryConfig {
-    memory_config_from(config, config.workspace_dir.clone())
+    memory_config_from(config, config.workspace_dir().clone())
 }
 
 #[cfg(test)]
@@ -62,9 +62,9 @@ mod tests {
     #[test]
     fn maps_workspace_and_embedding_from_host_config() {
         let mut config = Config::default();
-        config.memory.embedding_dimensions = 1024;
-        config.memory.embedding_model = "embedding-v1".to_string();
-        config.memory_tree.embedding_strict = true;
+        config.memory().embedding_dimensions = 1024;
+        config.memory().embedding_model = "embedding-v1".to_string();
+        config.memory_tree().embedding_strict = true;
 
         let workspace = PathBuf::from("/tmp/openhuman/ws");
         let mc = memory_config_from(&config, workspace.clone());
@@ -91,15 +91,15 @@ mod tests {
     #[test]
     fn engine_config_roots_at_host_workspace_dir() {
         // Pins the wrapper's only behavioural claim: identical to
-        // `memory_config_from(config, config.workspace_dir.clone())`.
+        // `memory_config_from(config, config.workspace_dir().clone())`.
         let mut config = Config::default();
-        config.memory.embedding_dimensions = 768;
-        config.memory_tree.embedding_strict = true;
+        config.memory().embedding_dimensions = 768;
+        config.memory_tree().embedding_strict = true;
 
         let via_wrapper = engine_config(&config);
-        let via_explicit = memory_config_from(&config, config.workspace_dir.clone());
+        let via_explicit = memory_config_from(&config, config.workspace_dir().clone());
 
-        assert_eq!(via_wrapper.workspace, config.workspace_dir);
+        assert_eq!(via_wrapper.workspace, config.workspace_dir());
         assert_eq!(via_wrapper.workspace, via_explicit.workspace);
         assert_eq!(via_wrapper.content_root, via_explicit.content_root);
         assert_eq!(via_wrapper.embedding.dim, via_explicit.embedding.dim);

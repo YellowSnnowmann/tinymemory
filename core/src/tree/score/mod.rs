@@ -33,7 +33,7 @@ pub fn scoring_config_from(config: &crate::Config) -> ScoringConfig {
     let extractor = tinycortex::memory::score::extract::LlmEntityExtractor::new(
         tinycortex::memory::score::extract::LlmExtractorConfig {
             model,
-            output_language: config.output_language.clone(),
+            output_language: config.output_language().clone(),
             ..Default::default()
         },
         provider,

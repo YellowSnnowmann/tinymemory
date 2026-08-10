@@ -43,7 +43,7 @@ pub struct OpenAiCompatEmbedder {
 impl OpenAiCompatEmbedder {
     /// Try to build the adapter from the user's configured embeddings settings.
     ///
-    /// Returns `Ok(None)` when `config.memory.embedding_provider` is **not** an
+    /// Returns `Ok(None)` when `config.memory().embedding_provider` is **not** an
     /// OpenAI-compatible provider (so the caller's resolution chain continues
     /// to the next branch), and `Ok(Some(_))` when it is. Errors only on an
     /// actual construction failure (which the caller can treat as
@@ -53,7 +53,7 @@ impl OpenAiCompatEmbedder {
     /// dimensions — the tree format is fixed at 1024, and the OpenAI path now
     /// honours the `dimensions` param so 3-large complies.
     pub fn try_from_config(config: &Config) -> Result<Option<Self>> {
-        let provider = config.memory.embedding_provider.trim();
+        let provider = config.memory().embedding_provider.trim();
 
         // Decide which OpenAI-compatible endpoint to route to, if any:
         //   * `openai`             → OpenAI's hosted API.
@@ -63,7 +63,7 @@ impl OpenAiCompatEmbedder {
         //     server.
         //
         // The third case is the #3781 fix. The chat/LLM factory already
-        // resolves these slugs via `config.cloud_providers`
+        // resolves these slugs via `config.cloud_providers()`
         // (`make_cloud_provider_by_slug`), so the memory_tree LLM extractor
         // honours a local `lmstudio` backend. The embedder, however, only knew
         // `openai`/`custom` — so a local LM Studio embeddings backend
@@ -126,7 +126,7 @@ impl OpenAiCompatEmbedder {
         // splitting it would mis-route the URL as the model. Leave the model
         // empty in that case and let the endpoint default apply.
         let model = {
-            let explicit = config.memory.embedding_model.trim();
+            let explicit = config.memory().embedding_model.trim();
             if !explicit.is_empty() {
                 explicit
             } else if provider.starts_with("custom:") {
@@ -148,14 +148,14 @@ impl OpenAiCompatEmbedder {
         // actionable message instead (Codex review on #4056). `text-embedding-3-*`
         // is exempt: we request `EMBEDDING_DIM` below and the server reduces to it.
         if !crate::openhuman::inference::embeddings::model_supports_dimensions(model)
-            && config.memory.embedding_dimensions != EMBEDDING_DIM
+            && config.memory().embedding_dimensions != EMBEDDING_DIM
         {
             anyhow::bail!(
                 "embeddings provider '{provider}' (model '{model}') produces \
                  {}-dimensional vectors, but the memory tree requires {EMBEDDING_DIM}. \
                  Choose a {EMBEDDING_DIM}-dimension model — an OpenAI `text-embedding-3-*` \
                  model, or a {EMBEDDING_DIM}-dim model such as `mxbai-embed-large` or `bge-large`.",
-                config.memory.embedding_dimensions
+                config.memory().embedding_dimensions
             );
         }
 
@@ -223,10 +223,10 @@ mod tests {
     fn cfg_with_provider(p: &str) -> (TempDir, Config) {
         let tmp = TempDir::new().unwrap();
         let mut cfg = Config::default();
-        cfg.workspace_dir = tmp.path().to_path_buf();
-        cfg.config_path = tmp.path().join("config.toml");
-        cfg.memory.embedding_provider = p.to_string();
-        cfg.memory.embedding_model = "text-embedding-3-large".to_string();
+        cfg.workspace_dir() = tmp.path().to_path_buf();
+        cfg.config_path() = tmp.path().join("config.toml");
+        cfg.memory().embedding_provider = p.to_string();
+        cfg.memory().embedding_model = "text-embedding-3-large".to_string();
         (tmp, cfg)
     }
 
@@ -262,7 +262,7 @@ mod tests {
     #[test]
     fn some_for_custom_endpoint_does_not_use_url_as_model() {
         let (_tmp, mut cfg) = cfg_with_provider("custom:https://embed.example/v1");
-        cfg.memory.embedding_model = String::new(); // force the inline fallback path
+        cfg.memory().embedding_model = String::new(); // force the inline fallback path
         let got = OpenAiCompatEmbedder::try_from_config(&cfg).expect("no error");
         let e = got.expect("custom endpoint with no model should still build");
         assert_eq!(e.name(), "custom");
@@ -288,8 +288,8 @@ mod tests {
     #[test]
     fn some_for_configured_lmstudio_slug() {
         let (_tmp, mut cfg) = cfg_with_provider("lmstudio");
-        cfg.memory.embedding_model = "bge-m3".to_string();
-        cfg.cloud_providers = vec![lmstudio_entry("http://localhost:1234/v1")];
+        cfg.memory().embedding_model = "bge-m3".to_string();
+        cfg.cloud_providers() = vec![lmstudio_entry("http://localhost:1234/v1")];
 
         let got = OpenAiCompatEmbedder::try_from_config(&cfg).expect("no error");
         let e = got.expect("configured lmstudio slug must build an adapter, not fall through");
@@ -302,8 +302,8 @@ mod tests {
     #[test]
     fn some_for_lmstudio_slug_with_inline_model() {
         let (_tmp, mut cfg) = cfg_with_provider("lmstudio:bge-m3");
-        cfg.memory.embedding_model = String::new(); // force inline-suffix fallback
-        cfg.cloud_providers = vec![lmstudio_entry("http://localhost:1234/v1")];
+        cfg.memory().embedding_model = String::new(); // force inline-suffix fallback
+        cfg.cloud_providers() = vec![lmstudio_entry("http://localhost:1234/v1")];
 
         let got = OpenAiCompatEmbedder::try_from_config(&cfg).expect("no error");
         let e = got.expect("lmstudio:model slug must resolve");
@@ -327,7 +327,7 @@ mod tests {
     #[test]
     fn none_for_configured_slug_with_blank_endpoint() {
         let (_tmp, mut cfg) = cfg_with_provider("lmstudio");
-        cfg.cloud_providers = vec![lmstudio_entry("   ")];
+        cfg.cloud_providers() = vec![lmstudio_entry("   ")];
         let got = OpenAiCompatEmbedder::try_from_config(&cfg).expect("no error");
         assert!(got.is_none(), "blank endpoint should fall through");
     }
@@ -340,7 +340,7 @@ mod tests {
         use tinymemory_api::host::cloud_providers::CloudProviderCreds;
         for p in ["managed", "cloud", "voyage", "cohere", "ollama", "none"] {
             let (_tmp, mut cfg) = cfg_with_provider(p);
-            cfg.cloud_providers = vec![CloudProviderCreds {
+            cfg.cloud_providers() = vec![CloudProviderCreds {
                 id: format!("p_{p}"),
                 slug: p.to_string(),
                 endpoint: "http://localhost:1234/v1".to_string(),
@@ -360,8 +360,8 @@ mod tests {
     #[test]
     fn err_for_non_reducible_model_with_incompatible_dimension() {
         let (_tmp, mut cfg) = cfg_with_provider("custom:https://embed.example/v1");
-        cfg.memory.embedding_model = "nomic-embed-text".to_string(); // not text-embedding-3-*
-        cfg.memory.embedding_dimensions = 768; // != EMBEDDING_DIM (1024)
+        cfg.memory().embedding_model = "nomic-embed-text".to_string(); // not text-embedding-3-*
+        cfg.memory().embedding_dimensions = 768; // != EMBEDDING_DIM (1024)
                                                // `expect_err` would require the Ok type (the embedder) to impl Debug,
                                                // which it can't (boxed trait object) — match instead.
         let err = match OpenAiCompatEmbedder::try_from_config(&cfg) {
@@ -380,8 +380,8 @@ mod tests {
     #[test]
     fn some_for_non_reducible_model_at_tree_dimension() {
         let (_tmp, mut cfg) = cfg_with_provider("custom:https://embed.example/v1");
-        cfg.memory.embedding_model = "mxbai-embed-large".to_string();
-        cfg.memory.embedding_dimensions = EMBEDDING_DIM; // 1024
+        cfg.memory().embedding_model = "mxbai-embed-large".to_string();
+        cfg.memory().embedding_dimensions = EMBEDDING_DIM; // 1024
         let got = OpenAiCompatEmbedder::try_from_config(&cfg).expect("no error");
         assert!(
             got.is_some(),
@@ -395,8 +395,8 @@ mod tests {
     #[test]
     fn some_for_reducible_model_regardless_of_stored_dimension() {
         let (_tmp, mut cfg) = cfg_with_provider("openai");
-        cfg.memory.embedding_model = "text-embedding-3-large".to_string();
-        cfg.memory.embedding_dimensions = 256; // reducible — tree still requests 1024
+        cfg.memory().embedding_model = "text-embedding-3-large".to_string();
+        cfg.memory().embedding_dimensions = 256; // reducible — tree still requests 1024
         let got = OpenAiCompatEmbedder::try_from_config(&cfg).expect("no error");
         assert!(
             got.is_some(),

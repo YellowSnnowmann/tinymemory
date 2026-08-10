@@ -231,7 +231,7 @@ pub async fn ingest_coding_sessions(
         "[memory_persona] coding session ingestion: entry"
     );
 
-    let memory_config = super::memory_config_from(config, config.workspace_dir.clone());
+    let memory_config = super::memory_config_from(config, config.workspace_dir().clone());
     let mut persona = PersonaConfig::with_home(
         dirs::home_dir()
             .as_deref()
@@ -256,7 +256,7 @@ pub async fn ingest_coding_sessions(
         );
     })?;
     let summariser = super::HostSummariser::new(config.clone());
-    let store = FileStateStore::open_in_workspace(&config.workspace_dir).inspect_err(|error| {
+    let store = FileStateStore::open_in_workspace(&config.workspace_dir()).inspect_err(|error| {
         tracing::error!(
             error = %error,
             "[memory_persona] coding session ingestion: open state store failed"

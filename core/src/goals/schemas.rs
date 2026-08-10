@@ -152,7 +152,7 @@ fn schemas(function: &str) -> ControllerSchema {
 fn handle_list(_params: Map<String, Value>) -> ControllerFuture {
     Box::pin(async move {
         let config = config_rpc::load_config_with_timeout().await?;
-        to_json(ops::list(&config.workspace_dir).await?)
+        to_json(ops::list(&config.workspace_dir()).await?)
     })
 }
 
@@ -160,7 +160,7 @@ fn handle_add(params: Map<String, Value>) -> ControllerFuture {
     Box::pin(async move {
         let config = config_rpc::load_config_with_timeout().await?;
         let req = parse_value::<AddParams>(Value::Object(params))?;
-        to_json(ops::add(&config.workspace_dir, &req.text).await?)
+        to_json(ops::add(&config.workspace_dir(), &req.text).await?)
     })
 }
 
@@ -168,7 +168,7 @@ fn handle_edit(params: Map<String, Value>) -> ControllerFuture {
     Box::pin(async move {
         let config = config_rpc::load_config_with_timeout().await?;
         let req = parse_value::<EditParams>(Value::Object(params))?;
-        to_json(ops::edit(&config.workspace_dir, &req.id, &req.text).await?)
+        to_json(ops::edit(&config.workspace_dir(), &req.id, &req.text).await?)
     })
 }
 
@@ -176,7 +176,7 @@ fn handle_delete(params: Map<String, Value>) -> ControllerFuture {
     Box::pin(async move {
         let config = config_rpc::load_config_with_timeout().await?;
         let req = parse_value::<DeleteParams>(Value::Object(params))?;
-        to_json(ops::delete(&config.workspace_dir, &req.id).await?)
+        to_json(ops::delete(&config.workspace_dir(), &req.id).await?)
     })
 }
 

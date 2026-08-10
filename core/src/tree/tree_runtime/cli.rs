@@ -641,10 +641,10 @@ mod tests {
         let config = runtime.block_on(load_config()).expect("config");
 
         let expected_config_path: PathBuf = tmp.path().join("config.toml");
-        assert_eq!(config.config_path, expected_config_path);
-        assert_eq!(config.workspace_dir, tmp.path().join("workspace"));
-        assert_eq!(config.default_model.as_deref(), Some("custom-model"));
-        assert_eq!(config.output_language.as_deref(), Some("fr-CA"));
+        assert_eq!(config.config_path(), expected_config_path);
+        assert_eq!(config.workspace_dir(), tmp.path().join("workspace"));
+        assert_eq!(config.default_model().as_deref(), Some("custom-model"));
+        assert_eq!(config.output_language().as_deref(), Some("fr-CA"));
     }
 
     #[test]

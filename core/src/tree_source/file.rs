@@ -141,7 +141,7 @@ mod tests {
     fn cfg() -> (TempDir, Config) {
         let tmp = TempDir::new().unwrap();
         let mut cfg = Config::default();
-        cfg.workspace_dir = tmp.path().to_path_buf();
+        cfg.workspace_dir() = tmp.path().to_path_buf();
         (tmp, cfg)
     }
 

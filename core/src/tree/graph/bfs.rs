@@ -14,7 +14,7 @@ pub fn pair_distances(
     tinycortex::memory::graph::pair_distances(
         &crate::tinycortex::memory_config_from(
             config,
-            config.workspace_dir.clone(),
+            config.workspace_dir().clone(),
         ),
         entity_ids,
         max_h,

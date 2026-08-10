@@ -30,7 +30,7 @@ pub async fn ingest_summary(
     }
 
     let outcome = tinycortex::memory::tree::ingest_summary(
-        &memory_config_from(config, config.workspace_dir.clone()),
+        &memory_config_from(config, config.workspace_dir().clone()),
         tree,
         input.clone(),
         &HostSummariser::new(config.clone()),

@@ -9,7 +9,7 @@ pub async fn status_list_rpc(config: &Config) -> Result<RpcOutcome<StatusListRes
     tracing::debug!("[memory_sync_status][rpc] status_list via tinycortex");
     let memory_config = crate::tinycortex::memory_config_from(
         config,
-        config.workspace_dir.clone(),
+        config.workspace_dir().clone(),
     );
     let statuses = match tokio::task::spawn_blocking(move || {
         tinycortex::memory::sync::list_sync_statuses(&memory_config)

@@ -442,7 +442,7 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
     // Global, user-configurable memory-sync cadence (#3302). Applied to every
     // opted-in source as a floor/override over the provider's own default; a
     // value of `Some(0)` disables periodic auto-sync ("Manual only").
-    let global_interval = config.memory_sync_interval_secs;
+    let global_interval = config.memory_sync_interval_secs();
 
     // Persisted last-sync fallback (#3302). The in-memory `LAST_SYNC_AT` map is
     // rebuilt empty on every launch, so without this a cold start would re-fire

@@ -50,7 +50,7 @@ fn scoring_config(config: &Config) -> ScoringConfig {
     match super::build_chat_provider(config) {
         Ok(provider) => {
             let mut extractor = LlmExtractorConfig::default();
-            extractor.output_language = config.output_language.clone();
+            extractor.output_language = config.output_language().clone();
             ScoringConfig::with_llm_extractor(std::sync::Arc::new(LlmEntityExtractor::new(
                 extractor, provider,
             )))
@@ -70,7 +70,7 @@ pub fn context(
     ScoringConfig,
 ) {
     (
-        super::memory_config_from(config, config.workspace_dir.clone()),
+        super::memory_config_from(config, config.workspace_dir().clone()),
         HostTreeJobSink::new(),
         scoring_config(config),
     )

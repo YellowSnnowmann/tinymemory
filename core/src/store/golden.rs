@@ -120,7 +120,7 @@ fn fixed_epoch_secs() -> f64 {
 /// (`chunks::*` / `trees::*`) which resolve their DB path from `workspace_dir`.
 fn fixture_config(workspace: &Path) -> Config {
     let mut config = Config::default();
-    config.workspace_dir = workspace.to_path_buf();
+    config.workspace_dir() = workspace.to_path_buf();
     config
 }
 

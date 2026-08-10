@@ -140,9 +140,9 @@ impl Tool for MemoryHybridSearchTool {
         );
 
         let memory = UnifiedMemory::new(
-            &config.workspace_dir,
+            &config.workspace_dir(),
             embedder,
-            config.memory.sqlite_open_timeout_secs,
+            config.memory().sqlite_open_timeout_secs,
         )
         .map_err(|e| anyhow::anyhow!("memory_hybrid_search: open store failed: {e}"))?;
 

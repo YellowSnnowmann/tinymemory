@@ -21,7 +21,7 @@ pub(crate) async fn memory_sources_write_guard() -> tokio::sync::MutexGuard<'sta
 async fn registry() -> Result<tinycortex::memory::sources::SourceRegistry, String> {
     let config = config_rpc::load_config_with_timeout().await?;
     Ok(tinycortex::memory::sources::SourceRegistry::new(
-        config.config_path,
+        config.config_path(),
     ))
 }
 
@@ -59,7 +59,7 @@ pub(crate) fn get_source_in(
     config: &crate::Config,
     id: &str,
 ) -> Result<Option<MemorySourceEntry>, String> {
-    tinycortex::memory::sources::SourceRegistry::new(config.config_path.clone())
+    tinycortex::memory::sources::SourceRegistry::new(config.config_path().clone())
         .get(id)
         .map_err(|error| error.to_string())
 }
