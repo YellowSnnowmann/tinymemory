@@ -25,9 +25,11 @@
 //! is a host configuration fact about how a driver was bound, not something a
 //! driver reports about itself.
 //!
-//! ## The engine's historical paths still resolve
+//! ## The TinyCortex engine's historical paths still resolve
 //!
-//! The engine crate aliases these modules back into their historical paths
+//! This contract used to live in the TinyCortex repository as `tinycortex-api`.
+//! That crate is now a deprecated re-export of this one, and the engine crate
+//! aliases these modules back into their historical paths
 //! (`tinycortex::memory::{types, error, traits}`,
 //! `tinycortex::memory::chunks::types`, `tinycortex::memory::tree::runtime::types`,
 //! `tinycortex::memory::tool_memory::types`, `tinycortex::memory::goals::types`),
