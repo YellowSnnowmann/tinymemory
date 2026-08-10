@@ -47,6 +47,7 @@ pub mod storage_memory;
 pub mod subsystems;
 
 mod config;
+mod embedding_host;
 mod embeddings;
 mod events;
 
