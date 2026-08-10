@@ -59,7 +59,7 @@ pub async fn take_snapshot(
         "[memory_diff] snapshot taken"
     );
 
-    crate::core::bus::BUS.publish(crate::core::events::DomainEvent::MemoryDiffSnapshotTaken {
+    crate::events::publish(crate::events::MemoryEvent::DiffSnapshotTaken {
         snapshot_id: snapshot.id.clone(),
         source_id: source.id.clone(),
         source_kind: source.kind.as_str().to_string(),
@@ -228,7 +228,7 @@ pub async fn mark_read(config: &Config, source_ids: Option<Vec<String>>) -> Resu
         "[memory_diff] mark_read committed read markers"
     );
 
-    crate::core::bus::BUS.publish(crate::core::events::DomainEvent::MemoryDiffMarkedRead {
+    crate::events::publish(crate::events::MemoryEvent::DiffMarkedRead {
         source_ids: target_ids,
         snapshot_ids,
     });

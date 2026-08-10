@@ -126,7 +126,7 @@ fn publish_canonicalized(
     } else {
         utf8_prefix(&canonical.markdown, 2048)
     };
-    BUS.publish(DomainEvent::DocumentCanonicalized {
+    crate::events::publish(crate::events::MemoryEvent::DocumentCanonicalized {
         source_id: source_id.into(),
         source_kind: canonical.metadata.source_kind.as_str().into(),
         chunks_written: result.chunks_written,

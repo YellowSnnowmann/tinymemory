@@ -591,8 +591,8 @@ impl EventHandler<DomainEvent> for ComposioConnectionCreatedSubscriber {
                                 .collect();
                             toolkits.sort();
                             toolkits.dedup();
-                            crate::core::bus::BUS.publish(
-                                DomainEvent::ComposioIntegrationsChanged {
+                            crate::events::publish(
+                                crate::events::MemoryEvent::ComposioIntegrationsChanged {
                                     toolkits: toolkits.clone(),
                                 },
                             );
@@ -894,7 +894,7 @@ impl EventHandler<DomainEvent> for ComposioConfigChangedSubscriber {
                         .collect();
                     toolkits.sort();
                     toolkits.dedup();
-                    crate::core::bus::BUS.publish(DomainEvent::ComposioIntegrationsChanged {
+                    crate::events::publish(crate::events::MemoryEvent::ComposioIntegrationsChanged {
                         toolkits: toolkits.clone(),
                     });
                     tracing::debug!(

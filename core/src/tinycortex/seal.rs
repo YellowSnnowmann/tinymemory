@@ -56,7 +56,7 @@ struct Observer<'a> {
 
 impl tinycortex::memory::tree::SealObserver for Observer<'_> {
     fn progress(&self, tree: &Tree, step: &str, level: u32, item_count: Option<u32>) {
-        BUS.publish(DomainEvent::MemoryTreeBuildProgress {
+        crate::events::publish(crate::events::MemoryEvent::TreeBuildProgress {
             phase: "seal".to_string(),
             step: step.to_string(),
             tree_scope: Some(tree.scope.clone()),

@@ -236,7 +236,7 @@ async fn ingestion_worker(
 
         let queue_depth = state.snapshot().queue_depth;
         state.mark_running(&document_id, &title, &namespace);
-        BUS.publish(DomainEvent::MemoryIngestionStarted {
+        crate::events::publish(crate::events::MemoryEvent::IngestionStarted {
             document_id: document_id.clone(),
             title: title.clone(),
             namespace: namespace.clone(),
@@ -276,7 +276,7 @@ async fn ingestion_worker(
         let elapsed_ms = started.elapsed().as_millis() as u64;
         let completed_at_ms = chrono::Utc::now().timestamp_millis();
         state.mark_completed(&document_id, success, completed_at_ms);
-        BUS.publish(DomainEvent::MemoryIngestionCompleted {
+        crate::events::publish(crate::events::MemoryEvent::IngestionCompleted {
             document_id,
             namespace,
             success,

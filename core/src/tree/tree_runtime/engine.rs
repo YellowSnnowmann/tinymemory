@@ -54,7 +54,7 @@ struct EventObserver;
 
 impl RuntimeObserver for EventObserver {
     fn hour_completed(&self, namespace: &str, node_id: &str, token_count: u32) {
-        BUS.publish(DomainEvent::TreeSummarizerHourCompleted {
+        crate::events::publish(crate::events::MemoryEvent::TreeSummarizerHourCompleted {
             namespace: namespace.to_string(),
             node_id: node_id.to_string(),
             token_count,
@@ -62,7 +62,7 @@ impl RuntimeObserver for EventObserver {
     }
 
     fn node_propagated(&self, namespace: &str, node_id: &str, level: NodeLevel, token_count: u32) {
-        BUS.publish(DomainEvent::TreeSummarizerPropagated {
+        crate::events::publish(crate::events::MemoryEvent::TreeSummarizerPropagated {
             namespace: namespace.to_string(),
             node_id: node_id.to_string(),
             level: level.as_str().to_string(),
@@ -71,7 +71,7 @@ impl RuntimeObserver for EventObserver {
     }
 
     fn rebuild_completed(&self, namespace: &str, total_nodes: u64) {
-        BUS.publish(DomainEvent::TreeSummarizerRebuildCompleted {
+        crate::events::publish(crate::events::MemoryEvent::TreeSummarizerRebuildCompleted {
             namespace: namespace.to_string(),
             total_nodes,
         });

@@ -107,7 +107,7 @@ fn report_ollama_health_gate_once(base_url: &str, model: &str) -> bool {
     };
     // publish_global is infallible (drops the event when no receivers are
     // registered, which is fine for the health-gate use case).
-    crate::core::bus::BUS.publish(event);
+    crate::events::publish(event);
 
     true
 }
