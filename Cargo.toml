@@ -94,6 +94,16 @@ private_intra_doc_links = "warn"
 [patch.crates-io]
 tinycortex = { path = "vendor/tinycortex" }
 tinycortex-api = { path = "vendor/tinycortex/api" }
+# `tinymemory-core`'s summariser and embedder factory name tinyagents' chat and
+# embedding model traits. It is not published, so a standalone build of this
+# workspace has to be told where it is: the engine submodule already vendors the
+# copy tinycortex itself builds against, and pointing at that one keeps both
+# crates on a single tinyagents rather than unifying two path copies.
+#
+# A host that embeds this crate patches tinyagents itself — patch tables only
+# apply from the workspace root being built — so this entry affects standalone
+# builds and `cargo test` here, and nothing downstream.
+tinyagents = { path = "vendor/tinycortex/vendor/tinyagents" }
 
 [profile.release]
 # Cross-crate optimization and smaller, faster binaries for release builds.

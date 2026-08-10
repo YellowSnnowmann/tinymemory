@@ -23,9 +23,6 @@ tinycortex-api = { version = "0.1" }
 # Chat-model and embedding primitives used by the tree summarizer and the
 # embedding factory.
 tinyagents = { version = "2.1", features = ["sqlite"] }
-# `conversations/bus.rs` keys conversation history off the channel envelope.
-tinychannels = { version = "0.1", features = ["relay-websocket"] }
-
 anyhow = "1.0"
 async-trait = "0.1"
 # Only under `memory-git`; see the feature's comment.
