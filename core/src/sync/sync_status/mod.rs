@@ -13,11 +13,5 @@
 //!   * `openhuman.memory_sync_status_list` — handler in [`rpc`]
 //!   * Controller registration via [`schemas::all_registered_controllers`]
 
-pub mod rpc;
-pub mod schemas;
 
-pub use schemas::{
-    all_controller_schemas as all_memory_sync_status_controller_schemas,
-    all_registered_controllers as all_memory_sync_status_registered_controllers,
-};
 pub use tinycortex::memory::sync::{FreshnessLabel, MemorySyncStatus};

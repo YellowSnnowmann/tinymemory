@@ -13,15 +13,8 @@
 pub mod bus;
 pub(crate) mod cli;
 pub mod engine;
-pub mod ops;
 pub mod store;
 
-mod schemas;
 
-pub use ops as rpc;
-pub use schemas::{
-    all_controller_schemas as all_tree_summarizer_controller_schemas,
-    all_registered_controllers as all_tree_summarizer_registered_controllers,
-};
 // Runtime tree types are engine-owned.
 pub use tinycortex::memory::tree::runtime::*;

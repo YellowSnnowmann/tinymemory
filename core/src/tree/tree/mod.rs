@@ -15,7 +15,6 @@ pub mod bucket_seal;
 pub mod factory;
 pub mod flush;
 pub mod registry;
-pub mod rpc;
 
 // Re-export persistence from memory_store so callers using tree::store / tree::types still work.
 pub use crate::store::trees::store;

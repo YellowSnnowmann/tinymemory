@@ -10,16 +10,10 @@
 pub mod address_book;
 pub mod migrations;
 pub mod resolver;
-pub mod rpc;
-pub mod schemas;
 pub mod scorer;
 pub mod store;
 pub mod types;
 
-pub use schemas::{
-    all_controller_schemas as all_people_controller_schemas,
-    all_registered_controllers as all_people_registered_controllers,
-};
 
 #[cfg(test)]
 mod tests;

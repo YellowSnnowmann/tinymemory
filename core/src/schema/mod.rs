@@ -19,11 +19,8 @@
 //! | `registry.rs`     | [`all_controller_schemas`] / [`all_registered_controllers`] lists |
 
 mod definitions;
-mod handlers;
-mod registry;
 
 pub use definitions::schemas;
-pub use registry::{all_controller_schemas, all_registered_controllers};
 
 // Re-export the NAMESPACE constant so schema_tests.rs can reference it via
 // `super::NAMESPACE` the same way the original flat module did.

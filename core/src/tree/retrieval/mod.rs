@@ -22,8 +22,6 @@ pub mod drill_down;
 mod engine;
 pub mod fast;
 pub mod fetch;
-pub mod rpc;
-pub mod schemas;
 pub mod search;
 pub mod source;
 pub mod types;
@@ -39,10 +37,6 @@ pub use cover::cover_window;
 pub use drill_down::drill_down;
 pub use fast::{fast_retrieve, FastRetrieveOptions};
 pub use fetch::fetch_leaves;
-pub use schemas::{
-    all_controller_schemas as all_retrieval_controller_schemas,
-    all_registered_controllers as all_retrieval_registered_controllers,
-};
 pub use search::search_entities;
 pub use source::query_source;
 pub use types::{EntityMatch, NodeKind, QueryResponse, RetrievalHit};

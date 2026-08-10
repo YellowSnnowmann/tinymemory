@@ -11,12 +11,9 @@
 // `use`, because `tests/raw_coverage/memory_threads_raw_coverage_e2e.rs`
 // imports this path directly.
 pub use tinycortex::memory::sync::composio::providers::normalize::slack_post_process as post_process;
-pub mod rpc;
-pub mod schemas;
 pub mod types;
 
 mod provider;
 
 pub use provider::{run_backfill_via_search, SlackProvider, BACKFILL_DAYS};
-pub use schemas::{all_slack_memory_controller_schemas, all_slack_memory_registered_controllers};
 pub use types::{SlackChannel, SlackMessage};

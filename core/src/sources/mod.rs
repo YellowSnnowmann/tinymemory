@@ -18,8 +18,6 @@
 pub mod readers;
 pub mod reconcile;
 pub mod registry;
-pub mod rpc;
-pub mod schemas;
 pub mod status;
 pub mod sync;
 pub mod types;
@@ -28,10 +26,5 @@ pub use registry::{
     add_source, apply_all_in, get_source, list_enabled_by_kind, list_sources,
     memory_sync_defaults_for_toolkit, remove_composio_source_by_connection_id, remove_source,
     update_source, upsert_composio_source, MemorySourcePatch,
-};
-pub use rpc::apply_kind_defaults;
-pub use schemas::{
-    all_controller_schemas as all_memory_sources_controller_schemas,
-    all_registered_controllers as all_memory_sources_registered_controllers,
 };
 pub use types::{ContentType, MemorySourceEntry, SourceContent, SourceItem, SourceKind};
