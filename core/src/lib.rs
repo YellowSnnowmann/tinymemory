@@ -61,6 +61,8 @@ pub mod sources;
 pub mod store;
 pub mod sync;
 pub mod sync_events;
+#[cfg(test)]
+pub(crate) mod test_seams;
 pub mod test_env_lock;
 pub mod thread_context;
 pub mod tinycortex;
