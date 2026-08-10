@@ -28,6 +28,8 @@ tinychannels = { version = "0.1", features = ["relay-websocket"] }
 
 anyhow = "1.0"
 async-trait = "0.1"
+# `store/factories.rs` exposes a tiny health router for the embedded provider.
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query", "ws", "macros"] }
 chrono = { version = "0.4", features = ["serde"] }
 futures = "0.3"
 log = "0.4"
