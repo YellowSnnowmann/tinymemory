@@ -118,7 +118,10 @@ impl OpenAiCompatEmbedder {
         // and matches the existing `custom` behaviour. `resolve_api_key` already
         // normalises a `custom:<url>` argument down to the `custom` slug.
         let cred_slug = provider.split(':').next().unwrap_or(provider).trim();
-        let api_key = crate::openhuman::inference::embeddings::resolve_api_key(config, cred_slug);
+        let api_key = crate::embedding_host::require_embedding_host()
+            .map_err(|e| anyhow::anyhow!(e))?
+            .resolve_api_key(cred_slug)
+            .unwrap_or_default();
 
         // Model: prefer the explicit `embedding_model`; otherwise fall back to an
         // inline `slug:model` suffix on the provider string. The `custom:<url>`
@@ -147,7 +150,9 @@ impl OpenAiCompatEmbedder {
         // the first embed ("expected 1024, got N") — refuse it here with an
         // actionable message instead (Codex review on #4056). `text-embedding-3-*`
         // is exempt: we request `EMBEDDING_DIM` below and the server reduces to it.
-        if !crate::openhuman::inference::embeddings::model_supports_dimensions(model)
+        if !crate::embedding_host::require_embedding_host()
+            .map_err(|e| anyhow::anyhow!(e))?
+            .model_supports_dimensions(model)
             && config.memory().embedding_dimensions != EMBEDDING_DIM
         {
             anyhow::bail!(
@@ -160,13 +165,16 @@ impl OpenAiCompatEmbedder {
         }
 
         let inner =
-            crate::openhuman::inference::embeddings::create_embedding_provider_with_credentials(
-                slug,
-                model,
-                EMBEDDING_DIM,
-                &api_key,
-                custom_endpoint,
-            )
+            crate::embedding_host::require_embedding_host()
+                .map_err(|e| anyhow::anyhow!(e))?
+                .create_embedding_provider_with_credentials(
+                    slug,
+                    model,
+                    EMBEDDING_DIM,
+                    &api_key,
+                    custom_endpoint,
+                )
+                .map_err(|e| anyhow::anyhow!(e))
             .with_context(|| {
                 format!("build {label} embedder for memory tree (provider='{provider}')")
             })?;

@@ -38,7 +38,7 @@ pub struct MemoryState(pub std::sync::Mutex<Option<MemoryClientRef>>);
 /// Embedding generation is delegated to whichever provider the
 /// [`MemoryConfig.embedding_provider`](tinymemory_api::host::MemoryConfig)
 /// resolves to — cloud (OpenHuman backend, the default returned by
-/// [`crate::openhuman::inference::embeddings::default_embedding_provider`]) or local Ollama
+/// [`crate::embedding_host::default_embedding_provider`]) or local Ollama
 /// when explicitly opted into. The cloud embedder resolves its session JWT
 /// lazily, so an unauthenticated session will surface as a clear error on the
 /// first `embed` call rather than at client construction.

@@ -35,6 +35,7 @@ pub mod binding;
 pub mod chat;
 pub mod conversations;
 pub mod diff;
+pub mod embedding_adapter;
 pub mod embedding_host;
 pub mod events;
 pub mod global;

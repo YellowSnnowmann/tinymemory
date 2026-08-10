@@ -17,10 +17,9 @@ use rusqlite::Connection;
 
 use tinymemory_api::host::MemoryConfig;
 use crate::openhuman::config::{EmbeddingRouteConfig, StorageProviderConfig};
-use crate::openhuman::inference::embeddings::{
-    self, format_embedding_signature, EmbeddingProvider, DEFAULT_CLOUD_EMBEDDING_DIMENSIONS,
-    DEFAULT_CLOUD_EMBEDDING_MODEL, DEFAULT_OLLAMA_DIMENSIONS, DEFAULT_OLLAMA_MODEL,
-};
+use crate::embedding_host::require_embedding_host;
+use tinyagents::harness::embeddings::{DEFAULT_OLLAMA_DIMENSIONS, DEFAULT_OLLAMA_MODEL};
+use tinymemory_api::host::{format_embedding_signature, EmbeddingProvider};
 use crate::store::namespace_store::UnifiedMemory;
 use crate::traits::Memory;
 
@@ -136,12 +135,14 @@ fn reset_health_gate_for_test() {
 
 /// Effective Ollama base URL.
 ///
-/// Delegates to [`crate::openhuman::inference::local::ollama_base_url`] so the probe
+/// Delegates to the host's [`EmbeddingHost::ollama_base_url`] so the probe
 /// always agrees with the rest of the Ollama machinery on the daemon address.
 /// If a future change adds another env-var override or shifts precedence, the
 /// memory health-gate picks it up automatically.
 fn ollama_base_url_for_probe() -> String {
-    crate::openhuman::inference::local::ollama_base_url()
+    require_embedding_host()
+        .map(|host| host.ollama_base_url())
+        .unwrap_or_default()
 }
 
 /// Canonical `(provider, model, dimensions)` tuple used everywhere the
@@ -352,7 +353,7 @@ pub fn create_memory(
 ///
 /// `embedding_api_key` is the user's stored credential for the selected BYO
 /// embedding provider, resolved by the caller via
-/// [`crate::openhuman::inference::embeddings::resolve_api_key`] (empty string when none is
+/// the host's [`EmbeddingHost::resolve_api_key`] (empty string when none is
 /// configured). It is threaded into the keyed providers (cohere/openai/voyage/
 /// custom) so they authenticate instead of sending an empty bearer; cloud /
 /// managed / ollama / none ignore it.
@@ -601,7 +602,7 @@ mod tests {
 
     impl EnvGuard {
         fn set(value: &str) -> Self {
-            let lock = crate::openhuman::inference::local::inference_test_guard();
+            let lock = crate::embedding_host::embedding_test_guard();
             let prev = std::env::var_os("OPENHUMAN_OLLAMA_BASE_URL");
             // SAFETY: env mutation is wrapped because Rust 2024 marks it
             // unsafe; the call is gated by the local-AI domain mutex so no

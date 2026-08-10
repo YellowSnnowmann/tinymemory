@@ -35,7 +35,7 @@ use std::time::Duration;
 
 use super::{Embedder, InertEmbedder, ProviderEmbedder, EMBEDDING_DIM};
 use crate::Config;
-use crate::openhuman::inference::local::ollama_base_url;
+use crate::embedding_host::require_embedding_host;
 use tinyagents::harness::embeddings::{OllamaEmbeddingModel, RECOMMENDED_OLLAMA_CONTEXT_TOKENS};
 
 /// Cheap heuristic for "is a backend session reachable?" — the cloud
@@ -351,21 +351,26 @@ fn build_ollama_embedder(endpoint: &str, model: &str, timeout_ms: u64) -> Result
         )
         .with_client(client);
     Ok(ProviderEmbedder::new(
-        crate::openhuman::inference::embeddings::TinyAgentsEmbeddingProvider::boxed(model),
+        crate::embedding_adapter::TinyAgentsEmbeddingProvider::boxed(model),
         "ollama",
     ))
 }
 
 fn build_cloud_embedder(config: &Config) -> ProviderEmbedder {
     let openhuman_dir = config.config_path().parent().map(std::path::PathBuf::from);
-    let provider = crate::openhuman::inference::embeddings::cloud::OpenHumanCloudEmbedding::new(
-        None,
-        openhuman_dir,
-        config.secrets_encrypt(),
-        crate::openhuman::inference::embeddings::cloud::DEFAULT_CLOUD_EMBEDDING_MODEL,
-        crate::openhuman::inference::embeddings::cloud::DEFAULT_CLOUD_EMBEDDING_DIMENSIONS,
-    );
-    ProviderEmbedder::new(Box::new(provider), "cloud")
+    // The managed cloud embedder resolves a session JWT and the backend API
+    // URL, both host concerns — it is built through the seam rather than here.
+    // `openhuman_dir` stays part of the caller's contract: the host reads the
+    // encrypted-secrets material relative to it.
+    let _ = openhuman_dir;
+    let host = require_embedding_host().expect("embedding host installed");
+    let provider = host
+        .cloud_embedding_provider(
+            host.default_cloud_embedding_model(),
+            host.default_cloud_embedding_dimensions(),
+        )
+        .expect("cloud embedding provider");
+    ProviderEmbedder::new(provider, "cloud")
 }
 
 #[cfg(test)]
