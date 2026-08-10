@@ -303,6 +303,7 @@ mod tests {
     /// suite.
     #[tokio::test]
     async fn client_if_ready_is_some_after_init_or_remains_none() {
+        crate::test_seams::init();
         let before = client_if_ready();
         let tmp = TempDir::new().unwrap();
         let _ = init(tmp.path().join("ws"));
@@ -317,6 +318,7 @@ mod tests {
 
     #[tokio::test]
     async fn init_returns_existing_client_when_already_set() {
+        crate::test_seams::init();
         let slot = GlobalClientSlot::default();
         let tmp = TempDir::new().unwrap();
         let workspace = tmp.path().join("ws");
@@ -329,6 +331,7 @@ mod tests {
 
     #[tokio::test]
     async fn init_rebinds_client_when_workspace_changes() {
+        crate::test_seams::init();
         let slot = GlobalClientSlot::default();
         let tmp = TempDir::new().unwrap();
 
@@ -342,6 +345,7 @@ mod tests {
 
     #[tokio::test]
     async fn init_clears_existing_client_when_rebind_workspace_cannot_initialise() {
+        crate::test_seams::init();
         let slot = GlobalClientSlot::default();
         let tmp = TempDir::new().unwrap();
 
@@ -360,6 +364,7 @@ mod tests {
 
     #[tokio::test]
     async fn client_returns_a_handle_after_explicit_init() {
+        crate::test_seams::init();
         // Bind TempDir at test scope so its directory outlives the global
         // client — the singleton holds the path and may be used later in
         // this test binary.
@@ -372,6 +377,7 @@ mod tests {
 
     #[tokio::test]
     async fn client_errs_clearly_when_not_initialised() {
+        crate::test_seams::init();
         // Use a fresh local `OnceLock` rather than the process-global one:
         // other tests may have already called `init()` on the singleton, so
         // an `is_none`-gated check on `GLOBAL_CLIENT` would race / silently
