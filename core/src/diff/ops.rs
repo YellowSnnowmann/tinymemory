@@ -550,7 +550,7 @@ mod tests {
         let a1 = seed(&config, "src_a", 1000, &[("a", "x")]);
         let b1 = seed(&config, "src_b", 1000, &[("b", "y")]);
         {
-            let ledger = Ledger::open(&config.workspace_dir()).unwrap();
+            let ledger = Ledger::open(&config.workspace_dir).unwrap();
             ledger
                 .create_checkpoint("ckpt_1", "base", &[a1.id.clone(), b1.id.clone()], 1500)
                 .unwrap();

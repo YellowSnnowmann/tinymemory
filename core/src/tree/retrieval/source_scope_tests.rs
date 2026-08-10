@@ -59,9 +59,9 @@ fn test_config() -> (TempDir, TestHostConfig) {
     // Inert embedder keeps these deterministic and avoids any real provider
     // call. Every retrieval call below passes `query: None`, so no embedder is
     // ever built.
-    cfg.memory_tree().embedding_endpoint = None;
-    cfg.memory_tree().embedding_model = None;
-    cfg.memory_tree().embedding_strict = false;
+    cfg.memory_tree.embedding_endpoint = None;
+    cfg.memory_tree.embedding_model = None;
+    cfg.memory_tree.embedding_strict = false;
     (tmp, cfg)
 }
 

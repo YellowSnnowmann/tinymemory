@@ -515,9 +515,9 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let mut cfg = TestHostConfig::default();
         cfg.workspace_dir = tmp.path().to_path_buf();
-        cfg.memory_tree().embedding_endpoint = None;
-        cfg.memory_tree().embedding_model = None;
-        cfg.memory_tree().embedding_strict = false;
+        cfg.memory_tree.embedding_endpoint = None;
+        cfg.memory_tree.embedding_model = None;
+        cfg.memory_tree.embedding_strict = false;
         (tmp, cfg)
     }
 
@@ -931,7 +931,7 @@ mod tests {
     async fn recover_corrupt_db_once_quarantines_and_rebuilds() {
         let (_tmp, cfg) = test_config();
         // Lay down a malformed `chunks.db` (garbage header) at the canonical path.
-        let db_path = cfg.workspace_dir().join("memory_tree").join("chunks.db");
+        let db_path = cfg.workspace_dir.join("memory_tree").join("chunks.db");
         std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
         std::fs::write(&db_path, b"not a sqlite database, just garbage bytes").unwrap();
 

@@ -287,8 +287,8 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let mut cfg = TestHostConfig::default();
         cfg.workspace_dir = tmp.path().to_path_buf();
-        cfg.memory_tree().embedding_endpoint = None;
-        cfg.memory_tree().embedding_model = None;
+        cfg.memory_tree.embedding_endpoint = None;
+        cfg.memory_tree.embedding_model = None;
         (tmp, cfg)
     }
 
@@ -297,7 +297,7 @@ mod tests {
         let _g = super::super::test_guard();
         let (_tmp, mut cfg) = test_config();
         cfg.embeddings_provider = None; // no provider at all
-        cfg.local_ai().runtime_enabled = false;
+        cfg.local_ai.runtime_enabled = false;
 
         let report = run_doctor(&cfg);
         assert!(!report.healthy);
@@ -318,7 +318,7 @@ mod tests {
         let _g = super::super::test_guard();
         let (_tmp, mut cfg) = test_config();
         cfg.embeddings_provider = Some("none".into()); // a configured choice
-        cfg.local_ai().runtime_enabled = true;
+        cfg.local_ai.runtime_enabled = true;
 
         let report = run_doctor(&cfg);
         assert!(
@@ -343,7 +343,7 @@ mod tests {
         let _g = super::super::test_guard();
         let (_tmp, mut cfg) = test_config();
         cfg.embeddings_provider = Some("none".into());
-        cfg.local_ai().runtime_enabled = true;
+        cfg.local_ai.runtime_enabled = true;
 
         let report = run_doctor(&cfg);
         let embed = report
@@ -370,8 +370,8 @@ mod tests {
         let _g = super::super::test_guard();
         let (_tmp, mut cfg) = test_config();
         cfg.embeddings_provider = Some("ollama:bge-m3".into());
-        cfg.local_ai().runtime_enabled = true;
-        cfg.scheduler_gate().mode = SchedulerGateMode::Off;
+        cfg.local_ai.runtime_enabled = true;
+        cfg.scheduler_gate.mode = SchedulerGateMode::Off;
 
         // Double-reset: guard resets on entry, but a concurrent non-guarded
         // code path (e.g. a tokio task draining after its test dropped its
@@ -405,7 +405,7 @@ mod tests {
         let _g = super::super::test_guard();
         let (_tmp, mut cfg) = test_config();
         cfg.embeddings_provider = Some("ollama:bge-m3".into()); // embeddings ok
-        cfg.local_ai().runtime_enabled = false; // cloud opt-in not set (default false)
+        cfg.local_ai.runtime_enabled = false; // cloud opt-in not set (default false)
 
         let report = run_doctor(&cfg);
         let tree = report
@@ -437,7 +437,7 @@ mod tests {
         let (_tmp, mut cfg) = test_config();
         // Deliberately also break embeddings so we prove storage wins.
         cfg.embeddings_provider = None;
-        cfg.local_ai().runtime_enabled = false;
+        cfg.local_ai.runtime_enabled = false;
         super::super::mark_storage_degraded(FailureCode::StorageUnavailable);
 
         let report = run_doctor(&cfg);

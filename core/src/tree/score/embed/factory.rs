@@ -408,9 +408,9 @@ mod tests {
     #[test]
     fn ollama_chosen_when_endpoint_and_model_set() {
         let (_tmp, mut cfg) = test_config();
-        cfg.memory_tree().embedding_endpoint = Some("http://localhost:11434".into());
-        cfg.memory_tree().embedding_model = Some("bge-m3".into());
-        cfg.memory_tree().embedding_timeout_ms = Some(5000);
+        cfg.memory_tree.embedding_endpoint = Some("http://localhost:11434".into());
+        cfg.memory_tree.embedding_model = Some("bge-m3".into());
+        cfg.memory_tree.embedding_timeout_ms = Some(5000);
         let e = build_embedder_from_config(&cfg).expect("Ollama path should build");
         assert_eq!(e.name(), "ollama");
     }
@@ -437,8 +437,8 @@ mod tests {
         let _guard = degraded_flag_lock();
         clear_semantic_recall_degraded();
         let (_tmp, mut cfg) = test_config();
-        cfg.memory_tree().embedding_endpoint = None;
-        cfg.memory_tree().embedding_model = None;
+        cfg.memory_tree.embedding_endpoint = None;
+        cfg.memory_tree.embedding_model = None;
         // No auth-profiles.json, no local workload model → no usable provider.
         let e = build_write_embedder(&cfg).expect("factory must not error");
         assert!(
@@ -466,8 +466,8 @@ mod tests {
         // Pretend a prior run left recall degraded; a working provider clears it.
         mark_semantic_recall_degraded(FailureCode::EmbeddingsUnconfigured);
         let (_tmp, mut cfg) = test_config();
-        cfg.memory_tree().embedding_endpoint = None;
-        cfg.memory_tree().embedding_model = None;
+        cfg.memory_tree.embedding_endpoint = None;
+        cfg.memory_tree.embedding_model = None;
         touch_auth_profile(&cfg);
         let e = build_write_embedder(&cfg)
             .expect("factory must not error")
@@ -482,8 +482,8 @@ mod tests {
     #[test]
     fn write_embedder_some_ollama_override() {
         let (_tmp, mut cfg) = test_config();
-        cfg.memory_tree().embedding_endpoint = Some("http://localhost:11434".into());
-        cfg.memory_tree().embedding_model = Some("bge-m3".into());
+        cfg.memory_tree.embedding_endpoint = Some("http://localhost:11434".into());
+        cfg.memory_tree.embedding_model = Some("bge-m3".into());
         let e = build_write_embedder(&cfg)
             .expect("factory must not error")
             .expect("override → Some(embedder)");
@@ -514,9 +514,9 @@ mod tests {
     #[test]
     fn unset_endpoint_with_session_routes_to_cloud() {
         let (_tmp, mut cfg) = test_config();
-        cfg.memory_tree().embedding_endpoint = None;
-        cfg.memory_tree().embedding_model = None;
-        cfg.memory_tree().embedding_strict = false;
+        cfg.memory_tree.embedding_endpoint = None;
+        cfg.memory_tree.embedding_model = None;
+        cfg.memory_tree.embedding_strict = false;
         touch_auth_profile(&cfg);
         let e = build_embedder_from_config(&cfg).expect("cloud default should build");
         assert_eq!(e.name(), "cloud");
@@ -528,9 +528,9 @@ mod tests {
         // factory degrades to InertEmbedder so callers don't crash on
         // first embed call.
         let (_tmp, mut cfg) = test_config();
-        cfg.memory_tree().embedding_endpoint = None;
-        cfg.memory_tree().embedding_model = None;
-        cfg.memory_tree().embedding_strict = false;
+        cfg.memory_tree.embedding_endpoint = None;
+        cfg.memory_tree.embedding_model = None;
+        cfg.memory_tree.embedding_strict = false;
         let e = build_embedder_from_config(&cfg).expect("inert fallback should build");
         assert_eq!(e.name(), "inert");
     }
@@ -538,9 +538,9 @@ mod tests {
     #[test]
     fn empty_strings_count_as_unset_with_session() {
         let (_tmp, mut cfg) = test_config();
-        cfg.memory_tree().embedding_endpoint = Some("".into());
-        cfg.memory_tree().embedding_model = Some("".into());
-        cfg.memory_tree().embedding_strict = false;
+        cfg.memory_tree.embedding_endpoint = Some("".into());
+        cfg.memory_tree.embedding_model = Some("".into());
+        cfg.memory_tree.embedding_strict = false;
         touch_auth_profile(&cfg);
         let e = build_embedder_from_config(&cfg).expect("cloud default should build");
         assert_eq!(e.name(), "cloud");
@@ -553,9 +553,9 @@ mod tests {
         // paths share the cloud fallback; strict bail is a no-op here
         // and auth failures surface at first embed() call instead.
         let (_tmp, mut cfg) = test_config();
-        cfg.memory_tree().embedding_endpoint = None;
-        cfg.memory_tree().embedding_model = None;
-        cfg.memory_tree().embedding_strict = true;
+        cfg.memory_tree.embedding_endpoint = None;
+        cfg.memory_tree.embedding_model = None;
+        cfg.memory_tree.embedding_strict = true;
         touch_auth_profile(&cfg);
         let e = build_embedder_from_config(&cfg).expect("cloud default should build");
         assert_eq!(e.name(), "cloud");
@@ -570,11 +570,11 @@ mod tests {
         // so the local branch is taken; `embedding_model_id` is still
         // the model name source for the Ollama provider.
         let (_tmp, mut cfg) = test_config();
-        cfg.memory_tree().embedding_endpoint = None;
-        cfg.memory_tree().embedding_model = None;
+        cfg.memory_tree.embedding_endpoint = None;
+        cfg.memory_tree.embedding_model = None;
         cfg.embeddings_provider = Some("ollama:all-minilm:latest".into());
-        cfg.local_ai().runtime_enabled = true;
-        cfg.local_ai().embedding_model_id = "all-minilm:latest".to_string();
+        cfg.local_ai.runtime_enabled = true;
+        cfg.local_ai.embedding_model_id = "all-minilm:latest".to_string();
         let e = build_embedder_from_config(&cfg).expect("ollama path should build");
         assert_eq!(e.name(), "ollama");
     }
@@ -583,10 +583,10 @@ mod tests {
     fn local_ai_usage_off_with_session_falls_back_to_cloud() {
         // runtime_enabled=true but usage.embeddings=false → cloud (with session).
         let (_tmp, mut cfg) = test_config();
-        cfg.memory_tree().embedding_endpoint = None;
-        cfg.memory_tree().embedding_model = None;
-        cfg.local_ai().runtime_enabled = true;
-        cfg.local_ai().usage.embeddings = false;
+        cfg.memory_tree.embedding_endpoint = None;
+        cfg.memory_tree.embedding_model = None;
+        cfg.local_ai.runtime_enabled = true;
+        cfg.local_ai.usage.embeddings = false;
         touch_auth_profile(&cfg);
         let e = build_embedder_from_config(&cfg).expect("cloud default should build");
         assert_eq!(e.name(), "cloud");
@@ -620,11 +620,11 @@ mod tests {
         };
         mark_semantic_recall_degraded(FailureCode::EmbeddingsUnconfigured);
         let (_tmp, mut cfg) = test_config();
-        cfg.memory_tree().embedding_endpoint = None;
-        cfg.memory_tree().embedding_model = None;
+        cfg.memory_tree.embedding_endpoint = None;
+        cfg.memory_tree.embedding_model = None;
         cfg.embeddings_provider = None; // top-level workload routing: unset
-        cfg.memory().embedding_provider = "openai".to_string();
-        cfg.memory().embedding_model = "text-embedding-3-large".to_string();
+        cfg.memory.embedding_provider = "openai".to_string();
+        cfg.memory.embedding_model = "text-embedding-3-large".to_string();
         let e = build_write_embedder(&cfg)
             .expect("factory must not error")
             .expect("openai provider → Some(embedder), must NOT fall through to skip/cloud");
@@ -654,11 +654,11 @@ mod tests {
         let _guard = degraded_flag_lock();
         mark_semantic_recall_degraded(FailureCode::EmbeddingsUnconfigured);
         let (_tmp, mut cfg) = test_config();
-        cfg.memory_tree().embedding_endpoint = None;
-        cfg.memory_tree().embedding_model = None;
+        cfg.memory_tree.embedding_endpoint = None;
+        cfg.memory_tree.embedding_model = None;
         cfg.embeddings_provider = None; // top-level workload routing: unset
-        cfg.memory().embedding_provider = "lmstudio".to_string();
-        cfg.memory().embedding_model = "bge-m3".to_string();
+        cfg.memory.embedding_provider = "lmstudio".to_string();
+        cfg.memory.embedding_model = "bge-m3".to_string();
         cfg.cloud_providers = vec![CloudProviderCreds {
             id: "p_lmstudio".to_string(),
             slug: "lmstudio".to_string(),
@@ -683,11 +683,11 @@ mod tests {
     fn read_embedder_routes_to_openai_when_memory_provider_is_openai() {
         // Same FR-015 routing, read path (`build_embedder_from_config`).
         let (_tmp, mut cfg) = test_config();
-        cfg.memory_tree().embedding_endpoint = None;
-        cfg.memory_tree().embedding_model = None;
+        cfg.memory_tree.embedding_endpoint = None;
+        cfg.memory_tree.embedding_model = None;
         cfg.embeddings_provider = None;
-        cfg.memory().embedding_provider = "openai".to_string();
-        cfg.memory().embedding_model = "text-embedding-3-large".to_string();
+        cfg.memory.embedding_provider = "openai".to_string();
+        cfg.memory.embedding_model = "text-embedding-3-large".to_string();
         let e = build_embedder_from_config(&cfg).expect("openai path should build");
         assert_eq!(e.name(), "openai");
     }
@@ -696,10 +696,10 @@ mod tests {
     fn explicit_endpoint_override_wins_over_local_ai_flag() {
         // Power-user override beats the checkbox.
         let (_tmp, mut cfg) = test_config();
-        cfg.memory_tree().embedding_endpoint = Some("http://staging-embed:11434".into());
-        cfg.memory_tree().embedding_model = Some("bge-m3".into());
-        cfg.local_ai().runtime_enabled = true;
-        cfg.local_ai().usage.embeddings = true;
+        cfg.memory_tree.embedding_endpoint = Some("http://staging-embed:11434".into());
+        cfg.memory_tree.embedding_model = Some("bge-m3".into());
+        cfg.local_ai.runtime_enabled = true;
+        cfg.local_ai.usage.embeddings = true;
         let e = build_embedder_from_config(&cfg).expect("override path should build");
         assert_eq!(e.name(), "ollama");
     }
@@ -713,14 +713,14 @@ mod tests {
     #[test]
     fn effective_slug_reports_ollama_when_local_ai_overrides_cloud_setting() {
         let (_tmp, mut cfg) = test_config();
-        cfg.memory().embedding_provider = "cloud".to_string();
+        cfg.memory.embedding_provider = "cloud".to_string();
         cfg.embeddings_provider = Some("ollama:all-minilm:latest".into());
-        cfg.local_ai().runtime_enabled = true;
-        cfg.local_ai().embedding_model_id = "all-minilm:latest".to_string();
+        cfg.local_ai.runtime_enabled = true;
+        cfg.local_ai.embedding_model_id = "all-minilm:latest".to_string();
         touch_auth_profile(&cfg);
 
         // The stale per-section field still says cloud …
-        assert_eq!(cfg.memory().embedding_provider, "cloud");
+        assert_eq!(cfg.memory.embedding_provider, "cloud");
         // … but the ladder — and therefore the wire field — says local.
         assert_eq!(effective_embedder_slug(&cfg), "ollama");
     }
@@ -728,9 +728,9 @@ mod tests {
     #[test]
     fn effective_slug_reports_ollama_for_explicit_endpoint_override() {
         let (_tmp, mut cfg) = test_config();
-        cfg.memory().embedding_provider = "cloud".to_string();
-        cfg.memory_tree().embedding_endpoint = Some("http://localhost:11434".into());
-        cfg.memory_tree().embedding_model = Some("bge-m3".into());
+        cfg.memory.embedding_provider = "cloud".to_string();
+        cfg.memory_tree.embedding_endpoint = Some("http://localhost:11434".into());
+        cfg.memory_tree.embedding_model = Some("bge-m3".into());
         touch_auth_profile(&cfg);
         assert_eq!(effective_embedder_slug(&cfg), "ollama");
     }
@@ -738,7 +738,7 @@ mod tests {
     #[test]
     fn effective_slug_reports_cloud_only_for_a_real_managed_session() {
         let (_tmp, mut cfg) = test_config();
-        cfg.memory().embedding_provider = "cloud".to_string();
+        cfg.memory.embedding_provider = "cloud".to_string();
         touch_auth_profile(&cfg);
         assert_eq!(effective_embedder_slug(&cfg), "cloud");
     }
@@ -748,7 +748,7 @@ mod tests {
         // No auth-profiles.json → nothing is billed, so this must not read as
         // managed even though the per-section field defaults to cloud.
         let (_tmp, mut cfg) = test_config();
-        cfg.memory().embedding_provider = "cloud".to_string();
+        cfg.memory.embedding_provider = "cloud".to_string();
         assert_eq!(effective_embedder_slug(&cfg), "unconfigured");
     }
 
@@ -769,9 +769,9 @@ mod tests {
         let (_tmp, mut cfg) = test_config();
         // No model + a non-tree dimension → `try_from_config` bails, and its
         // message interpolates the provider string.
-        cfg.memory().embedding_provider = "custom:https://user:pass@embed.example.com/v1".to_string();
-        cfg.memory().embedding_model = String::new();
-        cfg.memory().embedding_dimensions = 512;
+        cfg.memory.embedding_provider = "custom:https://user:pass@embed.example.com/v1".to_string();
+        cfg.memory.embedding_model = String::new();
+        cfg.memory.embedding_dimensions = 512;
 
         // `EmbedderChoice` is not `Debug` (it holds a live embedder), so unwrap
         // the error by hand rather than via `expect_err`.
@@ -822,7 +822,7 @@ mod tests {
         // one. That ordering is what let the long endpoint's secret survive:
         // scrubbing `https://embed.example.com` first rewrote the long string's
         // prefix, so the long string's own replacement no longer matched.
-        cfg.memory().embedding_provider = "custom:https://embed.example.com".to_string();
+        cfg.memory.embedding_provider = "custom:https://embed.example.com".to_string();
         cfg.cloud_providers = vec![CloudProviderCreds {
             id: "p_long".to_string(),
             slug: "longpfx".to_string(),
@@ -859,8 +859,8 @@ mod tests {
         use tinymemory_api::host::cloud_providers::CloudProviderCreds;
         let (_tmp, mut cfg) = test_config();
         cfg.embeddings_provider = None;
-        cfg.memory().embedding_provider = "lmstudio".to_string();
-        cfg.memory().embedding_model = "bge-m3".to_string();
+        cfg.memory.embedding_provider = "lmstudio".to_string();
+        cfg.memory.embedding_model = "bge-m3".to_string();
         cfg.cloud_providers = vec![CloudProviderCreds {
             id: "p_lmstudio".to_string(),
             slug: "lmstudio".to_string(),

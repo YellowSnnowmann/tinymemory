@@ -107,9 +107,9 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let mut cfg = TestHostConfig::default();
         cfg.workspace_dir = tmp.path().to_path_buf();
-        cfg.memory_tree().embedding_endpoint = None;
-        cfg.memory_tree().embedding_model = None;
-        cfg.memory_tree().embedding_strict = false;
+        cfg.memory_tree.embedding_endpoint = None;
+        cfg.memory_tree.embedding_model = None;
+        cfg.memory_tree.embedding_strict = false;
         (tmp, cfg)
     }
 

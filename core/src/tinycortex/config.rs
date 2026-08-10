@@ -64,9 +64,9 @@ mod tests {
     #[test]
     fn maps_workspace_and_embedding_from_host_config() {
         let mut config = TestHostConfig::default();
-        config.memory().embedding_dimensions = 1024;
-        config.memory().embedding_model = "embedding-v1".to_string();
-        config.memory_tree().embedding_strict = true;
+        config.memory.embedding_dimensions = 1024;
+        config.memory.embedding_model = "embedding-v1".to_string();
+        config.memory_tree.embedding_strict = true;
 
         let workspace = PathBuf::from("/tmp/openhuman/ws");
         let mc = memory_config_from(&config, workspace.clone());
@@ -95,13 +95,13 @@ mod tests {
         // Pins the wrapper's only behavioural claim: identical to
         // `memory_config_from(config, config.workspace_dir().clone())`.
         let mut config = TestHostConfig::default();
-        config.memory().embedding_dimensions = 768;
-        config.memory_tree().embedding_strict = true;
+        config.memory.embedding_dimensions = 768;
+        config.memory_tree.embedding_strict = true;
 
         let via_wrapper = engine_config(&config);
-        let via_explicit = memory_config_from(&config, config.workspace_dir().clone());
+        let via_explicit = memory_config_from(&config, config.workspace_dir.clone());
 
-        assert_eq!(via_wrapper.workspace, config.workspace_dir());
+        assert_eq!(via_wrapper.workspace, config.workspace_dir);
         assert_eq!(via_wrapper.workspace, via_explicit.workspace);
         assert_eq!(via_wrapper.content_root, via_explicit.content_root);
         assert_eq!(via_wrapper.embedding.dim, via_explicit.embedding.dim);

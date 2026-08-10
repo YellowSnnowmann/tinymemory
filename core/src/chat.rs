@@ -292,11 +292,11 @@ mod tests {
         // `memory_tree.cloud_llm_model` is inert and must not change it (neither a
         // known tier nor a custom string leaks through).
         let mut cfg = TestHostConfig::default();
-        cfg.memory_tree().cloud_llm_model = Some("chat-v1".into());
+        cfg.memory_tree.cloud_llm_model = Some("chat-v1".into());
         let (_provider, model) = build_chat_runtime(&cfg).unwrap();
         assert_eq!(model, DEFAULT_CLOUD_LLM_MODEL);
 
-        cfg.memory_tree().cloud_llm_model = Some("custom-summary-model".into());
+        cfg.memory_tree.cloud_llm_model = Some("custom-summary-model".into());
         let (_provider, model) = build_chat_runtime(&cfg).unwrap();
         assert_eq!(model, DEFAULT_CLOUD_LLM_MODEL);
     }
