@@ -31,6 +31,8 @@ pub struct TestHostConfig {
     pub config_path: PathBuf,
     /// See [`MemoryHostConfig::memory`].
     pub memory: MemoryConfig,
+    /// See [`MemoryHostConfig::session_token`]. `None` is signed-out.
+    pub session_token: Option<String>,
     /// See [`MemoryHostConfig::memory_tree`].
     pub memory_tree: MemoryTreeConfig,
     /// See [`MemoryHostConfig::scheduler_gate`].
@@ -127,8 +129,26 @@ impl MemoryHostConfig for TestHostConfig {
         }
     }
 
+    fn to_arc(&self) -> std::sync::Arc<dyn MemoryHostConfig> {
+        std::sync::Arc::new(self.clone())
+    }
+
     fn api_url(&self) -> Option<&str> {
         self.api_url.as_deref()
+    }
+
+    fn effective_backend_api_url(&self) -> String {
+        // No resolution to do: a test config states its backend URL outright,
+        // and the host's env/default ladder is not something to reimplement
+        // here.
+        self.api_url.clone().unwrap_or_default()
+    }
+
+    fn session_token(&self) -> Result<Option<String>, String> {
+        // `Ok(None)` — "read fine, not signed in" — rather than `Err`, so a
+        // test that never sets a token exercises the signed-out path instead of
+        // a credential-store failure.
+        Ok(self.session_token.clone())
     }
 
     fn default_model(&self) -> Option<&str> {
