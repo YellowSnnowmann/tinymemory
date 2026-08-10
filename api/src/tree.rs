@@ -144,7 +144,7 @@ pub struct QueryResult {
 
 /// Rough token estimate: ~4 characters per token.
 pub fn estimate_tokens(text: &str) -> u32 {
-    (text.len() as u32).div_ceil(4)
+    u32::try_from(text.len().div_ceil(4)).unwrap_or(u32::MAX)
 }
 
 /// Derive the parent node ID from a node ID.
@@ -191,6 +191,11 @@ pub fn derive_node_ids(ts: &DateTime<Utc>) -> (String, String, String, String, S
 pub fn node_id_to_path(node_id: &str) -> PathBuf {
     if node_id == "root" {
         return PathBuf::from("root.md");
+    }
+    if node_id.starts_with('/')
+        || node_id.split('/').any(|part| part.is_empty() || !part.chars().all(|c| c.is_ascii_digit()))
+    {
+        return PathBuf::from("invalid");
     }
     let level = level_from_node_id(node_id);
     if level.is_leaf() {

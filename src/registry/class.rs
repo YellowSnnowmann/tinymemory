@@ -15,6 +15,15 @@ use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+/// Error returned when a driver class is not recognized.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum DriverClassParseError {
+    /// The raw class value is unsupported.
+    #[error("unknown driver class")]
+    Unknown { raw: String },
+}
 
 /// How a bound driver is reached.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -55,12 +64,12 @@ impl DriverClass {
     ///
     /// Returns the unrecognised input in the message, so a typo in a
     /// `class = …` line is self-explaining.
-    pub fn parse(raw: &str) -> Result<Self, String> {
+    pub fn parse(raw: &str) -> Result<Self, DriverClassParseError> {
         Self::ALL
             .iter()
             .copied()
             .find(|class| class.as_str() == raw)
-            .ok_or_else(|| format!("unknown driver class: {raw}"))
+            .ok_or_else(|| DriverClassParseError::Unknown { raw: raw.to_string() })
     }
 }
 
@@ -71,7 +80,7 @@ impl fmt::Display for DriverClass {
 }
 
 impl FromStr for DriverClass {
-    type Err = String;
+    type Err = DriverClassParseError;
 
     fn from_str(raw: &str) -> Result<Self, Self::Err> {
         Self::parse(raw)

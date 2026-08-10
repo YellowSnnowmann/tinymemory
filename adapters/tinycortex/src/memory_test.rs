@@ -182,11 +182,14 @@ async fn a_store_exports_and_restores_across_two_engines() {
 
     let mut records = Vec::new();
     let mut cursor = None;
+    let mut pages = 0;
     loop {
         let page = source
             .export_page(cursor.as_deref(), 1)
             .await
             .expect("export page");
+        pages += 1;
+        assert!(pages < 10, "export did not terminate");
         records.extend(page.records);
         match page.next_cursor {
             Some(next) => cursor = Some(next),

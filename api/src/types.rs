@@ -155,6 +155,7 @@ impl std::str::FromStr for MemoryCategory {
             "core" => Ok(Self::Core),
             "daily" => Ok(Self::Daily),
             "conversation" => Ok(Self::Conversation),
+            "custom:" => Ok(Self::Custom(String::new())),
             value if value.starts_with("custom:") && value.len() > "custom:".len() => {
                 Ok(Self::Custom(value["custom:".len()..].to_string()))
             }

@@ -73,7 +73,9 @@ pub trait Memory: Send + Sync {
         session_id: Option<&str>,
         taint: MemoryTaint,
     ) -> anyhow::Result<()> {
-        let _ = taint;
+        if taint != MemoryTaint::Internal {
+            anyhow::bail!("backend does not support taint-preserving storage");
+        }
         self.store(namespace, key, content, category, session_id)
             .await
     }

@@ -38,6 +38,10 @@ impl SourceKind {
     }
 
     /// Parse back from the on-wire / on-disk string form.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `s` is not a supported source kind.
     pub fn parse(s: &str) -> Result<Self, String> {
         match s {
             "chat" => Ok(SourceKind::Chat),
@@ -115,6 +119,10 @@ impl DataSource {
     }
 
     /// Parse back from the on-wire / on-disk string form.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `s` is not a supported data source.
     pub fn parse(s: &str) -> Result<Self, String> {
         match s {
             "discord" => Ok(Self::Discord),

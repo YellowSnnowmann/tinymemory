@@ -171,7 +171,7 @@ impl DriverRegistry {
     /// same confirm-never-override rule then applies to it.
     #[must_use]
     pub fn with_reserved(mut self, id: impl Into<String>, class: DriverClass) -> Self {
-        self.reserved.insert(id.into(), class);
+        self.reserved.entry(id.into()).or_insert(class);
         self
     }
 
@@ -227,7 +227,7 @@ impl DriverRegistry {
                 &format!("{} has no class line", labels.driver_entry),
             )?,
             Some(raw) => {
-                let class = DriverClass::parse(raw).map_err(|e| refuse(&e))?;
+                let class = DriverClass::parse(raw).map_err(|_| refuse("unknown driver class"))?;
                 // A reserved id names a fixed implementation, so an explicit
                 // `class` line may confirm it but never override it.
                 if let Some(fixed) = self.reserved_class(id) {
