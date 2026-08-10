@@ -24,7 +24,7 @@ use tinycortex::memory::ingest::canonicalize::chat::{ChatBatch, ChatMessage};
 fn test_config() -> (TempDir, Config) {
     let tmp = TempDir::new().unwrap();
     let mut cfg = Config::default();
-    cfg.workspace_dir() = tmp.path().to_path_buf();
+    cfg.workspace_dir = tmp.path().to_path_buf();
     // Phase 4 (#710): ingest embeds chunks; tests use inert for determinism.
     cfg.memory_tree().embedding_endpoint = None;
     cfg.memory_tree().embedding_model = None;
@@ -35,7 +35,7 @@ fn test_config() -> (TempDir, Config) {
     // end-to-end, so opt into the inert embedder explicitly — `provider=none`
     // is the deterministic "vector search by choice" path that
     // `build_write_embedder` returns as Some(inert).
-    cfg.embeddings_provider() = Some("none".into());
+    cfg.embeddings_provider = Some("none".into());
     (tmp, cfg)
 }
 

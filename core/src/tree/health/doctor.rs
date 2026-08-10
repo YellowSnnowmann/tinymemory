@@ -284,7 +284,7 @@ mod tests {
     fn test_config() -> (TempDir, Config) {
         let tmp = TempDir::new().unwrap();
         let mut cfg = Config::default();
-        cfg.workspace_dir() = tmp.path().to_path_buf();
+        cfg.workspace_dir = tmp.path().to_path_buf();
         cfg.memory_tree().embedding_endpoint = None;
         cfg.memory_tree().embedding_model = None;
         (tmp, cfg)
@@ -294,7 +294,7 @@ mod tests {
     fn misconfigured_workspace_reports_embeddings_as_first_blocking_cause() {
         let _g = super::super::test_guard();
         let (_tmp, mut cfg) = test_config();
-        cfg.embeddings_provider() = None; // no provider at all
+        cfg.embeddings_provider = None; // no provider at all
         cfg.local_ai().runtime_enabled = false;
 
         let report = run_doctor(&cfg);
@@ -315,7 +315,7 @@ mod tests {
     fn healthy_when_embeddings_and_local_ai_configured() {
         let _g = super::super::test_guard();
         let (_tmp, mut cfg) = test_config();
-        cfg.embeddings_provider() = Some("none".into()); // a configured choice
+        cfg.embeddings_provider = Some("none".into()); // a configured choice
         cfg.local_ai().runtime_enabled = true;
 
         let report = run_doctor(&cfg);
@@ -340,7 +340,7 @@ mod tests {
         // not read as a working provider ("provider configured: none"). (CodeRabbit)
         let _g = super::super::test_guard();
         let (_tmp, mut cfg) = test_config();
-        cfg.embeddings_provider() = Some("none".into());
+        cfg.embeddings_provider = Some("none".into());
         cfg.local_ai().runtime_enabled = true;
 
         let report = run_doctor(&cfg);
@@ -367,7 +367,7 @@ mod tests {
         use tinymemory_api::host::SchedulerGateMode;
         let _g = super::super::test_guard();
         let (_tmp, mut cfg) = test_config();
-        cfg.embeddings_provider() = Some("ollama:bge-m3".into());
+        cfg.embeddings_provider = Some("ollama:bge-m3".into());
         cfg.local_ai().runtime_enabled = true;
         cfg.scheduler_gate().mode = SchedulerGateMode::Off;
 
@@ -402,7 +402,7 @@ mod tests {
     fn local_ai_off_reports_no_provider_without_cloud_opt_in() {
         let _g = super::super::test_guard();
         let (_tmp, mut cfg) = test_config();
-        cfg.embeddings_provider() = Some("ollama:bge-m3".into()); // embeddings ok
+        cfg.embeddings_provider = Some("ollama:bge-m3".into()); // embeddings ok
         cfg.local_ai().runtime_enabled = false; // cloud opt-in not set (default false)
 
         let report = run_doctor(&cfg);
@@ -434,7 +434,7 @@ mod tests {
         let _g = super::super::test_guard();
         let (_tmp, mut cfg) = test_config();
         // Deliberately also break embeddings so we prove storage wins.
-        cfg.embeddings_provider() = None;
+        cfg.embeddings_provider = None;
         cfg.local_ai().runtime_enabled = false;
         super::super::mark_storage_degraded(FailureCode::StorageUnavailable);
 

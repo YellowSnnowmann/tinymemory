@@ -312,7 +312,7 @@ mod tests {
     fn test_config() -> Config {
         let dir = tempfile::tempdir().unwrap();
         let mut config = Config::default();
-        config.workspace_dir() = dir.path().to_path_buf();
+        config.workspace_dir = dir.path().to_path_buf();
         // Leak the tempdir so the path stays valid for the test's lifetime.
         std::mem::forget(dir);
         config

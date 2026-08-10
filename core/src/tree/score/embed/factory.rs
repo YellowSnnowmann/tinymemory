@@ -383,11 +383,11 @@ mod tests {
     fn test_config() -> (TempDir, Config) {
         let tmp = TempDir::new().unwrap();
         let mut cfg = Config::default();
-        cfg.workspace_dir() = tmp.path().to_path_buf();
+        cfg.workspace_dir = tmp.path().to_path_buf();
         // Plant config_path in the tempdir so cloud_session_available()
         // checks a writable directory; tests that need to simulate a
         // logged-in user just `touch` auth-profiles.json next to it.
-        cfg.config_path() = tmp.path().join("config.toml");
+        cfg.config_path = tmp.path().join("config.toml");
         (tmp, cfg)
     }
 
@@ -496,7 +496,7 @@ mod tests {
         let _guard = degraded_flag_lock();
         clear_semantic_recall_degraded();
         let (_tmp, mut cfg) = test_config();
-        cfg.embeddings_provider() = Some("none".into());
+        cfg.embeddings_provider = Some("none".into());
         // Deliberate opt-out → InertEmbedder (vector search off by choice),
         // and NOT flagged as a degradation.
         let e = build_write_embedder(&cfg)
@@ -570,7 +570,7 @@ mod tests {
         let (_tmp, mut cfg) = test_config();
         cfg.memory_tree().embedding_endpoint = None;
         cfg.memory_tree().embedding_model = None;
-        cfg.embeddings_provider() = Some("ollama:all-minilm:latest".into());
+        cfg.embeddings_provider = Some("ollama:all-minilm:latest".into());
         cfg.local_ai().runtime_enabled = true;
         cfg.local_ai().embedding_model_id = "all-minilm:latest".to_string();
         let e = build_embedder_from_config(&cfg).expect("ollama path should build");
@@ -593,7 +593,7 @@ mod tests {
     #[test]
     fn none_provider_returns_inert() {
         let (_tmp, mut cfg) = test_config();
-        cfg.embeddings_provider() = Some("none".into());
+        cfg.embeddings_provider = Some("none".into());
         touch_auth_profile(&cfg);
         let e = build_embedder_from_config(&cfg).expect("none should build");
         assert_eq!(e.name(), "inert");
@@ -620,7 +620,7 @@ mod tests {
         let (_tmp, mut cfg) = test_config();
         cfg.memory_tree().embedding_endpoint = None;
         cfg.memory_tree().embedding_model = None;
-        cfg.embeddings_provider() = None; // top-level workload routing: unset
+        cfg.embeddings_provider = None; // top-level workload routing: unset
         cfg.memory().embedding_provider = "openai".to_string();
         cfg.memory().embedding_model = "text-embedding-3-large".to_string();
         let e = build_write_embedder(&cfg)
@@ -654,10 +654,10 @@ mod tests {
         let (_tmp, mut cfg) = test_config();
         cfg.memory_tree().embedding_endpoint = None;
         cfg.memory_tree().embedding_model = None;
-        cfg.embeddings_provider() = None; // top-level workload routing: unset
+        cfg.embeddings_provider = None; // top-level workload routing: unset
         cfg.memory().embedding_provider = "lmstudio".to_string();
         cfg.memory().embedding_model = "bge-m3".to_string();
-        cfg.cloud_providers() = vec![CloudProviderCreds {
+        cfg.cloud_providers = vec![CloudProviderCreds {
             id: "p_lmstudio".to_string(),
             slug: "lmstudio".to_string(),
             endpoint: "http://localhost:1234/v1".to_string(),
@@ -683,7 +683,7 @@ mod tests {
         let (_tmp, mut cfg) = test_config();
         cfg.memory_tree().embedding_endpoint = None;
         cfg.memory_tree().embedding_model = None;
-        cfg.embeddings_provider() = None;
+        cfg.embeddings_provider = None;
         cfg.memory().embedding_provider = "openai".to_string();
         cfg.memory().embedding_model = "text-embedding-3-large".to_string();
         let e = build_embedder_from_config(&cfg).expect("openai path should build");
@@ -712,7 +712,7 @@ mod tests {
     fn effective_slug_reports_ollama_when_local_ai_overrides_cloud_setting() {
         let (_tmp, mut cfg) = test_config();
         cfg.memory().embedding_provider = "cloud".to_string();
-        cfg.embeddings_provider() = Some("ollama:all-minilm:latest".into());
+        cfg.embeddings_provider = Some("ollama:all-minilm:latest".into());
         cfg.local_ai().runtime_enabled = true;
         cfg.local_ai().embedding_model_id = "all-minilm:latest".to_string();
         touch_auth_profile(&cfg);
@@ -753,7 +753,7 @@ mod tests {
     #[test]
     fn effective_slug_reports_none_for_deliberate_opt_out() {
         let (_tmp, mut cfg) = test_config();
-        cfg.embeddings_provider() = Some("none".into());
+        cfg.embeddings_provider = Some("none".into());
         touch_auth_profile(&cfg);
         assert_eq!(effective_embedder_slug(&cfg), "none");
     }
@@ -821,7 +821,7 @@ mod tests {
         // scrubbing `https://embed.example.com` first rewrote the long string's
         // prefix, so the long string's own replacement no longer matched.
         cfg.memory().embedding_provider = "custom:https://embed.example.com".to_string();
-        cfg.cloud_providers() = vec![CloudProviderCreds {
+        cfg.cloud_providers = vec![CloudProviderCreds {
             id: "p_long".to_string(),
             slug: "longpfx".to_string(),
             endpoint: "https://embed.example.com/v1?key=super-secret".to_string(),
@@ -856,10 +856,10 @@ mod tests {
     fn effective_slug_reports_custom_for_byo_openai_compatible() {
         use tinymemory_api::host::cloud_providers::CloudProviderCreds;
         let (_tmp, mut cfg) = test_config();
-        cfg.embeddings_provider() = None;
+        cfg.embeddings_provider = None;
         cfg.memory().embedding_provider = "lmstudio".to_string();
         cfg.memory().embedding_model = "bge-m3".to_string();
-        cfg.cloud_providers() = vec![CloudProviderCreds {
+        cfg.cloud_providers = vec![CloudProviderCreds {
             id: "p_lmstudio".to_string(),
             slug: "lmstudio".to_string(),
             endpoint: "http://localhost:1234/v1".to_string(),

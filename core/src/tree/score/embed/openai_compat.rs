@@ -231,8 +231,8 @@ mod tests {
     fn cfg_with_provider(p: &str) -> (TempDir, Config) {
         let tmp = TempDir::new().unwrap();
         let mut cfg = Config::default();
-        cfg.workspace_dir() = tmp.path().to_path_buf();
-        cfg.config_path() = tmp.path().join("config.toml");
+        cfg.workspace_dir = tmp.path().to_path_buf();
+        cfg.config_path = tmp.path().join("config.toml");
         cfg.memory().embedding_provider = p.to_string();
         cfg.memory().embedding_model = "text-embedding-3-large".to_string();
         (tmp, cfg)
@@ -297,7 +297,7 @@ mod tests {
     fn some_for_configured_lmstudio_slug() {
         let (_tmp, mut cfg) = cfg_with_provider("lmstudio");
         cfg.memory().embedding_model = "bge-m3".to_string();
-        cfg.cloud_providers() = vec![lmstudio_entry("http://localhost:1234/v1")];
+        cfg.cloud_providers = vec![lmstudio_entry("http://localhost:1234/v1")];
 
         let got = OpenAiCompatEmbedder::try_from_config(&cfg).expect("no error");
         let e = got.expect("configured lmstudio slug must build an adapter, not fall through");
@@ -311,7 +311,7 @@ mod tests {
     fn some_for_lmstudio_slug_with_inline_model() {
         let (_tmp, mut cfg) = cfg_with_provider("lmstudio:bge-m3");
         cfg.memory().embedding_model = String::new(); // force inline-suffix fallback
-        cfg.cloud_providers() = vec![lmstudio_entry("http://localhost:1234/v1")];
+        cfg.cloud_providers = vec![lmstudio_entry("http://localhost:1234/v1")];
 
         let got = OpenAiCompatEmbedder::try_from_config(&cfg).expect("no error");
         let e = got.expect("lmstudio:model slug must resolve");
@@ -335,7 +335,7 @@ mod tests {
     #[test]
     fn none_for_configured_slug_with_blank_endpoint() {
         let (_tmp, mut cfg) = cfg_with_provider("lmstudio");
-        cfg.cloud_providers() = vec![lmstudio_entry("   ")];
+        cfg.cloud_providers = vec![lmstudio_entry("   ")];
         let got = OpenAiCompatEmbedder::try_from_config(&cfg).expect("no error");
         assert!(got.is_none(), "blank endpoint should fall through");
     }
@@ -348,7 +348,7 @@ mod tests {
         use tinymemory_api::host::cloud_providers::CloudProviderCreds;
         for p in ["managed", "cloud", "voyage", "cohere", "ollama", "none"] {
             let (_tmp, mut cfg) = cfg_with_provider(p);
-            cfg.cloud_providers() = vec![CloudProviderCreds {
+            cfg.cloud_providers = vec![CloudProviderCreds {
                 id: format!("p_{p}"),
                 slug: p.to_string(),
                 endpoint: "http://localhost:1234/v1".to_string(),

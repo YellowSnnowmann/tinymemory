@@ -53,7 +53,7 @@ const MEMORY_SOURCES: &str = "memory_sources";
 fn test_config() -> (TempDir, Config) {
     let tmp = TempDir::new().unwrap();
     let mut cfg = Config::default();
-    cfg.workspace_dir() = tmp.path().to_path_buf();
+    cfg.workspace_dir = tmp.path().to_path_buf();
     // Inert embedder keeps these deterministic and avoids any real provider
     // call. Every retrieval call below passes `query: None`, so no embedder is
     // ever built.

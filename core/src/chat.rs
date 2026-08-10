@@ -306,7 +306,7 @@ mod tests {
         // returns the mock, so an unguarded read here could race it.
         let _guard = crate::chat_host::inference_test_guard();
         let mut cfg = Config::default();
-        cfg.memory_provider() = Some("ollama:qwen2.5:0.5b".into());
+        cfg.memory_provider = Some("ollama:qwen2.5:0.5b".into());
         let provider = build_chat_provider(&cfg).unwrap();
         assert!(provider.name().contains("qwen2.5:0.5b"));
     }
@@ -315,7 +315,7 @@ mod tests {
     fn build_chat_runtime_preserves_local_memory_model() {
         let _guard = crate::chat_host::inference_test_guard();
         let mut cfg = Config::default();
-        cfg.memory_provider() = Some("ollama:qwen2.5:0.5b".into());
+        cfg.memory_provider = Some("ollama:qwen2.5:0.5b".into());
         let (_provider, model) = build_chat_runtime(&cfg).unwrap();
         assert_eq!(model, "qwen2.5:0.5b");
     }

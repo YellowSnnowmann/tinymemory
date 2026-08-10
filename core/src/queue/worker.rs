@@ -512,7 +512,7 @@ mod tests {
     fn test_config() -> (TempDir, Config) {
         let tmp = TempDir::new().unwrap();
         let mut cfg = Config::default();
-        cfg.workspace_dir() = tmp.path().to_path_buf();
+        cfg.workspace_dir = tmp.path().to_path_buf();
         cfg.memory_tree().embedding_endpoint = None;
         cfg.memory_tree().embedding_model = None;
         cfg.memory_tree().embedding_strict = false;
@@ -992,7 +992,7 @@ mod tests {
         // Deliberate "none" opt-out → InertEmbedder (zero vectors, no network)
         // so the backfill has work and Defers; this test pins the worker's
         // defer-reschedule path, not embed quality.
-        cfg.embeddings_provider() = Some("none".to_string());
+        cfg.embeddings_provider = Some("none".to_string());
         let ts = Utc.timestamp_millis_opt(1_700_000_000_000).unwrap();
         let chunk = Chunk {
             id: chunk_id(SourceKind::Chat, "slack:#eng", 0, "reembed-worker-seed"),

@@ -828,7 +828,7 @@ mod tests {
         std::fs::create_dir_all(&audit_path).expect("create directory at audit file path");
 
         let mut config = Config::default();
-        config.workspace_dir() = workspace.path().to_path_buf();
+        config.workspace_dir = workspace.path().to_path_buf();
 
         let error = try_read_audit_log(&config).expect_err("directory read must fail");
         assert!(
