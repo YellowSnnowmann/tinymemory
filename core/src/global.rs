@@ -140,18 +140,6 @@ fn init_in_slot(
 
 /// Initialise using the default `~/.openhuman/workspace` directory.
 ///
-/// **TEST-ONLY.** Production code must call [`init`] with the real workspace
-/// directory at startup wiring. If this function ran first in production it
-/// would pin the singleton to `~/.openhuman/workspace`, causing every
-/// subsequent `init(custom_workspace)` to silently no-op and return the wrong
-/// handle (`OnceLock::set` is one-shot).
-#[cfg(test)]
-pub fn init_default() -> Result<MemoryClientRef, String> {
-    let workspace_dir = crate::openhuman::config::default_root_openhuman_dir()
-        .map_err(|e| e.to_string())?
-        .join("workspace");
-    init(workspace_dir)
-}
 
 /// Returns the global memory client.
 ///
@@ -236,7 +224,7 @@ fn cache_client(workspace_dir: &Path, client: &MemoryClientRef) -> Result<Memory
 /// when it already owns that workspace**.
 ///
 /// Exists for the embedded memory driver
-/// ([`crate::openhuman::memory::driver::embedded`]), which is constructed
+/// (the host's `memory::driver::embedded`), which is constructed
 /// synchronously at bind time and must resolve its client lazily on the first
 /// contract call.
 ///
