@@ -20,7 +20,7 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use tinyagents::harness::model::ChatModel;
+use tinyagents::harness::model::{ChatModel, ModelResponse};
 
 use crate::Config;
 
@@ -48,6 +48,20 @@ pub trait ChatHost: Send + Sync + std::fmt::Debug {
         config: &Config,
         temperature: f64,
     ) -> Result<(Arc<dyn ChatModel<()>>, String), String>;
+
+    /// Extract token accounting from a completed model response.
+    ///
+    /// The host's own usage metadata rides in the response's provider-specific
+    /// `raw` payload under a key only it knows, which is why this cannot be a
+    /// free function here.
+    fn usage_from_response(&self, response: &ModelResponse) -> Option<UsageInfo>;
+
+    /// Whether summarisation can run right now, and a user-facing explanation.
+    ///
+    /// Local AI off is **not** a fault by itself — since #002 FR-007
+    /// summarisation runs on the configured cloud provider in that case. Only
+    /// "no provider resolves at all" is bad.
+    fn summarizer_available(&self, config: &Config) -> (bool, &'static str);
 }
 
 static HOST: RwLock<Option<Arc<dyn ChatHost>>> = RwLock::new(None);
@@ -116,4 +130,20 @@ pub fn create_chat_model_with_model_id(
 pub fn inference_test_guard() -> std::sync::MutexGuard<'static, ()> {
     static GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
     GUARD.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Token accounting from a completed model response, or `None` when the
+/// provider reported none or no host is installed.
+#[must_use]
+pub fn usage_from_response(response: &ModelResponse) -> Option<UsageInfo> {
+    chat_host()?.usage_from_response(response)
+}
+
+/// Whether summarisation can run, and why. Reports unavailable when unwired.
+#[must_use]
+pub fn summarizer_available(config: &Config) -> (bool, &'static str) {
+    chat_host().map_or(
+        (false, "no chat host installed — summarisation cannot run"),
+        |host| host.summarizer_available(config),
+    )
 }

@@ -394,7 +394,6 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
     let config = config_rpc::load_config_with_timeout()
         .await
         .map_err(|e| format!("load_config: {e}"))?;
-    let config = Arc::new(config);
 
     // Step 2: list active connections — mode-aware. Backend mode walks
     // the tinyhumans tenant; direct mode walks the user's personal
@@ -407,7 +406,7 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
     // loop, and the host reports it through the same observability classifier
     // the UI poll uses. A failure here means "not signed in / no direct key" as
     // often as it means a real fault, so the tick skips rather than erroring.
-    let connections = match composio_host::list_connections(&config).await {
+    let connections = match composio_host::list_connections(&*config).await {
         Ok(connections) => connections,
         Err(e) => {
             tracing::debug!(
@@ -431,7 +430,7 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
     // "Sync every 24h" gap across app restarts. We index the persisted sync
     // audit log (wall-clock timestamps that survive restarts) and use it as the
     // due-check fallback whenever the in-memory monotonic record is absent.
-    let (audit_index, audit_available) = composio_audit_state(try_read_audit_log(&config));
+    let (audit_index, audit_available) = composio_audit_state(try_read_audit_log(&*config));
     if !audit_available {
         tracing::warn!(
             "[memory_sync:periodic] audit unavailable; sources without in-memory cadence will be skipped"
@@ -454,8 +453,7 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
     // re-enabling background sync for sources the user switched off on a
     // transient config-read failure. Reusing the tick's snapshot is fail-closed
     // (a disabled row stays disabled) and avoids the extra read entirely.
-    let composio_sources: HashMap<String, MemorySourceEntry> = config
-        .memory_sources
+    let composio_sources: HashMap<String, MemorySourceEntry> = crate::sources::decode_memory_sources(&*config)
         .iter()
         .filter(|s| s.kind == SourceKind::Composio)
         .filter_map(|s| s.connection_id.clone().map(|id| (id, s.clone())))
@@ -561,7 +559,7 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
         );
         let sync_started = Instant::now();
         let result =
-            crate::tinycortex::run_source_pipeline(&source, &config).await;
+            crate::tinycortex::run_source_pipeline(&source, &*config).await;
         let duration_ms = sync_started.elapsed().as_millis() as u64;
 
         match result {
@@ -585,7 +583,7 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
                     duration_ms,
                     None,
                 );
-                append_audit_entry(&config, &entry);
+                append_audit_entry(&*config, &entry);
                 record_sync_success(&conn.toolkit, &conn.id);
                 fired += 1;
             }
@@ -610,7 +608,7 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
                     duration_ms,
                     Some(e.to_string()),
                 );
-                append_audit_entry(&config, &entry);
+                append_audit_entry(&*config, &entry);
                 // Intentionally do NOT update last_sync_at on failure
                 // so the next tick retries immediately.
             }

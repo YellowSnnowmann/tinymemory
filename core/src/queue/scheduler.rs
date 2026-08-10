@@ -5,6 +5,7 @@
 //! source trees plus the entity index are the substrate, so there is no
 //! cross-source digest to enqueue. Only the stale-buffer flush remains.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::Config;
@@ -14,20 +15,20 @@ static STARTED: std::sync::Once = std::sync::Once::new();
 /// Start the periodic flush_stale scheduler. Takes the full `Config` so the
 /// enqueues match the same workspace + LLM settings the workers see — not
 /// `Config::default()`.
-pub fn start(config: Config) {
+pub fn start(config: Arc<Config>) {
     STARTED.call_once(|| {
         // Periodic flush_stale loop (every 3 h) so L0 buffers seal
         // promptly even for low-volume sources.
-        let cfg = config.clone();
+        let cfg = config.to_arc();
         tokio::spawn(async move {
             // Fire once on startup so new installs & restarts don't wait
             // up to 3 h for the first seal window.
-            retry_transient_failures(&cfg);
-            enqueue_flush_stale(&cfg);
+            retry_transient_failures(&*cfg);
+            enqueue_flush_stale(&*cfg);
             loop {
                 tokio::time::sleep(Duration::from_secs(3 * 60 * 60)).await;
-                retry_transient_failures(&cfg);
-                enqueue_flush_stale(&cfg);
+                retry_transient_failures(&*cfg);
+                enqueue_flush_stale(&*cfg);
             }
         });
     });
@@ -70,7 +71,7 @@ fn retry_transient_failures(config: &Config) {
 /// point, `tree::tree::flush::flush_stale_buffers_default`, takes **one**
 /// `LabelStrategy` for every tree, which no production caller uses and which
 /// would apply one tree kind's labelling to all of them.
-pub(crate) fn enqueue_flush_stale_job(config: &Config) -> Result<bool, String> {
+pub fn enqueue_flush_stale_job(config: &Config) -> Result<bool, String> {
     let memory = crate::tinycortex::memory_config_from(
         config,
         config.workspace_dir().clone(),

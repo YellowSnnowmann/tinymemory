@@ -82,12 +82,12 @@ pub fn wake_workers() {
 ///
 /// Idempotent (`Once`-guarded) so repeat calls during bootstrap are
 /// safe no-ops after the first.
-pub fn start(config: Config) {
+pub fn start(config: Arc<Config>) {
     STARTED.call_once(|| {
         let notify = WORKER_NOTIFY
             .get_or_init(|| Arc::new(Notify::new()))
             .clone();
-        if let Err(err) = recover_stale_locks(&config) {
+        if let Err(err) = recover_stale_locks(&*config) {
             log::warn!("[memory::jobs] recover_stale_locks failed at startup: {err:#}");
         }
 
@@ -96,8 +96,8 @@ pub fn start(config: Config) {
         // (which surfaced as a stale-lock recovery warn on every launch).
         // Hard kills still fall back to lease-expiry recovery at startup
         // (bug-report-2026-05-26 I2).
-        let shutdown_cfg = config.clone();
-        crate::core::shutdown::register(move || {
+        let shutdown_cfg = config.to_arc();
+        crate::shutdown::register(move || {
             // NOTE: `shutdown::register` is bound `F: Fn() -> Fut`, so this
             // closure may be invoked more than once; each call must hand the
             // returned future its own owned `Config`. Moving `shutdown_cfg`
@@ -105,7 +105,7 @@ pub fn start(config: Config) {
             // the per-call clone is required, not redundant.
             let cfg = shutdown_cfg.clone();
             async move {
-                match release_running_locks(&cfg) {
+                match release_running_locks(&*cfg) {
                     Ok(n) if n > 0 => {
                         log::info!(
                             "[memory::jobs] released {n} in-flight job lock(s) on graceful shutdown"
@@ -123,10 +123,10 @@ pub fn start(config: Config) {
 
         for idx in 0..WORKER_COUNT {
             let notify = notify.clone();
-            let cfg = config.clone();
+            let cfg = config.to_arc();
             tokio::spawn(async move {
                 loop {
-                    match run_once(&cfg).await {
+                    match run_once(&*cfg).await {
                         Ok(processed) => {
                             // A successful claim proves the memory_tree DB
                             // opened, so the host filesystem is healthy again.
@@ -209,7 +209,7 @@ pub fn start(config: Config) {
                                 // long so a failed recovery never re-floods.
                                 // `notify` still wakes us on new enqueues once the
                                 // rebuild succeeds.
-                                recover_corrupt_db_once(idx, &err, &cfg);
+                                recover_corrupt_db_once(idx, &err, &*cfg);
                                 tokio::time::sleep(Duration::from_secs(300)).await;
                             } else if is_host_io_error(&err) {
                                 // Persistent host-filesystem failure (EIO 5 /
@@ -288,7 +288,7 @@ pub async fn run_once(config: &Config) -> Result<bool> {
         config,
         config.workspace_dir().clone(),
     );
-    let delegates = crate::tinycortex::HostQueueDelegates::new(config.clone());
+    let delegates = crate::tinycortex::HostQueueDelegates::new(config.to_arc());
     tinycortex::memory::queue::run_once(&mc, &delegates).await
 }
 

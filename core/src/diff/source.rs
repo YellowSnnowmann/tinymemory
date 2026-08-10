@@ -19,6 +19,7 @@
 //! built from the full [`MemorySourceEntry`] list (which carries `toolkit`) and
 //! resolves each id → prefix up front.
 
+use std::sync::Arc;
 use std::collections::HashMap;
 
 use tinycortex::memory::diff::{extract_item_id, SnapshotItem, SnapshotItemSource};
@@ -34,14 +35,14 @@ use crate::sources::types::{MemorySourceEntry, SourceKind};
 /// that never materialise items (diff/list/cleanup) and just need *some* source
 /// to satisfy the engine's type parameter.
 pub struct ChunkStoreItemSource {
-    config: Config,
+    config: Arc<Config>,
     /// Logical source id → chunk `source_id LIKE` prefix.
     prefixes: HashMap<String, String>,
 }
 
 impl ChunkStoreItemSource {
     /// Adapter that can materialise items for any of `sources`.
-    pub fn for_sources(config: Config, sources: &[MemorySourceEntry]) -> Self {
+    pub fn for_sources(config: Arc<Config>, sources: &[MemorySourceEntry]) -> Self {
         let prefixes = sources
             .iter()
             .map(|s| (s.id.clone(), source_id_prefix(s)))
@@ -50,7 +51,7 @@ impl ChunkStoreItemSource {
     }
 
     /// Adapter scoped to a single source (the common `take_snapshot` path).
-    pub fn single(config: Config, source: &MemorySourceEntry) -> Self {
+    pub fn single(config: Arc<Config>, source: &MemorySourceEntry) -> Self {
         let mut prefixes = HashMap::new();
         prefixes.insert(source.id.clone(), source_id_prefix(source));
         Self { config, prefixes }
@@ -60,7 +61,7 @@ impl ChunkStoreItemSource {
     /// `diff_since_*`, `mark_read`, `diff_since_checkpoint`, `cleanup`) whose
     /// engine calls only touch the ledger. `items_for_source` always returns
     /// empty; it is never invoked on these paths.
-    pub fn read_only(config: Config) -> Self {
+    pub fn read_only(config: Arc<Config>) -> Self {
         Self {
             config,
             prefixes: HashMap::new(),
@@ -75,7 +76,7 @@ impl SnapshotItemSource for ChunkStoreItemSource {
         };
 
         let result =
-            crate::store::chunks::store::with_connection(&self.config, |conn| {
+            crate::store::chunks::store::with_connection(&*self.config, |conn| {
                 let mut stmt = conn.prepare(
                     "SELECT source_id, content \
                      FROM mem_tree_chunks \

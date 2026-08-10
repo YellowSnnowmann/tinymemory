@@ -10,6 +10,7 @@
 //! A per-source mutex prevents duplicate concurrent syncs when the user
 //! presses the sync button multiple times.
 
+use std::sync::Arc;
 use std::collections::HashSet;
 use std::sync::Mutex;
 
@@ -24,7 +25,7 @@ static ACTIVE_SYNCS: std::sync::LazyLock<Mutex<HashSet<String>>> =
 /// Trigger a sync for one source. Spawns work in the background and
 /// returns immediately. Progress is published as `MemorySyncStageChanged`
 /// events with `connection_id = Some(source.id)`.
-pub async fn sync_source(source: MemorySourceEntry, config: Config) -> Result<(), String> {
+pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Result<(), String> {
     if !source.enabled {
         return Err(format!("source '{}' is disabled", source.id));
     }
@@ -65,7 +66,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Config) -> Result<()
         let inner = tokio::spawn(async move {
             // Retry any previously-failed pipeline jobs so the worker
             // resumes processing through all documents.
-            if let Ok(retried) = crate::queue::store::retry_all_failed(&config) {
+            if let Ok(retried) = crate::queue::store::retry_all_failed(&*config) {
                 if retried > 0 {
                     tracing::info!(
                         retried = retried,
@@ -86,7 +87,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Config) -> Result<()
             let outcome = match source.kind {
                 SourceKind::Composio => {
                     match crate::tinycortex::run_source_pipeline(
-                        &source, &config,
+                        &source, &*config,
                     )
                     .await
                     {
@@ -103,19 +104,19 @@ pub async fn sync_source(source: MemorySourceEntry, config: Config) -> Result<()
                     }
                 }
                 SourceKind::Conversation | SourceKind::Folder => {
-                    crate::tinycortex::run_source_pipeline(&source, &config)
+                    crate::tinycortex::run_source_pipeline(&source, &*config)
                         .await
                         .map(|outcome| outcome.records_ingested as usize)
                         .map_err(|error| error.to_string())
                 }
                 SourceKind::GithubRepo => {
-                    crate::tinycortex::run_source_pipeline(&source, &config)
+                    crate::tinycortex::run_source_pipeline(&source, &*config)
                         .await
                         .map(|outcome| outcome.records_ingested as usize)
                         .map_err(|error| error.to_string())
                 }
                 SourceKind::RssFeed | SourceKind::WebPage => {
-                    crate::tinycortex::run_source_pipeline(&source, &config)
+                    crate::tinycortex::run_source_pipeline(&source, &*config)
                         .await
                         .map(|outcome| outcome.records_ingested as usize)
                         .map_err(|error| error.to_string())
@@ -148,7 +149,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Config) -> Result<()
                         append_audit_entry, SyncAuditEntry,
                     };
                     append_audit_entry(
-                        &config,
+                        &*config,
                         &SyncAuditEntry {
                             timestamp: chrono::Utc::now(),
                             source_id: source.id.clone(),
@@ -174,11 +175,11 @@ pub async fn sync_source(source: MemorySourceEntry, config: Config) -> Result<()
 
                     // Auto-rebuild: if raw files exist but the tree has
                     // no summaries, build the tree now.
-                    check_and_rebuild_tree(&source, &config).await;
+                    check_and_rebuild_tree(&source, &*config).await;
 
                     // Auto-snapshot: capture post-sync state for diff tracking.
                     if let Err(e) = crate::diff::ops::auto_snapshot_after_sync(
-                        &source, &config,
+                        &source, &*config,
                     )
                     .await
                     {
@@ -195,7 +196,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Config) -> Result<()
                         append_audit_entry, SyncAuditEntry,
                     };
                     append_audit_entry(
-                        &config,
+                        &*config,
                         &SyncAuditEntry {
                             timestamp: chrono::Utc::now(),
                             source_id: source.id.clone(),
@@ -319,7 +320,7 @@ pub(crate) struct SourceScope {
 }
 
 /// Derive the tree scope(s) + raw-archive id(s) that a source maps to.
-pub(crate) fn derive_scopes(source: &MemorySourceEntry, config: &Config) -> Vec<SourceScope> {
+pub fn derive_scopes(source: &MemorySourceEntry, config: &Config) -> Vec<SourceScope> {
     use crate::sources::readers::github;
 
     match source.kind {

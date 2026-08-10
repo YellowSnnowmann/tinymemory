@@ -44,7 +44,7 @@ pub async fn ensure_composio_sources() -> Option<HashSet<String>> {
 
     // Always hit Composio directly here — using list_sync_targets would
     // short-circuit through the registry and miss new connections.
-    let targets = match composio::scan_active_sync_targets(&config).await {
+    let targets = match composio::scan_active_sync_targets(&*config).await {
         Ok(t) => t,
         Err(e) => {
             tracing::debug!(

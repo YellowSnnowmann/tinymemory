@@ -13,6 +13,7 @@
 //! surfaces. This submodule is specifically the memory-sync half of that
 //! integration boundary.
 
+use std::sync::Arc;
 pub mod periodic;
 pub mod providers;
 
@@ -109,7 +110,7 @@ pub async fn scan_active_sync_targets(config: &Config) -> Result<Vec<SyncTarget>
 /// sync-audit caller can record Composio API-call cost alongside the LLM
 /// summarisation cost (#3111).
 pub async fn run_connection_sync(
-    config: Config,
+    config: Arc<Config>,
     connection_id: &str,
     reason: SyncReason,
 ) -> Result<(SyncOutcome, ComposioUsage), (String, ComposioUsage)> {
@@ -117,7 +118,7 @@ pub async fn run_connection_sync(
 
     let no_usage = |e: String| (e, ComposioUsage::default());
 
-    let target = list_sync_targets(&config)
+    let target = list_sync_targets(&*config)
         .await
         .map_err(no_usage)?
         .into_iter()
@@ -165,7 +166,7 @@ pub async fn run_connection_sync(
     match crate::tinycortex::run_composio_connection(
         &target.toolkit,
         &target.connection_id,
-        &config,
+        &*config,
     )
     .await
     {

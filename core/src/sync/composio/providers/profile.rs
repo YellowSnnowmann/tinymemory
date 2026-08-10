@@ -477,7 +477,7 @@ fn normalize_token(raw: &str) -> String {
     out.trim_matches('_').to_string()
 }
 
-pub(crate) fn normalize_connection_identifier(raw: &str) -> String {
+pub fn normalize_connection_identifier(raw: &str) -> String {
     normalize_token(raw)
 }
 

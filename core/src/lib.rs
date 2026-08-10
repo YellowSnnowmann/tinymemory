@@ -12,6 +12,7 @@
 //! credentials, schedulers, the event bus, and config mapping. The host
 //! supplies those through the seam traits in [`tinymemory_api::host`].
 
+use std::sync::Arc;
 /// The host's configuration, as this crate sees it.
 ///
 /// This is the load-bearing trick of the whole extraction. Before the move,
@@ -45,6 +46,7 @@ pub mod goals;
 pub mod ingest_pipeline;
 pub mod ingestion;
 pub mod learning_candidate;
+pub mod nlp_host;
 pub mod observability;
 pub mod people;
 pub mod preferences;
@@ -53,6 +55,7 @@ pub mod remember;
 pub mod rpc_models;
 pub mod scheduler_gate;
 pub mod search;
+pub mod shutdown;
 pub mod source_scope;
 pub mod sources;
 pub mod store;

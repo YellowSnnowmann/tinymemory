@@ -163,3 +163,28 @@ pub fn apply_kind_defaults(entry: &mut MemorySourceEntry) {
         _ => {}
     }
 }
+
+/// Decode the source registry a host config carries.
+///
+/// The registry crosses the host seam as JSON: [`MemorySourceEntry`] is defined
+/// by the engine crate, and `tinymemory-api` must not depend on it — that would
+/// drag SQLite into the dependency-light contract crate. So the host hands the
+/// registry over serialized and this is where it becomes typed again.
+///
+/// A malformed or absent registry yields an empty list rather than an error.
+/// Every caller is a background loop deciding what to sync, and "nothing is
+/// registered" is the fail-closed answer there; propagating would take the loop
+/// down over one bad row.
+#[must_use]
+pub fn decode_memory_sources(config: &crate::Config) -> Vec<MemorySourceEntry> {
+    match config.memory_sources_json() {
+        Ok(value) => serde_json::from_value(value).unwrap_or_else(|e| {
+            log::warn!("[memory_sources:registry] could not decode memory sources: {e:#}");
+            Vec::new()
+        }),
+        Err(e) => {
+            log::warn!("[memory_sources:registry] could not read memory sources: {e:#}");
+            Vec::new()
+        }
+    }
+}

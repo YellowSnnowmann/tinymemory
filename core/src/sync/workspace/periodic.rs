@@ -181,7 +181,7 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
         return Ok(());
     };
 
-    let (audit_index, audit_available) = workspace_audit_state(try_read_audit_log(&config));
+    let (audit_index, audit_available) = workspace_audit_state(try_read_audit_log(&*config));
     if !audit_available {
         tracing::warn!(
             "[memory_sync:workspace:periodic] audit unavailable; sources without in-memory cadence will be skipped"
@@ -190,8 +190,7 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
     let now = Utc::now();
     let map = fired_map();
 
-    let due_sources: Vec<MemorySourceEntry> = config
-        .memory_sources
+    let due_sources: Vec<MemorySourceEntry> = crate::sources::decode_memory_sources(&*config)
         .iter()
         .filter(|s| s.enabled && is_workspace_synced_kind(&s.kind))
         .filter(|s| {
@@ -232,7 +231,7 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
         );
         // sync_source spawns the actual work and returns immediately; it
         // rejects overlapping syncs of the same source internally.
-        match sync_source(source, config.clone()).await {
+        match sync_source(source, config.to_arc()).await {
             Ok(()) => {
                 if let Ok(mut guard) = map.lock() {
                     guard.insert(source_id, Instant::now());

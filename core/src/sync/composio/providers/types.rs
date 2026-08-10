@@ -328,23 +328,21 @@ impl ProviderContext {
         // users typically have no backend session token, which would
         // make a `build_composio_client` probe return None and falsely
         // skip them.
-        match composio_host::is_available(&config) {
-            true => Some(Self {
+        if composio_host::is_available(&*config) {
+            Some(Self {
                 config,
                 toolkit: toolkit.into(),
                 connection_id,
                 usage: ComposioUsageHandle::default(),
                 max_items: None,
                 sync_depth_days: None,
-            }),
-            Err(e) => {
-                tracing::debug!(
-                    error = %e,
-                    "[composio:provider_context] from_config: factory probe failed; \
-                     treating as not-signed-in"
-                );
-                None
-            }
+            })
+        } else {
+            tracing::debug!(
+                "[composio:provider_context] from_config: no viable Composio client; \
+                 treating as not-signed-in"
+            );
+            None
         }
     }
 
@@ -376,7 +374,7 @@ impl ProviderContext {
         // at context creation from the agent's scoped config — so reading from
         // it always reaches the correct user workspace and avoids a data-race
         // in tests that share the process env.
-        let live_config = config_rpc::reload_config_snapshot_with_timeout(&self.config)
+        let live_config = config_rpc::reload_config_snapshot_with_timeout(&*self.config)
             .await
             .map_err(|e| {
                 tracing::warn!(
@@ -390,7 +388,7 @@ impl ProviderContext {
         // Mode dispatch (backend tenant vs the user's own direct v3 tenant)
         // lives in the host's `ComposioHost` impl — this side just asks.
         let result = composio_host::execute(
-            &live_config,
+            &*live_config,
             action,
             arguments,
             &live_config.composio().entity_id,
@@ -502,7 +500,7 @@ mod tests {
         config.save().await.expect("save fake config to disk");
 
         let ctx = ProviderContext {
-            config: Arc::new(config),
+            config,
             toolkit: "gmail".to_string(),
             connection_id: None,
             usage: ComposioUsageHandle::default(),
@@ -537,7 +535,7 @@ mod tests {
         config.save().await.expect("save fake config to disk");
 
         let ctx = ProviderContext {
-            config: Arc::new(config),
+            config,
             toolkit: "gmail".to_string(),
             connection_id: None,
             usage: ComposioUsageHandle::default(),

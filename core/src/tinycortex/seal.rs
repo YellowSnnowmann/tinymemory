@@ -123,7 +123,7 @@ pub async fn seal_one_level(
     }
     let host_embedder = build_write_embedder(config)?;
     let embedder_bridge = host_embedder.as_deref().map(EmbedderBridge);
-    let summariser = HostSummariser::new(config.clone());
+    let summariser = HostSummariser::new(config.to_arc());
     let observer = Observer { config };
     let strategy = match strategy {
         LabelStrategy::ExtractFromContent(extractor) => {
@@ -166,7 +166,7 @@ pub async fn seal_document_subtree(
     }
     let host_embedder = build_write_embedder(config)?;
     let embedder_bridge = host_embedder.as_deref().map(EmbedderBridge);
-    let summariser = HostSummariser::new(config.clone());
+    let summariser = HostSummariser::new(config.to_arc());
     let observer = Observer { config };
     let strategy = match strategy {
         LabelStrategy::ExtractFromContent(extractor) => {
@@ -204,7 +204,7 @@ pub async fn cascade_tree(
 ) -> Result<Vec<String>> {
     let host_embedder = build_write_embedder(config)?;
     let embedder_bridge = host_embedder.as_deref().map(EmbedderBridge);
-    let summariser = HostSummariser::new(config.clone());
+    let summariser = HostSummariser::new(config.to_arc());
     let observer = Observer { config };
     let strategy = match strategy {
         LabelStrategy::ExtractFromContent(extractor) => {
@@ -240,7 +240,7 @@ pub async fn flush_stale_tree_buffers(
 ) -> Result<usize> {
     let host_embedder = build_write_embedder(config)?;
     let embedder_bridge = host_embedder.as_deref().map(EmbedderBridge);
-    let summariser = HostSummariser::new(config.clone());
+    let summariser = HostSummariser::new(config.to_arc());
     let observer = Observer { config };
     let strategy = match strategy {
         LabelStrategy::ExtractFromContent(extractor) => {

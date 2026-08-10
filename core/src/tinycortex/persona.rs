@@ -255,7 +255,7 @@ pub async fn ingest_coding_sessions(
             "[memory_persona] coding session ingestion: build_chat_provider failed"
         );
     })?;
-    let summariser = super::HostSummariser::new(config.clone());
+    let summariser = super::HostSummariser::new(config.to_arc());
     let store = FileStateStore::open_in_workspace(&config.workspace_dir()).inspect_err(|error| {
         tracing::error!(
             error = %error,

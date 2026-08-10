@@ -34,7 +34,7 @@ pub fn ensure_reembed_backfill(config: &crate::Config) {
         config,
         config.workspace_dir().clone(),
     );
-    let delegates = crate::tinycortex::HostQueueDelegates::new(config.clone());
+    let delegates = crate::tinycortex::HostQueueDelegates::new(config.to_arc());
     if let Err(error) = tinycortex::memory::queue::ensure_reembed_backfill(&memory, &delegates) {
         log::warn!("[memory::jobs] ensure_reembed_backfill failed: {error:#}");
     }

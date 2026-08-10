@@ -47,7 +47,7 @@ use tinyagents::harness::embeddings::{OllamaEmbeddingModel, RECOMMENDED_OLLAMA_C
 /// time (not factory build), preserving the prior failure behavior.
 fn cloud_session_available(config: &Config) -> bool {
     config
-        .config_path
+        .config_path()
         .parent()
         .map(|dir| dir.join("auth-profiles.json").exists())
         .unwrap_or(false)
@@ -154,7 +154,7 @@ fn resolve_embedder_choice(config: &Config) -> Result<EmbedderChoice> {
 
     // 2. Deliberate opt-out — vector search off by user choice.
     if config
-        .embeddings_provider
+        .embeddings_provider()
         .as_deref()
         .map(|s| s.trim())
         .is_some_and(|s| s == "none")
@@ -273,7 +273,7 @@ fn redact_ladder_error(config: &Config, err: &anyhow::Error) -> String {
     // configured form) plus every configured OpenAI-compatible endpoint
     // (LM Studio, vLLM, …), any of which the ladder may have been resolving.
     let mut endpoints: Vec<&str> = config
-        .memory
+        .memory()
         .embedding_provider
         .trim()
         .strip_prefix("custom:")

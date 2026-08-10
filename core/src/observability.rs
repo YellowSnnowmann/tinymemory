@@ -32,29 +32,40 @@ pub fn error_reporter() -> Option<Arc<dyn ErrorReporter>> {
 }
 
 /// Report `error` as a defect. A no-op beyond logging when nothing is installed.
-pub fn report_error(error: &anyhow::Error, domain: &str, operation: &str, tags: &[(&str, &str)]) {
+///
+/// Generic over `Display` exactly like the host's own `report_error`, and
+/// rendered with `{:#}` so an `anyhow::Error` carries its full context chain
+/// across the seam rather than just its outermost message.
+pub fn report_error<E: std::fmt::Display + ?Sized>(
+    error: &E,
+    domain: &str,
+    operation: &str,
+    tags: &[(&str, &str)],
+) {
+    let rendered = format!("{error:#}");
     match error_reporter() {
-        Some(reporter) => reporter.report_error(error, domain, operation, tags),
+        Some(reporter) => reporter.report_error(&rendered, domain, operation, tags),
         None => log::debug!(
             "[memory:observability] dropped report (no reporter installed) \
-             domain={domain} operation={operation}: {error:#}"
+             domain={domain} operation={operation}: {rendered}"
         ),
     }
 }
 
 /// Report `error`, letting the host classify defect vs expected failure. A
 /// no-op beyond logging when nothing is installed.
-pub fn report_error_or_expected(
-    error: &anyhow::Error,
+pub fn report_error_or_expected<E: std::fmt::Display + ?Sized>(
+    error: &E,
     domain: &str,
     operation: &str,
     tags: &[(&str, &str)],
 ) {
+    let rendered = format!("{error:#}");
     match error_reporter() {
-        Some(reporter) => reporter.report_error_or_expected(error, domain, operation, tags),
+        Some(reporter) => reporter.report_error_or_expected(&rendered, domain, operation, tags),
         None => log::debug!(
             "[memory:observability] dropped classified report (no reporter installed) \
-             domain={domain} operation={operation}: {error:#}"
+             domain={domain} operation={operation}: {rendered}"
         ),
     }
 }

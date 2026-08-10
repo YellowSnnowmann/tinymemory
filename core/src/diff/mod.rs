@@ -62,7 +62,6 @@ pub use stub::ops;
 pub mod source;
 
 
-#[cfg(feature = "memory-git")]
 pub use tinycortex::memory::diff::types::{
     ChangeKind, Checkpoint, CrossSourceDiff, DiffResult, DiffSummary, ItemChange, Snapshot,
     SnapshotTrigger,

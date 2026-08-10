@@ -53,11 +53,11 @@ pub async fn source_status(
     config: &Config,
     source: &MemorySourceEntry,
 ) -> Result<SourceStatus, String> {
-    let cfg = config.clone();
+    let cfg = config.to_arc();
     let source_clone = source.clone();
 
     tokio::task::spawn_blocking(move || {
-        with_connection(&cfg, |conn| {
+        with_connection(&*cfg, |conn| {
             let prefix = source_id_prefix(&source_clone);
 
             // Surface real query errors so status telemetry doesn't lie about

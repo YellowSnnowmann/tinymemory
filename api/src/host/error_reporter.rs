@@ -17,25 +17,25 @@
 //! bugs, which is why both exist.
 
 /// Receives error reports from the memory subsystem.
+///
+/// Takes the **already-rendered** message rather than a concrete error type:
+/// the trait has to be object-safe, so it cannot be generic over `E: Display`
+/// the way the host's own `report_error` is. The core's free functions keep
+/// that generic signature and render with `{:#}` — the alternate specifier that
+/// makes `anyhow::Error` print its full context chain — before crossing.
 pub trait ErrorReporter: Send + Sync + std::fmt::Debug {
     /// Report `error` as a defect worth investigating.
     ///
     /// `domain` and `operation` are stable, low-cardinality strings used for
     /// grouping (`"memory"` / `"tree_jobs_worker_corrupt"`); `tags` carries
     /// additional non-sensitive key/value context.
-    fn report_error(
-        &self,
-        error: &anyhow::Error,
-        domain: &str,
-        operation: &str,
-        tags: &[(&str, &str)],
-    );
+    fn report_error(&self, rendered: &str, domain: &str, operation: &str, tags: &[(&str, &str)]);
 
     /// Report `error`, letting the host classify it as a defect or an expected
     /// user/config failure and route it accordingly.
     fn report_error_or_expected(
         &self,
-        error: &anyhow::Error,
+        rendered: &str,
         domain: &str,
         operation: &str,
         tags: &[(&str, &str)],

@@ -13,9 +13,10 @@
 //! same `<kind>:<value>` namespace as the indexed chunk entities. No id
 //! mismatch, no bespoke join.
 
-pub use crate::openhuman::runtime::python_server::{
-    ensure_spacy, spacy_provisioned, SpacyResponse, SPACY_MODEL,
-};
+// Provisioning (`ensure_spacy`, `spacy_provisioned`, the model id) stayed in
+// the host — it downloads a Python toolchain and supervises a server. Only the
+// extraction call and its wire types cross the seam.
+pub use crate::nlp_host::{SpacyEntity, SpacyResponse};
 
 use crate::Config;
 use crate::tree::score::extract::{
@@ -50,7 +51,7 @@ pub async fn extract_query_entities(config: &Config, query: &str) -> Vec<Canonic
     }
 
     if config.memory_tree().spacy_enabled {
-        match crate::openhuman::runtime::python_server::extract_spacy(config, trimmed).await {
+        match crate::nlp_host::extract_spacy(config, trimmed).await {
             Ok(resp) => {
                 let extracted = spacy_to_extracted(&resp);
                 let canon = canonicalise(&extracted);
@@ -169,7 +170,7 @@ mod tests {
     fn spacy_response_maps_nouns_to_topics() {
         let resp = SpacyResponse {
             entities: vec![
-                crate::openhuman::runtime::python_server::spacy::SpacyEntity {
+                crate::nlp_host::SpacyEntity {
                     text: "Alice".into(),
                     label: "PERSON".into(),
                     start: 0,

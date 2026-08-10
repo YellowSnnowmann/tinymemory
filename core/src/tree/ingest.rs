@@ -33,7 +33,7 @@ pub async fn ingest_summary(
         &memory_config_from(config, config.workspace_dir().clone()),
         tree,
         input.clone(),
-        &HostSummariser::new(config.clone()),
+        &HostSummariser::new(config.to_arc()),
     )
     .await?;
 

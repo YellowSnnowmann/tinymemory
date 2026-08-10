@@ -352,7 +352,7 @@ pub fn create_memory(
     // No `Config` in scope here (tests + migration), so no credential store to
     // read — pass an empty key. Callers that select a keyed BYO provider must
     // use `create_memory_with_local_ai`, which resolves the stored credential.
-    create_memory_full(config, &[], None, None, "", workspace_dir)
+    create_memory_full(config, &[], None, None, "", workspace_dir, None)
 }
 
 /// Create a memory instance honouring the unified per-workload embedding
@@ -377,6 +377,7 @@ pub fn create_memory_with_local_ai(
     embedding_routes: &[EmbeddingRouteConfig],
     storage_provider: Option<&StorageProviderConfig>,
     workspace_dir: &Path,
+    sqlite_open_timeout_secs: Option<u64>,
 ) -> anyhow::Result<Box<dyn Memory>> {
     create_memory_full(
         memory,
@@ -385,6 +386,7 @@ pub fn create_memory_with_local_ai(
         local_embedding_model,
         embedding_api_key,
         workspace_dir,
+        sqlite_open_timeout_secs,
     )
 }
 
@@ -397,7 +399,7 @@ pub(crate) struct SessionMemory {
     pub sqlite_connection: Arc<Mutex<Connection>>,
 }
 
-pub(crate) fn create_session_memory_with_local_ai(
+pub fn create_session_memory_with_local_ai(
     memory: &MemoryConfig,
     local_embedding_model: Option<&str>,
     embedding_api_key: &str,
@@ -410,6 +412,7 @@ pub(crate) fn create_session_memory_with_local_ai(
     // the session's captures + recall (the `UnifiedMemory` SQLite store) into the
     // profile's own subtree so `dedicatedMemory` isolation actually takes effect.
     memory_subdir: &str,
+    sqlite_open_timeout_secs: Option<u64>,
 ) -> anyhow::Result<SessionMemory> {
     let memory = create_unified_memory_full(
         memory,
@@ -419,6 +422,7 @@ pub(crate) fn create_session_memory_with_local_ai(
         embedding_api_key,
         workspace_dir,
         memory_subdir,
+        sqlite_open_timeout_secs,
     )?;
     let sqlite_connection = Arc::clone(&memory.conn);
     Ok(SessionMemory {
@@ -474,6 +478,7 @@ fn create_memory_full(
     local_embedding_model: Option<&str>,
     embedding_api_key: &str,
     workspace_dir: &Path,
+    sqlite_open_timeout_secs: Option<u64>,
 ) -> anyhow::Result<Box<dyn Memory>> {
     Ok(Box::new(create_unified_memory_full(
         config,
@@ -485,6 +490,7 @@ fn create_memory_full(
         // Non-session callers (migration, standalone memory) always use the
         // shared default subtree.
         "memory",
+        sqlite_open_timeout_secs,
     )?))
 }
 
@@ -496,6 +502,9 @@ fn create_unified_memory_full(
     embedding_api_key: &str,
     workspace_dir: &Path,
     memory_subdir: &str,
+    // Threaded in rather than read off `config`: it is a *root* config setting,
+    // and this function only ever sees the memory section.
+    sqlite_open_timeout_secs: Option<u64>,
 ) -> anyhow::Result<UnifiedMemory> {
     // 1. Resolve the intended provider from config.
     let intended = effective_embedding_settings(config, local_embedding_model);
@@ -551,7 +560,9 @@ fn create_unified_memory_full(
     //    the prefix), so `custom_endpoint` stays `None` here. The key is never
     //    logged — the warning carries only provider/model/dims.
     let embedder: Arc<dyn EmbeddingProvider> = Arc::from(
-        require_embedding_host()?.create_embedding_provider_with_credentials(
+        require_embedding_host()
+        .map_err(anyhow::Error::msg)?
+        .create_embedding_provider_with_credentials(
             &provider,
             &model,
             dims,
@@ -562,7 +573,8 @@ fn create_unified_memory_full(
             log::warn!(
                 "[memory::factory] create_embedding_provider_with_credentials failed provider={provider} model={model} dims={dims}: {err}",
             );
-        })?,
+        })
+        .map_err(anyhow::Error::msg)?,
     );
 
     // 4. Instantiate UnifiedMemory which handles SQLite and vector storage,
@@ -572,7 +584,7 @@ fn create_unified_memory_full(
         workspace_dir,
         memory_subdir,
         embedder,
-        config.sqlite_open_timeout_secs(),
+        sqlite_open_timeout_secs,
     )
 }
 

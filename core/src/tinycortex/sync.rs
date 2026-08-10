@@ -1,5 +1,6 @@
 //! OpenHuman service adapters for tinycortex live synchronization.
 
+use std::sync::Arc;
 use async_trait::async_trait;
 use tinycortex::memory::sync::{
     ClickUpSyncPipeline, ComposioClient, ExternalSourceReader, GitHubSyncPipeline,
@@ -20,7 +21,7 @@ pub use tinycortex::memory::sync::{
 
 pub struct HostSyncAdapter {
     memory: MemoryClientRef,
-    config: Option<Config>,
+    config: Option<Arc<Config>>,
 }
 
 #[derive(Debug)]
@@ -54,7 +55,7 @@ impl HostSyncAdapter {
         }
     }
 
-    fn with_config(memory: MemoryClientRef, config: Config) -> Self {
+    fn with_config(memory: MemoryClientRef, config: Arc<Config>) -> Self {
         Self {
             memory,
             config: Some(config),
@@ -151,7 +152,7 @@ pub async fn rebuild_tree_from_raw(
 ) -> anyhow::Result<RebuildOutcome> {
     tracing::info!("[tinycortex:sync] raw rebuild starting");
     let memory_config = super::memory_config_from(config, config.workspace_dir().clone());
-    let summariser = super::HostSummariser::new(config.clone());
+    let summariser = super::HostSummariser::new(config.to_arc());
     let outcome = tinycortex::memory::sync::rebuild_tree_from_raw(
         &memory_config,
         tree_scope,
@@ -215,7 +216,7 @@ impl ExternalSourceReader for HostSyncAdapter {
         let host_source: MemorySourceEntry = serde_json::from_value(serde_json::to_value(source)?)?;
         let reader = crate::sources::readers::reader_for(&host_source.kind);
         let items = reader
-            .list_items(&host_source, config)
+            .list_items(&host_source, &**config)
             .await
             .map_err(anyhow::Error::msg)?;
         serde_json::from_value(serde_json::to_value(items)?).map_err(Into::into)
@@ -233,7 +234,7 @@ impl ExternalSourceReader for HostSyncAdapter {
         let host_source: MemorySourceEntry = serde_json::from_value(serde_json::to_value(source)?)?;
         let reader = crate::sources::readers::reader_for(&host_source.kind);
         let content = reader
-            .read_item(&host_source, item_id, config)
+            .read_item(&host_source, item_id, &**config)
             .await
             .map_err(anyhow::Error::msg)?;
         serde_json::from_value(serde_json::to_value(content)?).map_err(Into::into)
@@ -253,7 +254,7 @@ pub fn sync_context(memory: MemoryClientRef) -> SyncContext {
 }
 
 fn source_sync_context(memory: MemoryClientRef, config: &Config, local: bool) -> SyncContext {
-    let adapter = std::sync::Arc::new(HostSyncAdapter::with_config(memory, config.clone()));
+    let adapter = std::sync::Arc::new(HostSyncAdapter::with_config(memory, config.to_arc()));
     SyncContext {
         events: adapter.clone(),
         documents: adapter.clone(),
@@ -261,7 +262,7 @@ fn source_sync_context(memory: MemoryClientRef, config: &Config, local: bool) ->
         local_documents: local.then(|| adapter.clone() as std::sync::Arc<dyn LocalDocumentSink>),
         external_sources: local.then_some(adapter as std::sync::Arc<dyn ExternalSourceReader>),
         summariser: local.then(|| {
-            std::sync::Arc::new(super::HostSummariser::new(config.clone()))
+            std::sync::Arc::new(super::HostSummariser::new(config.to_arc()))
                 as std::sync::Arc<dyn tinycortex::memory::tree::Summariser>
         }),
     }
@@ -326,8 +327,7 @@ pub async fn run_composio_connection_with_budgets(
     max_items: Option<u32>,
     sync_depth_days: Option<u32>,
 ) -> Result<SyncOutcome, SourcePipelineFailure> {
-    let mut source = config
-        .memory_sources
+    let mut source = crate::sources::decode_memory_sources(&*config)
         .iter()
         .find(|source| {
             source.kind == SourceKind::Composio
@@ -550,11 +550,11 @@ fn composio_config(
             entity_id: Some(config.composio().entity_id.clone()),
         })
     } else {
-        let bearer = crate::api::jwt::get_session_token(config)?
+        let bearer = config.session_token()?
             .ok_or_else(|| "OpenHuman backend bearer token is not configured".to_string())?;
         Ok(ComposioSyncConfig {
             mode: ComposioMode::Proxied,
-            base_url: crate::api::config::effective_backend_api_url(&config.api_url()),
+            base_url: config.effective_backend_api_url(),
             api_key: None,
             bearer_token: Some(SecretString::new(bearer)),
             entity_id: Some(config.composio().entity_id.clone()),
@@ -618,7 +618,7 @@ impl LocalDocumentSink for HostSyncAdapter {
             source_ref: document.source_ref,
         };
         crate::ingest_pipeline::ingest_document_with_scope(
-            config,
+            &**config,
             &document.source_id,
             &document.owner,
             document.tags,
@@ -638,7 +638,7 @@ impl LocalDocumentSink for HostSyncAdapter {
         let source_id = source_id.to_owned();
         tokio::task::spawn_blocking(move || {
             crate::store::chunks::store::delete_chunks_by_source(
-                &config,
+                &*config,
                 crate::store::chunks::types::SourceKind::Document,
                 &source_id,
             )

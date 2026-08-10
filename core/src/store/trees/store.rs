@@ -52,7 +52,7 @@ pub fn list_trees_by_kind(config: &Config, kind: TreeKind) -> Result<Vec<Tree>> 
     tinycortex::memory::tree::store::list_trees_by_kind(&engine_config(config), kind)
 }
 
-pub(crate) fn update_tree_after_seal_tx(
+pub fn update_tree_after_seal_tx(
     tx: &Transaction<'_>,
     tree_id: &str,
     root_id: &str,
@@ -64,7 +64,7 @@ pub(crate) fn update_tree_after_seal_tx(
     )
 }
 
-pub(crate) fn insert_summary_tx(
+pub fn insert_summary_tx(
     tx: &Transaction<'_>,
     node: &SummaryNode,
     staged: Option<&StagedSummary>,

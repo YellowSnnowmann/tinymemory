@@ -1,5 +1,6 @@
 //! OpenHuman LLM adapter for tinycortex tree summarization.
 
+use std::sync::Arc;
 use async_trait::async_trait;
 use tinycortex::memory::tree::{
     Summariser, SummaryCall, SummaryContext, SummaryInput, SummaryOutput,
@@ -9,11 +10,11 @@ use crate::Config;
 
 #[derive(Clone)]
 pub struct HostSummariser {
-    config: Config,
+    config: Arc<Config>,
 }
 
 impl HostSummariser {
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Arc<Config>) -> Self {
         Self { config }
     }
 
@@ -23,7 +24,7 @@ impl HostSummariser {
         context: &SummaryContext<'_>,
     ) -> anyhow::Result<SummaryCall> {
         let output =
-            crate::tree::summarise::summarise(&self.config, inputs, context)
+            crate::tree::summarise::summarise(&*self.config, inputs, context)
                 .await?;
         Ok(SummaryCall {
             output: SummaryOutput {

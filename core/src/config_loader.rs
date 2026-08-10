@@ -34,10 +34,14 @@ pub trait ConfigLoader: Send + Sync + std::fmt::Debug {
     /// Load the config the way startup does, following the ambient
     /// environment.
     ///
+    /// Returns a `Box`, not an `Arc`: callers that run a config *migration*
+    /// need `&mut` to write settings back, which an `Arc<dyn _>` cannot give.
+    /// Sharing one is a free `Arc::from` at the few sites that need it.
+    ///
     /// # Errors
     ///
     /// Returns `Err` when the config cannot be read or times out.
-    async fn load(&self) -> Result<Arc<Config>, String>;
+    async fn load(&self) -> Result<Box<Config>, String>;
 
     /// Re-read the config from the same path `snapshot` was loaded from.
     ///
@@ -74,9 +78,18 @@ pub fn config_loader() -> Option<Arc<dyn ConfigLoader>> {
 /// # Errors
 ///
 /// Returns `Err` when no loader is installed, or the load fails.
-pub async fn load_config_with_timeout() -> Result<Arc<Config>, String> {
+pub async fn load_config_with_timeout() -> Result<Box<Config>, String> {
     let loader = config_loader().ok_or_else(|| NOT_INSTALLED.to_string())?;
     loader.load().await
+}
+
+/// Load a fresh config as a shareable handle, for callers that only read it.
+///
+/// # Errors
+///
+/// Returns `Err` when no loader is installed, or the load fails.
+pub async fn load_config_arc() -> Result<Arc<Config>, String> {
+    Ok(Arc::from(load_config_with_timeout().await?))
 }
 
 /// Re-read the config `snapshot` came from.

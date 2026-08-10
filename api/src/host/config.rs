@@ -135,8 +135,40 @@ pub trait MemoryHostConfig: Send + Sync + std::fmt::Debug {
 
     // ── Scalars ─────────────────────────────────────────────────────────────
 
+    /// An owned, shareable handle to this config.
+    ///
+    /// `tinymemory_core::Config` is the *unsized* `dyn MemoryHostConfig`, which
+    /// makes `&Config` free at every call site — the host's concrete `Config`
+    /// unsize-coerces with no edit. The cost is that a borrow cannot be turned
+    /// into an owned value: background loops that outlive their caller, structs
+    /// that hold a config, and `spawn_blocking` bodies all need one.
+    ///
+    /// This is that escape hatch. Implementations return
+    /// `Arc::new(self.clone())`; callers that only read should keep taking
+    /// `&Config` rather than reaching for this.
+    fn to_arc(&self) -> std::sync::Arc<dyn MemoryHostConfig>;
+
     /// Backend base URL, used to recognise first-party endpoints.
     fn api_url(&self) -> Option<&str>;
+
+    /// The backend API URL this host actually talks to, with the host's own
+    /// environment and default resolution already applied.
+    ///
+    /// Distinct from [`Self::api_url`], which is the raw configured value —
+    /// resolution (env override, staging/prod default, trailing-slash
+    /// normalisation) is host logic and must not be re-derived here.
+    fn effective_backend_api_url(&self) -> String;
+
+    /// The current backend session bearer, or `None` when signed out.
+    ///
+    /// Read through the trait rather than from a config field because the host
+    /// keeps it in its credential store, not in `config.toml`.
+    ///
+    /// # Errors
+    ///
+    /// Returns `Err` when the credential store cannot be read — distinct from
+    /// `Ok(None)`, which means "read fine, not signed in".
+    fn session_token(&self) -> Result<Option<String>, String>;
 
     /// Default chat model id.
     fn default_model(&self) -> Option<&str>;

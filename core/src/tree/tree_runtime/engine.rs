@@ -114,7 +114,7 @@ pub async fn rebuild_tree(
     .await
 }
 
-pub async fn run_hourly_loop(config: Config, provider: Arc<dyn ChatModel<()>>) {
+pub async fn run_hourly_loop(config: Arc<Config>, provider: Arc<dyn ChatModel<()>>) {
     log::debug!("[tree_summarizer] hourly loop started");
     loop {
         let now = Utc::now();
@@ -135,13 +135,13 @@ pub async fn run_hourly_loop(config: Config, provider: Arc<dyn ChatModel<()>>) {
 
         let ts = Utc::now();
         let namespaces =
-            tinycortex::memory::tree::runtime::discover_active_namespaces(&engine_config(&config));
+            tinycortex::memory::tree::runtime::discover_active_namespaces(&engine_config(&*config));
         log::debug!(
             "[tree_summarizer] hourly tick active_namespaces={}",
             namespaces.len()
         );
         for namespace in namespaces {
-            if let Err(error) = run_summarization(&config, provider.as_ref(), &namespace, ts).await
+            if let Err(error) = run_summarization(&*config, provider.as_ref(), &namespace, ts).await
             {
                 log::error!(
                     "[tree_summarizer] hourly run failed namespace={} error={error:#}",

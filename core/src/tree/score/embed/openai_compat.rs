@@ -97,7 +97,7 @@ impl OpenAiCompatEmbedder {
                     return Ok(None);
                 }
                 match config
-                    .cloud_providers
+                    .cloud_providers()
                     .iter()
                     .find(|e| e.slug == bare)
                     .map(|e| e.endpoint.trim())

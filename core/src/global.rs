@@ -193,7 +193,7 @@ fn client_from(slot: &GlobalClientSlot) -> Result<MemoryClientRef, String> {
 /// Reading the workspace rather than the client keeps the two resolutions
 /// answering about the same store instead of drifting onto whatever
 /// `Config::load_or_init` happens to say.
-pub(crate) fn active_workspace_dir() -> Option<PathBuf> {
+pub fn active_workspace_dir() -> Option<PathBuf> {
     global_slot()
         .read()
         .ok()?
@@ -254,7 +254,7 @@ fn cache_client(workspace_dir: &Path, client: &MemoryClientRef) -> Result<Memory
 ///
 /// Lock poisoning, or any failure constructing a fresh
 /// [`MemoryClient::from_workspace_dir`] (directory creation, store open).
-pub(crate) fn client_for_workspace(workspace_dir: &Path) -> Result<MemoryClientRef, String> {
+pub fn client_for_workspace(workspace_dir: &Path) -> Result<MemoryClientRef, String> {
     if let Some(existing) = global_slot()
         .read()
         .map_err(|e| format!("[memory:global] read lock poisoned: {e}"))?

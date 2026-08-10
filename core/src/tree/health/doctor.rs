@@ -139,12 +139,12 @@ pub fn run_doctor(config: &Config) -> DoctorReport {
     //    (`build_write_embedder` skips embedding when none is, so this is the
     //    most common "empty wiki" root cause.)
     let embeddings_provider = config
-        .memory_tree
+        .memory_tree()
         .embedding_endpoint
         .as_deref()
         .filter(|s| !s.trim().is_empty())
         .map(|_| "ollama-override".to_string())
-        .or_else(|| config.embeddings_provider().clone())
+        .or_else(|| config.embeddings_provider().map(str::to_string))
         .filter(|s| !s.trim().is_empty());
     stages.push(match embeddings_provider.as_deref() {
         // Explicit `none` opt-out: semantic recall is off by the user's choice,
@@ -226,7 +226,7 @@ pub fn run_doctor(config: &Config) -> DoctorReport {
     //    the configured cloud provider when local AI is off, so local-AI-off is
     //    NOT a fault by itself. Only `bad` when no provider resolves at all.
     let (summary_ok, summary_note) =
-        crate::tree::tree_runtime::ops::summarizer_available(config);
+        crate::chat_host::summarizer_available(config);
     stages.push(if summary_ok {
         StageHealth::ok("summary_tree", summary_note)
     } else {
@@ -257,8 +257,8 @@ pub fn run_doctor(config: &Config) -> DoctorReport {
 /// extraction coverage); a contended DB could pin a Tokio worker for the
 /// busy-timeout window, so offload the whole diagnostic to a blocking thread.
 pub async fn async_run_doctor(config: &Config) -> DoctorReport {
-    let cfg = config.clone();
-    match tokio::task::spawn_blocking(move || run_doctor(&cfg)).await {
+    let cfg = config.to_arc();
+    match tokio::task::spawn_blocking(move || run_doctor(&*cfg)).await {
         Ok(report) => report,
         Err(join_err) => {
             // The blocking task panicked — surface a degraded-but-shaped report

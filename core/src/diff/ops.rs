@@ -38,7 +38,7 @@ pub async fn take_snapshot(
     trigger: SnapshotTrigger,
 ) -> Result<Snapshot, String> {
     let workspace_dir = config.workspace_dir().clone();
-    let config_clone = config.clone();
+    let config_clone = config.to_arc();
     let source_owned = source.clone();
     let desc = descriptor(source);
 
@@ -114,7 +114,7 @@ pub async fn compute_diff(
     include_text_diff: bool,
 ) -> Result<DiffResult, String> {
     let workspace_dir = config.workspace_dir().clone();
-    let config_clone = config.clone();
+    let config_clone = config.to_arc();
     let to_id = to_snapshot_id.to_string();
     let from_id = from_snapshot_id.map(|s| s.to_string());
 
@@ -134,7 +134,7 @@ pub async fn diff_since_last(
     include_text_diff: bool,
 ) -> Result<DiffResult, String> {
     let workspace_dir = config.workspace_dir().clone();
-    let config_clone = config.clone();
+    let config_clone = config.to_arc();
     let source_id = source.id.clone();
 
     tokio::task::spawn_blocking(move || -> anyhow::Result<DiffResult> {
@@ -160,7 +160,7 @@ pub async fn diff_since_read(
     commit: bool,
 ) -> Result<DiffResult, String> {
     let workspace_dir = config.workspace_dir().clone();
-    let config_clone = config.clone();
+    let config_clone = config.to_arc();
     let source_id = source.id.clone();
 
     let diff = tokio::task::spawn_blocking(move || -> anyhow::Result<DiffResult> {
@@ -201,7 +201,7 @@ pub async fn mark_read(config: &Config, source_ids: Option<Vec<String>>) -> Resu
     };
 
     let workspace_dir = config.workspace_dir().clone();
-    let config_clone = config.clone();
+    let config_clone = config.to_arc();
     let ids_for_blocking = target_ids.clone();
 
     let (marked, snapshot_ids) =
@@ -245,7 +245,7 @@ pub async fn create_checkpoint(label: &str, config: &Config) -> Result<Checkpoin
     let enabled: Vec<MemorySourceEntry> = sources.into_iter().filter(|s| s.enabled).collect();
 
     let workspace_dir = config.workspace_dir().clone();
-    let config_clone = config.clone();
+    let config_clone = config.to_arc();
     let label_owned = label.to_string();
 
     let checkpoint = tokio::task::spawn_blocking(move || -> anyhow::Result<Checkpoint> {
@@ -274,7 +274,7 @@ pub async fn diff_since_checkpoint(
     include_text_diff: bool,
 ) -> Result<CrossSourceDiff, String> {
     let workspace_dir = config.workspace_dir().clone();
-    let config_clone = config.clone();
+    let config_clone = config.to_arc();
     let ckpt_id = checkpoint_id.to_string();
 
     tokio::task::spawn_blocking(move || -> anyhow::Result<CrossSourceDiff> {
@@ -293,7 +293,7 @@ pub async fn diff_since_checkpoint(
 /// Returns the number of checkpoints deleted.
 pub async fn cleanup(config: &Config, older_than_days: u32) -> Result<u64, String> {
     let workspace_dir = config.workspace_dir().clone();
-    let config_clone = config.clone();
+    let config_clone = config.to_arc();
 
     tokio::task::spawn_blocking(move || -> anyhow::Result<u64> {
         let engine = DiffEngine::new(workspace_dir, ChunkStoreItemSource::read_only(config_clone));

@@ -23,6 +23,7 @@
 //! reporting, event-bus publishing, and product-policy hooks while the crate
 //! owns claim/dispatch/settle.
 
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -333,13 +334,13 @@ pub fn classify_worker_error(err: &anyhow::Error) -> WorkerErrorAction {
 /// re-points `global.rs`/enqueue onto the crate store and deletes the legacy
 /// engine.
 pub struct HostQueueDelegates {
-    config: Config,
+    config: Arc<Config>,
 }
 
 impl HostQueueDelegates {
     /// Build the delegates over the host [`Config`] whose workspace the crate
     /// queue is driving.
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Arc<Config>) -> Self {
         Self { config }
     }
 }
@@ -356,7 +357,7 @@ impl QueueDelegates for HostQueueDelegates {
         _config: &MemoryConfig,
         chunk_id: &str,
     ) -> anyhow::Result<Option<ExtractDecision>> {
-        let config = &self.config;
+        let config = &*self.config;
         let Some(mut chunk) = chunk_store::get_chunk(config, chunk_id)? else {
             return Ok(None);
         };
@@ -437,7 +438,7 @@ impl QueueDelegates for HostQueueDelegates {
         node: &NodeRef,
         target: &AppendTarget,
     ) -> anyhow::Result<Option<AppendDecision>> {
-        let config = &self.config;
+        let config = &*self.config;
 
         // Buffer accounting needs only (item_id, token_count, timestamp); the
         // full body/entities are re-read from disk at seal time, so — unlike the
@@ -503,7 +504,7 @@ impl QueueDelegates for HostQueueDelegates {
                 trees_store::upsert_buffer_tx(&tx, &buf)?;
             }
             let memory_config =
-                super::memory_config_from(&self.config, self.config.workspace_dir().clone());
+                super::memory_config_from(&*self.config, self.config.workspace_dir().clone());
             let should_seal = tinycortex::memory::tree::should_seal(&memory_config, &buf);
             if is_source_target {
                 if let Some(cid) = lifecycle_chunk_id.as_deref() {
@@ -538,23 +539,23 @@ impl QueueDelegates for HostQueueDelegates {
         _config: &MemoryConfig,
         payload: &SealPayload,
     ) -> anyhow::Result<Option<SealPayload>> {
-        let Some(tree) = trees_store::get_tree(&self.config, &payload.tree_id)? else {
+        let Some(tree) = trees_store::get_tree(&*self.config, &payload.tree_id)? else {
             return Ok(None);
         };
-        let buf = trees_store::get_buffer(&self.config, &tree.id, payload.level)?;
+        let buf = trees_store::get_buffer(&*self.config, &tree.id, payload.level)?;
         let forced = payload.force_now_ms.is_some();
         let memory_config =
-            super::memory_config_from(&self.config, self.config.workspace_dir().clone());
+            super::memory_config_from(&*self.config, self.config.workspace_dir().clone());
         if buf.is_empty()
             || (!forced && !tinycortex::memory::tree::should_seal(&memory_config, &buf))
         {
             return Ok(None);
         }
-        let strategy = TreeFactory::from_tree(&tree).label_strategy(&self.config);
-        let summary_id = super::seal_tree_level(&self.config, &tree, &buf, &strategy, true).await?;
+        let strategy = TreeFactory::from_tree(&tree).label_strategy(&*self.config);
+        let summary_id = super::seal_tree_level(&*self.config, &tree, &buf, &strategy, true).await?;
         // Best-effort: rewrite the sealed summary's on-disk obsidian tags. Entity
         // rows were committed inside seal_one_level, so they are visible here.
-        if let Err(e) = content_store::update_summary_tags(&self.config, &summary_id) {
+        if let Err(e) = content_store::update_summary_tags(&*self.config, &summary_id) {
             log::warn!(
                 "[tinycortex::queue_driver] update_summary_tags failed for summary_id={summary_id}: {e:#}"
             );
@@ -570,7 +571,7 @@ impl QueueDelegates for HostQueueDelegates {
         max_age_secs: i64,
     ) -> anyhow::Result<Vec<StaleBuffer>> {
         let cutoff = chrono::Utc::now() - chrono::Duration::seconds(max_age_secs);
-        let buffers = trees_store::list_stale_buffers(&self.config, cutoff)?;
+        let buffers = trees_store::list_stale_buffers(&*self.config, cutoff)?;
         Ok(buffers
             .into_iter()
             .map(|b| StaleBuffer {
@@ -591,10 +592,10 @@ impl QueueDelegates for HostQueueDelegates {
             return Ok(());
         }
         // One physical tree per connection scope (e.g. notion:{connection_id}).
-        let tree = get_or_create_source_tree(&self.config, &payload.tree_scope)?;
-        let strategy = TreeFactory::from_tree(&tree).label_strategy(&self.config);
+        let tree = get_or_create_source_tree(&*self.config, &payload.tree_scope)?;
+        let strategy = TreeFactory::from_tree(&tree).label_strategy(&*self.config);
         super::seal_document_subtree(
-            &self.config,
+            &*self.config,
             &tree,
             &payload.doc_id,
             payload.version_ms,
@@ -615,7 +616,7 @@ impl QueueDelegates for HostQueueDelegates {
         _config: &MemoryConfig,
         signature: &str,
     ) -> anyhow::Result<ReembedProgress> {
-        let config = &self.config;
+        let config = &*self.config;
         let active_sig = chunk_store::tree_active_signature(config);
         if active_sig != signature {
             // The embedder changed since this chain started — a fresh chain for
@@ -723,7 +724,7 @@ impl QueueDelegates for HostQueueDelegates {
     /// The active embedding-space signature the queue re-embed switch-path keys
     /// on — the config-derived `provider={};model={};dims={}` string (P10).
     fn active_signature(&self, _config: &MemoryConfig) -> String {
-        chunk_store::tree_active_signature(&self.config)
+        chunk_store::tree_active_signature(&*self.config)
     }
 
     /// Whether any chunk/summary still lacks a vector at `signature` — the
@@ -734,7 +735,7 @@ impl QueueDelegates for HostQueueDelegates {
         _config: &MemoryConfig,
         signature: &str,
     ) -> anyhow::Result<bool> {
-        chunk_store::with_connection(&self.config, |conn| {
+        chunk_store::with_connection(&*self.config, |conn| {
             Ok(chunk_store::has_uncovered_reembed_work(conn, signature)?)
         })
     }
