@@ -20,7 +20,10 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DriverClassParseError {
     /// The raw class value is unsupported.
-    Unknown { raw: String },
+    Unknown {
+        /// The unrecognized input, retained for diagnostics that stay local.
+        raw: String,
+    },
 }
 
 impl fmt::Display for DriverClassParseError {

@@ -85,7 +85,7 @@ fn an_unparseable_class_is_refused_with_the_raw_value() {
             labels(),
         )
         .expect_err("a misspelled class is refused");
-    assert_eq!(refusal.reason, "unknown driver class: emebdded");
+    assert_eq!(refusal.reason, "unknown driver class");
 }
 
 /// The rule that keeps a bound engine truthfully labelled: a reserved id's
