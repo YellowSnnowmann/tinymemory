@@ -181,7 +181,7 @@ impl MemoryClient {
         self.ingestion_queue.submit(IngestionJob {
             document_id: document_id.clone(),
             document: input,
-            config: MemoryIngestionTestHostConfig::default(),
+            config: MemoryIngestionConfig::default(),
         });
 
         Ok(document_id)
@@ -328,7 +328,7 @@ impl MemoryClient {
         self.ingestion_queue.submit(IngestionJob {
             document_id: doc_id,
             document: input,
-            config: MemoryIngestionTestHostConfig::default(),
+            config: MemoryIngestionConfig::default(),
         });
 
         Ok(())

@@ -372,7 +372,7 @@ async fn ingest_doc_completes_and_stores_document() {
     let (_tmp, client) = make_client();
     let req = MemoryIngestionRequest {
         document: doc("ingest-ns", "direct-k", "inline sync ingest body"),
-        config: MemoryIngestionTestHostConfig::default(),
+        config: MemoryIngestionConfig::default(),
     };
     let result = client.ingest_doc(req).await;
     // Depending on whether the embedder is reachable the call may

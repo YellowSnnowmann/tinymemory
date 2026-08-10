@@ -51,7 +51,7 @@ impl TreeJobSink for HostTreeJobSink {
 fn scoring_config(config: &Config) -> ScoringConfig {
     match super::build_chat_provider(config) {
         Ok(provider) => {
-            let mut extractor = LlmExtractorTestHostConfig::default();
+            let mut extractor = LlmExtractorConfig::default();
             extractor.output_language = config.output_language().map(str::to_string);
             ScoringConfig::with_llm_extractor(std::sync::Arc::new(LlmEntityExtractor::new(
                 extractor, provider,

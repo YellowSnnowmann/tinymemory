@@ -13,7 +13,7 @@ use crate::{MemoryIngestionConfig, MemoryIngestionRequest};
 
 /// Test config for the heuristic-only ingestion pipeline.
 fn ci_safe_config() -> MemoryIngestionConfig {
-    MemoryIngestionTestHostConfig::default()
+    MemoryIngestionConfig::default()
 }
 
 fn fixture(path: &str) -> String {

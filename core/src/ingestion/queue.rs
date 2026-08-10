@@ -315,7 +315,7 @@ mod tests {
                 document_id: None,
                 taint: crate::MemoryTaint::Internal,
             },
-            config: MemoryIngestionTestHostConfig::default(),
+            config: MemoryIngestionConfig::default(),
         }
     }
 

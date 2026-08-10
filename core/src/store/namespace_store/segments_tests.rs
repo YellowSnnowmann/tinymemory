@@ -95,7 +95,7 @@ fn open_segment_for_session_returns_latest() {
 
 #[test]
 fn boundary_detection_time_gap() {
-    let config = BoundaryTestHostConfig::default();
+    let config = BoundaryConfig::default();
     let seg = ConversationSegment {
         segment_id: "s1".into(),
         session_id: "sess".into(),
@@ -129,7 +129,7 @@ fn boundary_detection_time_gap() {
 
 #[test]
 fn boundary_detection_explicit_marker() {
-    let config = BoundaryTestHostConfig::default();
+    let config = BoundaryConfig::default();
     let seg = ConversationSegment {
         segment_id: "s1".into(),
         session_id: "sess".into(),
@@ -196,7 +196,7 @@ fn boundary_detection_turn_count() {
 
 #[test]
 fn boundary_detection_embedding_drift() {
-    let config = BoundaryTestHostConfig::default();
+    let config = BoundaryConfig::default();
     let seg = ConversationSegment {
         segment_id: "s1".into(),
         session_id: "sess".into(),
@@ -338,7 +338,7 @@ fn segment_set_keywords_stores_and_reads() {
 
 #[test]
 fn boundary_no_false_positive_on_short_messages() {
-    let config = BoundaryTestHostConfig::default();
+    let config = BoundaryConfig::default();
     let seg = ConversationSegment {
         segment_id: "s1".into(),
         session_id: "sess".into(),
