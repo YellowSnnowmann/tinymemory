@@ -42,7 +42,7 @@ use std::fmt;
 
 mod class;
 
-pub use class::DriverClass;
+pub use class::{DriverClass, DriverClassParseError};
 
 #[cfg(test)]
 #[path = "test.rs"]
