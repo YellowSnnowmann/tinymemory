@@ -1,8 +1,12 @@
-//! Stable public contracts for the TinyCortex memory system.
+//! Stable public contracts for the TinyMemory memory system.
 //!
 //! This crate holds the value types, error enum, capability vocabulary, and
-//! storage trait that both the `tinycortex` engine and its embedding hosts
-//! compile against. It is deliberately dependency-light (serde / serde_json /
+//! storage trait that memory engines and their embedding hosts compile
+//! against. It is engine-neutral on purpose: `tinycortex` is the default
+//! embedded engine, not the owner of the contract, and a second engine
+//! (`supermemory`, `mem0`, a self-hosted HTTP backend) implements the same
+//! traits without either engine learning about the other.
+//! It is deliberately dependency-light (serde / serde_json /
 //! chrono / sha2 / anyhow / thiserror / async-trait / uuid only) so depending on
 //! the contract never drags in SQLite, git2, reqwest, regex, or an async
 //! runtime.
