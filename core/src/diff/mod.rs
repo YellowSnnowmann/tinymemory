@@ -58,16 +58,14 @@ pub mod ops;
 mod stub;
 #[cfg(not(feature = "memory-git"))]
 pub use stub::ops;
-#[cfg(not(feature = "memory-git"))]
-pub use stub::{Checkpoint, CrossSourceDiff, Snapshot};
 #[cfg(feature = "memory-git")]
 pub mod source;
 
 
-// `tinycortex::memory::diff` exists only under `tinycortex/git-diff`, which
-// `memory-git` turns on. With the feature off the stub's placeholders take
-// their place — see `stub::placeholder_types` for why they are opaque.
-#[cfg(feature = "memory-git")]
+// Ungated in both builds, mirroring tinycortex's own carve-out: its
+// `memory::diff::{types, source}` are serde-only wire types and stay compiled;
+// only the git-touching `ledger`/`DiffEngine` half sits behind `git-diff`. A
+// stub copy would be a second definition of one serde shape, free to drift.
 pub use tinycortex::memory::diff::types::{
     ChangeKind, Checkpoint, CrossSourceDiff, DiffResult, DiffSummary, ItemChange, Snapshot,
     SnapshotTrigger,

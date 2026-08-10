@@ -75,13 +75,9 @@ default = []
 # `diff` domain's ops are stubbed rather than `#[cfg]`'d at each call site, so a
 # diff simply never materialises.
 #
-# NOT in `default`, matching the host. The off-path did not originally build —
-# `diff/mod.rs` re-exported `tinycortex::memory::diff::types::{…}` ungated while
-# the modules behind them were gated, and that engine module only exists under
-# `tinycortex/git-diff`. The same two lines are ungated on the host's `main`, so
-# `cargo check --no-default-features` fails there too and CI never builds that
-# configuration. Fixed here by gating the re-export and giving the stub opaque
-# placeholder types; the host's copy is still worth fixing the same way.
+# NOT in `default`, matching the host. The off-path builds because tinycortex
+# makes the same carve-out: its `memory::diff::{types, source}` are serde-only
+# and stay compiled, so only the git-touching half disappears.
 memory-git = ["dep:git2", "tinycortex/git-diff", "tinycortex/wiki-git"]
 # Exposes the crate's test helpers (`chat::test_override`,
 # `chat::StaticChatProvider`, `tool_memory::test_helpers`) to *other* crates'
