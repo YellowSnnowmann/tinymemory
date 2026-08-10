@@ -394,7 +394,7 @@ pub fn create_memory_with_local_ai(
 ///
 /// The storage abstraction remains backend-neutral while SQLite-specific
 /// consumers receive the concrete shared connection explicitly.
-pub(crate) struct SessionMemory {
+pub struct SessionMemory {
     pub memory: Box<dyn Memory>,
     pub sqlite_connection: Arc<Mutex<Connection>>,
 }

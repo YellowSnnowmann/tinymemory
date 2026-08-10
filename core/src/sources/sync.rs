@@ -310,7 +310,7 @@ pub(crate) async fn check_and_rebuild_tree(source: &MemorySourceEntry, config: &
 /// `github.com/owner/repo`) — conflating them makes reconcile scan an
 /// empty directory while the real archive sits uncovered.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct SourceScope {
+pub struct SourceScope {
     /// Tree registry key, e.g. `"github:owner/repo"`.
     pub tree_scope: String,
     /// Raw-archive id whose slug names `raw/<slug>/`, e.g.

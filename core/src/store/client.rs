@@ -59,12 +59,19 @@ impl MemoryClient {
     /// Returns a handle to the underlying SQLite connection backing the
     /// profile/facet tables.
     ///
-    /// Narrowed from `pub(crate)` to `pub(in crate)`: a raw
-    /// `Arc<Mutex<Connection>>` cannot be wrapped by any decorator, so no
-    /// caller outside the memory family may hold one. [`Self::profile_store`]
-    /// is the only door out, and every SQL statement against `user_profile`
-    /// now lives inside this family.
-    pub(in crate) fn profile_conn(
+    /// A raw `Arc<Mutex<Connection>>` cannot be wrapped by any decorator, so
+    /// no caller outside the memory family may hold one.
+    /// [`Self::profile_store`] is the only door out, and every SQL statement
+    /// against `user_profile` belongs inside the family.
+    ///
+    /// It was `pub(in crate)` before the memory subsystem was extracted, which
+    /// let the compiler enforce that directly. The family now spans two crates
+    /// — this one and the host's `openhuman::memory` — so the rule cannot be a
+    /// visibility any more. It is enforced by
+    /// `profile_conn_is_confined_to_the_memory_family` in the host, which scans
+    /// the host tree and names the offending file; a visibility error read as
+    /// "private method", not as "you are reaching around the guard".
+    pub fn profile_conn(
         &self,
     ) -> std::sync::Arc<parking_lot::Mutex<rusqlite::Connection>> {
         std::sync::Arc::clone(&self.inner.conn)
@@ -77,7 +84,7 @@ impl MemoryClient {
     /// still run beneath [`crate::guard::MemoryGuard`]'s
     /// seven steps. What this buys is confinement, not policy: the SQL is in
     /// the memory family and the compiler keeps it there.
-    pub(crate) fn profile_store(&self) -> crate::store::ProfileStore {
+    pub fn profile_store(&self) -> crate::store::ProfileStore {
         tracing::debug!("[memory::profile_store] handing out typed profile store");
         crate::store::ProfileStore::from_conn(self.profile_conn())
     }
@@ -92,7 +99,7 @@ impl MemoryClient {
     /// external consumer bypasses any policy decorator wrapped around the
     /// `MemoryClient` API, so the escape hatch stays in-crate. Mirrors
     /// [`Self::profile_conn`].
-    pub(crate) fn memory_handle(&self) -> Arc<dyn crate::Memory> {
+    pub fn memory_handle(&self) -> Arc<dyn crate::Memory> {
         Arc::clone(&self.inner) as Arc<dyn crate::Memory>
     }
 
@@ -340,7 +347,7 @@ impl MemoryClient {
     /// ([`crate::driver::embedded`]), which needs a read-one
     /// path that [`Self::list_documents`] cannot provide — the latter's SELECT
     /// carries no `content` column.
-    pub(crate) async fn get_document(
+    pub async fn get_document(
         &self,
         namespace: &str,
         key: &str,
@@ -485,7 +492,7 @@ impl MemoryClient {
     /// [`Self::kv_list_namespace`], which returns a camelCase
     /// `Vec<serde_json::Value>` with no `updated_at` and no global slice —
     /// re-parsing that back into [`MemoryKvRecord`] would be lossy new logic.
-    pub(crate) async fn kv_records(
+    pub async fn kv_records(
         &self,
         namespace: Option<&str>,
     ) -> Result<Vec<MemoryKvRecord>, String> {
@@ -503,7 +510,7 @@ impl MemoryClient {
     /// returns camelCase JSON, these return the record type directly.
     ///
     /// Inherits the storage layer's hard `LIMIT 300` per SQL statement.
-    pub(crate) async fn graph_relations(
+    pub async fn graph_relations(
         &self,
         namespace: Option<&str>,
         subject: Option<&str>,

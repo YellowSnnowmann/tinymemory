@@ -61,6 +61,7 @@ mod events;
 pub mod test_support;
 
 pub use cloud_providers::{
+    endpoint_host,
     generate_provider_id, is_slug_reserved, migrate_legacy_fields, AuthStyle, CloudProviderCreds,
     CloudProviderType,
 };
