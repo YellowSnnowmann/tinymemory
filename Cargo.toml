@@ -35,7 +35,13 @@ exclude = [
 # `tinymemory_api::provider::MemoryProvider` are the same type.
 tinymemory-api = { path = "api", version = "0.1.1" }
 
+# `DriverClass` is read out of a host's config file, so its serde form is the
+# config form and is pinned by a test.
+serde = { version = "1", features = ["derive"] }
+
 [dev-dependencies]
+# Pins `DriverClass`'s serde spelling against `as_str` in `registry/test.rs`.
+serde_json = "1"
 
 [features]
 default = []

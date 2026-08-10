@@ -77,7 +77,11 @@ pub struct FallbackReason {
 
 impl fmt::Display for FallbackReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "driver '{}' refused: {}", self.configured_driver, self.reason)
+        write!(
+            f,
+            "driver '{}' refused: {}",
+            self.configured_driver, self.reason
+        )
     }
 }
 

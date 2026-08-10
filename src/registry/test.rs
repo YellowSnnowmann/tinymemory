@@ -4,6 +4,10 @@
 //! moved into the crate, so a refusal that used to be caught in OpenHuman is
 //! still caught here.
 
+// A failing assertion in a test *is* a panic; the crate-wide `expect_used` /
+// `panic` lints exist to keep the library from panicking, not the tests.
+#![allow(clippy::expect_used)]
+
 use super::*;
 
 fn labels() -> ConfigLabels<'static> {
@@ -75,7 +79,11 @@ fn an_unknown_id_with_a_classless_entry_is_refused() {
 #[test]
 fn an_unparseable_class_is_refused_with_the_raw_value() {
     let refusal = DriverRegistry::builtin()
-        .admit("supermemory", Some(entry(Some("emebdded"), TRUSTED)), labels())
+        .admit(
+            "supermemory",
+            Some(entry(Some("emebdded"), TRUSTED)),
+            labels(),
+        )
         .expect_err("a misspelled class is refused");
     assert_eq!(refusal.reason, "unknown driver class: emebdded");
 }
@@ -85,10 +93,16 @@ fn an_unparseable_class_is_refused_with_the_raw_value() {
 #[test]
 fn a_class_override_cannot_smuggle_the_engine_in_under_the_null_id() {
     let refusal = DriverRegistry::builtin()
-        .admit(NULL_DRIVER_ID, Some(entry(Some("embedded"), TRUSTED)), labels())
+        .admit(
+            NULL_DRIVER_ID,
+            Some(entry(Some("embedded"), TRUSTED)),
+            labels(),
+        )
         .expect_err("null is always class null");
     assert!(
-        refusal.reason.contains("is built in and is always class \"null\""),
+        refusal
+            .reason
+            .contains("is built in and is always class \"null\""),
         "reason should state the fixed class: {}",
         refusal.reason
     );
@@ -132,7 +146,11 @@ fn a_confirming_class_line_is_accepted() {
 #[test]
 fn an_untrusted_external_driver_is_refused_for_trust() {
     let refusal = DriverRegistry::builtin()
-        .admit("remote", Some(entry(Some("external"), "untrusted")), labels())
+        .admit(
+            "remote",
+            Some(entry(Some("external"), "untrusted")),
+            labels(),
+        )
         .expect_err("an untrusted external driver is refused");
     assert!(
         refusal.reason.contains("external driver is untrusted"),
@@ -203,8 +221,14 @@ fn a_refusal_reason_carries_only_the_id_and_config_shape() {
         )
         .expect_err("refused");
     assert!(!refusal.reason.contains("http"), "no endpoint may appear");
-    assert!(!refusal.reason.contains("token"), "no credential may appear");
-    assert!(!refusal.reason.contains("secret"), "no credential may appear");
+    assert!(
+        !refusal.reason.contains("token"),
+        "no credential may appear"
+    );
+    assert!(
+        !refusal.reason.contains("secret"),
+        "no credential may appear"
+    );
 }
 
 #[test]
