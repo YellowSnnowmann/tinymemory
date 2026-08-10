@@ -59,6 +59,7 @@ pub use cloud_providers::{
     CloudProviderType,
 };
 pub use config::{ComposioMode, MemoryHostConfig, COMPOSIO_MODE_BACKEND, COMPOSIO_MODE_DIRECT};
+pub use embedding_host::EmbeddingHost;
 pub use embeddings::{format_embedding_signature, EmbeddingProvider, NoopEmbedding};
 pub use events::{
     EmbeddingHealthReason, MemoryEvent, MemoryEventSink, NoopEventSink, SyncTrigger,
