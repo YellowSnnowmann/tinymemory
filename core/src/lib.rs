@@ -41,7 +41,6 @@ pub mod ingest_pipeline;
 pub mod ingestion;
 pub mod people;
 pub mod preferences;
-pub mod query;
 pub mod queue;
 pub mod remember;
 pub mod rpc_models;
