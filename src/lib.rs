@@ -13,6 +13,10 @@
 //!   `tinymemory_api::provider::MemoryProvider` are the same type. It is
 //!   deliberately dependency-light: depending on the contract never drags in
 //!   SQLite, git2, reqwest, or an async runtime.
+//! - **[`mandatory`]** — the three mandatory capability families, composed
+//!   once over the [`traits::Memory`] storage trait, so every backend that
+//!   implements it inherits a correct `store` / `list` / `recall` / export
+//!   rather than re-deriving the same four subtleties.
 //! - **[`registry`]** — driver admission. Which driver ids exist, what class
 //!   each binds as, and the fail-closed rule for out-of-process drivers.
 //! - **Engine adapters** — one crate per engine under `adapters/`, each
@@ -59,6 +63,7 @@
 //! let capabilities = provider.capabilities();
 //! ```
 
+pub mod mandatory;
 pub mod registry;
 
 // The contract, re-exported wholesale. Listed module by module rather than as a

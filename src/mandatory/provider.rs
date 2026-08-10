@@ -83,7 +83,11 @@ impl MemoryTraitProvider {
     /// else.
     #[must_use]
     pub fn advertised_capabilities() -> Capabilities {
-        Capabilities::from_iter([Capability::Core, Capability::Recall, Capability::Portability])
+        Capabilities::from_iter([
+            Capability::Core,
+            Capability::Recall,
+            Capability::Portability,
+        ])
     }
 }
 
@@ -106,10 +110,7 @@ impl MemoryCore for MemoryTraitProvider {
     }
 
     async fn get(&self, namespace: &str, key: &str) -> Result<Option<MemoryEntry>, MemoryError> {
-        self.memory
-            .get(namespace, key)
-            .await
-            .map_err(engine_error)
+        self.memory.get(namespace, key).await.map_err(engine_error)
     }
 
     async fn forget(&self, namespace: &str, key: &str) -> Result<bool, MemoryError> {

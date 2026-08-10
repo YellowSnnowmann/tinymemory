@@ -75,6 +75,7 @@ pub const SCOPE_UNAPPLIED: &str =
 /// and lands in [`MemoryError::Other`]. The typed variants (`Invalid`,
 /// `NotFound`, `Unsupported`) are constructed by the driver, where the reason is
 /// actually known.
+#[must_use]
 pub fn engine_error(error: anyhow::Error) -> MemoryError {
     MemoryError::Other(error)
 }
@@ -304,7 +305,11 @@ pub async fn export_page(
     }
 
     let end = offset.saturating_add(limit).min(entries.len());
-    let records: Vec<ExportRecord> = entries[offset..end].iter().cloned().map(to_record).collect();
+    let records: Vec<ExportRecord> = entries[offset..end]
+        .iter()
+        .cloned()
+        .map(to_record)
+        .collect();
 
     let next_cursor = if end < entries.len() {
         Some(format!("{index}:{end}"))
@@ -378,4 +383,3 @@ pub async fn import_records(
     );
     Ok(outcome)
 }
-

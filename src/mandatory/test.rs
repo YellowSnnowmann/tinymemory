@@ -7,7 +7,7 @@
 
 // A failing assertion in a test *is* a panic; the crate-wide `expect_used` /
 // `panic` lints exist to keep the library from panicking, not the tests.
-#![allow(clippy::expect_used)]
+#![allow(clippy::expect_used, clippy::panic)]
 
 use std::collections::BTreeMap;
 use std::sync::Mutex;
@@ -106,7 +106,10 @@ impl Memory for VecMemory {
         let entries = self.entries.lock().expect("lock");
         Ok(entries
             .values()
-            .filter(|e| opts.namespace.is_none_or(|ns| e.namespace.as_deref() == Some(ns)))
+            .filter(|e| {
+                opts.namespace
+                    .is_none_or(|ns| e.namespace.as_deref() == Some(ns))
+            })
             .filter(|e| e.content.contains(query))
             .take(limit)
             .cloned()
@@ -176,20 +179,24 @@ impl Memory for VecMemory {
     async fn health_check(&self) -> bool {
         self.healthy
     }
+
+    fn name(&self) -> &'static str {
+        "vec"
+    }
 }
 
 async fn seeded() -> Arc<VecMemory> {
     let memory = VecMemory::healthy();
     memory
-        .store(GLOBAL_NAMESPACE, "a", "alpha", MemoryCategory::Fact, None)
+        .store(GLOBAL_NAMESPACE, "a", "alpha", MemoryCategory::Core, None)
         .await
         .expect("store");
     memory
-        .store("projects", "b", "beta", MemoryCategory::Fact, None)
+        .store("projects", "b", "beta", MemoryCategory::Core, None)
         .await
         .expect("store");
     memory
-        .store("projects", "c", "gamma", MemoryCategory::Fact, None)
+        .store("projects", "c", "gamma", MemoryCategory::Core, None)
         .await
         .expect("store");
     memory
@@ -233,7 +240,7 @@ async fn store_preserves_the_taint_it_is_given() {
             "ns",
             "k",
             "body",
-            MemoryCategory::Fact,
+            MemoryCategory::Core,
             None,
             MemoryTaint::ExternalSync,
         )
@@ -348,7 +355,7 @@ async fn export_round_trips_through_import_with_provenance_intact() {
             "ns",
             "external",
             "from a sync",
-            MemoryCategory::Fact,
+            MemoryCategory::Core,
             Some("s1"),
             MemoryTaint::ExternalSync,
         )
@@ -359,7 +366,7 @@ async fn export_round_trips_through_import_with_provenance_intact() {
             "ns",
             "internal",
             "typed by the user",
-            MemoryCategory::Preference,
+            MemoryCategory::Daily,
             None,
             MemoryTaint::Internal,
         )
@@ -392,7 +399,7 @@ async fn export_round_trips_through_import_with_provenance_intact() {
     );
     assert_eq!(external.content, "from a sync");
     assert_eq!(external.session_id.as_deref(), Some("s1"));
-    assert_eq!(external.category, MemoryCategory::Fact);
+    assert_eq!(external.category, MemoryCategory::Core);
 
     let internal = target
         .get("ns", "internal")
@@ -400,7 +407,7 @@ async fn export_round_trips_through_import_with_provenance_intact() {
         .expect("get")
         .expect("present");
     assert_eq!(internal.taint, MemoryTaint::Internal);
-    assert_eq!(internal.category, MemoryCategory::Preference);
+    assert_eq!(internal.category, MemoryCategory::Daily);
 }
 
 /// A malformed record is reported, not fatal — a large restore must not abort
@@ -413,7 +420,7 @@ async fn a_malformed_record_is_reported_without_aborting_the_batch() {
         key: "ok".to_string(),
         content: "body".to_string(),
         namespace: Some("ns".to_string()),
-        category: MemoryCategory::Fact,
+        category: MemoryCategory::Core,
         timestamp: "2026-08-10T00:00:00Z".to_string(),
         session_id: None,
         score: None,
@@ -431,7 +438,7 @@ async fn a_malformed_record_is_reported_without_aborting_the_batch() {
         id: "ns/partial".to_string(),
         namespace: Some("ns".to_string()),
         taint: MemoryTaint::Internal,
-        payload: serde_json::json!({ "key": "partial", "category": "fact" }),
+        payload: serde_json::json!({ "key": "partial", "category": "core" }),
     };
 
     let outcome = provider(Arc::clone(&target))
@@ -441,7 +448,11 @@ async fn a_malformed_record_is_reported_without_aborting_the_batch() {
 
     assert_eq!(outcome.imported, 1);
     assert_eq!(outcome.failed, 2);
-    assert_eq!(outcome.errors.len(), 2, "every rejection must be diagnosable");
+    assert_eq!(
+        outcome.errors.len(),
+        2,
+        "every rejection must be diagnosable"
+    );
     assert!(target.get("ns", "ok").await.expect("get").is_some());
 }
 
@@ -458,8 +469,14 @@ async fn a_rejection_reason_carries_no_record_content() {
         payload: serde_json::json!({ "key": "partial", "content": secret }),
     };
     let reason = read_record(&record).expect_err("missing category");
-    assert!(reason.contains("ns/partial"), "reason should name the record");
-    assert!(reason.contains("category"), "reason should name the problem");
+    assert!(
+        reason.contains("ns/partial"),
+        "reason should name the record"
+    );
+    assert!(
+        reason.contains("category"),
+        "reason should name the problem"
+    );
     assert!(!reason.contains(secret), "reason must not carry content");
 }
 
@@ -473,14 +490,18 @@ async fn a_namespaceless_record_imports_globally() {
         id: "orphan".to_string(),
         namespace: None,
         taint: MemoryTaint::Internal,
-        payload: serde_json::json!({ "key": "k", "content": "v", "category": "fact" }),
+        payload: serde_json::json!({ "key": "k", "content": "v", "category": "core" }),
     };
     let outcome = provider(Arc::clone(&target))
         .import_records(vec![record])
         .await
         .expect("import");
     assert_eq!(outcome.imported, 1);
-    assert!(target.get(GLOBAL_NAMESPACE, "k").await.expect("get").is_some());
+    assert!(target
+        .get(GLOBAL_NAMESPACE, "k")
+        .await
+        .expect("get")
+        .is_some());
 }
 
 /// Advertised capabilities and reachable accessors must agree, or a host
@@ -491,7 +512,11 @@ async fn the_advertised_set_matches_what_is_actually_reachable() {
     audit_provider(&driver).expect("advertised capabilities match the accessors");
 
     let capabilities = driver.capabilities();
-    for mandatory in [Capability::Core, Capability::Recall, Capability::Portability] {
+    for mandatory in [
+        Capability::Core,
+        Capability::Recall,
+        Capability::Portability,
+    ] {
         assert!(capabilities.contains(mandatory));
         assert!(driver.provides(mandatory));
     }

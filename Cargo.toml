@@ -34,14 +34,22 @@ exclude = [
 # one dependency rather than two, and so `tinymemory::MemoryProvider` and
 # `tinymemory_api::provider::MemoryProvider` are the same type.
 tinymemory-api = { path = "api", version = "0.1.1" }
+# The mandatory capability families are `async fn`s on object-safe traits.
+async-trait = "0.1"
+# `Memory` is anyhow-typed; `mandatory::engine_error` maps it onto `MemoryError`.
+anyhow = "1"
+# Diagnostics on the shared store/recall/export paths.
+log = "0.4"
+# `ExportRecord::payload` is a `serde_json::Value`.
+serde_json = "1"
 
 # `DriverClass` is read out of a host's config file, so its serde form is the
 # config form and is pinned by a test.
 serde = { version = "1", features = ["derive"] }
 
 [dev-dependencies]
-# Pins `DriverClass`'s serde spelling against `as_str` in `registry/test.rs`.
-serde_json = "1"
+# The mandatory-family tests are async.
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [features]
 default = []
