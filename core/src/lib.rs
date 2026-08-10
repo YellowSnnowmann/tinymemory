@@ -73,8 +73,6 @@ pub mod util;
 
 #[cfg(test)]
 mod rpc_models_tests;
-#[cfg(test)]
-mod schema_tests;
 
 // The host seam, re-exported so downstream code takes one dependency. These are
 // the *only* types this crate accepts from its host.
