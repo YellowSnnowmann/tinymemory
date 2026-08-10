@@ -11,8 +11,6 @@ use tinycortex::memory::tree::runtime::{
     NodeLevel, RuntimeObserver, Summariser, TreeNode, TreeStatus,
 };
 
-use crate::core::bus::BUS;
-use crate::core::events::DomainEvent;
 use crate::Config;
 use crate::tinycortex::engine_config;
 

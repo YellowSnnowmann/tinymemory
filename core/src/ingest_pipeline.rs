@@ -2,8 +2,6 @@
 
 use anyhow::Result;
 
-use crate::core::bus::BUS;
-use crate::core::events::DomainEvent;
 use crate::Config;
 use crate::store::chunks::store::RawRef;
 use tinycortex::memory::ingest::canonicalize::{

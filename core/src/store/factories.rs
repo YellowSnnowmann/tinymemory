@@ -98,12 +98,14 @@ fn report_ollama_health_gate_once(base_url: &str, model: &str) -> bool {
     log::debug!(
         "[memory::factory] publishing EmbeddingModelUnhealthy event: provider=ollama model={model} fallback=cloud"
     );
-    let event = crate::core::events::DomainEvent::EmbeddingModelUnhealthy {
-        provider: "ollama".to_string(),
-        model: model.to_string(),
-        fallback_provider: "cloud".to_string(),
-        message: user_message,
-    };
+    let event = crate::events::MemoryEvent::EmbeddingModelUnhealthy(
+        tinymemory_api::host::EmbeddingHealthReason {
+            provider: "ollama".to_string(),
+            model: model.to_string(),
+            fallback_provider: "cloud".to_string(),
+            message: user_message,
+        },
+    );
     // publish_global is infallible (drops the event when no receivers are
     // registered, which is fine for the health-gate use case).
     crate::events::publish(event);

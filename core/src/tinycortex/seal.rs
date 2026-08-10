@@ -4,8 +4,6 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::Duration;
 
-use crate::core::bus::BUS;
-use crate::core::events::DomainEvent;
 use crate::Config;
 #[cfg(feature = "memory-git")]
 use crate::store::content::wiki_git::{SummaryCommitBatch, SummaryCommitEntry};

@@ -18,8 +18,6 @@ use tokio::sync::mpsc;
 
 use super::state::IngestionState;
 use super::MemoryIngestionConfig;
-use crate::core::bus::BUS;
-use crate::core::events::DomainEvent;
 use crate::store::{NamespaceDocumentInput, UnifiedMemory};
 
 /// Default capacity of the ingestion job channel.
