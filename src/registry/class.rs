@@ -21,14 +21,24 @@ use serde::{Deserialize, Serialize};
 pub enum DriverClassParseError {
     /// The raw class value is unsupported.
     Unknown {
-        /// The unrecognized input, retained for diagnostics that stay local.
+        /// The unrecognized input.
         raw: String,
     },
 }
 
 impl fmt::Display for DriverClassParseError {
+    /// Renders the offending value.
+    ///
+    /// A config typo (`class = "embeded"`) is the only way to reach this, and
+    /// the message is what the operator sees. Without the raw value it says
+    /// only that *some* class was unrecognized, which does not point at the
+    /// line to fix — and this error carries it already.
+    ///
+    /// The value comes from the host's own config file, not from a driver or
+    /// the network, so echoing it discloses nothing the reader did not write.
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("unknown driver class")
+        let Self::Unknown { raw } = self;
+        write!(f, "unknown driver class: {raw}")
     }
 }
 

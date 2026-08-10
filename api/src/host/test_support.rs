@@ -127,6 +127,10 @@ impl MemoryHostConfig for TestHostConfig {
         }
     }
 
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+
     fn to_arc(&self) -> std::sync::Arc<dyn MemoryHostConfig> {
         std::sync::Arc::new(self.clone())
     }

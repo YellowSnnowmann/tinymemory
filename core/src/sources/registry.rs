@@ -55,7 +55,7 @@ pub async fn get_source(id: &str) -> Result<Option<MemorySourceEntry>, String> {
 ///
 /// Synchronous because the registry read itself is; only the config lookup in
 /// [`registry`] was ever async.
-pub(crate) fn get_source_in(
+pub fn get_source_in(
     config: &crate::Config,
     id: &str,
 ) -> Result<Option<MemorySourceEntry>, String> {

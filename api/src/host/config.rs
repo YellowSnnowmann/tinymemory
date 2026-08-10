@@ -135,6 +135,22 @@ pub trait MemoryHostConfig: Send + Sync + std::fmt::Debug {
 
     // ── Scalars ─────────────────────────────────────────────────────────────
 
+    /// The concrete config behind this trait object, for host code that needs
+    /// its own type back.
+    ///
+    /// The seam deliberately hands the core a `dyn MemoryHostConfig`, and that
+    /// is the right shape for everything the core does. But a *host*
+    /// implementation of one of the behavioural seams — chat-model routing,
+    /// Composio mode dispatch — is handed the same trait object and has to get
+    /// its own `Config` back: routing reads BYOK fallbacks, per-role routes and
+    /// credentials, none of which are on this trait and none of which should
+    /// be.
+    ///
+    /// Implementations return `self`. A host downcasts and, on failure, falls
+    /// back to whatever it was configured with — a failure means the config is
+    /// somebody else's type (a test double), not that something is wrong.
+    fn as_any(&self) -> &dyn std::any::Any;
+
     /// An owned, shareable handle to this config.
     ///
     /// `tinymemory_core::Config` is the *unsized* `dyn MemoryHostConfig`, which
