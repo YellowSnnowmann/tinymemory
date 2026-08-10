@@ -18,6 +18,4 @@
 //! the file is stored state,
 //! not injected into the main system prompt.
 
-pub mod enrich;
 
-pub use enrich::{enrich_goals, spawn_enrich_goals, GOALS_AGENT_ID};

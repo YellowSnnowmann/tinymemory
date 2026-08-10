@@ -59,10 +59,7 @@ use crate::sources::{
 };
 
 use super::providers::{get_provider, ComposioUsage};
-use crate::openhuman::integrations::composio::client::{
-    create_composio_client, direct_list_connections, ComposioClientKind,
-};
-use crate::openhuman::integrations::composio::ops;
+use crate::composio_host;
 use crate::tinycortex::{
     append_audit_entry, try_read_audit_log, SyncAuditEntry,
 };
@@ -730,7 +727,7 @@ fn build_periodic_audit_entry(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::config::TEST_ENV_LOCK as ENV_LOCK;
+    use crate::test_env_lock::TEST_ENV_LOCK as ENV_LOCK;
     use tempfile::tempdir;
 
     #[test]

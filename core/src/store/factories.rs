@@ -41,7 +41,7 @@ static OLLAMA_HEALTH_REPORTED: AtomicBool = AtomicBool::new(false);
 /// Returns `true` on the firing call, `false` afterwards — callers use the
 /// return value only for logging context.
 ///
-/// [`EmbeddingModelUnhealthy`]: crate::core::events::DomainEvent::EmbeddingModelUnhealthy
+/// [`EmbeddingModelUnhealthy`]: crate::events::MemoryEvent::EmbeddingModelUnhealthy
 fn report_ollama_health_gate_once(base_url: &str, model: &str) -> bool {
     // Deliberately ABOVE the Sentry latch (#5354). `publish_web_channel_event`
     // is a `broadcast::send`: with no socket client attached yet it returns Err

@@ -69,7 +69,7 @@ fn migrate_is_idempotent() {
 
 #[test]
 fn profile_upsert_full_persists_phase3_fields() {
-    use crate::openhuman::agent::learning::candidate::EvidenceRef;
+    use tinymemory_api::host::EvidenceRef;
     let conn = setup_db();
     let facet = ProfileFacet {
         facet_id: "f-full".into(),

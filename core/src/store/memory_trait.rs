@@ -953,7 +953,7 @@ mod tests {
 
     #[tokio::test]
     async fn recall_excludes_document_from_ambient_current_thread() {
-        use crate::openhuman::agent::tinyagents::thread_context::with_thread_id;
+        use crate::thread_context::with_thread_id;
 
         let (_tmp, mem) = fresh_mem();
         mem.store(
@@ -1116,7 +1116,7 @@ mod tests {
 
         // Inside an ambient turn scope, yet passed `None`: the engine must
         // honour the argument, not the task-local.
-        let entries = crate::openhuman::agent::tinyagents::thread_context::with_thread_id(
+        let entries = crate::thread_context::with_thread_id(
             "thread-current",
             async {
                 mem.recall_excluding_session(

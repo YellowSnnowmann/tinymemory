@@ -4,7 +4,7 @@
 //! [issue #1400](https://github.com/tinyhumansai/openhuman/issues/1400):
 //! a first-class storage and retrieval surface for **actionable**
 //! tool-specific guidance, distinct from the
-//! [`tool_effectiveness`](crate::openhuman::agent::learning::tool_tracker)
+//! [`tool_effectiveness`](the host's `agent::learning::tool_tracker`)
 //! statistics namespace and from the generic `global` / `skill-*`
 //! namespaces.
 //!
@@ -31,16 +31,12 @@
 //! - [`tools`]   — agent-facing read/write tools:
 //!   [`tools::MemoryToolsListTool`], [`tools::MemoryToolsPutTool`].
 //!
-//! [`PostTurnHook`]: crate::openhuman::agent::hooks::PostTurnHook
+//! [`PostTurnHook`]: the host's `agent::hooks::PostTurnHook`
 
-pub mod capture;
-pub mod prompt;
 mod store;
 #[cfg(test)]
 pub mod test_helpers;
 
-pub use capture::ToolMemoryCaptureHook;
-pub use prompt::{render_tool_memory_rules, ToolMemoryRulesSection, TOOL_MEMORY_HEADING};
 pub use store::tool_memory_store;
 pub use tinycortex::memory::tool_memory::{
     store::{ToolMemoryStore, TOOL_MEMORY_PROMPT_CAP},

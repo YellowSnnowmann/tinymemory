@@ -49,6 +49,7 @@ pub mod subsystems;
 
 mod config;
 mod embedding_host;
+mod evidence;
 mod error_reporter;
 mod usage;
 mod embeddings;
@@ -64,6 +65,7 @@ pub use cloud_providers::{
 pub use config::{ComposioMode, MemoryHostConfig, COMPOSIO_MODE_BACKEND, COMPOSIO_MODE_DIRECT};
 pub use embedding_host::EmbeddingHost;
 pub use error_reporter::ErrorReporter;
+pub use evidence::EvidenceRef;
 pub use usage::UsageInfo;
 pub use embeddings::{format_embedding_signature, EmbeddingProvider, NoopEmbedding};
 pub use events::{

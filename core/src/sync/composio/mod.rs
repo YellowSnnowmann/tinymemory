@@ -8,7 +8,7 @@
 //! - trigger / connection-created event subscribers (`bus.rs`)
 //! - sync-state persistence and profile-to-memory shaping
 //!
-//! The sibling [`crate::openhuman::integrations::composio`] domain still owns auth,
+//! The host's sibling `integrations::composio` domain still owns auth,
 //! connection management, action execution, and general Composio RPC/tool
 //! surfaces. This submodule is specifically the memory-sync half of that
 //! integration boundary.
@@ -17,10 +17,7 @@ pub mod periodic;
 pub mod providers;
 
 use crate::Config;
-use crate::openhuman::integrations::composio::client::{
-    create_composio_client, direct_list_connections, ComposioClientKind,
-};
-use crate::openhuman::integrations::composio::types::ComposioConnection;
+use crate::composio_host::{self, ComposioConnection};
 
 pub use periodic::{record_sync_success, start_periodic_sync};
 pub use providers::{
@@ -93,20 +90,12 @@ pub async fn list_sync_targets(config: &Config) -> Result<Vec<SyncTarget>, Strin
 pub async fn scan_active_sync_targets(config: &Config) -> Result<Vec<SyncTarget>, String> {
     init_default_composio_sync_providers();
 
-    let kind =
-        create_composio_client(config).map_err(|e| format!("create_composio_client: {e:#}"))?;
-    let response = match kind {
-        ComposioClientKind::Backend(client) => client
-            .list_connections()
-            .await
-            .map_err(|e| format!("list_connections (backend): {e:#}"))?,
-        ComposioClientKind::Direct(client) => direct_list_connections(&client)
-            .await
-            .map_err(|e| format!("list_connections (direct): {e:#}"))?,
-    };
+    // Mode dispatch lives in the host's `ComposioHost` impl: backend mode
+    // walks the tinyhumans tenant, direct mode the user's own Composio v3
+    // tenant. Either way this side gets one flat list.
+    let connections = composio_host::list_connections(config).await?;
 
-    Ok(response
-        .connections
+    Ok(connections
         .into_iter()
         .filter_map(connection_to_sync_target)
         .collect())

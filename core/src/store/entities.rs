@@ -8,7 +8,7 @@ use tinycortex::memory::store::entity_index::{
 };
 
 use crate::Config;
-use crate::openhuman::integrations::composio::providers::profile::{
+use crate::sync::composio::providers::profile::{
     is_self_identity_any_toolkit, IdentityKind,
 };
 use crate::tinycortex::memory_config_from;

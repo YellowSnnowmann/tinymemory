@@ -43,13 +43,13 @@ pub mod global;
 pub mod goals;
 pub mod ingest_pipeline;
 pub mod ingestion;
+pub mod learning_candidate;
 pub mod observability;
 pub mod people;
 pub mod preferences;
 pub mod queue;
 pub mod remember;
 pub mod rpc_models;
-pub mod schema;
 pub mod scheduler_gate;
 pub mod search;
 pub mod source_scope;
@@ -57,6 +57,8 @@ pub mod sources;
 pub mod store;
 pub mod sync;
 pub mod sync_events;
+pub mod test_env_lock;
+pub mod thread_context;
 pub mod tinycortex;
 pub mod tool_memory;
 pub mod traits;
@@ -77,6 +79,22 @@ pub use tinymemory_api::host::{
     MemoryHostConfig, NoopEmbedding, NoopEventSink, COMPOSIO_MODE_BACKEND, COMPOSIO_MODE_DIRECT,
     DEFAULT_MEMORY_SYNC_INTERVAL_SECS,
 };
+
+/// The default OpenHuman root directory, `~/.openhuman`.
+///
+/// The host resolves this through `config::default_root_openhuman_dir`, which
+/// this crate cannot see. Reproduced here rather than added to the config seam
+/// because the two callers only need it as a last-resort fallback when no
+/// workspace was supplied.
+///
+/// # Errors
+///
+/// Returns `Err` when the home directory cannot be determined.
+pub fn default_openhuman_dir() -> Result<std::path::PathBuf, String> {
+    dirs::home_dir()
+        .ok_or_else(|| "Could not find home directory".to_string())
+        .map(|home| home.join(".openhuman"))
+}
 
 pub use ingestion::{
     ExtractedEntity, ExtractedRelation, ExtractionMode, IngestionJob, IngestionQueue,

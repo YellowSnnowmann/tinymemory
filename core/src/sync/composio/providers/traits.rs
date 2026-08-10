@@ -139,7 +139,7 @@ pub trait ComposioProvider: Send + Sync {
     }
 
     /// Hook fired when an OAuth handoff completes
-    /// ([`crate::core::events::DomainEvent::ComposioConnectionCreated`]).
+    /// (the host's `DomainEvent::ComposioConnectionCreated`).
     ///
     /// Default impl: fetch and persist the user profile. Initial memory
     /// ingestion is dispatched separately through tinycortex by the bus.
@@ -362,7 +362,7 @@ mod tests {
     // drops its guard before the next so the env is in a known state.
     #[test]
     fn resolve_sync_interval_honors_per_toolkit_env() {
-        let _lock = crate::openhuman::config::TEST_ENV_LOCK
+        let _lock = crate::test_env_lock::TEST_ENV_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
 

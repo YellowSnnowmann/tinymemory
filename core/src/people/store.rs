@@ -109,7 +109,7 @@ pub fn get() -> Result<Arc<PeopleStore>, &'static str> {
 }
 
 /// Per-workspace store cache keyed by workspace dir. Backs [`for_workspace`],
-/// the context-scoped accessor ([`crate::core::runtime::CoreContext::people`]).
+/// the context-scoped accessor (the host's context-scoped `CoreContext::people`).
 /// Distinct from the single `GLOBAL` slot above (which tracks the one
 /// active-user workspace for the legacy free-function handlers): this map lets
 /// multiple workspaces' stores coexist in one process, which is what per-context

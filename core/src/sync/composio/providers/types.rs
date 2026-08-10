@@ -5,10 +5,7 @@ use std::sync::{Arc, Mutex};
 
 use crate::openhuman::config::rpc as config_rpc;
 use crate::Config;
-use crate::openhuman::integrations::composio::client::{
-    create_composio_client, direct_execute, ComposioClient, ComposioClientKind,
-};
-use crate::openhuman::integrations::composio::types::ComposioExecuteResponse;
+use crate::composio_host::{self, ComposioExecuteResponse};
 
 /// Reason a sync was triggered. Providers can use this to decide
 /// whether to do a full backfill or an incremental pull.
@@ -262,7 +259,7 @@ impl TaskFetchFilter {
 /// routing through the backend tinyhumans tenant. The current shape
 /// keeps an [`Arc<Config>`] and resolves the underlying client per call
 /// through [`ProviderContext::execute`], mirroring the agent-tool
-/// migration in [`crate::openhuman::integrations::composio::tools::ComposioExecuteTool`].
+/// migration in the host's `integrations::composio::tools::ComposioExecuteTool`.
 /// Per-sync accumulator for Composio billable-action usage.
 ///
 /// Lives behind a shared handle on [`ProviderContext`] so the single
@@ -315,7 +312,7 @@ impl ProviderContext {
     /// Returns `None` only when we want to short-circuit early on the
     /// "user clearly not signed in" path. In the post-#1710 shape this
     /// is determined by attempting a factory resolve via
-    /// [`create_composio_client`] and treating any error there as
+    /// [`composio_host::is_available`] and treating a `false` there as
     /// "skip silently" — the same UX as the pre-fix
     /// `build_composio_client(...).is_some()` probe, but routed
     /// through the mode-aware factory so direct-mode users (no backend
@@ -331,8 +328,8 @@ impl ProviderContext {
         // users typically have no backend session token, which would
         // make a `build_composio_client` probe return None and falsely
         // skip them.
-        match create_composio_client(&config) {
-            Ok(_) => Some(Self {
+        match composio_host::is_available(&config) {
+            true => Some(Self {
                 config,
                 toolkit: toolkit.into(),
                 connection_id,
@@ -390,32 +387,17 @@ impl ProviderContext {
                 );
                 anyhow::anyhow!("composio provider_context: failed to reload live config: {e}")
             })?;
-        let kind = create_composio_client(&live_config)?;
-        let result = match kind {
-            ComposioClientKind::Backend(client) => {
-                tracing::debug!(
-                    action = %action,
-                    toolkit = %self.toolkit,
-                    "[composio:provider_context] execute: backend variant"
-                );
-                client.execute_tool(action, arguments).await
-            }
-            ComposioClientKind::Direct(direct) => {
-                tracing::debug!(
-                    action = %action,
-                    toolkit = %self.toolkit,
-                    "[composio:provider_context] execute: direct variant"
-                );
-                direct_execute(
-                    &direct,
-                    action,
-                    arguments,
-                    &live_config.composio().entity_id,
-                    self.connection_id.as_deref(),
-                )
-                .await
-            }
-        };
+        // Mode dispatch (backend tenant vs the user's own direct v3 tenant)
+        // lives in the host's `ComposioHost` impl — this side just asks.
+        let result = composio_host::execute(
+            &live_config,
+            action,
+            arguments,
+            &live_config.composio().entity_id,
+            self.connection_id.as_deref(),
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!(e));
 
         // Tally billable-action usage at the single chokepoint every provider
         // routes through (#3111). We count any *completed* round-trip — even a
@@ -430,47 +412,6 @@ impl ProviderContext {
             }
         }
         result
-    }
-
-    /// Resolve a `ComposioClient` for callers that need a handle to
-    /// pass to helpers built around the old `&ComposioClient` API
-    /// (e.g. `slack::users::SlackUsers::fetch`,
-    /// `slack::provider::execute_with_retry`).
-    ///
-    /// Returns `Err` when the live config selects direct mode — these
-    /// legacy helpers were written against the backend-tenant
-    /// `ComposioClient` and have not yet been ported to the factory.
-    /// Direct-mode users hit this path as a hard error rather than
-    /// silently routing through the wrong tenant.
-    pub async fn backend_client(&self) -> anyhow::Result<ComposioClient> {
-        // [#1710 Wave 4] Reload config fresh per call so a mid-session
-        // `composio.mode` toggle takes effect immediately. The Arc<Config>
-        // snapshot held by `self` was taken at agent-init time and is
-        // otherwise stale relative to subsequent set_api_key /
-        // clear_api_key RPCs.
-        //
-        // Anchored to the snapshot's config_path (not OPENHUMAN_WORKSPACE)
-        // for the same isolation reason as `execute`.
-        let live_config = config_rpc::reload_config_snapshot_with_timeout(&self.config)
-            .await
-            .map_err(|e| {
-                tracing::warn!(
-                    toolkit = %self.toolkit,
-                    error = %e,
-                    "[composio:provider_context] backend_client: reload_config failed"
-                );
-                anyhow::anyhow!(
-                    "composio provider_context.backend_client: failed to reload live config: {e}"
-                )
-            })?;
-        match create_composio_client(&live_config)? {
-            ComposioClientKind::Backend(client) => Ok(client),
-            ComposioClientKind::Direct(_) => Err(anyhow::anyhow!(
-                "composio direct mode is not yet supported on this provider's helper path; \
-                 toolkit={}",
-                self.toolkit
-            )),
-        }
     }
 
     /// Memory client handle if the global memory singleton is ready.

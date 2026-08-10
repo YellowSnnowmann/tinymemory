@@ -58,7 +58,7 @@ pub mod registry;
 pub mod slack;
 pub mod sync_state;
 
-use crate::openhuman::integrations::composio::types::ComposioCapability;
+use crate::composio_host::ComposioCapability;
 
 const CAPABILITY_TOOLKITS: &[&str] = &[
     "gmail",

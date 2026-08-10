@@ -7,7 +7,7 @@
 //! *engine* answers "which rows rank highest for this query"; it must not read
 //! the host's execution context to do it. Until this module existed, the
 //! `Memory::recall` implementation reached directly into
-//! `crate::openhuman::agent::tinyagents::thread_context` — an agent-harness
+//! `crate::thread_context` — an agent-harness
 //! task-local — from inside the persistence layer. Shipping that into a
 //! persistence crate would have baked an OpenHuman chat-turn concept into a
 //! storage engine, which is very hard to undo afterwards.
@@ -55,7 +55,7 @@
 /// [`UnifiedMemory::recall_excluding_session`]:
 /// crate::store::UnifiedMemory::recall_excluding_session
 pub(crate) fn current_self_echo_exclusion() -> Option<String> {
-    let exclusion = crate::openhuman::agent::tinyagents::thread_context::current_thread_id();
+    let exclusion = crate::thread_context::current_thread_id();
     if let Some(ref session_id) = exclusion {
         tracing::debug!(
             exclude_session_id = %session_id,
@@ -72,7 +72,7 @@ pub(crate) fn current_self_echo_exclusion() -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::agent::tinyagents::thread_context::with_thread_id;
+    use crate::thread_context::with_thread_id;
 
     #[tokio::test]
     async fn resolves_the_ambient_thread_id_inside_a_turn() {

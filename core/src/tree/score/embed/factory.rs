@@ -24,7 +24,7 @@
 //! The historical `InertEmbedder` (zero vectors) path is retained for
 //! tests only — it is no longer the production lax-mode fallback.
 //!
-//! Env var overrides applied in [`crate::openhuman::config::load`]:
+//! Env var overrides applied in the host's `config::load`:
 //! - `OPENHUMAN_MEMORY_EMBED_ENDPOINT`
 //! - `OPENHUMAN_MEMORY_EMBED_MODEL`
 //! - `OPENHUMAN_MEMORY_EMBED_TIMEOUT_MS`
