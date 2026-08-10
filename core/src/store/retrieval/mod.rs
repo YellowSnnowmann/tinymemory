@@ -29,7 +29,7 @@
 use anyhow::Result;
 use std::sync::Arc;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::store::chunks::store::list_chunks;
 use crate::store::chunks::types::{Chunk, SourceKind};
 use crate::store::types::NamespaceMemoryHit;
@@ -153,7 +153,7 @@ impl RetrievalFacade {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::inference::embeddings::NoopEmbedding;
+    use tinymemory_api::host::NoopEmbedding;
     use crate::store::chunks::store::upsert_chunks;
     use crate::store::chunks::types::{Chunk, Metadata};
     use chrono::{TimeZone, Utc};

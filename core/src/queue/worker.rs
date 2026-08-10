@@ -17,7 +17,7 @@ use std::time::Duration;
 use anyhow::Result;
 use tokio::sync::Notify;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 // W4 flip: `run_once` now delegates claim/dispatch/settle to the crate, so the
 // legacy `handlers`, per-job settle (`mark_*`/`scrub_for_log`), and claim
 // helpers are gone from this module. Only startup lock recovery + the loop's

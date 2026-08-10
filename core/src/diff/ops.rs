@@ -10,7 +10,7 @@
 //! the host's `async` + `Result<_, String>` signatures, the `DomainEvent`
 //! publishes, and the tracing that RPC/tools/sync/subconscious callers expect.
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::sources::types::MemorySourceEntry;
 
 use tinycortex::memory::diff::{DiffEngine, SourceDescriptor};

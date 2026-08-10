@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 
 pub use tinycortex::memory::graph::PairDistance;
 

@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 use rusqlite::Transaction;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::store::chunks::types::{Chunk, SourceKind};
 use crate::store::content::StagedChunk;
 use crate::tinycortex::engine_config;

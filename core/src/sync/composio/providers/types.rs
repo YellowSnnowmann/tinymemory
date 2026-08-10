@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
 use crate::openhuman::config::rpc as config_rpc;
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::openhuman::integrations::composio::client::{
     create_composio_client, direct_execute, ComposioClient, ComposioClientKind,
 };
@@ -556,7 +556,7 @@ mod tests {
         config.config_path = tmp.path().join("config.toml");
         config.workspace_dir = tmp.path().join("workspace");
         config.secrets.encrypt = false;
-        config.composio.mode = crate::openhuman::config::schema::COMPOSIO_MODE_DIRECT.to_string();
+        config.composio.mode = tinymemory_api::host::COMPOSIO_MODE_DIRECT.to_string();
         config.composio.api_key = Some("test-direct-key".to_string());
         config.save().await.expect("save fake config to disk");
 

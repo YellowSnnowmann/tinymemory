@@ -29,7 +29,7 @@ pub fn backfill_in_progress() -> bool {
 /// per-signature dedupe key means at most one chain per space, and a
 /// covered space enqueues nothing. Errors are logged, never propagated —
 /// a failed enqueue must not fail the user's settings save.
-pub fn ensure_reembed_backfill(config: &crate::openhuman::config::Config) {
+pub fn ensure_reembed_backfill(config: &crate::Config) {
     let memory = crate::tinycortex::memory_config_from(
         config,
         config.workspace_dir.clone(),
@@ -65,7 +65,7 @@ pub fn ensure_reembed_backfill(config: &crate::openhuman::config::Config) {
 /// presented to the user as remediated. `Ok(n)` is the number of jobs flipped
 /// back to `ready` (`Ok(0)` = nothing was parked).
 pub fn requeue_failed_after_provider_change(
-    config: &crate::openhuman::config::Config,
+    config: &crate::Config,
 ) -> Result<u64, String> {
     // Entry record (see AGENTS.md "Debug logging"): state-transition op, so log
     // entry + every branch + outcome. Prefix matches this module's sibling
@@ -96,7 +96,7 @@ pub fn requeue_failed_after_provider_change(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::config::Config;
+    use crate::Config;
     use crate::tree::health::{FailureCode, PipelineFailure};
     use tempfile::TempDir;
 

@@ -15,7 +15,7 @@
 use anyhow::Result;
 use rusqlite::Transaction;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::tinycortex::engine_config;
 
 // `RawRef` is re-exported from the crate (identical fields + serde derives), so

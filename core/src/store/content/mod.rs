@@ -33,7 +33,7 @@ pub use tinycortex::memory::store::content::{
 ///
 /// Delegates to [`tags::update_summary_tags`].
 pub fn update_summary_tags(
-    config: &crate::openhuman::config::Config,
+    config: &crate::Config,
     summary_id: &str,
 ) -> anyhow::Result<()> {
     tags::update_summary_tags(config, summary_id)

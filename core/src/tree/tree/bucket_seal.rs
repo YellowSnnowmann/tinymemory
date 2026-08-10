@@ -3,7 +3,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::store::trees::types::{Buffer, Tree};
 use crate::tinycortex::engine_config;
 

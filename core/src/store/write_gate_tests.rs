@@ -18,7 +18,7 @@ use std::sync::Arc;
 use serde_json::json;
 use tempfile::TempDir;
 
-use crate::openhuman::inference::embeddings::NoopEmbedding;
+use tinymemory_api::host::NoopEmbedding;
 use crate::store::{NamespaceDocumentInput, UnifiedMemory};
 
 /// A private key body, split so this source file does not itself contain a

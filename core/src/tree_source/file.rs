@@ -30,7 +30,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::store::content::raw::raw_source_dir;
 use crate::store::trees::types::Tree;
 

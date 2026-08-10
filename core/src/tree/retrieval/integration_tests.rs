@@ -13,7 +13,7 @@
 use chrono::{TimeZone, Utc};
 use tempfile::TempDir;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::ingest_pipeline::ingest_chat;
 use crate::store::chunks::types::SourceKind;
 use crate::tree::retrieval::{

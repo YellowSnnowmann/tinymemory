@@ -23,7 +23,7 @@ use std::collections::HashMap;
 
 use tinycortex::memory::diff::{extract_item_id, SnapshotItem, SnapshotItemSource};
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::sources::types::{MemorySourceEntry, SourceKind};
 
 /// Host [`SnapshotItemSource`] backed by `mem_tree_chunks`.

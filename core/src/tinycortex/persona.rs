@@ -8,7 +8,7 @@ use tinycortex::memory::persona::state::FileStateStore;
 use tinycortex::memory::persona::{PersonaConfig, Pipeline, RunMode};
 use walkdir::WalkDir;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 
 const DEFAULT_MAX_SESSIONS: usize = 100;
 const MAX_MAX_SESSIONS: usize = 1_000;

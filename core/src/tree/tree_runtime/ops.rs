@@ -3,7 +3,7 @@
 use chrono::{DateTime, Utc};
 use serde_json::{json, Value};
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::tree::tree_runtime::{engine, store};
 use crate::rpc::RpcOutcome;
 use tinycortex::memory::tree::runtime::*;

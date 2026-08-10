@@ -11,7 +11,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::openhuman::inference::provider::{
     create_chat_model_with_model_id, provider_for_role, UsageInfo,
 };
@@ -266,7 +266,7 @@ pub mod test_override {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::config::schema::DEFAULT_CLOUD_LLM_MODEL;
+    use tinymemory_api::host::DEFAULT_CLOUD_LLM_MODEL;
 
     #[test]
     fn build_provider_returns_inference_wrapper_when_default() {

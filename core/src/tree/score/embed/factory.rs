@@ -34,7 +34,7 @@ use anyhow::{Context, Result};
 use std::time::Duration;
 
 use super::{Embedder, InertEmbedder, ProviderEmbedder, EMBEDDING_DIM};
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::openhuman::inference::local::ollama_base_url;
 use tinyagents::harness::embeddings::{OllamaEmbeddingModel, RECOMMENDED_OLLAMA_CONTEXT_TOKENS};
 
@@ -638,7 +638,7 @@ mod tests {
         // the same way the LLM extractor already resolves the `lmstudio` slug —
         // and NOT fall through to the managed cloud budget (which 400s with
         // "Insufficient budget" and fails the seal job unrecoverably).
-        use crate::openhuman::config::schema::cloud_providers::CloudProviderCreds;
+        use tinymemory_api::host::cloud_providers::CloudProviderCreds;
         use crate::tree::health::{
             current_degraded_state, mark_semantic_recall_degraded, FailureCode,
         };
@@ -806,7 +806,7 @@ mod tests {
     /// (CodeRabbit, #5402).
     #[test]
     fn ladder_error_redaction_handles_prefix_overlapping_endpoints() {
-        use crate::openhuman::config::schema::cloud_providers::CloudProviderCreds;
+        use tinymemory_api::host::cloud_providers::CloudProviderCreds;
         let (_tmp, mut cfg) = test_config();
         // The SHORT endpoint is the one the old code scrubbed first (the inline
         // `custom:` form led the list), and it is a strict prefix of the long
@@ -847,7 +847,7 @@ mod tests {
 
     #[test]
     fn effective_slug_reports_custom_for_byo_openai_compatible() {
-        use crate::openhuman::config::schema::cloud_providers::CloudProviderCreds;
+        use tinymemory_api::host::cloud_providers::CloudProviderCreds;
         let (_tmp, mut cfg) = test_config();
         cfg.embeddings_provider = None;
         cfg.memory.embedding_provider = "lmstudio".to_string();

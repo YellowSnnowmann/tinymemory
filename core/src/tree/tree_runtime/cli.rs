@@ -340,8 +340,8 @@ fn build_runtime() -> Result<tokio::runtime::Runtime> {
         .map_err(|e| anyhow::anyhow!("failed to build tokio runtime: {e}"))
 }
 
-async fn load_config() -> Result<crate::openhuman::config::Config> {
-    let mut config = crate::openhuman::config::Config::load_or_init()
+async fn load_config() -> Result<crate::Config> {
+    let mut config = crate::Config::load_or_init()
         .await
         .unwrap_or_default();
     config.apply_env_overrides();

@@ -24,7 +24,7 @@ use tinycortex_api::provider::{MemoryCore, MemoryPortability, MemoryRecall};
 use tinycortex_api::recall::OwnedRecallOpts;
 use tinycortex_api::types::{MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary};
 
-use crate::openhuman::config::schema::MemoryDriverConfig;
+use tinymemory_api::host::MemoryDriverConfig;
 
 fn external_driver_cfg(trust_state: &str) -> MemorySubsystemConfig {
     let mut cfg = MemorySubsystemConfig {

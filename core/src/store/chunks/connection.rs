@@ -3,7 +3,7 @@
 use anyhow::Result;
 use rusqlite::Connection;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::tinycortex::engine_config;
 
 #[doc(hidden)]

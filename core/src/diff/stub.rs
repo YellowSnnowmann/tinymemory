@@ -23,7 +23,7 @@
 //! already knows how to log and skip. Failing closed matters more than being
 //! quiet: the caller in `profiles/memory.rs` logs and moves on.
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::sources::types::MemorySourceEntry;
 
 use super::types::{Checkpoint, CrossSourceDiff, Snapshot};

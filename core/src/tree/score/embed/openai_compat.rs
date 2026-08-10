@@ -29,8 +29,8 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 
 use super::{Embedder, EMBEDDING_DIM};
-use crate::openhuman::config::Config;
-use crate::openhuman::inference::embeddings::EmbeddingProvider;
+use crate::Config;
+use tinymemory_api::host::EmbeddingProvider;
 
 /// Adapter from the unified [`EmbeddingProvider`] to the memory-tree
 /// [`Embedder`] trait for the OpenAI / custom-OpenAI providers.
@@ -272,8 +272,8 @@ mod tests {
     /// OpenAI-compatible server.
     fn lmstudio_entry(
         endpoint: &str,
-    ) -> crate::openhuman::config::schema::cloud_providers::CloudProviderCreds {
-        crate::openhuman::config::schema::cloud_providers::CloudProviderCreds {
+    ) -> tinymemory_api::host::cloud_providers::CloudProviderCreds {
+        tinymemory_api::host::cloud_providers::CloudProviderCreds {
             id: "p_lmstudio_test".to_string(),
             slug: "lmstudio".to_string(),
             endpoint: endpoint.to_string(),
@@ -337,7 +337,7 @@ mod tests {
     /// branches, not the OpenAI-compatible adapter.
     #[test]
     fn reserved_slugs_still_fall_through() {
-        use crate::openhuman::config::schema::cloud_providers::CloudProviderCreds;
+        use tinymemory_api::host::cloud_providers::CloudProviderCreds;
         for p in ["managed", "cloud", "voyage", "cohere", "ollama", "none"] {
             let (_tmp, mut cfg) = cfg_with_provider(p);
             cfg.cloud_providers = vec![CloudProviderCreds {

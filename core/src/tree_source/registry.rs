@@ -6,7 +6,7 @@
 use anyhow::Result;
 
 use super::file;
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::store::trees::types::Tree;
 use crate::tree::tree::TreeFactory;
 

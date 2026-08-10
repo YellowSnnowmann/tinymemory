@@ -18,7 +18,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::{current_degraded_state, DegradedState, FailureCode, PipelineFailure};
-use crate::openhuman::config::{Config, SchedulerGateMode};
+use crate::Config;
+use tinymemory_api::host::SchedulerGateMode;
 
 /// Health of one named pipeline stage.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -363,7 +364,7 @@ mod tests {
 
     #[test]
     fn scheduler_gate_off_is_a_choice_not_a_fault() {
-        use crate::openhuman::config::SchedulerGateMode;
+        use tinymemory_api::host::SchedulerGateMode;
         let _g = super::super::test_guard();
         let (_tmp, mut cfg) = test_config();
         cfg.embeddings_provider = Some("ollama:bge-m3".into());

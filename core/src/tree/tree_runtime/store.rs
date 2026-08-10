@@ -6,7 +6,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::tinycortex::engine_config;
 use tinycortex::memory::tree::runtime::{TreeNode, TreeStatus};
 

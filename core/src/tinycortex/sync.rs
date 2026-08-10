@@ -9,7 +9,7 @@ use tinycortex::memory::sync::{
     SyncEventSink, SyncOutcome, SyncPipeline, SyncStage, SyncStateStore, WorkspaceSourcePipeline,
 };
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::sources::{MemorySourceEntry, SourceKind};
 use crate::store::MemoryClientRef;
 
@@ -703,7 +703,7 @@ mod tests {
         build_pipeline, is_composio_toolkit_syncable, syncable_composio_toolkits,
         try_read_audit_log,
     };
-    use crate::openhuman::config::Config;
+    use crate::Config;
     use crate::sources::MemorySourceEntry;
     use crate::sync::composio::{
         get_composio_sync_provider, init_default_composio_sync_providers,

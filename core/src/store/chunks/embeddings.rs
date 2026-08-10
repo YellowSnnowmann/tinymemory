@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 use rusqlite::{Connection, Transaction};
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::tinycortex::engine_config;
 
 pub(crate) fn tree_active_signature(config: &Config) -> String {

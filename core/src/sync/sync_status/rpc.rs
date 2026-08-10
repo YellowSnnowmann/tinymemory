@@ -1,6 +1,6 @@
 //! OpenHuman RPC shell for tinycortex synchronization status.
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::rpc::RpcOutcome;
 
 use tinycortex::memory::sync::StatusListResponse;

@@ -2,7 +2,7 @@
 
 use async_trait::async_trait;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::sources::readers::SourceReader;
 use crate::sources::types::{
     MemorySourceEntry, SourceContent, SourceItem, SourceKind,

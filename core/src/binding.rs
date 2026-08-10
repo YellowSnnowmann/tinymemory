@@ -70,7 +70,8 @@ use tinymemory::registry::{
 use crate::core::subsystem::{
     BoundDriver, DriverCapabilities, DriverClass, DriverHealth, SubsystemSlot,
 };
-use crate::openhuman::config::schema::{MemoryHooksConfig, MemorySubsystemConfig};
+use tinymemory_api::host::MemoryHooksConfig;
+use tinymemory_api::host::MemorySubsystemConfig;
 use crate::driver::embedded::EmbeddedMemoryProvider;
 use crate::guard::{GuardPolicy, MemoryGuard};
 
@@ -80,7 +81,7 @@ use crate::guard::{GuardPolicy, MemoryGuard};
 /// produce it. `reason` is operator-facing: it is logged, published on the
 /// event bus, and rendered in status, so it must never interpolate
 /// `credential_ref` or `endpoint` from
-/// [`crate::openhuman::config::schema::MemoryDriverConfig`], which carries a
+/// [`tinymemory_api::host::MemoryDriverConfig`], which carries a
 /// manual redacting `Debug` for exactly that reason. The crate enforces this
 /// structurally — [`DriverEntry`] carries neither field, so a refusal built
 /// there cannot reach one. Pinned by

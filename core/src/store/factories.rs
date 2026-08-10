@@ -15,7 +15,8 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use rusqlite::Connection;
 
-use crate::openhuman::config::{EmbeddingRouteConfig, MemoryConfig, StorageProviderConfig};
+use tinymemory_api::host::MemoryConfig;
+use crate::openhuman::config::{EmbeddingRouteConfig, StorageProviderConfig};
 use crate::openhuman::inference::embeddings::{
     self, format_embedding_signature, EmbeddingProvider, DEFAULT_CLOUD_EMBEDDING_DIMENSIONS,
     DEFAULT_CLOUD_EMBEDDING_MODEL, DEFAULT_OLLAMA_DIMENSIONS, DEFAULT_OLLAMA_MODEL,
@@ -669,7 +670,7 @@ mod tests {
         assert_eq!(model, "nomic-embed-text:latest");
         assert_eq!(
             dims,
-            crate::openhuman::inference::embeddings::DEFAULT_OLLAMA_DIMENSIONS,
+            tinyagents::harness::embeddings::DEFAULT_OLLAMA_DIMENSIONS,
             "dimensions must default to Ollama default"
         );
     }
@@ -683,12 +684,12 @@ mod tests {
         assert_eq!(provider, "ollama");
         assert_eq!(
             model,
-            crate::openhuman::inference::embeddings::DEFAULT_OLLAMA_MODEL,
+            tinyagents::harness::embeddings::DEFAULT_OLLAMA_MODEL,
             "empty model ID must fall back to default Ollama model"
         );
         assert_eq!(
             dims,
-            crate::openhuman::inference::embeddings::DEFAULT_OLLAMA_DIMENSIONS
+            tinyagents::harness::embeddings::DEFAULT_OLLAMA_DIMENSIONS
         );
     }
 
@@ -772,7 +773,7 @@ mod tests {
     /// the legacy `local_ai.usage.embeddings = true` flag was set. Used so
     /// the existing test scenarios continue to drive the local code path.
     fn local_embedding_for_test() -> &'static str {
-        crate::openhuman::inference::embeddings::DEFAULT_OLLAMA_MODEL
+        tinyagents::harness::embeddings::DEFAULT_OLLAMA_MODEL
     }
 
     #[tokio::test]

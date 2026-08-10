@@ -36,7 +36,7 @@ pub struct MemoryState(pub std::sync::Mutex<Option<MemoryClientRef>>);
 ///
 /// Storage (documents, vectors, graph) remains on-device via [`UnifiedMemory`].
 /// Embedding generation is delegated to whichever provider the
-/// [`MemoryConfig.embedding_provider`](crate::openhuman::config::MemoryConfig)
+/// [`MemoryConfig.embedding_provider`](tinymemory_api::host::MemoryConfig)
 /// resolves to — cloud (OpenHuman backend, the default returned by
 /// [`crate::openhuman::inference::embeddings::default_embedding_provider`]) or local Ollama
 /// when explicitly opted into. The cloud embedder resolves its session JWT

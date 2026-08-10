@@ -7,14 +7,14 @@ pub use tinycortex::memory::store::content::{
 };
 
 pub fn read_chunk_body(
-    config: &crate::openhuman::config::Config,
+    config: &crate::Config,
     chunk_id: &str,
 ) -> anyhow::Result<String> {
     tinycortex::memory::store::content::read_chunk_body(&engine_config(config), chunk_id)
 }
 
 pub fn read_summary_body(
-    config: &crate::openhuman::config::Config,
+    config: &crate::Config,
     summary_id: &str,
 ) -> anyhow::Result<String> {
     tinycortex::memory::store::content::read_summary_body(&engine_config(config), summary_id)

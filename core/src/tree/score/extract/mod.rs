@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use async_trait::async_trait;
 
 pub use tinycortex::memory::score::extract::{

@@ -24,7 +24,7 @@ use std::path::PathBuf;
 use tinycortex::memory::config::EmbeddingConfig;
 use tinycortex::memory::MemoryConfig;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 
 /// Build a [`MemoryConfig`] from the host [`Config`] and the resolved memory
 /// workspace root.

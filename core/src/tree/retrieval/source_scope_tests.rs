@@ -30,7 +30,7 @@ use std::collections::HashSet;
 use chrono::{TimeZone, Utc};
 use tempfile::TempDir;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::source_scope::{chunk_source_allowed_in, with_source_scope};
 use crate::store::chunks::store::{
     list_chunks, upsert_chunks, upsert_staged_chunks_tx, with_connection, ListChunksQuery,

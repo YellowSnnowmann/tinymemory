@@ -36,7 +36,7 @@ pub async fn ingest_coding_sessions_rpc(
     req: crate::tinycortex::CodingSessionIngestRequest,
 ) -> Result<RpcOutcome<crate::tinycortex::CodingSessionIngestResponse>, String> {
     tracing::info!("[memory_sources] ingest_coding_sessions_rpc: entry");
-    let config = crate::openhuman::config::Config::load_or_init()
+    let config = crate::Config::load_or_init()
         .await
         .map_err(|error| format!("load config for coding-session ingestion: {error}"))?;
     // TinyCortex's persona pipeline intentionally carries borrowed path state

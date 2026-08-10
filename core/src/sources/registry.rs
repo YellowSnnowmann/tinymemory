@@ -56,7 +56,7 @@ pub async fn get_source(id: &str) -> Result<Option<MemorySourceEntry>, String> {
 /// Synchronous because the registry read itself is; only the config lookup in
 /// [`registry`] was ever async.
 pub(crate) fn get_source_in(
-    config: &crate::openhuman::config::Config,
+    config: &crate::Config,
     id: &str,
 ) -> Result<Option<MemorySourceEntry>, String> {
     tinycortex::memory::sources::SourceRegistry::new(config.config_path.clone())

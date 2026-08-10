@@ -9,7 +9,7 @@
 
 use serde::Serialize;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::sources::types::{MemorySourceEntry, SourceKind};
 use crate::store::chunks::store::with_connection;
 

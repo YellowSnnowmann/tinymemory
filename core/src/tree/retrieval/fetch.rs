@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::source_scope::chunk_source_allowed_in;
 use crate::source_scope::current_source_scope;
 use crate::store::chunks::store::get_chunks_batch;

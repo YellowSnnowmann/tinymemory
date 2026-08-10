@@ -13,7 +13,7 @@
 use std::collections::HashSet;
 use std::sync::Mutex;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::sources::types::{MemorySourceEntry, SourceKind};
 use crate::sync::composio::ComposioUsage;
 use crate::sync_events::{emit_sync_stage, MemorySyncStage, MemorySyncTrigger};

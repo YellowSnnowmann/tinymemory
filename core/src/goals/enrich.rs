@@ -18,7 +18,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::openhuman::agent::harness::definition::AgentDefinitionRegistry;
 use crate::openhuman::agent::turn_origin::{with_origin, AgentTurnOrigin, TrustedAutomationSource};
 use crate::openhuman::agent::Agent;
-use crate::openhuman::config::Config;
+use crate::Config;
 use tinycortex::memory::goals::store;
 
 /// Registry id of the bundled goals enrichment agent definition.

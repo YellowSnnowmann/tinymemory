@@ -6,7 +6,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rusqlite::{Connection, Transaction};
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::store::content::StagedSummary;
 use crate::store::trees::types::{Buffer, SummaryNode, Tree, TreeKind};
 use crate::tinycortex::engine_config;

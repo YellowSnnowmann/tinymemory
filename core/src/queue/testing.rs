@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 
 /// Deterministically run queued memory-tree jobs until no immediately
 /// claimable work remains. Intended for tests that need the async pipeline
@@ -19,7 +19,7 @@ pub async fn drain_until_idle(config: &Config) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::config::Config;
+    use crate::Config;
     use tempfile::TempDir;
 
     fn test_config() -> (TempDir, Config) {

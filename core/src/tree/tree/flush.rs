@@ -3,7 +3,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::store::trees::types::DEFAULT_FLUSH_AGE_SECS;
 use crate::tree::tree::bucket_seal::{cascade_all_from, LabelStrategy};
 

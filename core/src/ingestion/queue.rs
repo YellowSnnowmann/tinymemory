@@ -410,7 +410,7 @@ mod tests {
     #[tokio::test]
     #[should_panic(expected = "ingestion queue capacity must be greater than zero")]
     async fn start_worker_rejects_zero_capacity() {
-        use crate::openhuman::inference::embeddings::NoopEmbedding;
+        use tinymemory_api::host::NoopEmbedding;
         use tempfile::TempDir;
         let tmp = TempDir::new().unwrap();
         let memory = UnifiedMemory::new(tmp.path(), Arc::new(NoopEmbedding), None).unwrap();

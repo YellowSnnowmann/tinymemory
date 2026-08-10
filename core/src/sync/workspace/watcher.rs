@@ -53,7 +53,8 @@ use notify::{
 use notify_debouncer_mini::{new_debouncer, DebouncedEvent, Debouncer};
 use tokio::sync::mpsc;
 
-use crate::openhuman::config::{rpc as config_rpc, Config};
+use crate::Config;
+use crate::openhuman::config::{rpc as config_rpc};
 use crate::ingest_pipeline::ingest_document_with_scope;
 use tinycortex::memory::ingest::canonicalize::document::DocumentInput;
 use crate::sync::workspace::watcher::state::WatcherStateStore;

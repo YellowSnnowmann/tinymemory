@@ -13,7 +13,7 @@ use anyhow::Context as _;
 use parking_lot::Mutex;
 use rusqlite::Connection;
 
-use crate::openhuman::inference::embeddings::EmbeddingProvider;
+use tinymemory_api::host::EmbeddingProvider;
 use crate::store::safety::canonical_identifier;
 use crate::store::types::GLOBAL_NAMESPACE;
 
@@ -434,7 +434,7 @@ impl UnifiedMemory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::inference::embeddings::NoopEmbedding;
+    use tinymemory_api::host::NoopEmbedding;
     use tempfile::TempDir;
 
     #[test]

@@ -31,9 +31,17 @@ async-trait = "0.1"
 # `store/factories.rs` exposes a tiny health router for the embedded provider.
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query", "ws", "macros"] }
 chrono = { version = "0.4", features = ["serde"] }
+# `tinycortex/persona.rs` resolves the user's home directory for the obsidian
+# vault default.
+dirs = "5"
 futures = "0.3"
 log = "0.4"
 parking_lot = "0.12"
+# `tree/tree/registry.rs` salts a tree id; the sync readers talk HTTP to the
+# provider APIs; the pipelines are `tracing`-instrumented.
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+tracing = "0.1"
 regex = "1.10"
 rusqlite = { version = "=0.40.0", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
@@ -54,6 +62,9 @@ objc2-contacts = { version = "0.3.2", features = ["CNContact", "CNContactFetchRe
 block2 = { version = "0.6", optional = true }
 
 [dev-dependencies]
+# `TestHostConfig` — the concrete `MemoryHostConfig` the extracted test suites
+# build, since `Config` is a trait object and cannot be `Default`ed.
+tinymemory-api = { path = "../api", version = "0.1.1", features = ["test-support"] }
 tempfile = "3"
 tokio = { version = "1", features = ["test-util"] }
 

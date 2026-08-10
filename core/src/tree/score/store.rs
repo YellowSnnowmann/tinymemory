@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 use rusqlite::Transaction;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::tinycortex::engine_config;
 
 pub use tinycortex::memory::score::store::{EntityHit, ScoreRow};

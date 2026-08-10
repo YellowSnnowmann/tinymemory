@@ -17,7 +17,7 @@ pub use crate::openhuman::runtime::python_server::{
     ensure_spacy, spacy_provisioned, SpacyResponse, SPACY_MODEL,
 };
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::tree::score::extract::{
     EntityKind, ExtractedEntities, ExtractedEntity, ExtractedTopic,
 };

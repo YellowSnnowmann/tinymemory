@@ -6,7 +6,7 @@
 
 use std::path::Path;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::store::chunks::store::get_summary_content_pointers;
 use crate::store::content::compose::{
     rewrite_summary_tags, scan_fm_field, source_tag, split_front_matter,

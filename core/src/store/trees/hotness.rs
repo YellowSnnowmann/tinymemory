@@ -2,7 +2,7 @@
 
 use anyhow::Result;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::store::trees::types::HotnessCounters;
 use crate::tinycortex::engine_config;
 

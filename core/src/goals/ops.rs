@@ -6,7 +6,7 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::rpc::RpcOutcome;
 use tinycortex::memory::goals::store;
 use tinycortex_api::goals::GoalsDoc;

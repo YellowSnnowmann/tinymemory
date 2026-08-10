@@ -5,7 +5,7 @@ use std::sync::Arc;
 use serde_json::json;
 use tempfile::TempDir;
 
-use crate::openhuman::inference::embeddings::NoopEmbedding;
+use tinymemory_api::host::NoopEmbedding;
 use crate::store::{NamespaceDocumentInput, UnifiedMemory};
 
 fn make_doc_input(
@@ -375,7 +375,7 @@ struct CountingEmbedder {
 }
 
 #[async_trait::async_trait]
-impl crate::openhuman::inference::embeddings::EmbeddingProvider for CountingEmbedder {
+impl tinymemory_api::host::EmbeddingProvider for CountingEmbedder {
     fn name(&self) -> &str {
         "counting"
     }

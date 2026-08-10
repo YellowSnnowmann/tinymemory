@@ -15,7 +15,7 @@
 /// The host's configuration, as this crate sees it.
 ///
 /// This is the load-bearing trick of the whole extraction. Before the move,
-/// every function in this crate took `config: &crate::openhuman::config::Config`
+/// every function in this crate took `config: &crate::Config`
 /// — a concrete host struct. Aliasing `Config` to the *trait object* means those
 /// signatures read `config: &Config` exactly as they did before, and the host's
 /// concrete `Config` unsize-coerces at each of the ~550 call sites on the other
@@ -35,6 +35,7 @@ pub mod binding;
 pub mod chat;
 pub mod conversations;
 pub mod diff;
+pub mod events;
 pub mod goals;
 pub mod ingest_pipeline;
 pub mod ingestion;

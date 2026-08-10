@@ -7,7 +7,7 @@ use tinycortex::memory::store::entity_index::{
     CanonicalEntity, EntityIndex, EntityKind, SelfIdentity,
 };
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::openhuman::integrations::composio::providers::profile::{
     is_self_identity_any_toolkit, IdentityKind,
 };

@@ -43,7 +43,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context as _, Result};
 use chrono::{DateTime, TimeZone, Utc};
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::ops::{
     doc_list, doc_put, graph_query, graph_upsert, kv_get, memory_query_namespace, GraphQueryParams,
     GraphUpsertParams, KvGetDeleteParams, KvSetParams, NamespaceOnlyParams, PutDocParams,
@@ -415,7 +415,7 @@ pub async fn init_fresh_schema(workspace: &Path) -> Result<()> {
     // Host unified tier.
     let memory = crate::store::UnifiedMemory::new(
         workspace,
-        std::sync::Arc::new(crate::openhuman::inference::embeddings::NoopEmbedding),
+        std::sync::Arc::new(tinymemory_api::host::NoopEmbedding),
         None,
     )
     .context("[golden] UnifiedMemory::new on a fresh workspace")?;

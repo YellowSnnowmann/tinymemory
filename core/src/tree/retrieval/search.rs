@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::tinycortex::engine_config;
 use crate::tree::retrieval::types::EntityMatch;
 use crate::tree::score::extract::EntityKind;

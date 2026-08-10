@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 
 static STARTED: std::sync::Once = std::sync::Once::new();
 

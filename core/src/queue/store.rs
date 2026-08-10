@@ -3,7 +3,7 @@
 use anyhow::Result;
 use rusqlite::Transaction;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::tree::health::PipelineFailure;
 
 use super::types::{Job, JobFailure, JobStatus, NewJob};

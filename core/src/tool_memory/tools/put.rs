@@ -148,7 +148,8 @@ mod tests {
 
     use tempfile::TempDir;
 
-    use crate::openhuman::config::{Config, TEST_ENV_LOCK};
+    use crate::Config;
+use crate::openhuman::config::{TEST_ENV_LOCK};
     use crate::guard::policy::GUARD_DENIED_PREFIX;
     use crate::openhuman::security::live_policy;
     use crate::openhuman::security::policy::{AutonomyLevel, SecurityPolicy};

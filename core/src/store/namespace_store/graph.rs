@@ -514,7 +514,7 @@ impl UnifiedMemory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::inference::embeddings::NoopEmbedding;
+    use tinymemory_api::host::NoopEmbedding;
     use std::sync::Arc;
     use tempfile::TempDir;
 

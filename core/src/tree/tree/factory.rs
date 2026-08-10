@@ -11,7 +11,7 @@ use std::borrow::Cow;
 
 use anyhow::Result;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::store::content::paths::slugify_source_id;
 use crate::store::content::SummaryTreeKind;
 use crate::store::trees::archive_tree;

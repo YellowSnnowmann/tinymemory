@@ -4,7 +4,7 @@
 use anyhow::Context;
 use anyhow::Result;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 #[cfg(feature = "memory-git")]
 use crate::store::content::wiki_git::{SummaryCommitBatch, SummaryCommitEntry};
 use crate::store::trees::types::Tree;

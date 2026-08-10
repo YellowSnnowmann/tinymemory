@@ -13,7 +13,7 @@ use tinycortex::memory::tree::runtime::{
 
 use crate::core::bus::BUS;
 use crate::core::events::DomainEvent;
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::tinycortex::engine_config;
 
 const SUMMARIZATION_TEMP: f64 = 0.3;

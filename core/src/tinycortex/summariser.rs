@@ -5,7 +5,7 @@ use tinycortex::memory::tree::{
     Summariser, SummaryCall, SummaryContext, SummaryInput, SummaryOutput,
 };
 
-use crate::openhuman::config::Config;
+use crate::Config;
 
 #[derive(Clone)]
 pub struct HostSummariser {

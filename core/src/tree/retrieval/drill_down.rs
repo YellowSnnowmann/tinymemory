@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::openhuman::config::Config;
+use crate::Config;
 use crate::source_scope::current_source_scope;
 use crate::tinycortex::engine_config;
 use crate::tree::retrieval::engine::EmbedderBridge;

@@ -55,7 +55,7 @@ use crate::core::bus::BUS;
 use crate::core::events::DomainEvent;
 use crate::openhuman::agent::triage::{apply_decision, run_triage, TriageOutcome, TriggerEnvelope};
 use crate::openhuman::config::rpc as config_rpc;
-use crate::openhuman::config::schema::COMPOSIO_MODE_DIRECT;
+use tinymemory_api::host::COMPOSIO_MODE_DIRECT;
 use crate::openhuman::integrations::composio::trigger_history;
 use tinybus::EventHandler;
 use tinybus::SubscriptionHandle;
