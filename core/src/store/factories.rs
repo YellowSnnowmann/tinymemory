@@ -915,7 +915,7 @@ mod tests {
         let _lock = crate::embedding_host::embedding_test_guard();
         reset_health_gate_for_test();
 
-        let mut rx = crate::openhuman::web_chat::subscribe_web_channel_events();
+        let sink = crate::events::RecordingSink::install();
 
         assert!(
             report_ollama_health_gate_once("http://127.0.0.1:1", "bge-m3"),

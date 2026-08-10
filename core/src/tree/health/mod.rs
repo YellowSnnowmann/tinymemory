@@ -313,17 +313,18 @@ mod tests {
     #[test]
     fn local_model_unavailable_broadcasts_once_per_transition() {
         let _g = test_guard();
-        let mut rx = crate::openhuman::web_chat::subscribe_web_channel_events();
+        let sink = crate::events::RecordingSink::install();
 
         let failure = PipelineFailure::new(FailureCode::LocalModelUnavailable);
 
         // First failure of the outage → clients are told.
         mark_local_model_unavailable_if_applicable(&failure);
-        let event = rx.try_recv().expect("transition must broadcast");
-        assert_eq!(event.event, "user_error");
-        assert_eq!(
-            event.error_type.as_deref(),
-            Some(LOCAL_MODEL_UNAVAILABLE_KIND)
+        let recorded = sink.drain();
+        assert_eq!(recorded.len(), 1, "transition must broadcast");
+        let event = &recorded[0];
+        assert!(
+            matches!(event, crate::events::MemoryEvent::LocalModelUnavailable { .. }),
+            "the transition must publish the local-model-unavailable event, got {event:?}"
         );
 
         // Subsequent failures in the same outage must stay quiet — the re-embed
@@ -331,7 +332,7 @@ mod tests {
         mark_local_model_unavailable_if_applicable(&failure);
         mark_local_model_unavailable_if_applicable(&failure);
         assert!(
-            rx.try_recv().is_err(),
+            sink.drain().is_empty(),
             "must not re-broadcast while already degraded for this cause"
         );
 
@@ -352,7 +353,7 @@ mod tests {
     #[test]
     fn concurrent_failures_announce_exactly_once() {
         let _g = test_guard();
-        let mut rx = crate::openhuman::web_chat::subscribe_web_channel_events();
+        let sink = crate::events::RecordingSink::install();
 
         const THREADS: usize = 8;
         std::thread::scope(|scope| {
@@ -388,9 +389,9 @@ mod tests {
         mark_local_model_unavailable_if_applicable(&failure);
 
         // The client connects now, after the first failure.
-        let mut rx = crate::openhuman::web_chat::subscribe_web_channel_events();
+        let sink = crate::events::RecordingSink::install();
         assert!(
-            rx.try_recv().is_err(),
+            sink.drain().is_empty(),
             "the pre-subscription announcement is genuinely gone, not buffered"
         );
 
@@ -415,7 +416,7 @@ mod tests {
     #[test]
     fn local_model_unavailable_broadcasts_over_a_different_active_cause() {
         let _g = test_guard();
-        let mut rx = crate::openhuman::web_chat::subscribe_web_channel_events();
+        let sink = crate::events::RecordingSink::install();
 
         mark_semantic_recall_degraded(FailureCode::EmbeddingsUnconfigured);
         mark_local_model_unavailable_if_applicable(&PipelineFailure::new(
