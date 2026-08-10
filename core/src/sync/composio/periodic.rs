@@ -52,8 +52,8 @@ use tokio::time::interval;
 
 use crate::openhuman::config::rpc as config_rpc;
 use tinymemory_api::host::DEFAULT_MEMORY_SYNC_INTERVAL_SECS;
-use crate::openhuman::cron::scheduler_gate::gate::{current_policy, resume_notify};
-use crate::openhuman::cron::scheduler_gate::policy::PauseReason;
+use crate::scheduler_gate::{current_policy, resume_notify};
+use crate::scheduler_gate::PauseReason;
 use crate::sources::{
     memory_sync_defaults_for_toolkit, MemorySourceEntry, SourceKind,
 };

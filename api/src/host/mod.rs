@@ -41,6 +41,7 @@
 //! them and they can go home.
 
 pub mod cloud_providers;
+pub mod composio;
 pub mod local_ai;
 pub mod scheduler_gate;
 pub mod storage_memory;

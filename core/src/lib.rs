@@ -49,6 +49,7 @@ pub mod queue;
 pub mod remember;
 pub mod rpc_models;
 pub mod schema;
+pub mod scheduler_gate;
 pub mod search;
 pub mod source_scope;
 pub mod sources;

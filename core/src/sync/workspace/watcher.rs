@@ -58,8 +58,8 @@ use crate::openhuman::config::{rpc as config_rpc};
 use crate::ingest_pipeline::ingest_document_with_scope;
 use tinycortex::memory::ingest::canonicalize::document::DocumentInput;
 use crate::sync::workspace::watcher::state::WatcherStateStore;
-use crate::openhuman::cron::scheduler_gate::gate::current_policy;
-use crate::openhuman::cron::scheduler_gate::policy::PauseReason;
+use crate::scheduler_gate::current_policy;
+use crate::scheduler_gate::PauseReason;
 
 pub mod state;
 
