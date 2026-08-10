@@ -221,7 +221,7 @@ impl EventHandler<DomainEvent> for ComposioTriggerSubscriber {
         // existing env-var / config triage flags below remain the
         // backend-mode gates.
         if let Ok(config) = config_rpc::load_config_with_timeout().await {
-            if config.composio.mode == COMPOSIO_MODE_DIRECT {
+            if config.composio().mode == COMPOSIO_MODE_DIRECT {
                 tracing::info!(
                     toolkit = %toolkit,
                     trigger = %trigger,
@@ -290,7 +290,7 @@ impl EventHandler<DomainEvent> for ComposioTriggerSubscriber {
         // the config we let triage run rather than silently drop events.
         match config_rpc::load_config_with_timeout().await {
             Ok(config) => {
-                if config.composio.triage_disabled {
+                if config.composio().triage_disabled {
                     tracing::debug!(
                         toolkit = %toolkit,
                         trigger = %trigger,
@@ -646,7 +646,7 @@ impl EventHandler<DomainEvent> for ComposioConnectionCreatedSubscriber {
             // onboarding completes. The memory_sources auto-register below
             // still runs unconditionally so the source appears in the unified
             // sources list immediately.
-            if !ctx.config.onboarding_completed {
+            if !ctx.config.onboarding_completed() {
                 tracing::info!(
                     toolkit = %toolkit,
                     connection_id = %connection_id,
@@ -822,7 +822,7 @@ async fn wait_for_connection_active(
 // ── Config-changed subscriber ───────────────────────────────────────
 
 /// Drops the prompt-level integrations cache whenever the user flips
-/// `config.composio.mode` between `"backend"` and `"direct"` or
+/// `config.composio().mode` between `"backend"` and `"direct"` or
 /// stores/clears the direct-mode API key. Without this, the chat
 /// runtime keeps the old tenant's tool catalogue / connection list
 /// pinned for up to `CACHE_TTL` (60s) — that's the regression behind

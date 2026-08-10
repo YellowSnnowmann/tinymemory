@@ -190,7 +190,7 @@ pub trait ComposioProvider: Send + Sync {
                 // turn (the facets table feeds queries; PROFILE.md
                 // feeds the system prompt).
                 if let Err(e) = super::profile_md::merge_provider_into_profile_md(
-                    &ctx.config.workspace_dir,
+                    &ctx.config.workspace_dir(),
                     &profile,
                 ) {
                     tracing::warn!(

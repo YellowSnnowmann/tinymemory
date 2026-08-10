@@ -17,7 +17,7 @@
 //!
 //! Real-time trigger webhooks (`composio:trigger` socket.io events
 //! fanned out from `wss://api.tinyhumans.ai`) still do not reach the
-//! core when `config.composio.mode == "direct"`, because the backend
+//! core when `config.composio().mode == "direct"`, because the backend
 //! HMAC-verifies the Composio webhook and pushes it down a per-user
 //! socket — direct-mode users see synchronous tool execution and
 //! periodic poll-based sync, but not async trigger pushes in this

@@ -410,7 +410,7 @@ impl ProviderContext {
                     &direct,
                     action,
                     arguments,
-                    &live_config.composio.entity_id,
+                    &live_config.composio().entity_id,
                     self.connection_id.as_deref(),
                 )
                 .await
@@ -479,7 +479,7 @@ impl ProviderContext {
         #[cfg(test)]
         {
             return crate::store::MemoryClient::from_workspace_dir(
-                self.config.workspace_dir.clone(),
+                self.config.workspace_dir().clone(),
             )
             .ok()
             .map(std::sync::Arc::new);
@@ -537,7 +537,7 @@ mod tests {
     }
 
     // `ProviderContext::execute` and `ProviderContext::backend_client` reload
-    // config from `ctx.config.config_path` (via `reload_config_snapshot_with_timeout`)
+    // config from `ctx.config.config_path()` (via `reload_config_snapshot_with_timeout`)
     // rather than from the process-global `OPENHUMAN_WORKSPACE`. Tests
     // therefore only need to persist the config to `config_path` — no env var
     // manipulation required.
@@ -555,9 +555,9 @@ mod tests {
         let mut config = Config::default();
         config.config_path() = tmp.path().join("config.toml");
         config.workspace_dir() = tmp.path().join("workspace");
-        config.secrets.encrypt = false;
-        config.composio.mode = tinymemory_api::host::COMPOSIO_MODE_DIRECT.to_string();
-        config.composio.api_key = Some("test-direct-key".to_string());
+        config.secrets_encrypt() = false;
+        config.composio().mode = tinymemory_api::host::COMPOSIO_MODE_DIRECT.to_string();
+        config.composio().api_key = Some("test-direct-key".to_string());
         config.save().await.expect("save fake config to disk");
 
         let ctx = ProviderContext {
@@ -592,7 +592,7 @@ mod tests {
         let mut config = Config::default();
         config.config_path() = tmp.path().join("config.toml");
         config.workspace_dir() = tmp.path().join("workspace");
-        config.secrets.encrypt = false;
+        config.secrets_encrypt() = false;
         config.save().await.expect("save fake config to disk");
 
         let ctx = ProviderContext {

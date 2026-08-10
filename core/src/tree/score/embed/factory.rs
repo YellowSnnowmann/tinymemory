@@ -361,7 +361,7 @@ fn build_cloud_embedder(config: &Config) -> ProviderEmbedder {
     let provider = crate::openhuman::inference::embeddings::cloud::OpenHumanCloudEmbedding::new(
         None,
         openhuman_dir,
-        config.secrets.encrypt,
+        config.secrets_encrypt(),
         crate::openhuman::inference::embeddings::cloud::DEFAULT_CLOUD_EMBEDDING_MODEL,
         crate::openhuman::inference::embeddings::cloud::DEFAULT_CLOUD_EMBEDDING_DIMENSIONS,
     );

@@ -538,16 +538,16 @@ fn composio_config(
 ) -> Result<tinycortex::memory::config::ComposioSyncConfig, String> {
     use tinycortex::memory::config::{ComposioMode, ComposioSyncConfig, SecretString};
 
-    if config.composio.mode.eq_ignore_ascii_case("direct") {
+    if config.composio().mode.eq_ignore_ascii_case("direct") {
         let api_key = crate::openhuman::security::credentials::get_composio_api_key(config)?
-            .or_else(|| config.composio.api_key.clone())
+            .or_else(|| config.composio().api_key.clone())
             .ok_or_else(|| "Composio direct API key is not configured".to_string())?;
         Ok(ComposioSyncConfig {
             mode: ComposioMode::Direct,
             base_url: "https://backend.composio.dev/api/v3".into(),
             api_key: Some(SecretString::new(api_key)),
             bearer_token: None,
-            entity_id: Some(config.composio.entity_id.clone()),
+            entity_id: Some(config.composio().entity_id.clone()),
         })
     } else {
         let bearer = crate::api::jwt::get_session_token(config)?
@@ -557,7 +557,7 @@ fn composio_config(
             base_url: crate::api::config::effective_backend_api_url(&config.api_url()),
             api_key: None,
             bearer_token: Some(SecretString::new(bearer)),
-            entity_id: Some(config.composio.entity_id.clone()),
+            entity_id: Some(config.composio().entity_id.clone()),
         })
     }
 }

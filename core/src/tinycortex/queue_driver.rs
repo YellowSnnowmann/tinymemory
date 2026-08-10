@@ -503,7 +503,7 @@ impl QueueDelegates for HostQueueDelegates {
                 trees_store::upsert_buffer_tx(&tx, &buf)?;
             }
             let memory_config =
-                super::memory_config_from(&self.config, self.config.workspace_dir.clone());
+                super::memory_config_from(&self.config, self.config.workspace_dir().clone());
             let should_seal = tinycortex::memory::tree::should_seal(&memory_config, &buf);
             if is_source_target {
                 if let Some(cid) = lifecycle_chunk_id.as_deref() {
@@ -544,7 +544,7 @@ impl QueueDelegates for HostQueueDelegates {
         let buf = trees_store::get_buffer(&self.config, &tree.id, payload.level)?;
         let forced = payload.force_now_ms.is_some();
         let memory_config =
-            super::memory_config_from(&self.config, self.config.workspace_dir.clone());
+            super::memory_config_from(&self.config, self.config.workspace_dir().clone());
         if buf.is_empty()
             || (!forced && !tinycortex::memory::tree::should_seal(&memory_config, &buf))
         {
