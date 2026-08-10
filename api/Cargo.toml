@@ -22,6 +22,12 @@ description = "Stable public contracts for the TinyMemory memory system"
 # - `uuid`    — `tool_memory::ToolMemoryRule::generate_id` (v4 bytes, nibble
 #               encoded). Only the `v4` feature is needed here; the engine
 #               crate additionally enables `serde`.
+# - `schemars` — the `host::` config sections are still fields of the host's
+#               root `Config`, which derives `JsonSchema` to generate the
+#               settings schema the UI renders. Dropping the derive on the way
+#               down here would silently shrink that schema. `schemars` is pure
+#               Rust (serde + serde_json + dyn-clone + ref-cast) and carries
+#               none of the forbidden dependencies below.
 #
 # Nothing here may pull in `rusqlite`, `git2`, `reqwest`, `regex`, or an async
 # runtime. Guard with the FORWARD form, which is scoped to this package:
@@ -36,8 +42,24 @@ description = "Stable public contracts for the TinyMemory memory system"
 anyhow = "1"
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
+# `log` is the zero-dependency logging facade, not an implementation. The
+# `host::cloud_providers` legacy-field migration logs what it rewrote.
+log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+schemars = "1.2"
 sha2 = "0.10"
 thiserror = "2"
 uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+# The moved `host::` config sections are parsed from TOML in their own tests,
+# exactly as the host parses them from `config.toml`.
+toml = "0.9"
+
+[features]
+default = []
+# `host::test_support::TestHostConfig` — a concrete, `Default`-able
+# `MemoryHostConfig`. `tinymemory-core` enables this from its dev-dependencies;
+# nothing enables it in a shipped build.
+test-support = []

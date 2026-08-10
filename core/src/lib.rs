@@ -12,6 +12,25 @@
 //! credentials, schedulers, the event bus, and config mapping. The host
 //! supplies those through the seam traits in [`tinymemory_api::host`].
 
+/// The host's configuration, as this crate sees it.
+///
+/// This is the load-bearing trick of the whole extraction. Before the move,
+/// every function in this crate took `config: &crate::openhuman::config::Config`
+/// — a concrete host struct. Aliasing `Config` to the *trait object* means those
+/// signatures read `config: &Config` exactly as they did before, and the host's
+/// concrete `Config` unsize-coerces at each of the ~550 call sites on the other
+/// side of the seam with no edit at all.
+///
+/// What did change inside this crate: field reads became method calls
+/// (`config.workspace_dir` → `config.workspace_dir()`), by-value `Config`
+/// parameters became `Arc<Config>`, and `Config::default()` in tests became
+/// [`tinymemory_api::host::test_support::TestHostConfig`], which cannot be built
+/// from a trait object.
+///
+/// See [`tinymemory_api::host::MemoryHostConfig`] for the accessor surface and
+/// why its return types are shaped the way they are.
+pub type Config = dyn tinymemory_api::host::MemoryHostConfig;
+
 pub mod binding;
 pub mod chat;
 pub mod conversations;

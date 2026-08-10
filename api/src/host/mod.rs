@@ -59,7 +59,9 @@ pub use cloud_providers::{
 };
 pub use config::{ComposioMode, MemoryHostConfig, COMPOSIO_MODE_BACKEND, COMPOSIO_MODE_DIRECT};
 pub use embeddings::{format_embedding_signature, EmbeddingProvider, NoopEmbedding};
-pub use events::{EmbeddingHealthReason, MemoryEventSink, NoopEventSink, SyncTrigger};
+pub use events::{
+    EmbeddingHealthReason, MemoryEvent, MemoryEventSink, NoopEventSink, SyncTrigger,
+};
 pub use local_ai::{LocalAiConfig, LocalAiUsage};
 pub use scheduler_gate::{SchedulerGateConfig, SchedulerGateMode};
 pub use storage_memory::{
