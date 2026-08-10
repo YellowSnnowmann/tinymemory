@@ -15,6 +15,4 @@
 //!   entry points. Request paths must use these, never the sync API (#5156).
 
 pub mod blocking;
-mod bus;
 
-pub use bus::register_conversation_persistence_subscriber;

@@ -31,7 +31,6 @@
 /// why its return types are shaped the way they are.
 pub type Config = dyn tinymemory_api::host::MemoryHostConfig;
 
-pub mod binding;
 pub mod chat;
 pub mod chat_host;
 pub mod conversations;
@@ -64,8 +63,6 @@ pub mod tree_policy;
 pub mod tree_source;
 pub mod util;
 
-#[cfg(test)]
-mod binding_tests;
 #[cfg(test)]
 mod rpc_models_tests;
 #[cfg(test)]

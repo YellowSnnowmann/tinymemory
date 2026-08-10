@@ -13,7 +13,6 @@
 //! surfaces. This submodule is specifically the memory-sync half of that
 //! integration boundary.
 
-pub mod bus;
 pub mod periodic;
 pub mod providers;
 
@@ -23,10 +22,6 @@ use crate::openhuman::integrations::composio::client::{
 };
 use crate::openhuman::integrations::composio::types::ComposioConnection;
 
-pub use bus::{
-    register_composio_trigger_subscriber, ComposioConfigChangedSubscriber,
-    ComposioTriggerSubscriber,
-};
 pub use periodic::{record_sync_success, start_periodic_sync};
 pub use providers::{
     all_providers as all_composio_sync_providers, get_provider as get_composio_sync_provider,

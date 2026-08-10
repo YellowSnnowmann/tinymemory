@@ -204,7 +204,7 @@ pub(crate) fn active_workspace_dir() -> Option<PathBuf> {
 /// Per-workspace client cache used by [`client_for_workspace`].
 ///
 /// A *map*, not a slot, for the same reason
-/// [`crate::binding`] caches bindings in a map: a subsystem
+/// the host's `memory::binding` caches bindings in a map: a subsystem
 /// driver is resolved per workspace and must never be handed another
 /// workspace's handle.
 static WORKSPACE_CLIENTS: OnceLock<RwLock<HashMap<PathBuf, MemoryClientRef>>> = OnceLock::new();
