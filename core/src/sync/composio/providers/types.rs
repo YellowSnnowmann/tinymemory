@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
+use tinymemory_api::host::MemoryHostConfig;
+
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::config_loader as config_rpc;

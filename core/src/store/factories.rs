@@ -612,8 +612,7 @@ pub fn create_memory_for_migration(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tree::health::user_error::LOCAL_MODEL_UNAVAILABLE_KIND;
-
+    
     use axum::{routing::get, Json, Router};
     use std::ffi::OsString;
     use std::net::SocketAddr;
@@ -858,8 +857,8 @@ mod tests {
             provider, "cloud",
             "opted-in but unreachable Ollama must fall back to cloud"
         );
-        assert_eq!(model, DEFAULT_CLOUD_EMBEDDING_MODEL);
-        assert_eq!(dims, DEFAULT_CLOUD_EMBEDDING_DIMENSIONS);
+        assert_eq!(model, CLOUD_TEST_MODEL);
+        assert_eq!(dims, CLOUD_TEST_DIMENSIONS);
     }
 
     #[tokio::test]

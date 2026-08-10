@@ -17,6 +17,8 @@ use std::time::Duration;
 use anyhow::Result;
 use tokio::sync::Notify;
 
+use tinymemory_api::host::MemoryHostConfig;
+
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::Config;

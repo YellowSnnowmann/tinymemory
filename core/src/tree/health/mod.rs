@@ -280,7 +280,6 @@ pub fn current_degraded_state() -> DegradedState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use user_error::LOCAL_MODEL_UNAVAILABLE_KIND;
 
     /// #5354 — a classified local-runtime failure flips the recall flag with
     /// its own cause, so the panel names the Ollama fix from the first failed
