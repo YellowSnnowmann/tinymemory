@@ -416,7 +416,7 @@ mod tests {
         // summary_tree must mirror summarizer_available precisely.
         assert_eq!(
             tree.ok,
-            crate::tree::tree_runtime::ops::summarizer_available(&cfg).0,
+            crate::chat_host::summarizer_available(&cfg).0,
             "summary_tree health must mirror the runtime capability check"
         );
         // Without opt-in, the note names the "no summarization provider" case.
