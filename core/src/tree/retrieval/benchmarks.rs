@@ -22,6 +22,8 @@
 use chrono::{TimeZone, Utc};
 use tempfile::TempDir;
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::Config;
 use crate::ingest_pipeline::ingest_chat;
 use crate::queue::testing::drain_until_idle;
@@ -30,9 +32,9 @@ use crate::tree::retrieval::{fetch_leaves, query_source, search_entities};
 use tinycortex::memory::ingest::canonicalize::chat::{ChatBatch, ChatMessage};
 
 /// Shared test config — disables embedding for deterministic inert behaviour.
-fn bench_config() -> (TempDir, Config) {
+fn bench_config() -> (TempDir, TestHostConfig) {
     let tmp = TempDir::new().unwrap();
-    let mut cfg = Config::default();
+    let mut cfg = TestHostConfig::default();
     cfg.workspace_dir = tmp.path().to_path_buf();
     cfg.memory_tree().embedding_endpoint = None;
     cfg.memory_tree().embedding_model = None;

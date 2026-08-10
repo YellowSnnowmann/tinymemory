@@ -8,13 +8,15 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::Config;
 
 static STARTED: std::sync::Once = std::sync::Once::new();
 
 /// Start the periodic flush_stale scheduler. Takes the full `Config` so the
 /// enqueues match the same workspace + LLM settings the workers see — not
-/// `Config::default()`.
+/// `TestHostConfig::default()`.
 pub fn start(config: Arc<Config>) {
     STARTED.call_once(|| {
         // Periodic flush_stale loop (every 3 h) so L0 buffers seal
@@ -101,9 +103,9 @@ mod tests {
     use crate::queue::types::{FlushStalePayload, JobKind, JobStatus};
     use tempfile::TempDir;
 
-    fn test_config() -> (TempDir, Config) {
+    fn test_config() -> (TempDir, TestHostConfig) {
         let tmp = TempDir::new().unwrap();
-        let mut cfg = Config::default();
+        let mut cfg = TestHostConfig::default();
         cfg.workspace_dir = tmp.path().to_path_buf();
         cfg.memory_tree().embedding_endpoint = None;
         cfg.memory_tree().embedding_model = None;

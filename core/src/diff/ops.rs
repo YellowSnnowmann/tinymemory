@@ -10,6 +10,8 @@
 //! the host's `async` + `Result<_, String>` signatures, the `DomainEvent`
 //! publishes, and the tracing that RPC/tools/sync/subconscious callers expect.
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::Config;
 use crate::sources::types::MemorySourceEntry;
 
@@ -309,9 +311,9 @@ mod tests {
     use super::*;
     use tinycortex::memory::diff::{Ledger, SnapshotMeta};
 
-    fn test_config() -> Config {
+    fn test_config() -> TestHostConfig {
         let dir = tempfile::tempdir().unwrap();
-        let mut config = Config::default();
+        let mut config = TestHostConfig::default();
         config.workspace_dir = dir.path().to_path_buf();
         // Leak the tempdir so the path stays valid for the test's lifetime.
         std::mem::forget(dir);

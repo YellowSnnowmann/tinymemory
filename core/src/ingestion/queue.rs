@@ -16,6 +16,8 @@ use std::time::Instant;
 
 use tokio::sync::mpsc;
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use super::state::IngestionState;
 use super::MemoryIngestionConfig;
 use crate::store::{NamespaceDocumentInput, UnifiedMemory};
@@ -313,7 +315,7 @@ mod tests {
                 document_id: None,
                 taint: crate::MemoryTaint::Internal,
             },
-            config: MemoryIngestionConfig::default(),
+            config: MemoryIngestionTestHostConfig::default(),
         }
     }
 

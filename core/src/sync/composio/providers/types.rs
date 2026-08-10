@@ -3,6 +3,8 @@
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::config_loader as config_rpc;
 use crate::Config;
 use crate::composio_host::{self, ComposioExecuteResponse};
@@ -443,7 +445,7 @@ mod tests {
     #[test]
     fn usage_handle_is_shared_across_context_clones() {
         let ctx = ProviderContext {
-            config: Arc::new(Config::default()),
+            config: Arc::new(TestHostConfig::default()),
             toolkit: "gmail".to_string(),
             connection_id: None,
             usage: ComposioUsageHandle::default(),
@@ -491,7 +493,7 @@ mod tests {
         // even with `mode = "direct"`.
         let tmp = tempfile::tempdir().expect("tempdir");
 
-        let mut config = Config::default();
+        let mut config = TestHostConfig::default();
         config.config_path = tmp.path().join("config.toml");
         config.workspace_dir = tmp.path().join("workspace");
         config.secrets_encrypt = false;
@@ -528,7 +530,7 @@ mod tests {
         // the error surface is sensible.
         let tmp = tempfile::tempdir().expect("tempdir");
 
-        let mut config = Config::default();
+        let mut config = TestHostConfig::default();
         config.config_path = tmp.path().join("config.toml");
         config.workspace_dir = tmp.path().join("workspace");
         config.secrets_encrypt = false;

@@ -24,6 +24,8 @@ use std::collections::HashMap;
 
 use tinycortex::memory::diff::{extract_item_id, SnapshotItem, SnapshotItemSource};
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::Config;
 use crate::sources::types::{MemorySourceEntry, SourceKind};
 
@@ -193,7 +195,7 @@ mod tests {
 
     #[test]
     fn read_only_adapter_never_yields_items() {
-        let source = ChunkStoreItemSource::read_only(Config::default());
+        let source = ChunkStoreItemSource::read_only(TestHostConfig::default());
         assert!(source.items_for_source("anything").is_empty());
     }
 }

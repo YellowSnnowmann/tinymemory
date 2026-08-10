@@ -13,6 +13,8 @@
 use chrono::{TimeZone, Utc};
 use tempfile::TempDir;
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::Config;
 use crate::ingest_pipeline::ingest_chat;
 use crate::store::chunks::types::SourceKind;
@@ -21,9 +23,9 @@ use crate::tree::retrieval::{
 };
 use tinycortex::memory::ingest::canonicalize::chat::{ChatBatch, ChatMessage};
 
-fn test_config() -> (TempDir, Config) {
+fn test_config() -> (TempDir, TestHostConfig) {
     let tmp = TempDir::new().unwrap();
-    let mut cfg = Config::default();
+    let mut cfg = TestHostConfig::default();
     cfg.workspace_dir = tmp.path().to_path_buf();
     // Phase 4 (#710): ingest embeds chunks; tests use inert for determinism.
     cfg.memory_tree().embedding_endpoint = None;

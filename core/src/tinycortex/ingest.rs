@@ -5,6 +5,8 @@ use tinycortex::memory::ingest::{QueueJobSink, TreeJobSink};
 use tinycortex::memory::score::extract::{LlmEntityExtractor, LlmExtractorConfig};
 use tinycortex::memory::score::ScoringConfig;
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::Config;
 
 #[derive(Default)]
@@ -49,7 +51,7 @@ impl TreeJobSink for HostTreeJobSink {
 fn scoring_config(config: &Config) -> ScoringConfig {
     match super::build_chat_provider(config) {
         Ok(provider) => {
-            let mut extractor = LlmExtractorConfig::default();
+            let mut extractor = LlmExtractorTestHostConfig::default();
             extractor.output_language = config.output_language().map(str::to_string);
             ScoringConfig::with_llm_extractor(std::sync::Arc::new(LlmEntityExtractor::new(
                 extractor, provider,

@@ -17,6 +17,8 @@ use std::time::Duration;
 use anyhow::Result;
 use tokio::sync::Notify;
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::Config;
 // W4 flip: `run_once` now delegates claim/dispatch/settle to the crate, so the
 // legacy `handlers`, per-job settle (`mark_*`/`scrub_for_log`), and claim
@@ -76,7 +78,7 @@ pub fn wake_workers() {
 
 /// Start the worker pool + daily scheduler. Takes the full `Config` so
 /// each spawned task sees the user's actual settings (LLM endpoints,
-/// embedder model, timeouts) — not `Config::default()`. Without this,
+/// embedder model, timeouts) — not `TestHostConfig::default()`. Without this,
 /// workers fall back to inert/regex-only behavior regardless of what's
 /// in `config.toml`, defeating the entire async pipeline.
 ///
@@ -509,9 +511,9 @@ mod tests {
     use chrono::{TimeZone, Utc};
     use tempfile::TempDir;
 
-    fn test_config() -> (TempDir, Config) {
+    fn test_config() -> (TempDir, TestHostConfig) {
         let tmp = TempDir::new().unwrap();
-        let mut cfg = Config::default();
+        let mut cfg = TestHostConfig::default();
         cfg.workspace_dir = tmp.path().to_path_buf();
         cfg.memory_tree().embedding_endpoint = None;
         cfg.memory_tree().embedding_model = None;

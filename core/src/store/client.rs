@@ -11,6 +11,8 @@ use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::embedding_host::require_embedding_host;
 use tinymemory_api::host::EmbeddingProvider;
 use crate::ingestion::queue as ingestion_queue;
@@ -179,7 +181,7 @@ impl MemoryClient {
         self.ingestion_queue.submit(IngestionJob {
             document_id: document_id.clone(),
             document: input,
-            config: MemoryIngestionConfig::default(),
+            config: MemoryIngestionTestHostConfig::default(),
         });
 
         Ok(document_id)
@@ -326,7 +328,7 @@ impl MemoryClient {
         self.ingestion_queue.submit(IngestionJob {
             document_id: doc_id,
             document: input,
-            config: MemoryIngestionConfig::default(),
+            config: MemoryIngestionTestHostConfig::default(),
         });
 
         Ok(())

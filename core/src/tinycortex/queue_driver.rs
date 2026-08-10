@@ -39,6 +39,8 @@ use tinycortex::memory::queue::{
 };
 use tinycortex::memory::MemoryConfig;
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::Config;
 use crate::store::chunks::store as chunk_store;
 use crate::store::chunks::types::{
@@ -908,7 +910,7 @@ mod tests {
 
     fn host_delegates_on_tempdir() -> (tempfile::TempDir, HostQueueDelegates) {
         let tmp = tempfile::tempdir().expect("tempdir");
-        let mut config = crate::Config::default();
+        let mut config = crate::TestHostConfig::default();
         config.workspace_dir = tmp.path().to_path_buf();
         (tmp, HostQueueDelegates::new(config))
     }

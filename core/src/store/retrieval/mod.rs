@@ -29,6 +29,8 @@
 use anyhow::Result;
 use std::sync::Arc;
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::Config;
 use crate::store::chunks::store::list_chunks;
 use crate::store::chunks::types::{Chunk, SourceKind};
@@ -159,9 +161,9 @@ mod tests {
     use chrono::{TimeZone, Utc};
     use tempfile::TempDir;
 
-    fn test_config() -> (TempDir, Config) {
+    fn test_config() -> (TempDir, TestHostConfig) {
         let tmp = TempDir::new().unwrap();
-        let mut cfg = Config::default();
+        let mut cfg = TestHostConfig::default();
         cfg.workspace_dir = tmp.path().to_path_buf();
         (tmp, cfg)
     }

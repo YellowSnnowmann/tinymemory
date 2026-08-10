@@ -30,6 +30,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::Config;
 use crate::store::content::raw::raw_source_dir;
 use crate::store::trees::types::Tree;
@@ -138,9 +140,9 @@ mod tests {
     use chrono::TimeZone;
     use tempfile::TempDir;
 
-    fn cfg() -> (TempDir, Config) {
+    fn cfg() -> (TempDir, TestHostConfig) {
         let tmp = TempDir::new().unwrap();
-        let mut cfg = Config::default();
+        let mut cfg = TestHostConfig::default();
         cfg.workspace_dir = tmp.path().to_path_buf();
         (tmp, cfg)
     }

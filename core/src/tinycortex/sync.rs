@@ -10,6 +10,8 @@ use tinycortex::memory::sync::{
     SyncEventSink, SyncOutcome, SyncPipeline, SyncStage, SyncStateStore, WorkspaceSourcePipeline,
 };
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::Config;
 use crate::sources::{MemorySourceEntry, SourceKind};
 use crate::store::MemoryClientRef;
@@ -791,7 +793,7 @@ mod tests {
         }))
         .expect("construct composio source");
 
-        let config = Config::default();
+        let config = TestHostConfig::default();
         let mut memory_config =
             tinycortex::memory::config::MemoryConfig::new("/tmp/openhuman-test-ws");
 
@@ -827,7 +829,7 @@ mod tests {
         let audit_path = workspace.path().join("memory_tree/sync_audit.jsonl");
         std::fs::create_dir_all(&audit_path).expect("create directory at audit file path");
 
-        let mut config = Config::default();
+        let mut config = TestHostConfig::default();
         config.workspace_dir = workspace.path().to_path_buf();
 
         let error = try_read_audit_log(&config).expect_err("directory read must fail");

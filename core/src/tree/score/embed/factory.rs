@@ -33,6 +33,8 @@ use anyhow::{Context, Result};
 
 use std::time::Duration;
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use super::{Embedder, InertEmbedder, ProviderEmbedder, EMBEDDING_DIM};
 use crate::Config;
 use crate::embedding_host::require_embedding_host;
@@ -380,9 +382,9 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn test_config() -> (TempDir, Config) {
+    fn test_config() -> (TempDir, TestHostConfig) {
         let tmp = TempDir::new().unwrap();
-        let mut cfg = Config::default();
+        let mut cfg = TestHostConfig::default();
         cfg.workspace_dir = tmp.path().to_path_buf();
         // Plant config_path in the tempdir so cloud_session_available()
         // checks a writable directory; tests that need to simulate a

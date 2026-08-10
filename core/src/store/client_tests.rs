@@ -1,6 +1,8 @@
 //! Tests for `MemoryClient` — exercise the sync storage surface (upsert, list,
 //! kv, graph) against a fresh temp workspace.
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use super::*;
 use tempfile::TempDir;
 
@@ -370,7 +372,7 @@ async fn ingest_doc_completes_and_stores_document() {
     let (_tmp, client) = make_client();
     let req = MemoryIngestionRequest {
         document: doc("ingest-ns", "direct-k", "inline sync ingest body"),
-        config: MemoryIngestionConfig::default(),
+        config: MemoryIngestionTestHostConfig::default(),
     };
     let result = client.ingest_doc(req).await;
     // Depending on whether the embedder is reachable the call may

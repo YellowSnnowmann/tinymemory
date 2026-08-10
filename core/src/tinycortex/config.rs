@@ -24,6 +24,8 @@ use std::path::PathBuf;
 use tinycortex::memory::config::EmbeddingConfig;
 use tinycortex::memory::MemoryConfig;
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::Config;
 
 /// Build a [`MemoryConfig`] from the host [`Config`] and the resolved memory
@@ -61,7 +63,7 @@ mod tests {
 
     #[test]
     fn maps_workspace_and_embedding_from_host_config() {
-        let mut config = Config::default();
+        let mut config = TestHostConfig::default();
         config.memory().embedding_dimensions = 1024;
         config.memory().embedding_model = "embedding-v1".to_string();
         config.memory_tree().embedding_strict = true;
@@ -81,7 +83,7 @@ mod tests {
         // the host engine's own constants — asserted here so a crate-side change
         // to those defaults surfaces as a failing parity test rather than a
         // silent behaviour drift.
-        let mc = memory_config_from(&Config::default(), PathBuf::from("/tmp/ws"));
+        let mc = memory_config_from(&TestHostConfig::default(), PathBuf::from("/tmp/ws"));
         assert_eq!(mc.tree.input_token_budget, 50_000);
         assert_eq!(mc.tree.output_token_budget, 5_000);
         assert_eq!(mc.tree.summary_fanout, 10);
@@ -92,7 +94,7 @@ mod tests {
     fn engine_config_roots_at_host_workspace_dir() {
         // Pins the wrapper's only behavioural claim: identical to
         // `memory_config_from(config, config.workspace_dir().clone())`.
-        let mut config = Config::default();
+        let mut config = TestHostConfig::default();
         config.memory().embedding_dimensions = 768;
         config.memory_tree().embedding_strict = true;
 

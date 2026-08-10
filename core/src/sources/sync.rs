@@ -14,6 +14,8 @@ use std::sync::Arc;
 use std::collections::HashSet;
 use std::sync::Mutex;
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::Config;
 use crate::sources::types::{MemorySourceEntry, SourceKind};
 use crate::sync::composio::ComposioUsage;
@@ -407,7 +409,7 @@ mod tests {
         }))
         .expect("github source entry");
 
-        let scopes = derive_scopes(&source, &Config::default());
+        let scopes = derive_scopes(&source, &TestHostConfig::default());
 
         assert_eq!(scopes.len(), 1);
         assert_eq!(scopes[0].tree_scope, "github:tinyhumansai/openhuman");

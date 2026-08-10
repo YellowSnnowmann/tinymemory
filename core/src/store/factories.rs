@@ -17,6 +17,7 @@ use rusqlite::Connection;
 
 use tinymemory_api::host::MemoryConfig;
 use tinymemory_api::host::{EmbeddingRouteConfig, StorageProviderConfig};
+use tinymemory_api::host::test_support::TestHostConfig;
 use crate::embedding_host::require_embedding_host;
 use tinyagents::harness::embeddings::{DEFAULT_OLLAMA_DIMENSIONS, DEFAULT_OLLAMA_MODEL};
 use tinymemory_api::host::{format_embedding_signature, EmbeddingProvider};
@@ -655,7 +656,7 @@ mod tests {
 
     #[test]
     fn embedding_settings_defaults_to_cloud_when_no_local_ai() {
-        let mem = MemoryConfig::default();
+        let mem = MemoryTestHostConfig::default();
         let (provider, model, dims) = effective_embedding_settings(&mem, None);
         assert_eq!(
             provider, "cloud",
@@ -667,7 +668,7 @@ mod tests {
 
     #[test]
     fn embedding_settings_uses_memory_config_when_local_disabled() {
-        let mut mem = MemoryConfig::default();
+        let mut mem = MemoryTestHostConfig::default();
         mem.embedding_provider = "openai".to_string();
         mem.embedding_model = "text-embedding-3-small".to_string();
         mem.embedding_dimensions = 1536;
@@ -686,7 +687,7 @@ mod tests {
     fn embedding_settings_local_overrides_memory_config() {
         // memory.embedding_provider says "cloud" — but a Some(local_model)
         // is the stronger signal and must override it.
-        let mem = MemoryConfig::default(); // cloud by default
+        let mem = MemoryTestHostConfig::default(); // cloud by default
         let (provider, model, dims) =
             effective_embedding_settings(&mem, Some("nomic-embed-text:latest"));
         assert_eq!(
@@ -705,7 +706,7 @@ mod tests {
     fn embedding_settings_local_with_empty_model_uses_default() {
         // When the user has opted in but the model field is empty/whitespace,
         // the default Ollama model must be used rather than passing "" to Ollama.
-        let mem = MemoryConfig::default();
+        let mem = MemoryTestHostConfig::default();
         let (provider, model, dims) = effective_embedding_settings(&mem, Some("   "));
         assert_eq!(provider, "ollama");
         assert_eq!(
@@ -726,7 +727,7 @@ mod tests {
     #[test]
     fn active_signature_matches_live_provider_signature() {
         for local in [None, Some("nomic-embed-text:latest"), Some("bge-m3")] {
-            let mem = MemoryConfig::default();
+            let mem = MemoryTestHostConfig::default();
             let (provider, model, dims) = effective_embedding_settings(&mem, local);
             let live = embeddings::create_embedding_provider(&provider, &model, dims)
                 .expect("provider builds for test triple");
@@ -745,7 +746,7 @@ mod tests {
         // a transient Ollama-down fallback can't flip it to cloud. The dim is
         // base/config-dependent (not what this test pins); the provider+model
         // staying the intended ollama/bge-m3 is the probe-stability property.
-        let mem = MemoryConfig::default();
+        let mem = MemoryTestHostConfig::default();
         let sig = active_embedding_signature(&mem, Some("bge-m3"));
         assert!(
             sig.starts_with("provider=ollama;model=bge-m3;dims="),
@@ -773,7 +774,7 @@ mod tests {
         // scoped memory handle. Box<dyn Memory> doesn't impl Debug, so we
         // match instead of unwrap.
         let tmp = tempfile::tempdir().unwrap();
-        let cfg = MemoryConfig::default();
+        let cfg = MemoryTestHostConfig::default();
         match create_memory_for_migration(&cfg, tmp.path()) {
             Ok(_) => {}
             Err(e) => panic!("expected Ok for unified namespace core, got: {e}"),
@@ -833,7 +834,7 @@ mod tests {
     #[tokio::test]
     async fn probed_settings_keep_cloud_when_provider_is_cloud() {
         // No local-AI opt-in → intended provider is cloud, probe is skipped.
-        let mem = MemoryConfig::default();
+        let mem = MemoryTestHostConfig::default();
         let (provider, _, _) = effective_embedding_settings_probed(&mem, None).await;
         assert_eq!(provider, "cloud");
     }
@@ -848,7 +849,7 @@ mod tests {
         // leave the latch tripped and silently turn this assertion green.
         reset_health_gate_for_test();
 
-        let mem = MemoryConfig::default();
+        let mem = MemoryTestHostConfig::default();
 
         let (provider, model, dims) =
             effective_embedding_settings_probed(&mem, Some(local_embedding_for_test())).await;
@@ -866,7 +867,7 @@ mod tests {
         let url = start_mock_ollama().await;
         let _env = EnvGuard::set(&url);
 
-        let mem = MemoryConfig::default();
+        let mem = MemoryTestHostConfig::default();
 
         let (provider, _model, dims) =
             effective_embedding_settings_probed(&mem, Some(local_embedding_for_test())).await;

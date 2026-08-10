@@ -7,6 +7,8 @@
 
 use async_trait::async_trait;
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::Config;
 use crate::sources::types::{
     MemorySourceEntry, SourceContent, SourceItem, SourceKind,
@@ -101,7 +103,7 @@ mod tests {
     async fn list_items_returns_not_configured_error() {
         let reader = TwitterReader;
         let result = reader
-            .list_items(&twitter_source(), &Config::default())
+            .list_items(&twitter_source(), &TestHostConfig::default())
             .await;
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not yet configured"));

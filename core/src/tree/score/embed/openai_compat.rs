@@ -28,6 +28,8 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use super::{Embedder, EMBEDDING_DIM};
 use crate::Config;
 use tinymemory_api::host::EmbeddingProvider;
@@ -228,9 +230,9 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn cfg_with_provider(p: &str) -> (TempDir, Config) {
+    fn cfg_with_provider(p: &str) -> (TempDir, TestHostConfig) {
         let tmp = TempDir::new().unwrap();
-        let mut cfg = Config::default();
+        let mut cfg = TestHostConfig::default();
         cfg.workspace_dir = tmp.path().to_path_buf();
         cfg.config_path = tmp.path().join("config.toml");
         cfg.memory().embedding_provider = p.to_string();

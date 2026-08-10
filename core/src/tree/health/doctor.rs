@@ -17,6 +17,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use super::{current_degraded_state, DegradedState, FailureCode, PipelineFailure};
 use crate::Config;
 use tinymemory_api::host::SchedulerGateMode;
@@ -281,9 +283,9 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn test_config() -> (TempDir, Config) {
+    fn test_config() -> (TempDir, TestHostConfig) {
         let tmp = TempDir::new().unwrap();
-        let mut cfg = Config::default();
+        let mut cfg = TestHostConfig::default();
         cfg.workspace_dir = tmp.path().to_path_buf();
         cfg.memory_tree().embedding_endpoint = None;
         cfg.memory_tree().embedding_model = None;

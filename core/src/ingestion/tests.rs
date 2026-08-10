@@ -7,12 +7,13 @@ use serde_json::json;
 use tempfile::TempDir;
 
 use tinymemory_api::host::NoopEmbedding;
+use tinymemory_api::host::test_support::TestHostConfig;
 use crate::store::{NamespaceDocumentInput, UnifiedMemory};
 use crate::{MemoryIngestionConfig, MemoryIngestionRequest};
 
 /// Test config for the heuristic-only ingestion pipeline.
 fn ci_safe_config() -> MemoryIngestionConfig {
-    MemoryIngestionConfig::default()
+    MemoryIngestionTestHostConfig::default()
 }
 
 fn fixture(path: &str) -> String {

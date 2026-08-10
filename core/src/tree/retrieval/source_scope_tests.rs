@@ -30,6 +30,8 @@ use std::collections::HashSet;
 use chrono::{TimeZone, Utc};
 use tempfile::TempDir;
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::Config;
 use crate::source_scope::{chunk_source_allowed_in, with_source_scope};
 use crate::store::chunks::store::{
@@ -50,9 +52,9 @@ const MEMORY_SOURCES: &str = "memory_sources";
 
 // ── fixtures ─────────────────────────────────────────────────────────────
 
-fn test_config() -> (TempDir, Config) {
+fn test_config() -> (TempDir, TestHostConfig) {
     let tmp = TempDir::new().unwrap();
-    let mut cfg = Config::default();
+    let mut cfg = TestHostConfig::default();
     cfg.workspace_dir = tmp.path().to_path_buf();
     // Inert embedder keeps these deterministic and avoids any real provider
     // call. Every retrieval call below passes `query: None`, so no embedder is

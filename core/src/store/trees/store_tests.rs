@@ -1,12 +1,14 @@
 //! Unit tests for [`super::store`] — round-trip tree / summary / buffer
 //! persistence including embedding blob handling and stale-buffer queries.
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use super::*;
 use tempfile::TempDir;
 
-fn test_config() -> (TempDir, Config) {
+fn test_config() -> (TempDir, TestHostConfig) {
     let tmp = TempDir::new().unwrap();
-    let mut cfg = Config::default();
+    let mut cfg = TestHostConfig::default();
     cfg.workspace_dir() = tmp.path().to_path_buf();
     (tmp, cfg)
 }

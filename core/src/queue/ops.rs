@@ -95,14 +95,15 @@ pub fn requeue_failed_after_provider_change(
 
 #[cfg(test)]
 mod tests {
+    use tinymemory_api::host::test_support::TestHostConfig;
     use super::*;
     use crate::Config;
     use crate::tree::health::{FailureCode, PipelineFailure};
     use tempfile::TempDir;
 
-    fn test_config() -> (TempDir, Config) {
+    fn test_config() -> (TempDir, TestHostConfig) {
         let tmp = TempDir::new().unwrap();
-        let mut cfg = Config::default();
+        let mut cfg = TestHostConfig::default();
         cfg.workspace_dir = tmp.path().to_path_buf();
         (tmp, cfg)
     }
@@ -193,7 +194,7 @@ mod tests {
         // cannot be opened (ENOTDIR). The failure must propagate to the caller.
         let as_file = tmp.path().join("workspace-is-a-file");
         std::fs::write(&as_file, b"not a directory").unwrap();
-        let mut cfg = Config::default();
+        let mut cfg = TestHostConfig::default();
         cfg.workspace_dir = as_file;
 
         let out = requeue_failed_after_provider_change(&cfg);

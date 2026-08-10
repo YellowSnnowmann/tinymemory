@@ -18,6 +18,8 @@
 // extraction call and its wire types cross the seam.
 pub use crate::nlp_host::{SpacyEntity, SpacyResponse};
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::Config;
 use crate::tree::score::extract::{
     EntityKind, ExtractedEntities, ExtractedEntity, ExtractedTopic,
@@ -131,8 +133,8 @@ async fn fallback_extract(query: &str) -> Vec<CanonicalEntity> {
 mod tests {
     use super::*;
 
-    fn cfg_spacy_off() -> Config {
-        let mut c = Config::default();
+    fn cfg_spacy_off() -> TestHostConfig {
+        let mut c = TestHostConfig::default();
         c.memory_tree.spacy_enabled = false;
         c
     }

@@ -7,6 +7,8 @@
 
 use async_trait::async_trait;
 
+use tinymemory_api::host::test_support::TestHostConfig;
+
 use crate::Config;
 use crate::sources::types::{
     ContentType, MemorySourceEntry, SourceContent, SourceItem, SourceKind,
@@ -99,7 +101,7 @@ mod tests {
     #[tokio::test]
     async fn list_items_returns_connection_as_item() {
         let reader = ComposioReader;
-        let config = Config::default();
+        let config = TestHostConfig::default();
         let items = reader.list_items(&test_source(), &config).await.unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].id, "cmp_123");
