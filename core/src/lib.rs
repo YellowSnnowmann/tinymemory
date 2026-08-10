@@ -36,6 +36,7 @@ pub mod chat;
 pub mod conversations;
 pub mod diff;
 pub mod events;
+pub mod global;
 pub mod goals;
 pub mod ingest_pipeline;
 pub mod ingestion;
