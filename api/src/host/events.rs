@@ -185,7 +185,30 @@ pub enum MemoryEvent {
         /// Channel to report progress back on, when the request came from one.
         channel_id: Option<String>,
     },
+    /// The local embedding runtime is unusable and the user must act outside
+    /// the app (start Ollama, pull the model).
+    ///
+    /// The host surfaces this in its durable user-error centre. Carries no
+    /// provider text, model id or endpoint — see [`LOCAL_MODEL_UNAVAILABLE_KIND`].
+    LocalModelUnavailable {
+        /// Short, non-sensitive tag naming which producer fired
+        /// (`health_gate` / `embed_classify`), so the two paths stay
+        /// distinguishable in the log without a correlation id.
+        origin: String,
+    },
 }
+
+/// Stable `error_type` token for the local-embedding-runtime user error.
+///
+/// Mirrors the frontend `UserErrorKind` discriminator of the same name. It is
+/// defined in the contract crate because both sides name it: the host builds
+/// the wire payload from it, and the core's tests assert on it. A drift on
+/// either side drops the signal silently.
+pub const LOCAL_MODEL_UNAVAILABLE_KIND: &str = "local_model_unavailable";
+
+/// `error_source` for the memory subsystem's user errors. Drives the panel's
+/// scope grouping (`socketService` maps it to the `memory` `UserErrorScope`).
+pub const MEMORY_USER_ERROR_SOURCE: &str = "memory";
 
 /// Receives [`MemoryEvent`]s and does something host-shaped with them.
 pub trait MemoryEventSink: Send + Sync + std::fmt::Debug {

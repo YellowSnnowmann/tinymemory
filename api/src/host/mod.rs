@@ -67,6 +67,7 @@ pub use usage::UsageInfo;
 pub use embeddings::{format_embedding_signature, EmbeddingProvider, NoopEmbedding};
 pub use events::{
     EmbeddingHealthReason, MemoryEvent, MemoryEventSink, NoopEventSink, SyncTrigger,
+    LOCAL_MODEL_UNAVAILABLE_KIND, MEMORY_USER_ERROR_SOURCE,
 };
 pub use local_ai::{LocalAiConfig, LocalAiUsage};
 pub use scheduler_gate::{SchedulerGateConfig, SchedulerGateMode};
