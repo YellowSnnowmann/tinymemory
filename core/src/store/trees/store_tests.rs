@@ -1,6 +1,7 @@
 //! Unit tests for [`super::store`] — round-trip tree / summary / buffer
 //! persistence including embedding blob handling and stale-buffer queries.
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use super::*;

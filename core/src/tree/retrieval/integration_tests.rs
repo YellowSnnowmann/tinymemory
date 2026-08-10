@@ -15,6 +15,7 @@ use tempfile::TempDir;
 
 use tinymemory_api::host::MemoryHostConfig;
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::Config;

@@ -33,6 +33,7 @@ use anyhow::{Context, Result};
 
 use std::time::Duration;
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use super::{Embedder, InertEmbedder, ProviderEmbedder, EMBEDDING_DIM};

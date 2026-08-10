@@ -30,6 +30,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::Config;

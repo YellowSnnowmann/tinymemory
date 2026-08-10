@@ -28,6 +28,7 @@
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use super::{Embedder, EMBEDDING_DIM};

@@ -18,6 +18,7 @@
 // extraction call and its wire types cross the seam.
 pub use crate::nlp_host::{SpacyEntity, SpacyResponse};
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::Config;

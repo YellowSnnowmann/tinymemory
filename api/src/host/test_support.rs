@@ -55,8 +55,6 @@ pub struct TestHostConfig {
     pub output_language: Option<String>,
     /// See [`MemoryHostConfig::memory_sync_interval_secs`].
     pub memory_sync_interval_secs: Option<u64>,
-    /// See [`MemoryHostConfig::sqlite_open_timeout_secs`].
-    pub sqlite_open_timeout_secs: Option<u64>,
     /// See [`MemoryHostConfig::onboarding_completed`].
     pub onboarding_completed: bool,
     /// See [`MemoryHostConfig::secrets_encrypt`].
@@ -165,10 +163,6 @@ impl MemoryHostConfig for TestHostConfig {
 
     fn memory_sync_interval_secs(&self) -> Option<u64> {
         self.memory_sync_interval_secs
-    }
-
-    fn sqlite_open_timeout_secs(&self) -> Option<u64> {
-        self.sqlite_open_timeout_secs
     }
 
     fn onboarding_completed(&self) -> bool {

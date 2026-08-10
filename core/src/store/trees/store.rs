@@ -217,7 +217,7 @@ pub(crate) fn get_buffer_conn(conn: &Connection, tree_id: &str, level: u32) -> R
     tinycortex::memory::tree::store::get_buffer_conn(conn, tree_id, level)
 }
 
-pub(crate) fn upsert_buffer_tx(tx: &Transaction<'_>, buffer: &Buffer) -> Result<()> {
+pub fn upsert_buffer_tx(tx: &Transaction<'_>, buffer: &Buffer) -> Result<()> {
     tinycortex::memory::tree::store::upsert_buffer_tx(tx, buffer)
 }
 

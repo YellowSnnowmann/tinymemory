@@ -26,6 +26,7 @@ use tinycortex::memory::diff::{extract_item_id, SnapshotItem, SnapshotItemSource
 
 use tinymemory_api::host::MemoryHostConfig;
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::Config;

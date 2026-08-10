@@ -17,6 +17,7 @@ use rusqlite::Connection;
 
 use tinymemory_api::host::MemoryConfig;
 use tinymemory_api::host::{EmbeddingRouteConfig, StorageProviderConfig};
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 use crate::embedding_host::require_embedding_host;
 use tinyagents::harness::embeddings::{DEFAULT_OLLAMA_DIMENSIONS, DEFAULT_OLLAMA_MODEL};
@@ -353,7 +354,7 @@ pub fn create_memory(
     // No `Config` in scope here (tests + migration), so no credential store to
     // read — pass an empty key. Callers that select a keyed BYO provider must
     // use `create_memory_with_local_ai`, which resolves the stored credential.
-    create_memory_full(config, &[], None, None, "", workspace_dir, None)
+    create_memory_full(config, &[], None, None, "", workspace_dir)
 }
 
 /// Create a memory instance honouring the unified per-workload embedding
@@ -378,7 +379,6 @@ pub fn create_memory_with_local_ai(
     embedding_routes: &[EmbeddingRouteConfig],
     storage_provider: Option<&StorageProviderConfig>,
     workspace_dir: &Path,
-    sqlite_open_timeout_secs: Option<u64>,
 ) -> anyhow::Result<Box<dyn Memory>> {
     create_memory_full(
         memory,
@@ -387,7 +387,6 @@ pub fn create_memory_with_local_ai(
         local_embedding_model,
         embedding_api_key,
         workspace_dir,
-        sqlite_open_timeout_secs,
     )
 }
 
@@ -413,7 +412,6 @@ pub fn create_session_memory_with_local_ai(
     // the session's captures + recall (the `UnifiedMemory` SQLite store) into the
     // profile's own subtree so `dedicatedMemory` isolation actually takes effect.
     memory_subdir: &str,
-    sqlite_open_timeout_secs: Option<u64>,
 ) -> anyhow::Result<SessionMemory> {
     let memory = create_unified_memory_full(
         memory,
@@ -423,7 +421,6 @@ pub fn create_session_memory_with_local_ai(
         embedding_api_key,
         workspace_dir,
         memory_subdir,
-        sqlite_open_timeout_secs,
     )?;
     let sqlite_connection = Arc::clone(&memory.conn);
     Ok(SessionMemory {
@@ -479,7 +476,6 @@ fn create_memory_full(
     local_embedding_model: Option<&str>,
     embedding_api_key: &str,
     workspace_dir: &Path,
-    sqlite_open_timeout_secs: Option<u64>,
 ) -> anyhow::Result<Box<dyn Memory>> {
     Ok(Box::new(create_unified_memory_full(
         config,
@@ -491,7 +487,6 @@ fn create_memory_full(
         // Non-session callers (migration, standalone memory) always use the
         // shared default subtree.
         "memory",
-        sqlite_open_timeout_secs,
     )?))
 }
 
@@ -503,9 +498,6 @@ fn create_unified_memory_full(
     embedding_api_key: &str,
     workspace_dir: &Path,
     memory_subdir: &str,
-    // Threaded in rather than read off `config`: it is a *root* config setting,
-    // and this function only ever sees the memory section.
-    sqlite_open_timeout_secs: Option<u64>,
 ) -> anyhow::Result<UnifiedMemory> {
     // 1. Resolve the intended provider from config.
     let intended = effective_embedding_settings(config, local_embedding_model);
@@ -585,7 +577,7 @@ fn create_unified_memory_full(
         workspace_dir,
         memory_subdir,
         embedder,
-        sqlite_open_timeout_secs,
+        config.sqlite_open_timeout_secs,
     )
 }
 

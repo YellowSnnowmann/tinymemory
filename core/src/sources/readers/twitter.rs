@@ -7,6 +7,7 @@
 
 use async_trait::async_trait;
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::Config;

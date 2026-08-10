@@ -19,6 +19,7 @@ use tokio::sync::Notify;
 
 use tinymemory_api::host::MemoryHostConfig;
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::Config;

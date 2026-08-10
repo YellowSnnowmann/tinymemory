@@ -121,7 +121,7 @@ impl IngestionState {
     ///
     /// Preserves `last_completed_at`, `last_document_id`, and `last_success`
     /// so tests that assert completion history still work.
-    #[cfg(test)]
+    #[cfg(any(test, feature = "test-support"))]
     pub fn reset_for_test(&self) {
         self.inner.queue_depth.store(0, Ordering::SeqCst);
         let mut snap = self.inner.snapshot.write();

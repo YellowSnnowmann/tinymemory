@@ -226,7 +226,7 @@ pub fn clear_storage_degraded() {
 /// cargo's parallel runner. Any such test must `let _g = test_guard();` at the
 /// top: it takes a shared mutex (serialising all flag-touching tests) and
 /// resets both flags to a clean baseline so the test starts deterministic.
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub fn test_guard() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
     let g = LOCK

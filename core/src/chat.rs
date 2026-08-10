@@ -11,6 +11,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 
+#[cfg(any(test, feature = "test-support"))]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::Config;
@@ -169,12 +170,12 @@ impl ChatProvider for InferenceChatProvider {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 fn test_override_runtime() -> Option<(Arc<dyn ChatProvider>, String)> {
     test_override::current().map(|provider| (provider, "test:override".to_string()))
 }
 
-#[cfg(not(test))]
+#[cfg(not(any(test, feature = "test-support")))]
 fn test_override_runtime() -> Option<(Arc<dyn ChatProvider>, String)> {
     None
 }
@@ -213,13 +214,13 @@ pub fn build_chat_provider(config: &Config) -> Result<Arc<dyn ChatProvider>> {
     Ok(build_chat_runtime(config)?.0)
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub struct StaticChatProvider {
     pub response: String,
     pub calls: std::sync::atomic::AtomicUsize,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl StaticChatProvider {
     pub fn new(response: impl Into<String>) -> Self {
         Self {
@@ -229,7 +230,7 @@ impl StaticChatProvider {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 #[async_trait]
 impl ChatProvider for StaticChatProvider {
     fn name(&self) -> &str {
@@ -242,7 +243,7 @@ impl ChatProvider for StaticChatProvider {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub mod test_override {
     use super::ChatProvider;
     use std::sync::Arc;
@@ -263,7 +264,7 @@ pub mod test_override {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 mod tests {
     use super::*;
     use tinymemory_api::host::DEFAULT_CLOUD_LLM_MODEL;

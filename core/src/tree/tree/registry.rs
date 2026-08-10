@@ -9,6 +9,7 @@ use anyhow::Result;
 use chrono::Utc;
 use uuid::Uuid;
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::Config;

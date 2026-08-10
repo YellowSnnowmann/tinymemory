@@ -79,7 +79,7 @@ pub async fn seal_document_subtree(
     .await
 }
 
-pub(crate) async fn seal_one_level(
+pub async fn seal_one_level(
     config: &Config,
     tree: &Tree,
     buffer: &Buffer,

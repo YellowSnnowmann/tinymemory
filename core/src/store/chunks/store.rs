@@ -19,11 +19,11 @@ pub fn upsert_chunks(config: &Config, chunks: &[Chunk]) -> Result<usize> {
     tinycortex::memory::chunks::upsert_chunks(&engine_config(config), chunks)
 }
 
-pub(crate) fn upsert_chunks_tx(tx: &Transaction<'_>, chunks: &[Chunk]) -> Result<usize> {
+pub fn upsert_chunks_tx(tx: &Transaction<'_>, chunks: &[Chunk]) -> Result<usize> {
     tinycortex::memory::chunks::upsert_chunks_tx(tx, chunks)
 }
 
-pub(crate) fn upsert_staged_chunks_tx(
+pub fn upsert_staged_chunks_tx(
     tx: &Transaction<'_>,
     chunks: &[StagedChunk],
 ) -> Result<usize> {
@@ -82,7 +82,7 @@ pub fn get_chunk_lifecycle_status(config: &Config, id: &str) -> Result<Option<St
     tinycortex::memory::chunks::get_chunk_lifecycle_status(&engine_config(config), id)
 }
 
-pub(crate) fn get_chunk_lifecycle_status_tx(
+pub fn get_chunk_lifecycle_status_tx(
     tx: &Transaction<'_>,
     id: &str,
 ) -> Result<Option<String>> {
@@ -97,7 +97,7 @@ pub fn is_source_ingested(config: &Config, kind: SourceKind, id: &str) -> Result
     tinycortex::memory::chunks::is_source_ingested(&engine_config(config), kind, id)
 }
 
-pub(crate) fn claim_source_ingest_tx(
+pub fn claim_source_ingest_tx(
     tx: &Transaction<'_>,
     kind: SourceKind,
     id: &str,

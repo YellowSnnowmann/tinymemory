@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::collections::HashSet;
 use std::sync::Mutex;
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::Config;

@@ -24,6 +24,7 @@ use std::path::PathBuf;
 use tinycortex::memory::config::EmbeddingConfig;
 use tinycortex::memory::MemoryConfig;
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::Config;

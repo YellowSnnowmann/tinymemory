@@ -1,6 +1,7 @@
 //! Tests for `MemoryClient` — exercise the sync storage surface (upsert, list,
 //! kv, graph) against a fresh temp workspace.
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use super::*;

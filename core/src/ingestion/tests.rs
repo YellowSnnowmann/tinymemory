@@ -7,6 +7,7 @@ use serde_json::json;
 use tempfile::TempDir;
 
 use tinymemory_api::host::NoopEmbedding;
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 use crate::store::{NamespaceDocumentInput, UnifiedMemory};
 use crate::{MemoryIngestionConfig, MemoryIngestionRequest};

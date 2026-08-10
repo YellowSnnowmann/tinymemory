@@ -8,6 +8,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::Config;

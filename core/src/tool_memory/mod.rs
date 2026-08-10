@@ -34,7 +34,7 @@
 //! [`PostTurnHook`]: the host's `agent::hooks::PostTurnHook`
 
 mod store;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 pub mod test_helpers;
 
 pub use store::tool_memory_store;

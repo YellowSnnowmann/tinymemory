@@ -16,6 +16,7 @@ use std::time::Instant;
 
 use tokio::sync::mpsc;
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use super::state::IngestionState;

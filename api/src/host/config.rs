@@ -185,9 +185,6 @@ pub trait MemoryHostConfig: Send + Sync + std::fmt::Debug {
     /// `Some(0)` means manual-only.
     fn memory_sync_interval_secs(&self) -> Option<u64>;
 
-    /// SQLite `busy_timeout` for memory databases, in seconds.
-    fn sqlite_open_timeout_secs(&self) -> Option<u64>;
-
     /// Whether the user has finished onboarding. Background ingestion holds off
     /// until they have.
     fn onboarding_completed(&self) -> bool;

@@ -10,6 +10,7 @@
 //! the host's `async` + `Result<_, String>` signatures, the `DomainEvent`
 //! publishes, and the tracing that RPC/tools/sync/subconscious callers expect.
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::Config;

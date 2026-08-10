@@ -17,6 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use super::{current_degraded_state, DegradedState, FailureCode, PipelineFailure};

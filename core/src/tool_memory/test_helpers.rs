@@ -1,6 +1,6 @@
 //! Shared test infrastructure for the tool-scoped memory layer.
 //!
-//! Only compiled under `#[cfg(test)]`.
+//! Only compiled under `#[cfg(any(test, feature = "test-support"))]`.
 
 use std::collections::HashMap;
 
@@ -107,7 +107,7 @@ impl Memory for MockMemory {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 mod tests {
     use super::*;
 

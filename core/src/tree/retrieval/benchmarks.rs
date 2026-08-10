@@ -22,6 +22,7 @@
 use chrono::{TimeZone, Utc};
 use tempfile::TempDir;
 
+#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::Config;

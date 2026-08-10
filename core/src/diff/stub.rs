@@ -26,7 +26,29 @@
 use crate::Config;
 use crate::sources::types::MemorySourceEntry;
 
-use tinycortex::memory::diff::types::{Checkpoint, CrossSourceDiff, Snapshot};
+/// Placeholder stand-ins for the engine's diff value types.
+///
+/// `tinycortex::memory::diff` only exists under `tinycortex/git-diff`, so with
+/// `memory-git` off there is no real type to name. Every function below returns
+/// `Err` unconditionally, and every caller in a `memory-git`-less build only
+/// inspects the error, so these never carry a value — they exist so the
+/// signatures typecheck and callers need no feature awareness.
+///
+/// Deliberately opaque: giving them fields would invite a caller to construct
+/// one and believe a diff had been produced.
+pub mod placeholder_types {
+    /// Stands in for `tinycortex::memory::diff::types::Snapshot`.
+    #[derive(Debug)]
+    pub struct Snapshot(());
+    /// Stands in for `tinycortex::memory::diff::types::Checkpoint`.
+    #[derive(Debug)]
+    pub struct Checkpoint(());
+    /// Stands in for `tinycortex::memory::diff::types::CrossSourceDiff`.
+    #[derive(Debug)]
+    pub struct CrossSourceDiff(());
+}
+
+pub use placeholder_types::{Checkpoint, CrossSourceDiff, Snapshot};
 
 /// The message every disabled entry point returns.
 ///
