@@ -66,6 +66,14 @@ mod rpc_models_tests;
 #[cfg(test)]
 mod schema_tests;
 
+// The host seam, re-exported so downstream code takes one dependency. These are
+// the *only* types this crate accepts from its host.
+pub use tinymemory_api::host::{
+    format_embedding_signature, ComposioMode, EmbeddingProvider, MemoryEvent, MemoryEventSink,
+    MemoryHostConfig, NoopEmbedding, NoopEventSink, COMPOSIO_MODE_BACKEND, COMPOSIO_MODE_DIRECT,
+    DEFAULT_MEMORY_SYNC_INTERVAL_SECS,
+};
+
 pub use ingestion::{
     ExtractedEntity, ExtractedRelation, ExtractionMode, IngestionJob, IngestionQueue,
     IngestionState, IngestionStatusSnapshot, MemoryIngestionConfig, MemoryIngestionRequest,
