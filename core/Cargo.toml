@@ -1,0 +1,61 @@
+[package]
+name = "tinymemory-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+description = "The engine-neutral memory subsystem: store, summary tree, sync pipelines, ingestion and recall"
+repository = "https://github.com/tinyhumansai/tinymemory"
+readme = "../README.md"
+
+[dependencies]
+# The contract. `tinymemory-core` implements and consumes it; the host seam
+# traits (config, event sink, embeddings, chat) live in `tinymemory_api::host`.
+tinymemory-api = { path = "../api", version = "0.1.1" }
+tinymemory = { path = "..", version = "0.1.0" }
+
+# The default embedded engine. `store/`, `tree/` and `sync/` drive it directly;
+# `tinycortex-api` is a direct dependency because `tinycortex::memory` aliases
+# back only `{error, traits, types}`.
+tinycortex = { version = "0.1", features = ["obsidian", "persona", "sync"] }
+tinycortex-api = { version = "0.1" }
+
+# Chat-model and embedding primitives used by the tree summarizer and the
+# embedding factory.
+tinyagents = { version = "2.1", features = ["sqlite"] }
+# `conversations/bus.rs` keys conversation history off the channel envelope.
+tinychannels = { version = "0.1", features = ["relay-websocket"] }
+
+anyhow = "1.0"
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+futures = "0.3"
+log = "0.4"
+parking_lot = "0.12"
+regex = "1.10"
+rusqlite = { version = "=0.40.0", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2.0"
+tokio = { version = "1", features = ["full"] }
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+walkdir = "2"
+
+# macOS address-book reader behind `people/address_book.rs`. Gated by the
+# host's `contacts` feature, forwarded here.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSError", "NSObject", "NSString", "NSPredicate"], optional = true }
+objc2-contacts = { version = "0.3.2", features = ["CNContact", "CNContactFetchRequest", "CNContactStore", "CNLabeledValue", "CNPhoneNumber"], optional = true }
+block2 = { version = "0.6", optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { version = "1", features = ["test-util"] }
+
+[features]
+default = []
+# The macOS CNContactStore address-book seeding path. No-op off macOS.
+contacts = ["dep:objc2", "dep:objc2-foundation", "dep:objc2-contacts", "dep:block2"]
