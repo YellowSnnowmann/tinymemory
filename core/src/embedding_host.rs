@@ -53,3 +53,26 @@ pub fn embedding_host() -> Option<Arc<dyn EmbeddingHost>> {
 pub fn require_embedding_host() -> Result<Arc<dyn EmbeddingHost>, String> {
     embedding_host().ok_or_else(|| NOT_INSTALLED.to_string())
 }
+
+/// The host's default embedding provider — the managed cloud embedder.
+///
+/// # Errors
+///
+/// Returns `Err` when no [`EmbeddingHost`] has been installed.
+pub fn default_embedding_provider() -> Result<Arc<dyn tinymemory_api::host::EmbeddingProvider>, String>
+{
+    Ok(require_embedding_host()?.default_embedding_provider())
+}
+
+/// Serialises tests that mutate embedding-related process environment.
+///
+/// The host has its own guard over the same variables (`inference::local::
+/// inference_test_guard`). They are deliberately *different* locks: each crate's
+/// tests link into their own binary and therefore their own process, so a shared
+/// lock would buy nothing and would mean the contract crate owning a mutex for
+/// the host's benefit.
+#[must_use]
+pub fn embedding_test_guard() -> std::sync::MutexGuard<'static, ()> {
+    static GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    GUARD.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}

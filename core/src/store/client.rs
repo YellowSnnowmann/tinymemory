@@ -11,7 +11,8 @@ use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use crate::openhuman::inference::embeddings::{self, EmbeddingProvider};
+use crate::embedding_host::require_embedding_host;
+use tinymemory_api::host::EmbeddingProvider;
 use crate::ingestion::queue as ingestion_queue;
 use crate::ingestion::{
     IngestionJob, IngestionQueue, IngestionState, MemoryIngestionConfig, MemoryIngestionRequest,
@@ -129,7 +130,8 @@ impl MemoryClient {
         // Ollama path should build their memory store via
         // `create_memory_with_local_ai` with the appropriate
         // `MemoryConfig.embedding_provider`.
-        let embedder: Arc<dyn EmbeddingProvider> = embeddings::default_embedding_provider();
+        let embedder: Arc<dyn EmbeddingProvider> =
+            require_embedding_host()?.default_embedding_provider();
 
         // Create the underlying UnifiedMemory instance.
         let memory =

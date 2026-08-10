@@ -886,7 +886,7 @@ mod tests {
     /// broadcasts even though its Sentry half is suppressed.
     #[test]
     fn user_error_broadcast_is_not_suppressed_by_the_sentry_latch() {
-        let _lock = crate::openhuman::inference::local::inference_test_guard();
+        let _lock = crate::embedding_host::embedding_test_guard();
         reset_health_gate_for_test();
 
         let mut rx = crate::openhuman::web_chat::subscribe_web_channel_events();
@@ -927,7 +927,7 @@ mod tests {
     /// fresh "first", flaking the suppression assertion.
     #[test]
     fn ollama_health_gate_reports_at_most_once_per_process() {
-        let _lock = crate::openhuman::inference::local::inference_test_guard();
+        let _lock = crate::embedding_host::embedding_test_guard();
         reset_health_gate_for_test();
 
         assert!(
