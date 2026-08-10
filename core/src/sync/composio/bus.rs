@@ -384,7 +384,7 @@ impl EventHandler<DomainEvent> for ComposioTriggerSubscriber {
                         "[composio][triage] run_triage failed (label={}): {e:#}",
                         envelope.display_label
                     );
-                    crate::core::observability::report_error_or_expected(
+                    crate::observability::report_error_or_expected(
                         detail.as_str(),
                         "composio",
                         "trigger_triage",

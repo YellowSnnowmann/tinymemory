@@ -234,7 +234,7 @@ pub fn start(config: Config) {
                                 // next successful claim.
                                 mark_storage_degraded(FailureCode::StorageUnavailable);
                                 if !STORAGE_IO_REPORTED.swap(true, Ordering::Relaxed) {
-                                    crate::core::observability::report_error(
+                                    crate::observability::report_error(
                                         &err,
                                         "memory",
                                         "tree_jobs_worker_host_io",
@@ -248,7 +248,7 @@ pub fn start(config: Config) {
                                 );
                                 tokio::time::sleep(Duration::from_secs(300)).await;
                             } else {
-                                crate::core::observability::report_error(
+                                crate::observability::report_error(
                                     &err,
                                     "memory",
                                     "tree_jobs_worker",
@@ -455,7 +455,7 @@ fn is_host_io_error(err: &anyhow::Error) -> bool {
 /// applies the long backoff after this returns.
 fn recover_corrupt_db_once(idx: usize, err: &anyhow::Error, config: &Config) {
     if !CORRUPT_REPORTED.swap(true, Ordering::Relaxed) {
-        crate::core::observability::report_error(
+        crate::observability::report_error(
             err,
             "memory",
             "tree_jobs_worker_corrupt",

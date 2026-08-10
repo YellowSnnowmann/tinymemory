@@ -80,7 +80,7 @@ fn report_ollama_health_gate_once(base_url: &str, model: &str) -> bool {
     // and produced TAURI-RUST-B (~409 events). The `&str` input avoids
     // the `format!("{:#}")` round-trip that `report_error` would do on an
     // anyhow chain — the wire shape stays bit-identical.
-    crate::core::observability::report_error_or_expected(
+    crate::observability::report_error_or_expected(
         sentry_message.as_str(),
         "memory",
         "ollama_health_gate",

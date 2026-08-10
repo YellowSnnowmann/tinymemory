@@ -225,7 +225,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Config) -> Result<()
                     // so we surface real bugs without Sentry-spamming routine
                     // user/config errors (#3295). The reason is still shown to
                     // the user via the Failed stage event regardless.
-                    crate::core::observability::report_error_or_expected(
+                    crate::observability::report_error_or_expected(
                         &error,
                         "memory_sources",
                         "sync",

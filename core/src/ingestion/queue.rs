@@ -260,7 +260,7 @@ async fn ingestion_worker(
                 true
             }
             Err(e) => {
-                crate::core::observability::report_error(
+                crate::observability::report_error(
                     &e,
                     "memory",
                     "ingestion_extract",

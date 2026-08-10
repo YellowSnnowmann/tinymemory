@@ -43,6 +43,7 @@ pub mod global;
 pub mod goals;
 pub mod ingest_pipeline;
 pub mod ingestion;
+pub mod observability;
 pub mod people;
 pub mod preferences;
 pub mod queue;
