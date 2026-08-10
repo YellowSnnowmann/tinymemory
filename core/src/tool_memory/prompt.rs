@@ -46,7 +46,7 @@ mod tests {
     use crate::openhuman::agent::prompts::types::{
         LearnedContextData, PromptContext, ToolCallFormat,
     };
-    use crate::openhuman::memory::tool_memory::{
+    use crate::tool_memory::{
         ToolMemoryPriority, ToolMemoryRule, ToolMemorySource,
     };
 

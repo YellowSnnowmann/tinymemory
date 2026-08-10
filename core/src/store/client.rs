@@ -12,13 +12,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::openhuman::inference::embeddings::{self, EmbeddingProvider};
-use crate::openhuman::memory::ingestion::queue as ingestion_queue;
-use crate::openhuman::memory::ingestion::{
+use crate::ingestion::queue as ingestion_queue;
+use crate::ingestion::{
     IngestionJob, IngestionQueue, IngestionState, MemoryIngestionConfig, MemoryIngestionRequest,
     MemoryIngestionResult,
 };
-use crate::openhuman::memory::store::namespace_store::UnifiedMemory;
-use crate::openhuman::memory::store::types::{
+use crate::store::namespace_store::UnifiedMemory;
+use crate::store::types::{
     GraphRelationRecord, MemoryKvRecord, NamespaceDocumentInput, NamespaceMemoryHit,
     NamespaceRetrievalContext, StoredMemoryDocument,
 };
@@ -44,7 +44,7 @@ pub struct MemoryState(pub std::sync::Mutex<Option<MemoryClientRef>>);
 /// first `embed` call rather than at client construction.
 ///
 /// Callers that need a non-default embedder should construct the underlying
-/// store via [`crate::openhuman::memory::store::create_memory_with_local_ai`] with the
+/// store via [`crate::store::create_memory_with_local_ai`] with the
 /// appropriate `MemoryConfig.embedding_provider`.
 #[derive(Clone)]
 pub struct MemoryClient {
@@ -58,12 +58,12 @@ impl MemoryClient {
     /// Returns a handle to the underlying SQLite connection backing the
     /// profile/facet tables.
     ///
-    /// Narrowed from `pub(crate)` to `pub(in crate::openhuman::memory)`: a raw
+    /// Narrowed from `pub(crate)` to `pub(in crate)`: a raw
     /// `Arc<Mutex<Connection>>` cannot be wrapped by any decorator, so no
     /// caller outside the memory family may hold one. [`Self::profile_store`]
     /// is the only door out, and every SQL statement against `user_profile`
     /// now lives inside this family.
-    pub(in crate::openhuman::memory) fn profile_conn(
+    pub(in crate) fn profile_conn(
         &self,
     ) -> std::sync::Arc<parking_lot::Mutex<rusqlite::Connection>> {
         std::sync::Arc::clone(&self.inner.conn)
@@ -73,12 +73,12 @@ impl MemoryClient {
     ///
     /// **Not guarded.** The profile tables have no capability family in the
     /// thirteen-family `tinycortex_api` contract, so these reads and writes
-    /// still run beneath [`crate::openhuman::memory::guard::MemoryGuard`]'s
+    /// still run beneath [`crate::guard::MemoryGuard`]'s
     /// seven steps. What this buys is confinement, not policy: the SQL is in
     /// the memory family and the compiler keeps it there.
-    pub(crate) fn profile_store(&self) -> crate::openhuman::memory::store::ProfileStore {
+    pub(crate) fn profile_store(&self) -> crate::store::ProfileStore {
         tracing::debug!("[memory::profile_store] handing out typed profile store");
-        crate::openhuman::memory::store::ProfileStore::from_conn(self.profile_conn())
+        crate::store::ProfileStore::from_conn(self.profile_conn())
     }
 
     /// Returns an `Arc<dyn Memory>` handle backed by the same
@@ -91,8 +91,8 @@ impl MemoryClient {
     /// external consumer bypasses any policy decorator wrapped around the
     /// `MemoryClient` API, so the escape hatch stays in-crate. Mirrors
     /// [`Self::profile_conn`].
-    pub(crate) fn memory_handle(&self) -> Arc<dyn crate::openhuman::memory::Memory> {
-        Arc::clone(&self.inner) as Arc<dyn crate::openhuman::memory::Memory>
+    pub(crate) fn memory_handle(&self) -> Arc<dyn crate::Memory> {
+        Arc::clone(&self.inner) as Arc<dyn crate::Memory>
     }
 
     /// Create a new local memory client using the default `.openhuman` directory.
@@ -247,7 +247,7 @@ impl MemoryClient {
     /// Maps generic skill/integration fields into the `NamespaceDocumentInput` structure.
     ///
     /// Every write goes in as
-    /// [`MemoryTaint::ExternalSync`](crate::openhuman::memory::MemoryTaint::ExternalSync)
+    /// [`MemoryTaint::ExternalSync`](crate::MemoryTaint::ExternalSync)
     /// — this entry point exists specifically for memory_sync providers
     /// (Gmail / Slack / Notion / Composio / etc.) that ingest text from
     /// third-party services. Routing the call through here is what lets
@@ -308,7 +308,7 @@ impl MemoryClient {
             // Every sync entry point is by definition ingesting third-
             // party content; mark it so the subconscious gate can see
             // the provenance through the persistence layer.
-            taint: crate::openhuman::memory::MemoryTaint::ExternalSync,
+            taint: crate::MemoryTaint::ExternalSync,
         };
 
         let doc_id = self.inner.upsert_document(input.clone()).await?;
@@ -335,7 +335,7 @@ impl MemoryClient {
     ///
     /// `pub(crate)` on the same reasoning as [`Self::memory_handle`]: the only
     /// in-crate consumer is the embedded memory driver
-    /// ([`crate::openhuman::memory::driver::embedded`]), which needs a read-one
+    /// ([`crate::driver::embedded`]), which needs a read-one
     /// path that [`Self::list_documents`] cannot provide — the latter's SELECT
     /// carries no `content` column.
     pub(crate) async fn get_document(

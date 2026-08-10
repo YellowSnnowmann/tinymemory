@@ -28,7 +28,7 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use super::normalization;
-use crate::openhuman::memory::sync::composio::providers::{
+use crate::sync::composio::providers::{
     first_array_str, merge_extra, pick_str, resolve_sync_interval_secs, ComposioProvider,
     CuratedTool, NormalizedTask, ProviderContext, ProviderUserProfile, TaskFetchFilter, TaskKind,
 };
@@ -129,7 +129,7 @@ impl ComposioProvider for ClickUpProvider {
     }
 
     /// Incremental sync via the generic
-    /// [`orchestrator`](crate::openhuman::memory::sync::composio::providers::orchestrator):
+    /// [`orchestrator`](crate::sync::composio::providers::orchestrator):
     /// user/workspace resolution, the per-workspace page loop, dedup, the
     /// `max_items` cap, the epoch-ms `sync_depth_days` window, and cursor
     /// handling live in `run_sync`; the ClickUp-specific primitives live in

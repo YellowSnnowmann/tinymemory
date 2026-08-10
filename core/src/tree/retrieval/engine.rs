@@ -1,7 +1,7 @@
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::openhuman::memory::tree::score::embed::Embedder as HostEmbedder;
+use crate::tree::score::embed::Embedder as HostEmbedder;
 
 pub(super) struct EmbedderBridge<'a>(pub &'a dyn HostEmbedder);
 

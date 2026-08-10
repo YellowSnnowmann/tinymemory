@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::chat::{build_chat_provider, ChatPrompt};
+use crate::chat::{build_chat_provider, ChatPrompt};
 
 pub use tinycortex::memory::tree::{SummaryContext, SummaryInput};
 

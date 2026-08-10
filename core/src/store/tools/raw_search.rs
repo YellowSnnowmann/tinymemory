@@ -11,8 +11,8 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::openhuman::config::rpc as config_rpc;
-use crate::openhuman::memory::tree::retrieval::search::search_entities;
-use crate::openhuman::memory::tree::score::extract::EntityKind;
+use crate::tree::retrieval::search::search_entities;
+use crate::tree::score::extract::EntityKind;
 use crate::openhuman::tools::traits::{Tool, ToolResult};
 
 pub struct MemoryStoreRawSearchTool;

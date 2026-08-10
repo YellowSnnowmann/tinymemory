@@ -105,7 +105,7 @@ impl Tool for MemoryDiffTool {
 
         if let Some(sid) = source_id {
             debug!("[memory_diff][tool] branch=source_diff source_id={sid}");
-            let source = crate::openhuman::memory::sources::get_source(sid)
+            let source = crate::sources::get_source(sid)
                 .await
                 .map_err(|e| anyhow::anyhow!(e))?
                 .ok_or_else(|| anyhow::anyhow!("source not found: {sid}"))?;
@@ -125,7 +125,7 @@ impl Tool for MemoryDiffTool {
 
         debug!("[memory_diff][tool] branch=list_sources");
         // No source_id or checkpoint_id: list sources with snapshot counts
-        let sources = crate::openhuman::memory::sources::list_sources()
+        let sources = crate::sources::list_sources()
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
 

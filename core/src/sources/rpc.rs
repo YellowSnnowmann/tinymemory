@@ -1,21 +1,21 @@
 //! RPC handler implementations for memory sources.
 
 use crate::openhuman::config::rpc as config_rpc;
-use crate::openhuman::memory::sources::readers;
-use crate::openhuman::memory::sources::registry::{self, MemorySourcePatch};
-use crate::openhuman::memory::sources::types::{MemorySourceEntry, SourceKind};
+use crate::sources::readers;
+use crate::sources::registry::{self, MemorySourcePatch};
+use crate::sources::types::{MemorySourceEntry, SourceKind};
 use crate::rpc::RpcOutcome;
 
 #[derive(Debug, serde::Serialize)]
 pub struct CodingSessionStatusResponse {
-    pub sources: Vec<crate::openhuman::memory::tinycortex::CodingSessionSourceStatus>,
+    pub sources: Vec<crate::tinycortex::CodingSessionSourceStatus>,
 }
 
 pub async fn coding_session_status_rpc() -> Result<RpcOutcome<CodingSessionStatusResponse>, String>
 {
     tracing::debug!("[memory_sources] coding_session_status_rpc: entry");
     let sources =
-        tokio::task::spawn_blocking(crate::openhuman::memory::tinycortex::coding_session_status)
+        tokio::task::spawn_blocking(crate::tinycortex::coding_session_status)
             .await
             .map_err(|error| format!("join coding-session discovery: {error}"))?;
     tracing::debug!(
@@ -33,8 +33,8 @@ pub async fn coding_session_status_rpc() -> Result<RpcOutcome<CodingSessionStatu
 }
 
 pub async fn ingest_coding_sessions_rpc(
-    req: crate::openhuman::memory::tinycortex::CodingSessionIngestRequest,
-) -> Result<RpcOutcome<crate::openhuman::memory::tinycortex::CodingSessionIngestResponse>, String> {
+    req: crate::tinycortex::CodingSessionIngestRequest,
+) -> Result<RpcOutcome<crate::tinycortex::CodingSessionIngestResponse>, String> {
     tracing::info!("[memory_sources] ingest_coding_sessions_rpc: entry");
     let config = crate::openhuman::config::Config::load_or_init()
         .await
@@ -56,7 +56,7 @@ pub async fn ingest_coding_sessions_rpc(
         runtime.block_on(async move {
             tokio::time::timeout(
                 ingest_timeout,
-                crate::openhuman::memory::tinycortex::ingest_coding_sessions(&config, req),
+                crate::tinycortex::ingest_coding_sessions(&config, req),
             )
             .await
         })
@@ -104,7 +104,7 @@ pub async fn list_rpc() -> Result<RpcOutcome<ListResponse>, String> {
     // collapse identical same-id duplicates from any reconcile race. This is a
     // display-layer filter only — no row, setting, or ingested memory is
     // removed; an inactive connection's row simply reappears once it re-activates.
-    let active = crate::openhuman::memory::sources::reconcile::ensure_composio_sources().await;
+    let active = crate::sources::reconcile::ensure_composio_sources().await;
     let sources = registry::list_sources().await?;
     let filtered = filter_to_active_composio_sources(sources, active.as_ref());
     tracing::debug!(
@@ -347,7 +347,7 @@ pub struct ListItemsRequest {
 
 #[derive(Debug, serde::Serialize)]
 pub struct ListItemsResponse {
-    pub items: Vec<crate::openhuman::memory::sources::types::SourceItem>,
+    pub items: Vec<crate::sources::types::SourceItem>,
 }
 
 pub async fn list_items_rpc(
@@ -376,7 +376,7 @@ pub struct ReadItemRequest {
 
 #[derive(Debug, serde::Serialize)]
 pub struct ReadItemResponse {
-    pub content: crate::openhuman::memory::sources::types::SourceContent,
+    pub content: crate::sources::types::SourceContent,
 }
 
 pub async fn read_item_rpc(req: ReadItemRequest) -> Result<RpcOutcome<ReadItemResponse>, String> {
@@ -418,7 +418,7 @@ pub async fn sync_rpc(req: SyncRequest) -> Result<RpcOutcome<SyncResponse>, Stri
         .ok_or_else(|| format!("source '{}' not found", req.source_id))?;
 
     let config = config_rpc::load_config_with_timeout().await?;
-    crate::openhuman::memory::sources::sync::sync_source(source, config).await?;
+    crate::sources::sync::sync_source(source, config).await?;
 
     Ok(RpcOutcome::new(
         SyncResponse {
@@ -465,8 +465,8 @@ pub struct ReconcileResponse {
 /// sources. The same incremental reconcile runs automatically after every
 /// sync; this RPC exposes it for inspection and manual triggering.
 pub async fn reconcile_rpc(req: ReconcileRequest) -> Result<RpcOutcome<ReconcileResponse>, String> {
-    use crate::openhuman::memory::sources::sync::derive_scopes;
-    use crate::openhuman::memory::tinycortex::{raw_coverage, rebuild_tree_from_raw};
+    use crate::sources::sync::derive_scopes;
+    use crate::tinycortex::{raw_coverage, rebuild_tree_from_raw};
 
     tracing::info!(
         source_id = ?req.source_id,
@@ -540,13 +540,13 @@ pub async fn reconcile_rpc(req: ReconcileRequest) -> Result<RpcOutcome<Reconcile
 
 #[derive(Debug, serde::Serialize)]
 pub struct StatusListResponse {
-    pub statuses: Vec<crate::openhuman::memory::sources::status::SourceStatus>,
+    pub statuses: Vec<crate::sources::status::SourceStatus>,
 }
 
 pub async fn status_list_rpc() -> Result<RpcOutcome<StatusListResponse>, String> {
     tracing::debug!("[memory_sources] status_list_rpc: entry");
     let config = config_rpc::load_config_with_timeout().await?;
-    let statuses = crate::openhuman::memory::sources::status::status_list(&config).await?;
+    let statuses = crate::sources::status::status_list(&config).await?;
     Ok(RpcOutcome::new(StatusListResponse { statuses }, vec![]))
 }
 
@@ -570,10 +570,10 @@ pub async fn supported_toolkits_rpc() -> Result<RpcOutcome<SupportedToolkitsResp
     // Ensure the built-in providers are registered before we snapshot the
     // registry — in CLI / fresh-process contexts the startup hook that calls
     // this may not have run yet.
-    crate::openhuman::memory::sync::composio::init_default_composio_sync_providers();
+    crate::sync::composio::init_default_composio_sync_providers();
 
     let mut toolkits: Vec<String> =
-        crate::openhuman::memory::sync::composio::all_composio_sync_providers()
+        crate::sync::composio::all_composio_sync_providers()
             .iter()
             .map(|p| p.toolkit_slug().to_string())
             .collect();
@@ -595,12 +595,12 @@ pub async fn supported_toolkits_rpc() -> Result<RpcOutcome<SupportedToolkitsResp
 
 #[derive(Debug, serde::Serialize)]
 pub struct SyncAuditLogResponse {
-    pub entries: Vec<crate::openhuman::memory::tinycortex::SyncAuditEntry>,
+    pub entries: Vec<crate::tinycortex::SyncAuditEntry>,
 }
 
 pub async fn sync_audit_log_rpc() -> Result<RpcOutcome<SyncAuditLogResponse>, String> {
     let config = config_rpc::load_config_with_timeout().await?;
-    let entries = crate::openhuman::memory::tinycortex::read_audit_log(&config);
+    let entries = crate::tinycortex::read_audit_log(&config);
     Ok(RpcOutcome::new(SyncAuditLogResponse { entries }, vec![]))
 }
 
@@ -640,7 +640,7 @@ pub async fn estimate_sync_cost_rpc(
     let estimated_input_tokens = item_count as u64 * 500;
     let estimated_output_tokens = item_count as u64 * 100;
     let estimated_tokens = estimated_input_tokens + estimated_output_tokens;
-    let estimated_cost_usd = crate::openhuman::memory::tinycortex::estimate_cost_usd(
+    let estimated_cost_usd = crate::tinycortex::estimate_cost_usd(
         estimated_input_tokens,
         estimated_output_tokens,
     );
@@ -673,7 +673,7 @@ pub struct MonthlyCostSummaryResponse {
 pub async fn monthly_cost_summary_rpc() -> Result<RpcOutcome<MonthlyCostSummaryResponse>, String> {
     tracing::debug!("[memory_sources] monthly_cost_summary_rpc: entry");
     let config = config_rpc::load_config_with_timeout().await?;
-    let entries = crate::openhuman::memory::tinycortex::read_audit_log(&config);
+    let entries = crate::tinycortex::read_audit_log(&config);
 
     let now = chrono::Utc::now();
     let month_str = now.format("%Y-%m").to_string();
@@ -744,7 +744,7 @@ pub async fn apply_all_in_rpc() -> Result<RpcOutcome<AllInResponse>, String> {
             kind = %source.kind.as_str(),
             "[memory_sources] apply_all_in_rpc: triggering sync"
         );
-        match crate::openhuman::memory::sources::sync::sync_source(source.clone(), config.clone())
+        match crate::sources::sync::sync_source(source.clone(), config.clone())
             .await
         {
             Ok(()) => {

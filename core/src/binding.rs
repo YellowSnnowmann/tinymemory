@@ -9,9 +9,9 @@
 //! [`CoreContext::memory_binding`](crate::core::runtime::CoreContext::memory_binding),
 //! which keys on the context's workspace dir. The cache below is deliberately
 //! shaped like
-//! [`memory::people::store::for_workspace`](crate::openhuman::memory::people::store::for_workspace)
+//! [`memory::people::store::for_workspace`](crate::people::store::for_workspace)
 //! — a **workspace-and-config-keyed map** — and deliberately *not* like
-//! [`memory::global`](crate::openhuman::memory::global), which is a single slot
+//! [`memory::global`](crate::global), which is a single slot
 //! holding "the one active-user workspace".
 //!
 //! That shape choice carries a real correctness property for free.
@@ -71,8 +71,8 @@ use crate::core::subsystem::{
     BoundDriver, DriverCapabilities, DriverClass, DriverHealth, SubsystemSlot,
 };
 use crate::openhuman::config::schema::{MemoryHooksConfig, MemorySubsystemConfig};
-use crate::openhuman::memory::driver::embedded::EmbeddedMemoryProvider;
-use crate::openhuman::memory::guard::{GuardPolicy, MemoryGuard};
+use crate::driver::embedded::EmbeddedMemoryProvider;
+use crate::guard::{GuardPolicy, MemoryGuard};
 
 /// Why a bind fell back to the placeholder driver.
 ///
@@ -125,7 +125,7 @@ impl MemoryBinding {
     /// backed by a *compiler*-enforced boundary: even if `MemoryBinding` grows
     /// another reachable path, no module outside `openhuman::memory` can name
     /// this accessor at all.
-    pub(in crate::openhuman::memory) fn unguarded_provider(&self) -> &Arc<dyn MemoryProvider> {
+    pub(in crate) fn unguarded_provider(&self) -> &Arc<dyn MemoryProvider> {
         &self.provider
     }
 
@@ -326,7 +326,7 @@ fn build(workspace_dir: &Path, cfg: &MemorySubsystemConfig) -> MemoryBinding {
                 .drivers
                 .get(&driver_id)
                 .map(|entry| entry.trust_state.clone())
-                .unwrap_or_else(|| crate::openhuman::memory::guard::policy::TRUSTED.to_string());
+                .unwrap_or_else(|| crate::guard::policy::TRUSTED.to_string());
             let binding = bind_provider(provider, driver_id, class, cfg.hooks, trust_state, None);
             log::info!(
                 "[memory:binding] workspace={} bound driver='{}' class={} capabilities=[{}]",
@@ -368,7 +368,7 @@ fn build(workspace_dir: &Path, cfg: &MemorySubsystemConfig) -> MemoryBinding {
                 // boundary to cross and nothing to trust-gate. The refused
                 // driver's own trust_state is deliberately NOT carried over —
                 // it describes a binding that did not happen.
-                crate::openhuman::memory::guard::policy::TRUSTED.to_string(),
+                crate::guard::policy::TRUSTED.to_string(),
                 Some(fallback),
             )
         }
@@ -423,7 +423,7 @@ pub(crate) fn bind_provider_for_test(
         driver_id,
         class,
         MemoryHooksConfig::default(),
-        crate::openhuman::memory::guard::policy::TRUSTED.to_string(),
+        crate::guard::policy::TRUSTED.to_string(),
         None,
     )
 }

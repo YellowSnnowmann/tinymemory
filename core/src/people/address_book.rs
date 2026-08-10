@@ -10,7 +10,7 @@
 //!
 //! On non-mac platforms `read()` returns an empty vec (stub path).
 
-use crate::openhuman::memory::people::types::AddressBookContact;
+use crate::people::types::AddressBookContact;
 
 /// Result type distinguishing permission errors from other failures.
 #[derive(Debug, PartialEq)]

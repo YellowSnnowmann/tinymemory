@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use async_trait::async_trait;
 use parking_lot::Mutex;
 
-use crate::openhuman::memory::{Memory, MemoryCategory, MemoryEntry, NamespaceSummary, RecallOpts};
+use crate::{Memory, MemoryCategory, MemoryEntry, NamespaceSummary, RecallOpts};
 
 /// Minimal in-memory [`Memory`] backend for unit tests.
 ///

@@ -11,8 +11,8 @@ use super::provider::{
 };
 use super::tools::GITHUB_CURATED;
 use super::GitHubProvider;
-use crate::openhuman::memory::sync::composio::providers::ComposioProvider;
-use crate::openhuman::memory::sync::composio::providers::{
+use crate::sync::composio::providers::ComposioProvider;
+use crate::sync::composio::providers::{
     GithubFetchMode, TaskFetchFilter, TaskKind,
 };
 use serde_json::json;

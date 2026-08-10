@@ -22,7 +22,7 @@
 // These were formerly defined here. They are now the crate's types verbatim
 // (identical fields, derives, serde attrs, and — for `MemoryTaint` — the same
 // fail-closed `from_db_str`). Re-exporting keeps one source of truth while every
-// `use crate::openhuman::memory::traits::{MemoryEntry, …}` site compiles unchanged.
+// `use crate::traits::{MemoryEntry, …}` site compiles unchanged.
 pub use tinycortex::memory::{
     Memory, MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary, RecallOpts,
 };

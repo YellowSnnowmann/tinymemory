@@ -6,7 +6,7 @@ use anyhow::Result;
 use rusqlite::Transaction;
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::tinycortex::engine_config;
+use crate::tinycortex::engine_config;
 
 pub use tinycortex::memory::score::store::{EntityHit, ScoreRow};
 
@@ -26,7 +26,7 @@ pub fn get_scores_batch(config: &Config, chunk_ids: &[String]) -> Result<HashMap
     tinycortex::memory::score::store::get_scores_batch(&engine_config(config), chunk_ids)
 }
 
-pub use crate::openhuman::memory::store::entities::{
+pub use crate::store::entities::{
     clear_entity_index_for_node, count_entity_index, list_entity_ids_for_node, lookup_entity,
 };
 
@@ -39,7 +39,7 @@ pub fn index_entity(
     tree_id: Option<&str>,
 ) -> Result<()> {
     let entity = to_store_entity(entity)?;
-    crate::openhuman::memory::store::entities::index_entity(
+    crate::store::entities::index_entity(
         config,
         &entity,
         node_id,
@@ -61,7 +61,7 @@ pub fn index_entities(
         .iter()
         .map(to_store_entity)
         .collect::<Result<_>>()?;
-    crate::openhuman::memory::store::entities::index_entities(
+    crate::store::entities::index_entities(
         config,
         &entities,
         node_id,
@@ -83,7 +83,7 @@ pub(crate) fn index_summary_entity_ids_tx(
     timestamp_ms: i64,
     tree_id: Option<&str>,
 ) -> Result<usize> {
-    let identity = crate::openhuman::memory::store::entities::host_self_identity();
+    let identity = crate::store::entities::host_self_identity();
     tinycortex::memory::store::entity_index::index_summary_entity_ids_tx_with_identity(
         tx,
         entity_ids,
@@ -103,7 +103,7 @@ pub(crate) fn index_entities_tx(
     timestamp_ms: i64,
     tree_id: Option<&str>,
 ) -> Result<usize> {
-    let identity = crate::openhuman::memory::store::entities::host_self_identity();
+    let identity = crate::store::entities::host_self_identity();
     let entities: Vec<tinycortex::memory::store::CanonicalEntity> = entities
         .iter()
         .map(to_store_entity)

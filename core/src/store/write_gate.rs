@@ -58,8 +58,8 @@
 //! is therefore gated. `write_gate_tests.rs` pins both halves: the gate
 //! redacts, and the raw driver method does not.
 
-use crate::openhuman::memory::store::safety;
-use crate::openhuman::memory::store::types::NamespaceDocumentInput;
+use crate::store::safety;
+use crate::store::types::NamespaceDocumentInput;
 
 use super::namespace_store::UnifiedMemory;
 

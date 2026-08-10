@@ -203,7 +203,7 @@ fn resolve_embedder_choice(config: &Config) -> Result<EmbedderChoice> {
 /// degradation: it returns the [`InertEmbedder`] (vector search intentionally
 /// off) without setting the degraded flag — same as the read path.
 pub fn build_write_embedder(config: &Config) -> Result<Option<Box<dyn Embedder>>> {
-    use crate::openhuman::memory::tree::health::{
+    use crate::tree::health::{
         clear_semantic_recall_degraded, mark_semantic_recall_degraded, FailureCode,
     };
 
@@ -265,7 +265,7 @@ pub fn build_write_embedder(config: &Config) -> Result<Option<Box<dyn Embedder>>
 /// the exact strings we already hold is precise, where a generic URL-matching
 /// pass over free text would be guesswork (CodeRabbit, #5402 / CWE-532).
 fn redact_ladder_error(config: &Config, err: &anyhow::Error) -> String {
-    use crate::openhuman::memory::util::redact::redact_endpoint;
+    use crate::util::redact::redact_endpoint;
 
     // Candidates: the inline `custom:<url>` endpoint (when that is the
     // configured form) plus every configured OpenAI-compatible endpoint
@@ -417,12 +417,12 @@ mod tests {
     // (a factory-local mutex would only serialise within this module, leaving
     // a cross-module race). The guard also resets the flags on entry.
     fn degraded_flag_lock() -> std::sync::MutexGuard<'static, ()> {
-        crate::openhuman::memory::tree::health::test_guard()
+        crate::tree::health::test_guard()
     }
 
     #[test]
     fn write_embedder_none_when_no_provider_and_marks_degraded() {
-        use crate::openhuman::memory::tree::health::{
+        use crate::tree::health::{
             clear_semantic_recall_degraded, current_degraded_state, FailureCode,
         };
         let _guard = degraded_flag_lock();
@@ -450,7 +450,7 @@ mod tests {
 
     #[test]
     fn write_embedder_some_cloud_with_session_and_clears_degraded() {
-        use crate::openhuman::memory::tree::health::{
+        use crate::tree::health::{
             current_degraded_state, mark_semantic_recall_degraded, FailureCode,
         };
         let _guard = degraded_flag_lock();
@@ -483,7 +483,7 @@ mod tests {
 
     #[test]
     fn write_embedder_none_provider_is_inert_not_skip() {
-        use crate::openhuman::memory::tree::health::{
+        use crate::tree::health::{
             clear_semantic_recall_degraded, current_degraded_state,
         };
         let _guard = degraded_flag_lock();
@@ -606,7 +606,7 @@ mod tests {
         // not match) vs `memory.embedding_provider` (the unified Embeddings-
         // settings field that drives the OpenAI/custom detection).
         let _guard = degraded_flag_lock();
-        use crate::openhuman::memory::tree::health::{
+        use crate::tree::health::{
             current_degraded_state, mark_semantic_recall_degraded, FailureCode,
         };
         mark_semantic_recall_degraded(FailureCode::EmbeddingsUnconfigured);
@@ -639,7 +639,7 @@ mod tests {
         // and NOT fall through to the managed cloud budget (which 400s with
         // "Insufficient budget" and fails the seal job unrecoverably).
         use crate::openhuman::config::schema::cloud_providers::CloudProviderCreds;
-        use crate::openhuman::memory::tree::health::{
+        use crate::tree::health::{
             current_degraded_state, mark_semantic_recall_degraded, FailureCode,
         };
         let _guard = degraded_flag_lock();

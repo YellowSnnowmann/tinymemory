@@ -7,7 +7,7 @@
 //!
 //! This module was renamed from `memory::summarizer` to
 //! `memory_tree::tree_runtime` so it no longer collides conceptually with
-//! [`crate::openhuman::memory::tree::summarise`], which is only the single-call
+//! [`crate::tree::summarise`], which is only the single-call
 //! LLM fold primitive used during seals.
 
 pub mod bus;

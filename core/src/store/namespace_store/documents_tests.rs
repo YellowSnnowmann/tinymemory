@@ -6,7 +6,7 @@ use serde_json::json;
 use tempfile::TempDir;
 
 use crate::openhuman::inference::embeddings::NoopEmbedding;
-use crate::openhuman::memory::store::{NamespaceDocumentInput, UnifiedMemory};
+use crate::store::{NamespaceDocumentInput, UnifiedMemory};
 
 fn make_doc_input(
     namespace: &str,
@@ -26,7 +26,7 @@ fn make_doc_input(
         category: "core".to_string(),
         session_id: None,
         document_id: None,
-        taint: crate::openhuman::memory::MemoryTaint::Internal,
+        taint: crate::MemoryTaint::Internal,
     }
 }
 
@@ -940,7 +940,7 @@ async fn upsert_document_redacts_secret_like_content_before_persisting() {
             category: "core".to_string(),
             session_id: None,
             document_id: None,
-            taint: crate::openhuman::memory::MemoryTaint::Internal,
+            taint: crate::MemoryTaint::Internal,
         })
         .await
         .unwrap();
@@ -1050,7 +1050,7 @@ async fn upsert_document_rejects_secret_like_key() {
             category: "core".to_string(),
             session_id: None,
             document_id: None,
-            taint: crate::openhuman::memory::MemoryTaint::Internal,
+            taint: crate::MemoryTaint::Internal,
         })
         .await
         .expect_err("secret-like key should be rejected");
@@ -1075,7 +1075,7 @@ async fn upsert_document_rejects_secret_like_namespace() {
             category: "core".to_string(),
             session_id: None,
             document_id: None,
-            taint: crate::openhuman::memory::MemoryTaint::Internal,
+            taint: crate::MemoryTaint::Internal,
         })
         .await
         .expect_err("secret-like namespace should be rejected");
@@ -1100,7 +1100,7 @@ async fn upsert_document_metadata_only_rejects_secret_like_key() {
             category: "core".to_string(),
             session_id: None,
             document_id: None,
-            taint: crate::openhuman::memory::MemoryTaint::Internal,
+            taint: crate::MemoryTaint::Internal,
         })
         .await
         .expect_err("secret-like key should be rejected");
@@ -1204,7 +1204,7 @@ async fn upsert_document_auto_sanitizes_pii_like_key() {
             category: "core".to_string(),
             session_id: None,
             document_id: None,
-            taint: crate::openhuman::memory::MemoryTaint::Internal,
+            taint: crate::MemoryTaint::Internal,
         })
         .await
         .expect("PII-like key should be auto-sanitized, not rejected");
@@ -1238,7 +1238,7 @@ async fn upsert_document_auto_sanitizes_pii_like_namespace() {
             category: "core".to_string(),
             session_id: None,
             document_id: None,
-            taint: crate::openhuman::memory::MemoryTaint::Internal,
+            taint: crate::MemoryTaint::Internal,
         })
         .await
         .expect("PII-like namespace should be auto-sanitized, not rejected");
@@ -1275,7 +1275,7 @@ async fn upsert_document_metadata_only_auto_sanitizes_pii_like_key() {
             category: "core".to_string(),
             session_id: None,
             document_id: None,
-            taint: crate::openhuman::memory::MemoryTaint::Internal,
+            taint: crate::MemoryTaint::Internal,
         })
         .await
         .expect("PII-like key should be auto-sanitized, not rejected");
@@ -1307,7 +1307,7 @@ async fn upsert_document_metadata_only_auto_sanitizes_pii_like_namespace() {
             category: "core".to_string(),
             session_id: None,
             document_id: None,
-            taint: crate::openhuman::memory::MemoryTaint::Internal,
+            taint: crate::MemoryTaint::Internal,
         })
         .await
         .expect("PII-like namespace should be auto-sanitized, not rejected");
@@ -1342,7 +1342,7 @@ async fn upsert_document_metadata_only_auto_sanitizes_pii_like_namespace() {
 
 #[tokio::test]
 async fn pii_like_document_key_round_trips_through_get_and_forget() {
-    use crate::openhuman::memory::traits::Memory;
+    use crate::traits::Memory;
 
     let tmp = TempDir::new().unwrap();
     let memory = UnifiedMemory::new(tmp.path(), Arc::new(NoopEmbedding), None).unwrap();
@@ -1382,7 +1382,7 @@ async fn pii_like_document_key_round_trips_through_get_and_forget() {
 
 #[tokio::test]
 async fn pii_like_namespace_round_trips_through_get_and_list() {
-    use crate::openhuman::memory::traits::Memory;
+    use crate::traits::Memory;
 
     let tmp = TempDir::new().unwrap();
     let memory = UnifiedMemory::new(tmp.path(), Arc::new(NoopEmbedding), None).unwrap();
@@ -1482,7 +1482,7 @@ async fn scanner_built_identifiers_are_preserved_verbatim() {
 
 #[tokio::test]
 async fn metadata_only_write_round_trips_through_pii_like_key() {
-    use crate::openhuman::memory::traits::Memory;
+    use crate::traits::Memory;
 
     let tmp = TempDir::new().unwrap();
     let memory = UnifiedMemory::new(tmp.path(), Arc::new(NoopEmbedding), None).unwrap();

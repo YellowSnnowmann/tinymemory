@@ -54,9 +54,9 @@ use notify_debouncer_mini::{new_debouncer, DebouncedEvent, Debouncer};
 use tokio::sync::mpsc;
 
 use crate::openhuman::config::{rpc as config_rpc, Config};
-use crate::openhuman::memory::ingest_pipeline::ingest_document_with_scope;
+use crate::ingest_pipeline::ingest_document_with_scope;
 use tinycortex::memory::ingest::canonicalize::document::DocumentInput;
-use crate::openhuman::memory::sync::workspace::watcher::state::WatcherStateStore;
+use crate::sync::workspace::watcher::state::WatcherStateStore;
 use crate::openhuman::cron::scheduler_gate::gate::current_policy;
 use crate::openhuman::cron::scheduler_gate::policy::PauseReason;
 
@@ -371,7 +371,7 @@ async fn handle_remove(
     if let Some(mtime) = last_mtime {
         let source_id = format!("vault_watcher:{rel}@{mtime}");
         if let Err(e) =
-            crate::openhuman::memory::ingest_pipeline::mark_document_deleted(config, &source_id)
+            crate::ingest_pipeline::mark_document_deleted(config, &source_id)
                 .await
         {
             tracing::warn!(
@@ -524,7 +524,7 @@ mod vault_watcher_integration {
     use std::time::Duration;
     use tempfile::TempDir;
 
-    use crate::openhuman::memory::sync::workspace::watcher::state::WatcherStateStore;
+    use crate::sync::workspace::watcher::state::WatcherStateStore;
 
     // ── helpers ───────────────────────────────────────────────────────────
 

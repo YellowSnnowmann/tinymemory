@@ -172,7 +172,7 @@ impl Tool for MemoryTreeTool {
 #[cfg(test)]
 mod memory_tree_dispatcher_tests {
     use super::*;
-    use crate::openhuman::memory::query::test_workspace::isolated_config;
+    use crate::query::test_workspace::isolated_config;
     use crate::openhuman::tools::traits::Tool;
     use serde_json::json;
     use tempfile::TempDir;

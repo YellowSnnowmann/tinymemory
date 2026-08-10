@@ -13,7 +13,7 @@
 
 pub mod pii;
 
-use crate::openhuman::memory::store::types::NamespaceDocumentInput;
+use crate::store::types::NamespaceDocumentInput;
 
 pub use tinycortex::memory::store::safety::{
     has_likely_pii, has_likely_secret, sanitize_json, sanitize_text, SanitizationReport, Sanitized,
@@ -327,12 +327,12 @@ mod tests {
             category: "core".into(),
             session_id: None,
             document_id: None,
-            taint: crate::openhuman::memory::MemoryTaint::ExternalSync,
+            taint: crate::MemoryTaint::ExternalSync,
         };
         let sanitized = sanitize_document_input(input);
         assert_eq!(
             sanitized.value.taint,
-            crate::openhuman::memory::MemoryTaint::ExternalSync,
+            crate::MemoryTaint::ExternalSync,
             "taint must survive sanitization unchanged"
         );
         assert!(sanitized.report.text_redactions >= 1);

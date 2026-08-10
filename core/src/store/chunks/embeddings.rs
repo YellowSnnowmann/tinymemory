@@ -6,7 +6,7 @@ use anyhow::Result;
 use rusqlite::{Connection, Transaction};
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::tinycortex::engine_config;
+use crate::tinycortex::engine_config;
 
 pub(crate) fn tree_active_signature(config: &Config) -> String {
     tinycortex::memory::chunks::tree_active_signature(&engine_config(config))

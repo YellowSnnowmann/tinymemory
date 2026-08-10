@@ -6,9 +6,9 @@ use anyhow::Result;
 
 use crate::openhuman::config::Config;
 #[cfg(feature = "memory-git")]
-use crate::openhuman::memory::store::content::wiki_git::{SummaryCommitBatch, SummaryCommitEntry};
-use crate::openhuman::memory::store::trees::types::Tree;
-use crate::openhuman::memory::tinycortex::{memory_config_from, HostSummariser};
+use crate::store::content::wiki_git::{SummaryCommitBatch, SummaryCommitEntry};
+use crate::store::trees::types::Tree;
+use crate::tinycortex::{memory_config_from, HostSummariser};
 
 pub use tinycortex::memory::tree::{SummaryIngestInput, SummaryIngestOutcome};
 
@@ -24,7 +24,7 @@ pub async fn ingest_summary(
     );
     let content_root = config.memory_tree_content_root();
     if let Err(error) =
-        crate::openhuman::memory::store::content::obsidian::ensure_obsidian_defaults(&content_root)
+        crate::store::content::obsidian::ensure_obsidian_defaults(&content_root)
     {
         log::warn!("[memory_tree::ingest] obsidian defaults failed: {error:#}");
     }
@@ -42,7 +42,7 @@ pub async fn ingest_summary(
     // mirror. Skipping it when `memory-git` is off loses the mirror, not the
     // summary — so the call site is gated rather than stubbed.
     #[cfg(feature = "memory-git")]
-    crate::openhuman::memory::store::content::wiki_git::commit_summaries(
+    crate::store::content::wiki_git::commit_summaries(
         &content_root,
         &SummaryCommitBatch {
             reason: "summary_ingest".to_string(),

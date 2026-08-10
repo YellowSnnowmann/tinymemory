@@ -30,11 +30,11 @@ use anyhow::Result;
 use std::sync::Arc;
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::store::chunks::store::list_chunks;
-use crate::openhuman::memory::store::chunks::types::{Chunk, SourceKind};
-use crate::openhuman::memory::store::types::NamespaceMemoryHit;
-use crate::openhuman::memory::store::UnifiedMemory;
-use crate::openhuman::memory::tree::retrieval::types::RetrievalHit;
+use crate::store::chunks::store::list_chunks;
+use crate::store::chunks::types::{Chunk, SourceKind};
+use crate::store::types::NamespaceMemoryHit;
+use crate::store::UnifiedMemory;
+use crate::tree::retrieval::types::RetrievalHit;
 
 /// Optional filter set for `param_tag_search`. All `Some` fields are AND-ed
 /// together; `None` fields are unconstrained.
@@ -77,7 +77,7 @@ impl RetrievalFacade {
         query: Option<&str>,
         limit: Option<usize>,
     ) -> Result<Vec<RetrievalHit>> {
-        crate::openhuman::memory::tree::retrieval::drill_down::drill_down(
+        crate::tree::retrieval::drill_down::drill_down(
             config, node_id, max_depth, query, limit,
         )
         .await
@@ -121,7 +121,7 @@ impl RetrievalFacade {
         config: &Config,
         filters: &ParamTagFilters,
     ) -> Result<Vec<Chunk>> {
-        let query = crate::openhuman::memory::store::chunks::store::ListChunksQuery {
+        let query = crate::store::chunks::store::ListChunksQuery {
             source_kind: filters.source_kind,
             source_id: filters.source_id.clone(),
             owner: filters.owner.clone(),
@@ -154,8 +154,8 @@ impl RetrievalFacade {
 mod tests {
     use super::*;
     use crate::openhuman::inference::embeddings::NoopEmbedding;
-    use crate::openhuman::memory::store::chunks::store::upsert_chunks;
-    use crate::openhuman::memory::store::chunks::types::{Chunk, Metadata};
+    use crate::store::chunks::store::upsert_chunks;
+    use crate::store::chunks::types::{Chunk, Metadata};
     use chrono::{TimeZone, Utc};
     use tempfile::TempDir;
 

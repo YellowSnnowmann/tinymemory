@@ -9,9 +9,9 @@
 //! source — enabled or disabled — conservative per-toolkit caps.
 
 use crate::openhuman::config::rpc as config_rpc;
-use crate::openhuman::memory::sources::registry;
-use crate::openhuman::memory::sources::types::{MemorySourceEntry, SourceKind};
-use crate::openhuman::memory::sync::composio;
+use crate::sources::registry;
+use crate::sources::types::{MemorySourceEntry, SourceKind};
+use crate::sync::composio;
 use std::collections::HashSet;
 
 /// Current version of the caps migration. Bump when the migration logic changes
@@ -154,7 +154,7 @@ fn apply_caps_defaults_to_entries(sources: &mut [MemorySourceEntry]) -> u32 {
             _ => {
                 // Use the rpc::apply_kind_defaults helper so the same
                 // conservative values are applied consistently.
-                crate::openhuman::memory::sources::rpc::apply_kind_defaults(source);
+                crate::sources::rpc::apply_kind_defaults(source);
             }
         }
     }
@@ -225,7 +225,7 @@ fn short_id(id: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::memory::sources::types::{MemorySourceEntry, SourceKind};
+    use crate::sources::types::{MemorySourceEntry, SourceKind};
 
     fn make_composio_entry(
         id: &str,

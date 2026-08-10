@@ -1,5 +1,5 @@
 use super::*;
-use crate::openhuman::memory::store::MemoryClient;
+use crate::store::MemoryClient;
 use std::sync::Arc;
 use tempfile::TempDir;
 

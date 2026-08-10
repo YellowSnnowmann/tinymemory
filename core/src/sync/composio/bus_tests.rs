@@ -1,7 +1,7 @@
 //! Unit tests for the composio connection-created event handler's gating.
 
 use super::toolkit_is_memory_source_registrable;
-use crate::openhuman::memory::sync::composio::init_default_composio_sync_providers;
+use crate::sync::composio::init_default_composio_sync_providers;
 
 /// #4957 regression: the connection-created handler must only auto-register a
 /// toolkit as a memory source when a native memory-sync provider exists for it.

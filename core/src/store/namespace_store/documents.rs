@@ -9,8 +9,8 @@ use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use uuid::Uuid;
 
-use crate::openhuman::memory::store::safety;
-use crate::openhuman::memory::store::types::{NamespaceDocumentInput, StoredMemoryDocument};
+use crate::store::safety;
+use crate::store::types::{NamespaceDocumentInput, StoredMemoryDocument};
 
 use super::UnifiedMemory;
 
@@ -20,7 +20,7 @@ impl UnifiedMemory {
     /// provider.
     ///
     /// **Takes already-sanitized input.** The host secret/PII write gate runs
-    /// in [`crate::openhuman::memory::store::write_gate`], which owns this
+    /// in [`crate::store::write_gate`], which owns this
     /// method's only call site; use `UnifiedMemory::upsert_document` instead
     /// unless you are that gate. Calling this directly persists caller content
     /// verbatim, credentials and all.
@@ -382,7 +382,7 @@ impl UnifiedMemory {
             created_at: row.get(11).map_err(|e| e.to_string())?,
             updated_at: row.get(12).map_err(|e| e.to_string())?,
             markdown_rel_path: row.get(13).map_err(|e| e.to_string())?,
-            taint: crate::openhuman::memory::MemoryTaint::from_db_str(&taint_str),
+            taint: crate::MemoryTaint::from_db_str(&taint_str),
         }))
     }
 
@@ -433,7 +433,7 @@ impl UnifiedMemory {
             // so a forward-rolled schema variant or a bad UPDATE can't
             // silently downgrade a row to user-authored content.
             let taint_str: String = row.get(14).map_err(|e| e.to_string())?;
-            let taint = crate::openhuman::memory::MemoryTaint::from_db_str(&taint_str);
+            let taint = crate::MemoryTaint::from_db_str(&taint_str);
             docs.push(StoredMemoryDocument {
                 document_id: row.get(0).map_err(|e| e.to_string())?,
                 namespace: row.get(1).map_err(|e| e.to_string())?,

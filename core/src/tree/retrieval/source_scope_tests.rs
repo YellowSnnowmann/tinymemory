@@ -31,17 +31,17 @@ use chrono::{TimeZone, Utc};
 use tempfile::TempDir;
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::source_scope::{chunk_source_allowed_in, with_source_scope};
-use crate::openhuman::memory::store::chunks::store::{
+use crate::source_scope::{chunk_source_allowed_in, with_source_scope};
+use crate::store::chunks::store::{
     list_chunks, upsert_chunks, upsert_staged_chunks_tx, with_connection, ListChunksQuery,
 };
-use crate::openhuman::memory::store::chunks::types::{
+use crate::store::chunks::types::{
     chunk_id, Chunk, Metadata, SourceKind, SourceRef,
 };
-use crate::openhuman::memory::store::content as content_store;
-use crate::openhuman::memory::store::trees::store::{insert_summary_tx, insert_tree};
-use crate::openhuman::memory::store::trees::types::{SummaryNode, Tree, TreeKind, TreeStatus};
-use crate::openhuman::memory::tree::retrieval::{
+use crate::store::content as content_store;
+use crate::store::trees::store::{insert_summary_tx, insert_tree};
+use crate::store::trees::types::{SummaryNode, Tree, TreeKind, TreeStatus};
+use crate::tree::retrieval::{
     cover_window, drill_down, fetch_leaves, query_source,
 };
 

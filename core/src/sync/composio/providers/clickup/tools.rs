@@ -6,7 +6,7 @@
 //! subset the periodic Memory Tree sync relies on, plus the most common
 //! task-write surface the agent already uses through generic tool-calling.
 
-use crate::openhuman::memory::sync::composio::providers::tool_scope::{CuratedTool, ToolScope};
+use crate::sync::composio::providers::tool_scope::{CuratedTool, ToolScope};
 
 pub const CLICKUP_CURATED: &[CuratedTool] = &[
     // ── Read: identity ─────────────────────────────────────────────

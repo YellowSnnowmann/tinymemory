@@ -20,7 +20,7 @@ use super::state::IngestionState;
 use super::MemoryIngestionConfig;
 use crate::core::bus::BUS;
 use crate::core::events::DomainEvent;
-use crate::openhuman::memory::store::{NamespaceDocumentInput, UnifiedMemory};
+use crate::store::{NamespaceDocumentInput, UnifiedMemory};
 
 /// Default capacity of the ingestion job channel.
 ///
@@ -313,7 +313,7 @@ mod tests {
                 category: "core".to_string(),
                 session_id: None,
                 document_id: None,
-                taint: crate::openhuman::memory::MemoryTaint::Internal,
+                taint: crate::MemoryTaint::Internal,
             },
             config: MemoryIngestionConfig::default(),
         }

@@ -18,10 +18,10 @@
 
 use std::path::PathBuf;
 
-use crate::openhuman::memory::people::types::Person;
-use crate::openhuman::memory::store::chunks::types::Chunk;
-use crate::openhuman::memory::store::kinds::MemoryKind;
-use crate::openhuman::memory::store::trees::{SummaryNode, Tree};
+use crate::people::types::Person;
+use crate::store::chunks::types::Chunk;
+use crate::store::kinds::MemoryKind;
+use crate::store::trees::{SummaryNode, Tree};
 
 /// A rendered Obsidian markdown file: where it lives in the vault and what
 /// bytes to write. Vault path is relative to the content-store root.
@@ -175,7 +175,7 @@ impl ObsidianRepresentable for Person {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::memory::store::chunks::types::{Metadata, SourceKind};
+    use crate::store::chunks::types::{Metadata, SourceKind};
     use chrono::Utc;
 
     fn sample_chunk() -> Chunk {
@@ -218,7 +218,7 @@ mod tests {
         let node = SummaryNode {
             id: "summary-1".into(),
             tree_id: "tree-1".into(),
-            tree_kind: crate::openhuman::memory::store::trees::TreeKind::Source,
+            tree_kind: crate::store::trees::TreeKind::Source,
             level: 1,
             parent_id: None,
             child_ids: vec!["chunk-1".into()],
@@ -250,12 +250,12 @@ mod tests {
     fn tree_traits_render_obsidian_metadata() {
         let tree = Tree {
             id: "tree-1".into(),
-            kind: crate::openhuman::memory::store::trees::TreeKind::Topic,
+            kind: crate::store::trees::TreeKind::Topic,
             scope: "topic:phoenix".into(),
             ask: None,
             root_id: Some("summary-root".into()),
             max_level: 2,
-            status: crate::openhuman::memory::store::trees::TreeStatus::Active,
+            status: crate::store::trees::TreeStatus::Active,
             created_at: Utc::now(),
             last_sealed_at: None,
         };
@@ -270,15 +270,15 @@ mod tests {
     fn person_traits_render_name_and_email_when_present() {
         let now = Utc::now();
         let person = Person {
-            id: crate::openhuman::memory::people::types::PersonId::new(),
+            id: crate::people::types::PersonId::new(),
             display_name: Some("Alice Example".into()),
             primary_email: Some("alice@example.com".into()),
             primary_phone: Some("+1 555 0100".into()),
             handles: vec![
-                crate::openhuman::memory::people::types::Handle::DisplayName(
+                crate::people::types::Handle::DisplayName(
                     "Alice Example".into(),
                 ),
-                crate::openhuman::memory::people::types::Handle::Email("alice@example.com".into()),
+                crate::people::types::Handle::Email("alice@example.com".into()),
             ],
             created_at: now,
             updated_at: now,
@@ -298,7 +298,7 @@ mod tests {
     fn person_traits_fall_back_when_fields_are_missing() {
         let now = Utc::now();
         let person = Person {
-            id: crate::openhuman::memory::people::types::PersonId::new(),
+            id: crate::people::types::PersonId::new(),
             display_name: None,
             primary_email: None,
             primary_phone: None,

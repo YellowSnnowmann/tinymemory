@@ -4,7 +4,7 @@
 //!
 //! 1. accept a manual or scheduled sync request
 //! 2. emit coarse lifecycle events for UI visibility
-//! 3. dispatch into [`crate::openhuman::memory::sync`] backends
+//! 3. dispatch into [`crate::sync`] backends
 //! 4. rely on `memory_store` + `memory_queue` + `memory_tree` backends to
 //!    persist, enqueue, ingest, and seal the resulting data
 //!
@@ -180,7 +180,7 @@ impl EventHandler<DomainEvent> for SyncCompleteEmbedTrigger {
         if let DomainEvent::MemorySyncStageChanged { stage, .. } = event {
             if stage == "completed" {
                 log::debug!("[memory-sync] sync completed — triggering batch embedding backfill");
-                crate::openhuman::memory::queue::ensure_reembed_backfill(&self.config);
+                crate::queue::ensure_reembed_backfill(&self.config);
             }
         }
     }

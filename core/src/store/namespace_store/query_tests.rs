@@ -6,8 +6,8 @@ use serde_json::json;
 use tempfile::TempDir;
 
 use crate::openhuman::inference::embeddings::NoopEmbedding;
-use crate::openhuman::memory::store::{NamespaceDocumentInput, UnifiedMemory};
-use crate::openhuman::memory::Memory;
+use crate::store::{NamespaceDocumentInput, UnifiedMemory};
+use crate::Memory;
 
 #[tokio::test]
 async fn graph_duplicate_upsert_aggregates_evidence_count() {
@@ -62,7 +62,7 @@ async fn query_namespace_uses_graph_signal_for_document_ranking() {
             category: "core".to_string(),
             session_id: None,
             document_id: None,
-            taint: crate::openhuman::memory::MemoryTaint::Internal,
+            taint: crate::MemoryTaint::Internal,
         })
         .await
         .unwrap();
@@ -105,7 +105,7 @@ async fn query_scores_relation_entities_found_in_document_content() {
             category: "core".to_string(),
             session_id: None,
             document_id: None,
-            taint: crate::openhuman::memory::MemoryTaint::Internal,
+            taint: crate::MemoryTaint::Internal,
         })
         .await
         .unwrap();
@@ -145,13 +145,13 @@ async fn recall_namespace_memories_includes_namespace_kv() {
     let hits = memory.recall_namespace_memories("team", 5).await.unwrap();
     assert!(hits.iter().any(|hit| matches!(
         hit.kind,
-        crate::openhuman::memory::store::MemoryItemKind::Kv
+        crate::store::MemoryItemKind::Kv
     )));
 }
 
 #[tokio::test]
 async fn query_returns_episodic_hits_when_available() {
-    use crate::openhuman::memory::store::fts5::{self, EpisodicEntry};
+    use crate::store::fts5::{self, EpisodicEntry};
 
     let tmp = TempDir::new().unwrap();
     let memory = UnifiedMemory::new(tmp.path(), Arc::new(NoopEmbedding), None).unwrap();
@@ -179,7 +179,7 @@ async fn query_returns_episodic_hits_when_available() {
 
     let episodic_hits: Vec<_> = hits
         .iter()
-        .filter(|h| h.kind == crate::openhuman::memory::store::MemoryItemKind::Episodic)
+        .filter(|h| h.kind == crate::store::MemoryItemKind::Episodic)
         .collect();
     assert!(
         !episodic_hits.is_empty(),
@@ -189,7 +189,7 @@ async fn query_returns_episodic_hits_when_available() {
 
 #[tokio::test]
 async fn query_returns_event_hits_when_available() {
-    use crate::openhuman::memory::store::events::{self, EventRecord, EventType};
+    use crate::store::events::{self, EventRecord, EventType};
 
     let tmp = TempDir::new().unwrap();
     let memory = UnifiedMemory::new(tmp.path(), Arc::new(NoopEmbedding), None).unwrap();
@@ -221,7 +221,7 @@ async fn query_returns_event_hits_when_available() {
 
     let event_hits: Vec<_> = hits
         .iter()
-        .filter(|h| h.kind == crate::openhuman::memory::store::MemoryItemKind::Event)
+        .filter(|h| h.kind == crate::store::MemoryItemKind::Event)
         .collect();
     assert!(
         !event_hits.is_empty(),
@@ -231,7 +231,7 @@ async fn query_returns_event_hits_when_available() {
 
 #[tokio::test]
 async fn query_episodic_hits_have_correct_kind() {
-    use crate::openhuman::memory::store::fts5::{self, EpisodicEntry};
+    use crate::store::fts5::{self, EpisodicEntry};
 
     let tmp = TempDir::new().unwrap();
     let memory = UnifiedMemory::new(tmp.path(), Arc::new(NoopEmbedding), None).unwrap();
@@ -259,7 +259,7 @@ async fn query_episodic_hits_have_correct_kind() {
     for hit in hits.iter().filter(|h| h.id.starts_with("episodic:")) {
         assert_eq!(
             hit.kind,
-            crate::openhuman::memory::store::MemoryItemKind::Episodic,
+            crate::store::MemoryItemKind::Episodic,
             "Hits with 'episodic:' id prefix must have kind Episodic"
         );
     }
@@ -272,7 +272,7 @@ async fn query_episodic_hits_have_correct_kind() {
 /// for n > 1 — the single-entry tests above cannot, since idx is always 0.
 #[tokio::test]
 async fn query_episodic_relevance_tracks_rank_position() {
-    use crate::openhuman::memory::store::fts5::{self, EpisodicEntry};
+    use crate::store::fts5::{self, EpisodicEntry};
 
     let tmp = TempDir::new().unwrap();
     let memory = UnifiedMemory::new(tmp.path(), Arc::new(NoopEmbedding), None).unwrap();
@@ -306,7 +306,7 @@ async fn query_episodic_relevance_tracks_rank_position() {
 
     let mut relevances: Vec<f64> = hits
         .iter()
-        .filter(|h| h.kind == crate::openhuman::memory::store::MemoryItemKind::Episodic)
+        .filter(|h| h.kind == crate::store::MemoryItemKind::Episodic)
         .map(|h| h.score_breakdown.episodic_relevance)
         .collect();
     relevances.sort_by(|a, b| a.partial_cmp(b).unwrap());
@@ -340,7 +340,7 @@ async fn query_supporting_relations_contain_entity_types() {
             category: "core".to_string(),
             session_id: None,
             document_id: None,
-            taint: crate::openhuman::memory::MemoryTaint::Internal,
+            taint: crate::MemoryTaint::Internal,
         })
         .await
         .unwrap();
@@ -453,7 +453,7 @@ async fn recall_supporting_relations_stay_scoped_per_document() {
             category: "core".to_string(),
             session_id: None,
             document_id: None,
-            taint: crate::openhuman::memory::MemoryTaint::Internal,
+            taint: crate::MemoryTaint::Internal,
         })
         .await
         .unwrap();
@@ -470,7 +470,7 @@ async fn recall_supporting_relations_stay_scoped_per_document() {
             category: "core".to_string(),
             session_id: None,
             document_id: None,
-            taint: crate::openhuman::memory::MemoryTaint::Internal,
+            taint: crate::MemoryTaint::Internal,
         })
         .await
         .unwrap();
@@ -506,7 +506,7 @@ async fn recall_supporting_relations_stay_scoped_per_document() {
         .find(|hit| hit.key == "beta-doc")
         .expect("recall should return beta-doc");
 
-    let objects = |hit: &crate::openhuman::memory::store::NamespaceMemoryHit| {
+    let objects = |hit: &crate::store::NamespaceMemoryHit| {
         hit.supporting_relations
             .iter()
             .map(|relation| relation.object.to_uppercase())
@@ -555,7 +555,7 @@ async fn format_context_text_includes_entity_types() {
             category: "core".to_string(),
             session_id: None,
             document_id: None,
-            taint: crate::openhuman::memory::MemoryTaint::Internal,
+            taint: crate::MemoryTaint::Internal,
         })
         .await
         .unwrap();
@@ -637,7 +637,7 @@ fn pref_doc(key: &str, content: &str) -> NamespaceDocumentInput {
         category: "core".to_string(),
         session_id: None,
         document_id: None,
-        taint: crate::openhuman::memory::MemoryTaint::Internal,
+        taint: crate::MemoryTaint::Internal,
     }
 }
 
@@ -804,7 +804,7 @@ fn situational_doc(key: &str, content: &str) -> NamespaceDocumentInput {
         category: "core".to_string(),
         session_id: None,
         document_id: None,
-        taint: crate::openhuman::memory::MemoryTaint::Internal,
+        taint: crate::MemoryTaint::Internal,
     }
 }
 
@@ -874,7 +874,7 @@ fn conversation_doc_with_session(
         category: "conversation".to_string(),
         session_id: session_id.map(str::to_string),
         document_id: None,
-        taint: crate::openhuman::memory::MemoryTaint::Internal,
+        taint: crate::MemoryTaint::Internal,
     }
 }
 

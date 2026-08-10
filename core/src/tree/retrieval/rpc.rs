@@ -8,8 +8,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::store::chunks::types::SourceKind;
-use crate::openhuman::memory::tree::retrieval::{
+use crate::store::chunks::types::SourceKind;
+use crate::tree::retrieval::{
     cover::cover_window,
     drill_down::drill_down,
     fetch::fetch_leaves,
@@ -17,7 +17,7 @@ use crate::openhuman::memory::tree::retrieval::{
     source::query_source,
     types::{EntityMatch, QueryResponse, RetrievalHit},
 };
-use crate::openhuman::memory::tree::score::extract::EntityKind;
+use crate::tree::score::extract::EntityKind;
 use crate::rpc::RpcOutcome;
 
 // ── query_source ──────────────────────────────────────────────────────
@@ -297,9 +297,9 @@ mod tests {
     //! initialises the schema idempotently on first access, so read-only
     //! calls return empty responses rather than erroring.
     use super::*;
-    use crate::openhuman::memory::store::chunks::store::upsert_chunks;
-    use crate::openhuman::memory::store::chunks::types::{chunk_id, Chunk, Metadata, SourceRef};
-    use crate::openhuman::memory::store::content as content_store;
+    use crate::store::chunks::store::upsert_chunks;
+    use crate::store::chunks::types::{chunk_id, Chunk, Metadata, SourceRef};
+    use crate::store::content as content_store;
     use chrono::{TimeZone, Utc};
     use tempfile::TempDir;
 
@@ -308,9 +308,9 @@ mod tests {
         std::fs::create_dir_all(&content_root).expect("create content_root for test");
         let staged = content_store::stage_chunks(&content_root, chunks)
             .expect("stage_chunks for test chunks");
-        crate::openhuman::memory::store::chunks::store::with_connection(cfg, |conn| {
+        crate::store::chunks::store::with_connection(cfg, |conn| {
             let tx = conn.unchecked_transaction()?;
-            crate::openhuman::memory::store::chunks::store::upsert_staged_chunks_tx(&tx, &staged)?;
+            crate::store::chunks::store::upsert_staged_chunks_tx(&tx, &staged)?;
             tx.commit()?;
             Ok(())
         })
@@ -443,7 +443,7 @@ mod tests {
 
     #[tokio::test]
     async fn cover_window_rpc_honors_profile_source_scope() {
-        use crate::openhuman::memory::source_scope::with_source_scope;
+        use crate::source_scope::with_source_scope;
         let (_tmp, cfg) = test_config();
         // Two memory-source chunks in different sources, both inside the window.
         let mut allowed = sample_chunk("slack:#eng", 0);

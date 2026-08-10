@@ -269,7 +269,7 @@ impl TaskFetchFilter {
 /// `execute` chokepoint can tally every action a provider fires during one
 /// sync run, regardless of which provider (gmail / slack / github / notion /
 /// linear / clickup) or how many pages it paginates.
-/// [`crate::openhuman::memory::sync::composio::run_connection_sync`] returns
+/// [`crate::sync::composio::run_connection_sync`] returns
 /// the final tally alongside the [`SyncOutcome`] for the sync audit log
 /// (#3111).
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -475,10 +475,10 @@ impl ProviderContext {
 
     /// Memory client handle if the global memory singleton is ready.
     /// Used by providers that want to persist sync snapshots.
-    pub fn memory_client(&self) -> Option<crate::openhuman::memory::store::MemoryClientRef> {
+    pub fn memory_client(&self) -> Option<crate::store::MemoryClientRef> {
         #[cfg(test)]
         {
-            return crate::openhuman::memory::store::MemoryClient::from_workspace_dir(
+            return crate::store::MemoryClient::from_workspace_dir(
                 self.config.workspace_dir.clone(),
             )
             .ok()
@@ -486,7 +486,7 @@ impl ProviderContext {
         }
 
         #[cfg(not(test))]
-        crate::openhuman::memory::global::client_if_ready()
+        crate::global::client_if_ready()
     }
 }
 

@@ -21,7 +21,7 @@ use super::ProviderUserProfile;
 use crate::openhuman::agent::learning::candidate::{
     self as learning_candidate, CueFamily, EvidenceRef, FacetClass, LearningCandidate,
 };
-use crate::openhuman::memory::store::profile::FacetType;
+use crate::store::profile::FacetType;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
@@ -31,7 +31,7 @@ use std::collections::BTreeMap;
 
 /// Shape of an identifier persisted against a connection. Mirrors the
 /// matching dimensions of the memory tree's
-/// `crate::openhuman::memory::tree::score::extract::EntityKind` so the
+/// `crate::tree::score::extract::EntityKind` so the
 /// self-check is a direct `(toolkit, kind, value)` lookup.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdentityKind {
@@ -128,7 +128,7 @@ pub fn canonicalize(kind: IdentityKind, raw: &str) -> Option<String> {
 /// the number of rows written. Silently no-ops if the memory client isn't
 /// ready (startup race / unauthenticated CLI).
 pub fn persist_provider_profile(profile: &ProviderUserProfile) -> usize {
-    let Some(client) = crate::openhuman::memory::global::client_if_ready() else {
+    let Some(client) = crate::global::client_if_ready() else {
         tracing::debug!(
             toolkit = %profile.toolkit,
             "[composio:profile] memory client not ready, skipping persist"
@@ -278,7 +278,7 @@ pub struct ConnectedIdentity {
 /// Rows whose last segment is not a known [`IdentityKind`] are silently
 /// skipped — that includes legacy `username` rows from before the rewrite.
 pub fn load_connected_identities() -> Vec<ConnectedIdentity> {
-    let Some(client) = crate::openhuman::memory::global::client_if_ready() else {
+    let Some(client) = crate::global::client_if_ready() else {
         tracing::debug!("[composio:profile] load_connected_identities: memory client not ready");
         return Vec::new();
     };
@@ -332,7 +332,7 @@ pub fn is_self_identity(toolkit: &str, kind: IdentityKind, raw_value: &str) -> b
     let Some(canonical) = canonicalize(kind, raw_value) else {
         return false;
     };
-    let Some(client) = crate::openhuman::memory::global::client_if_ready() else {
+    let Some(client) = crate::global::client_if_ready() else {
         return false;
     };
     let key_pattern = format!("skill:{}:%:{}", normalize_token(toolkit), kind.as_str());
@@ -352,7 +352,7 @@ pub fn is_self_identity_any_toolkit(kind: IdentityKind, raw_value: &str) -> bool
     let Some(canonical) = canonicalize(kind, raw_value) else {
         return false;
     };
-    let Some(client) = crate::openhuman::memory::global::client_if_ready() else {
+    let Some(client) = crate::global::client_if_ready() else {
         return false;
     };
     let key_pattern = format!("skill:%:%:{}", kind.as_str());
@@ -420,7 +420,7 @@ pub fn delete_connected_identity_facets(source: &str, identifier: &str) -> usize
     // keep treating the removed account as the user — #1381 review).
     let source = normalize_token(source);
     let identifier = normalize_token(identifier);
-    let Some(client) = crate::openhuman::memory::global::client_if_ready() else {
+    let Some(client) = crate::global::client_if_ready() else {
         tracing::debug!(
             source = %source,
             identifier = %identifier,
@@ -509,7 +509,7 @@ fn now_secs() -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::memory::store::profile::{self, profile_load_all, PROFILE_INIT_SQL};
+    use crate::store::profile::{self, profile_load_all, PROFILE_INIT_SQL};
     use parking_lot::Mutex;
     use rusqlite::Connection;
     use serde_json::json;

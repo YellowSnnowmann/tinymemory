@@ -3,8 +3,8 @@
 use async_trait::async_trait;
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::sources::readers::SourceReader;
-use crate::openhuman::memory::sources::types::{
+use crate::sources::readers::SourceReader;
+use crate::sources::types::{
     MemorySourceEntry, SourceContent, SourceItem, SourceKind,
 };
 
@@ -24,7 +24,7 @@ impl SourceReader for WebPageReader {
         tinycortex::memory::sources::SourceReader::list_items(
             &tinycortex::memory::sources::readers::web_page::WebPageReader,
             source,
-            &crate::openhuman::memory::tinycortex::memory_config_from(
+            &crate::tinycortex::memory_config_from(
                 config,
                 config.workspace_dir.clone(),
             ),
@@ -43,7 +43,7 @@ impl SourceReader for WebPageReader {
             &tinycortex::memory::sources::readers::web_page::WebPageReader,
             source,
             item_id,
-            &crate::openhuman::memory::tinycortex::memory_config_from(
+            &crate::tinycortex::memory_config_from(
                 config,
                 config.workspace_dir.clone(),
             ),

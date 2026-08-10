@@ -1,7 +1,7 @@
 //! GitHub Composio provider — incremental Memory Tree ingest for issues and
 //! pull requests involving the connected user.
 //!
-//! Mirrors the [`crate::openhuman::memory::sync::composio::providers::clickup`] layout so
+//! Mirrors the [`crate::sync::composio::providers::clickup`] layout so
 //! anyone familiar with ClickUp/Notion ingestion can read this without
 //! re-learning a new shape:
 //!

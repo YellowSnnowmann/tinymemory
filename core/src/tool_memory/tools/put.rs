@@ -1,6 +1,6 @@
 //! `memory_tools_put` — upsert a tool-scoped memory rule.
 //!
-//! Routed through [`MemoryGuard`](crate::openhuman::memory::guard::MemoryGuard).
+//! Routed through [`MemoryGuard`](crate::guard::MemoryGuard).
 //! `MemoryToolMemory::put_tool_rule` delegates to the same
 //! `ToolMemoryStore::put_rule` this tool used to build by hand, with one
 //! asymmetry: the contract method returns unit while the store returns the
@@ -26,9 +26,9 @@ use serde::Deserialize;
 use serde_json::json;
 use tinycortex_api::provider::MemoryProvider;
 
-use crate::openhuman::memory::ops::guard::active_memory_guard;
-use crate::openhuman::memory::ops::tool_memory::NO_TOOL_MEMORY;
-use crate::openhuman::memory::tool_memory::{ToolMemoryPriority, ToolMemoryRule, ToolMemorySource};
+use crate::ops::guard::active_memory_guard;
+use crate::ops::tool_memory::NO_TOOL_MEMORY;
+use crate::tool_memory::{ToolMemoryPriority, ToolMemoryRule, ToolMemorySource};
 use crate::openhuman::tools::traits::{Tool, ToolResult};
 
 pub struct MemoryToolsPutTool;
@@ -149,7 +149,7 @@ mod tests {
     use tempfile::TempDir;
 
     use crate::openhuman::config::{Config, TEST_ENV_LOCK};
-    use crate::openhuman::memory::guard::policy::GUARD_DENIED_PREFIX;
+    use crate::guard::policy::GUARD_DENIED_PREFIX;
     use crate::openhuman::security::live_policy;
     use crate::openhuman::security::policy::{AutonomyLevel, SecurityPolicy};
     use crate::openhuman::tools::traits::Tool;
@@ -271,7 +271,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_success_path_persists_rule_in_isolated_workspace() {
-        let _serial = crate::openhuman::memory::ops::GLOBAL_MEMORY_TEST_LOCK
+        let _serial = crate::ops::GLOBAL_MEMORY_TEST_LOCK
             .lock()
             .await;
         let tmp = TempDir::new().expect("tempdir");
@@ -297,7 +297,7 @@ mod tests {
         assert_eq!(parsed["tags"], json!(["safety", "shell"]));
         assert!(parsed["id"].as_str().is_some());
 
-        let guard = crate::openhuman::memory::ops::guard::active_memory_guard()
+        let guard = crate::ops::guard::active_memory_guard()
             .await
             .expect("active memory guard");
         let rules = guard
@@ -317,7 +317,7 @@ mod tests {
 
     #[tokio::test]
     async fn execute_defaults_unknown_priority_to_normal() {
-        let _serial = crate::openhuman::memory::ops::GLOBAL_MEMORY_TEST_LOCK
+        let _serial = crate::ops::GLOBAL_MEMORY_TEST_LOCK
             .lock()
             .await;
         let tmp = TempDir::new().expect("tempdir");
@@ -344,7 +344,7 @@ mod tests {
     /// `admit_write` calls `enforce_write_tier` first.
     #[tokio::test]
     async fn execute_is_refused_under_the_readonly_tier() {
-        let _serial = crate::openhuman::memory::ops::GLOBAL_MEMORY_TEST_LOCK
+        let _serial = crate::ops::GLOBAL_MEMORY_TEST_LOCK
             .lock()
             .await;
         let tmp = TempDir::new().expect("tempdir");
@@ -369,7 +369,7 @@ mod tests {
     /// test above is proving the tier gate rather than a broken write path.
     #[tokio::test]
     async fn execute_succeeds_under_the_full_tier() {
-        let _serial = crate::openhuman::memory::ops::GLOBAL_MEMORY_TEST_LOCK
+        let _serial = crate::ops::GLOBAL_MEMORY_TEST_LOCK
             .lock()
             .await;
         let tmp = TempDir::new().expect("tempdir");
@@ -391,7 +391,7 @@ mod tests {
     /// `ToolMemoryStore` handles.
     #[tokio::test]
     async fn guarded_put_and_guarded_list_share_the_store() {
-        let _serial = crate::openhuman::memory::ops::GLOBAL_MEMORY_TEST_LOCK
+        let _serial = crate::ops::GLOBAL_MEMORY_TEST_LOCK
             .lock()
             .await;
         let tmp = TempDir::new().expect("tempdir");

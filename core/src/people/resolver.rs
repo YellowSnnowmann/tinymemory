@@ -11,9 +11,9 @@
 
 use chrono::Utc;
 
-use crate::openhuman::memory::people::address_book::{self, AddressBookError, ContactsSource};
-use crate::openhuman::memory::people::store::PeopleStore;
-use crate::openhuman::memory::people::types::{Handle, Person, PersonId};
+use crate::people::address_book::{self, AddressBookError, ContactsSource};
+use crate::people::store::PeopleStore;
+use crate::people::types::{Handle, Person, PersonId};
 
 pub struct HandleResolver<'a> {
     store: &'a PeopleStore,
@@ -176,8 +176,8 @@ impl<'a> HandleResolver<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::memory::people::address_book::tests::MockContactsSource;
-    use crate::openhuman::memory::people::types::AddressBookContact;
+    use crate::people::address_book::tests::MockContactsSource;
+    use crate::people::types::AddressBookContact;
 
     #[tokio::test]
     async fn resolve_returns_none_for_unknown_handle() {

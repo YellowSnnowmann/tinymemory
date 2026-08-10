@@ -30,7 +30,7 @@ fn doc(namespace: &str, key: &str, content: &str) -> NamespaceDocumentInput {
         category: "core".to_string(),
         session_id: None,
         document_id: None,
-        taint: crate::openhuman::memory::MemoryTaint::Internal,
+        taint: crate::MemoryTaint::Internal,
     }
 }
 
@@ -126,7 +126,7 @@ async fn store_skill_sync_with_secret_like_title_uses_stable_document_id_as_key(
     // test cannot silently pass if the detector's patterns change.
     let secret_like_title = "Security alert: token glpat-aaaaaaaaaaaaaaaaaaaa was created";
     assert!(
-        crate::openhuman::memory::store::safety::has_likely_secret(secret_like_title),
+        crate::store::safety::has_likely_secret(secret_like_title),
         "test title must trip the secret detector for this regression to be meaningful"
     );
 
@@ -292,7 +292,7 @@ async fn profile_conn_returns_arc_shared_connection() {
 }
 
 /// `profile_conn()` hands out a raw `Arc<Mutex<Connection>>` that no decorator
-/// can wrap. It is `pub(in crate::openhuman::memory)`, so the compiler already
+/// can wrap. It is `pub(in crate)`, so the compiler already
 /// refuses a call from outside the family — this test states the rule in a form
 /// that *names the offending file*, because a visibility error at a call site
 /// reads as "private method", not as "you are reaching around the guard".
@@ -342,7 +342,7 @@ fn profile_conn_is_confined_to_the_memory_family() {
         outside.is_empty(),
         "raw profile connections reached from outside the memory family: {outside:?}\n\
          Use `MemoryClient::profile_store()`; every SQL statement against \
-         user_profile belongs inside `crate::openhuman::memory`."
+         user_profile belongs inside `crate`."
     );
 }
 

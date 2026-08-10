@@ -4,7 +4,7 @@
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::openhuman::memory::store::MemoryKind;
+use crate::store::MemoryKind;
 use crate::openhuman::tools::traits::{Tool, ToolResult};
 
 pub struct MemoryStoreKindsTool;

@@ -7,7 +7,7 @@ use tinycortex::memory::sync::StatusListResponse;
 
 pub async fn status_list_rpc(config: &Config) -> Result<RpcOutcome<StatusListResponse>, String> {
     tracing::debug!("[memory_sync_status][rpc] status_list via tinycortex");
-    let memory_config = crate::openhuman::memory::tinycortex::memory_config_from(
+    let memory_config = crate::tinycortex::memory_config_from(
         config,
         config.workspace_dir.clone(),
     );

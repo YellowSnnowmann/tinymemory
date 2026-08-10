@@ -35,8 +35,8 @@
 //!
 //! Ideally the exclusion would be threaded down from the caller that knows the
 //! session id, so nothing anywhere reads a task-local. That is not reachable
-//! today: both [`crate::openhuman::memory::Memory`] and
-//! [`crate::openhuman::memory::RecallOpts`] are re-exported verbatim from the
+//! today: both [`crate::Memory`] and
+//! [`crate::RecallOpts`] are re-exported verbatim from the
 //! vendored `tinycortex` crate, `RecallOpts` has exactly five fields and none of
 //! them is an exclusion, and the trait method takes no further argument. Every
 //! in-turn caller (`memory_recall` tool, memory loader, channel context, flow
@@ -53,7 +53,7 @@
 /// [`UnifiedMemory::recall_excluding_session`].
 ///
 /// [`UnifiedMemory::recall_excluding_session`]:
-/// crate::openhuman::memory::store::UnifiedMemory::recall_excluding_session
+/// crate::store::UnifiedMemory::recall_excluding_session
 pub(crate) fn current_self_echo_exclusion() -> Option<String> {
     let exclusion = crate::openhuman::agent::tinyagents::thread_context::current_thread_id();
     if let Some(ref session_id) = exclusion {

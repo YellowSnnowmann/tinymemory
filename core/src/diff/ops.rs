@@ -11,7 +11,7 @@
 //! publishes, and the tracing that RPC/tools/sync/subconscious callers expect.
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::sources::types::MemorySourceEntry;
+use crate::sources::types::MemorySourceEntry;
 
 use tinycortex::memory::diff::{DiffEngine, SourceDescriptor};
 
@@ -191,7 +191,7 @@ pub async fn diff_since_read(
 pub async fn mark_read(config: &Config, source_ids: Option<Vec<String>>) -> Result<u64, String> {
     let target_ids: Vec<String> = match source_ids {
         Some(ids) => ids,
-        None => crate::openhuman::memory::sources::registry::list_sources()
+        None => crate::sources::registry::list_sources()
             .await
             .map_err(|e| format!("list sources: {e}"))?
             .into_iter()
@@ -239,7 +239,7 @@ pub async fn mark_read(config: &Config, source_ids: Option<Vec<String>>) -> Resu
 /// Create a checkpoint (git tag at HEAD) grouping the latest snapshot per
 /// enabled source. Sources lacking a snapshot are baselined first.
 pub async fn create_checkpoint(label: &str, config: &Config) -> Result<Checkpoint, String> {
-    let sources = crate::openhuman::memory::sources::registry::list_sources()
+    let sources = crate::sources::registry::list_sources()
         .await
         .map_err(|e| format!("list sources: {e}"))?;
     let enabled: Vec<MemorySourceEntry> = sources.into_iter().filter(|s| s.enabled).collect();
@@ -321,7 +321,7 @@ mod tests {
     fn folder_source(id: &str) -> MemorySourceEntry {
         MemorySourceEntry {
             id: id.into(),
-            kind: crate::openhuman::memory::sources::types::SourceKind::Folder,
+            kind: crate::sources::types::SourceKind::Folder,
             label: "Docs".into(),
             enabled: true,
             toolkit: None,

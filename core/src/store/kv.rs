@@ -10,9 +10,9 @@
 
 use tinycortex::memory::store::kv::KvStore;
 
-use crate::openhuman::memory::store::namespace_store::UnifiedMemory;
-use crate::openhuman::memory::store::safety::canonical_identifier;
-use crate::openhuman::memory::store::types::MemoryKvRecord;
+use crate::store::namespace_store::UnifiedMemory;
+use crate::store::safety::canonical_identifier;
+use crate::store::types::MemoryKvRecord;
 
 impl UnifiedMemory {
     fn tinycortex_kv(&self) -> Result<KvStore, String> {

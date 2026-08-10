@@ -12,12 +12,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::ingest_pipeline::{
+use crate::ingest_pipeline::{
     ingest_chat as do_ingest_chat, ingest_document as do_ingest_document,
     ingest_email as do_ingest_email, IngestResult,
 };
-use crate::openhuman::memory::store::chunks::store::{self as chunk_store, ListChunksQuery};
-use crate::openhuman::memory::store::chunks::types::{Chunk, SourceKind};
+use crate::store::chunks::store::{self as chunk_store, ListChunksQuery};
+use crate::store::chunks::types::{Chunk, SourceKind};
 use crate::rpc::RpcOutcome;
 use tinycortex::memory::ingest::canonicalize::{
     chat::ChatBatch, document::DocumentInput, email::EmailThread,
@@ -295,7 +295,7 @@ pub async fn backfill_status_rpc(
         log::debug!("[memory::rpc] backfill_status: error: {msg}");
         msg
     })?;
-    let in_progress = crate::openhuman::memory::queue::backfill_in_progress() || pending_jobs > 0;
+    let in_progress = crate::queue::backfill_in_progress() || pending_jobs > 0;
     Ok(RpcOutcome::single_log(
         BackfillStatusResponse {
             in_progress,
@@ -375,14 +375,14 @@ pub struct PipelineStatusResponse {
     /// typed `cause` so the UI can render an actionable remediation. Additive:
     /// `#[serde(default)]` keeps older clients deserialising the response.
     #[serde(default)]
-    pub degraded: crate::openhuman::memory::tree::health::DegradedState,
+    pub degraded: crate::tree::health::DegradedState,
     /// #002 (FR-004): the single first blocking/most-significant cause, as a
     /// typed failure with an i18n remediation key. Populated from a failed
     /// job's classified reason or the active degradation cause; `None` when
     /// the pipeline is healthy. The frontend renders this verbatim (resolving
     /// `remediation_key`) instead of re-deriving a cause from raw counters.
     #[serde(default)]
-    pub first_blocking_cause: Option<crate::openhuman::memory::tree::health::PipelineFailure>,
+    pub first_blocking_cause: Option<crate::tree::health::PipelineFailure>,
     /// #002 (FR-010 / US5): fraction of chunks with ≥1 indexed entity, in
     /// `[0.0, 1.0]`. Near 0 with `total_chunks > 0` means extraction is
     /// producing no structure (the "empty-but-built wiki"). `None` when the
@@ -404,8 +404,8 @@ pub async fn pipeline_status_rpc(
     config: &Config,
 ) -> Result<RpcOutcome<PipelineStatusResponse>, String> {
     use crate::openhuman::config::SchedulerGateMode;
-    use crate::openhuman::memory::queue::store as queue_store;
-    use crate::openhuman::memory::queue::types::JobStatus;
+    use crate::queue::store as queue_store;
+    use crate::queue::types::JobStatus;
 
     log::debug!("[memory-tree][rpc] pipeline_status: entry");
 
@@ -502,7 +502,7 @@ pub async fn pipeline_status_rpc(
     // its source in `extract::llm` — it self-clears on the next *completed*
     // extraction (#3365), so the status surface never consults the unrelated
     // `extraction_coverage` metric to second-guess it here.
-    let degraded = crate::openhuman::memory::tree::health::current_degraded_state();
+    let degraded = crate::tree::health::current_degraded_state();
 
     let (status, reason) = derive_pipeline_status(
         is_paused,
@@ -540,7 +540,7 @@ pub async fn pipeline_status_rpc(
                 );
                 None
             });
-            let coverage = crate::openhuman::memory::store::chunks::store::extraction_coverage(&cfg)
+            let coverage = crate::store::chunks::store::extraction_coverage(&cfg)
                 .map_err(|e| {
                     log::warn!(
                         "[memory-tree][rpc] pipeline_status: extraction_coverage read failed: {e:#}"
@@ -597,9 +597,9 @@ pub async fn pipeline_status_rpc(
 /// blocking-pool dispatch is needed.
 pub async fn doctor_rpc(
     config: &Config,
-) -> Result<RpcOutcome<crate::openhuman::memory::tree::health::DoctorReport>, String> {
+) -> Result<RpcOutcome<crate::tree::health::DoctorReport>, String> {
     // Offload the doctor's blocking SQLite reads off the async runtime thread.
-    let report = crate::openhuman::memory::tree::health::async_run_doctor(config).await;
+    let report = crate::tree::health::async_run_doctor(config).await;
     let summary = if report.healthy {
         "memory_tree: doctor — healthy".to_string()
     } else {
@@ -629,13 +629,13 @@ pub struct RetryFailedResponse {
 pub async fn retry_failed_rpc(config: &Config) -> Result<RpcOutcome<RetryFailedResponse>, String> {
     let cfg = config.clone();
     let requeued = tokio::task::spawn_blocking(move || {
-        crate::openhuman::memory::queue::store::requeue_failed(&cfg)
+        crate::queue::store::requeue_failed(&cfg)
     })
     .await
     .map_err(|e| format!("retry_failed join error: {e}"))?
     .map_err(|e| format!("retry_failed: {e:#}"))?;
     // Wake the worker pool so the requeued jobs are picked up promptly.
-    crate::openhuman::memory::queue::wake_workers();
+    crate::queue::wake_workers();
     Ok(RpcOutcome::single_log(
         RetryFailedResponse { requeued },
         format!("memory_tree: retry_failed requeued={requeued}"),
@@ -674,8 +674,8 @@ pub async fn retry_failed_rpc(config: &Config) -> Result<RpcOutcome<RetryFailedR
 /// the user what to go and do right now, is withheld once it stops being true.
 fn latest_failed_job_failure(
     config: &Config,
-) -> Result<Option<crate::openhuman::memory::tree::health::PipelineFailure>, String> {
-    use crate::openhuman::memory::tree::health::{FailureClass, FailureCode, PipelineFailure};
+) -> Result<Option<crate::tree::health::PipelineFailure>, String> {
+    use crate::tree::health::{FailureClass, FailureCode, PipelineFailure};
 
     // Read the newest failed row AND the success watermark on the SAME
     // connection. `with_connection` holds the process-global connection mutex
@@ -902,7 +902,7 @@ fn derive_pipeline_status(
     failed: u64,
     failed_unrecoverable: u64,
     total_chunks: u64,
-    degraded: &crate::openhuman::memory::tree::health::DegradedState,
+    degraded: &crate::tree::health::DegradedState,
     queue_idle_ms: Option<i64>,
 ) -> (String, Option<String>) {
     if is_paused {
@@ -1102,8 +1102,8 @@ pub async fn set_enabled_rpc(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::memory::queue as jobs;
-    use crate::openhuman::memory::store::chunks::types::SourceKind;
+    use crate::queue as jobs;
+    use crate::store::chunks::types::SourceKind;
     use chrono::Utc;
     use serde_json::json;
     use tempfile::TempDir;
@@ -1455,7 +1455,7 @@ mod tests {
     #[test]
     fn derive_pipeline_status_precedence_matches_spec() {
         use crate::openhuman::config::SchedulerGateMode;
-        use crate::openhuman::memory::tree::health::{DegradedState, FailureCode, PipelineFailure};
+        use crate::tree::health::{DegradedState, FailureCode, PipelineFailure};
 
         let healthy = DegradedState::default();
         let recall_degraded = DegradedState {
@@ -1646,7 +1646,7 @@ mod tests {
     #[test]
     fn stalled_queue_degrades_instead_of_reading_healthy() {
         use crate::openhuman::config::SchedulerGateMode;
-        use crate::openhuman::memory::tree::health::{DegradedState, FailureCode, PipelineFailure};
+        use crate::tree::health::{DegradedState, FailureCode, PipelineFailure};
 
         let healthy = DegradedState::default();
         let stalled = Some(QUEUE_STALL_THRESHOLD_MS);
@@ -1753,8 +1753,8 @@ mod tests {
     /// heavy users this issue is about.
     #[tokio::test]
     async fn queue_idle_ms_ignores_deep_but_draining_and_deferred_backlogs() {
-        use crate::openhuman::memory::queue::store as queue_store;
-        use crate::openhuman::memory::queue::types::{FlushStalePayload, NewJob};
+        use crate::queue::store as queue_store;
+        use crate::queue::types::{FlushStalePayload, NewJob};
 
         let (_tmp, cfg) = test_config();
         let now = 1_800_000_000_000_i64;
@@ -1832,8 +1832,8 @@ mod tests {
     /// appeared, before the worker had any chance to touch it.
     #[tokio::test]
     async fn queue_idle_ms_starts_from_fresh_work_not_ancient_completion() {
-        use crate::openhuman::memory::queue::store as queue_store;
-        use crate::openhuman::memory::queue::types::{FlushStalePayload, NewJob};
+        use crate::queue::store as queue_store;
+        use crate::queue::types::{FlushStalePayload, NewJob};
 
         let (_tmp, cfg) = test_config();
         let now = 1_800_000_000_000_i64;
@@ -1892,8 +1892,8 @@ mod tests {
         failed_at_ms: i64,
         done_at_ms: Option<i64>,
     ) {
-        use crate::openhuman::memory::queue::store as queue_store;
-        use crate::openhuman::memory::queue::types::{FlushStalePayload, NewJob};
+        use crate::queue::store as queue_store;
+        use crate::queue::types::{FlushStalePayload, NewJob};
 
         let failed_job =
             NewJob::flush_stale(&FlushStalePayload::default(), "2026-07-10", 3).unwrap();
@@ -1959,7 +1959,7 @@ mod tests {
     /// the fix would silence the diagnosis it exists to deliver.
     #[test]
     fn blocking_cause_surfaces_when_nothing_has_succeeded_since() {
-        use crate::openhuman::memory::tree::health::{FailureClass, FailureCode};
+        use crate::tree::health::{FailureClass, FailureCode};
 
         let (_tmp, cfg) = test_config();
         let succeeded_before = 1_800_000_000_000_i64;
@@ -2009,7 +2009,7 @@ mod tests {
         // #002: the degraded flags are process-global; reset+serialise so a
         // parallel test (factory None-path, extract transport-fail) can't leak
         // a "degraded" signal into this fresh-workspace assertion.
-        let _g = crate::openhuman::memory::tree::health::test_guard();
+        let _g = crate::tree::health::test_guard();
         let (_tmp, cfg) = test_config();
         let out = pipeline_status_rpc(&cfg).await.unwrap().value;
         assert_eq!(out.status, "idle");
@@ -2049,7 +2049,7 @@ mod tests {
     async fn pipeline_status_reports_chunk_aggregates_after_ingest() {
         // #002: reset+serialise the process-global degraded flags so this
         // "running" assertion isn't flipped to "degraded" by a parallel test.
-        let _g = crate::openhuman::memory::tree::health::test_guard();
+        let _g = crate::tree::health::test_guard();
         let (_tmp, cfg) = test_config();
 
         // Seed one document so `mem_tree_chunks` is non-empty.

@@ -8,7 +8,7 @@
 use async_trait::async_trait;
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::sources::types::{
+use crate::sources::types::{
     ContentType, MemorySourceEntry, SourceContent, SourceItem, SourceKind,
 };
 
@@ -68,7 +68,7 @@ impl SourceReader for ComposioReader {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::memory::sources::types::MemorySourceEntry;
+    use crate::sources::types::MemorySourceEntry;
 
     fn test_source() -> MemorySourceEntry {
         MemorySourceEntry {

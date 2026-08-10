@@ -11,10 +11,10 @@ use std::fmt::Write;
 
 use crate::openhuman::config::rpc as config_rpc;
 use crate::openhuman::inference::embeddings::provider_from_config;
-use crate::openhuman::memory::store::chunks::store::{
+use crate::store::chunks::store::{
     get_chunk_embeddings_for_signature_batch, list_chunks, ListChunksQuery,
 };
-use crate::openhuman::memory::store::chunks::types::SourceKind;
+use crate::store::chunks::types::SourceKind;
 use crate::openhuman::tools::traits::{Tool, ToolResult};
 use tinycortex::memory::retrieval::mmr::{mmr_select, MmrCandidate};
 use tinycortex::memory::store::vectors::cosine_similarity;
@@ -153,7 +153,7 @@ impl Tool for MemoryVectorSearchTool {
             until_ms: None,
             limit: Some(1000),
             offset: None,
-            source_scope: crate::openhuman::memory::source_scope::current_source_scope(),
+            source_scope: crate::source_scope::current_source_scope(),
             exclude_dropped: false,
         };
 

@@ -3,7 +3,7 @@
 use std::sync::OnceLock;
 
 use crate::openhuman::config::rpc as config_rpc;
-use crate::openhuman::memory::sources::types::{MemorySourceEntry, SourceKind};
+use crate::sources::types::{MemorySourceEntry, SourceKind};
 
 pub use tinycortex::memory::sources::{
     memory_sync_defaults_for_toolkit, ComposioUpsertTarget, MemorySourcePatch,
@@ -47,7 +47,7 @@ pub async fn get_source(id: &str) -> Result<Option<MemorySourceEntry>, String> {
 /// `config_rpc::load_config_with_timeout`, i.e. from the process environment.
 /// That is right for RPC handlers, which serve the active user, and wrong for
 /// the embedded memory driver
-/// ([`crate::openhuman::memory::driver::embedded`]), which is bound to one
+/// ([`crate::driver::embedded`]), which is bound to one
 /// workspace and holds a `Config` re-anchored to it. Reading the global path
 /// there would let a driver bound to workspace B answer with workspace A's
 /// sources — the cross-workspace leak the workspace-keyed binding map exists to

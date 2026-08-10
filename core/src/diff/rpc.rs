@@ -143,7 +143,7 @@ pub async fn take_snapshot_rpc(
         req.source_id
     );
     let config = config_rpc::load_config_with_timeout().await?;
-    let source = crate::openhuman::memory::sources::get_source(&req.source_id)
+    let source = crate::sources::get_source(&req.source_id)
         .await?
         .ok_or_else(|| format!("source not found: {}", req.source_id))?;
 
@@ -202,7 +202,7 @@ pub async fn diff_since_last_rpc(
         req.source_id
     );
     let config = config_rpc::load_config_with_timeout().await?;
-    let source = crate::openhuman::memory::sources::get_source(&req.source_id)
+    let source = crate::sources::get_source(&req.source_id)
         .await?
         .ok_or_else(|| format!("source not found: {}", req.source_id))?;
 
@@ -224,7 +224,7 @@ pub async fn diff_since_read_rpc(
         req.source_id, commit
     );
     let config = config_rpc::load_config_with_timeout().await?;
-    let source = crate::openhuman::memory::sources::get_source(&req.source_id)
+    let source = crate::sources::get_source(&req.source_id)
         .await?
         .ok_or_else(|| format!("source not found: {}", req.source_id))?;
 

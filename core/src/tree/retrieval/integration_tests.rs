@@ -14,9 +14,9 @@ use chrono::{TimeZone, Utc};
 use tempfile::TempDir;
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::ingest_pipeline::ingest_chat;
-use crate::openhuman::memory::store::chunks::types::SourceKind;
-use crate::openhuman::memory::tree::retrieval::{
+use crate::ingest_pipeline::ingest_chat;
+use crate::store::chunks::types::SourceKind;
+use crate::tree::retrieval::{
     drill_down, fetch_leaves, query_source, search_entities,
 };
 use tinycortex::memory::ingest::canonicalize::chat::{ChatBatch, ChatMessage};
@@ -127,9 +127,9 @@ async fn end_to_end_three_chat_batches() {
 /// handler, so the test drains the queue before inspecting.
 #[tokio::test]
 async fn ingest_populates_chunk_embeddings() {
-    use crate::openhuman::memory::queue::drain_until_idle;
-    use crate::openhuman::memory::store::chunks::store::get_chunk_embedding;
-    use crate::openhuman::memory::tree::score::embed::EMBEDDING_DIM;
+    use crate::queue::drain_until_idle;
+    use crate::store::chunks::store::get_chunk_embedding;
+    use crate::tree::score::embed::EMBEDDING_DIM;
 
     let (_tmp, cfg) = test_config();
     let out = ingest_chat(&cfg, "slack:#eng", "alice", vec![], chat_about_phoenix(0))
@@ -170,16 +170,16 @@ async fn ingest_populates_chunk_embeddings() {
 /// the seal from firing on short batches.
 #[tokio::test]
 async fn seal_populates_summary_embedding() {
-    use crate::openhuman::memory::chat::{test_override, ChatProvider, StaticChatProvider};
-    use crate::openhuman::memory::store::chunks::store::upsert_chunks;
-    use crate::openhuman::memory::store::chunks::types::{
+    use crate::chat::{test_override, ChatProvider, StaticChatProvider};
+    use crate::store::chunks::store::upsert_chunks;
+    use crate::store::chunks::types::{
         chunk_id, Chunk, Metadata, SourceKind, SourceRef,
     };
-    use crate::openhuman::memory::store::content as content_store;
-    use crate::openhuman::memory::tree::score::embed::EMBEDDING_DIM;
-    use crate::openhuman::memory::tree::tree::bucket_seal::{append_leaf, LabelStrategy, LeafRef};
-    use crate::openhuman::memory::tree::tree::store as src_store;
-    use crate::openhuman::memory::tree_source::registry::get_or_create_source_tree;
+    use crate::store::content as content_store;
+    use crate::tree::score::embed::EMBEDDING_DIM;
+    use crate::tree::tree::bucket_seal::{append_leaf, LabelStrategy, LeafRef};
+    use crate::tree::tree::store as src_store;
+    use crate::tree_source::registry::get_or_create_source_tree;
     use std::sync::Arc;
 
     let (_tmp, cfg) = test_config();
@@ -213,9 +213,9 @@ async fn seal_populates_summary_embedding() {
         std::fs::create_dir_all(&content_root).expect("create content_root for test");
         let staged = content_store::stage_chunks(&content_root, &[c1.clone(), c2.clone()])
             .expect("stage_chunks for test chunks");
-        crate::openhuman::memory::store::chunks::store::with_connection(&cfg, |conn| {
+        crate::store::chunks::store::with_connection(&cfg, |conn| {
             let tx = conn.unchecked_transaction()?;
-            crate::openhuman::memory::store::chunks::store::upsert_staged_chunks_tx(&tx, &staged)?;
+            crate::store::chunks::store::upsert_staged_chunks_tx(&tx, &staged)?;
             tx.commit()?;
             Ok(())
         })

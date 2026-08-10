@@ -14,9 +14,9 @@ use chrono::{TimeZone, Utc};
 use rusqlite::{params, OptionalExtension};
 use serde_json::json;
 
-use crate::openhuman::memory::store::namespace_store::fts5;
-use crate::openhuman::memory::store::types::{NamespaceDocumentInput, GLOBAL_NAMESPACE};
-use crate::openhuman::memory::traits::{
+use crate::store::namespace_store::fts5;
+use crate::store::types::{NamespaceDocumentInput, GLOBAL_NAMESPACE};
+use crate::traits::{
     Memory, MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary, RecallOpts,
 };
 use anyhow::Context;
@@ -79,7 +79,7 @@ impl UnifiedMemory {
     /// asked not to see. `None` applies no exclusion at all.
     ///
     /// The host policy that decides *what* to exclude lives in
-    /// [`crate::openhuman::memory::store::recall_policy`]; the [`Memory::recall`]
+    /// [`crate::store::recall_policy`]; the [`Memory::recall`]
     /// impl below is the thin adapter that joins the two.
     pub async fn recall_excluding_session(
         &self,
@@ -176,7 +176,7 @@ impl UnifiedMemory {
                     timestamp: ts_rfc3339,
                     session_id: Some(entry.session_id),
                     score: Some(match_score),
-                    taint: crate::openhuman::memory::MemoryTaint::Internal,
+                    taint: crate::MemoryTaint::Internal,
                 });
             }
         }
@@ -247,7 +247,7 @@ impl UnifiedMemory {
                     timestamp: ts_rfc3339,
                     session_id: Some(entry.session_id),
                     score: Some(match_score),
-                    taint: crate::openhuman::memory::MemoryTaint::Internal,
+                    taint: crate::MemoryTaint::Internal,
                 });
             }
         }
@@ -368,7 +368,7 @@ impl Memory for UnifiedMemory {
         // changed anything — the caller then reads the row as absent and stores
         // it again, which is the retry loop behind #5164.
         let ns = UnifiedMemory::sanitize_namespace(namespace);
-        let key = crate::openhuman::memory::store::safety::canonical_document_key(key);
+        let key = crate::store::safety::canonical_document_key(key);
         let conn = self.conn.lock();
         let row: Option<(String, String, String, f64, String, String)> = conn
             .query_row(
@@ -397,7 +397,7 @@ impl Memory for UnifiedMemory {
                 timestamp: timestamp_to_rfc3339(updated_at),
                 session_id: None,
                 score: None,
-                taint: crate::openhuman::memory::MemoryTaint::from_db_str(&taint_str),
+                taint: crate::MemoryTaint::from_db_str(&taint_str),
             },
         ))
     }
@@ -425,7 +425,7 @@ impl Memory for UnifiedMemory {
                 session_id: row.get(4)?,
                 timestamp: timestamp_to_rfc3339(row.get(5)?),
                 score: None,
-                taint: crate::openhuman::memory::MemoryTaint::from_db_str(
+                taint: crate::MemoryTaint::from_db_str(
                     &row.get::<_, String>(6)?,
                 ),
             })
@@ -445,7 +445,7 @@ impl Memory for UnifiedMemory {
         // addresses the raw caller identifiers can never delete a row whose
         // namespace or key was canonicalized on the way in.
         let ns = UnifiedMemory::sanitize_namespace(namespace);
-        let key = crate::openhuman::memory::store::safety::canonical_document_key(key);
+        let key = crate::store::safety::canonical_document_key(key);
         let row: Option<String> = {
             let conn = self.conn.lock();
             conn.query_row(

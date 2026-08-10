@@ -7,9 +7,9 @@ use chrono::{DateTime, Utc};
 use rusqlite::{Connection, Transaction};
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::store::content::StagedSummary;
-use crate::openhuman::memory::store::trees::types::{Buffer, SummaryNode, Tree, TreeKind};
-use crate::openhuman::memory::tinycortex::engine_config;
+use crate::store::content::StagedSummary;
+use crate::store::trees::types::{Buffer, SummaryNode, Tree, TreeKind};
+use crate::tinycortex::engine_config;
 
 pub(crate) use tinycortex::memory::tree::store::TreeCascadeDeletion;
 

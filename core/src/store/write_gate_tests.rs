@@ -19,7 +19,7 @@ use serde_json::json;
 use tempfile::TempDir;
 
 use crate::openhuman::inference::embeddings::NoopEmbedding;
-use crate::openhuman::memory::store::{NamespaceDocumentInput, UnifiedMemory};
+use crate::store::{NamespaceDocumentInput, UnifiedMemory};
 
 /// A private key body, split so this source file does not itself contain a
 /// scanner-tripping literal in one piece.
@@ -39,7 +39,7 @@ fn secret_doc(key: &str) -> NamespaceDocumentInput {
         category: "core".to_string(),
         session_id: None,
         document_id: None,
-        taint: crate::openhuman::memory::MemoryTaint::Internal,
+        taint: crate::MemoryTaint::Internal,
     }
 }
 

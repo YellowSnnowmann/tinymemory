@@ -10,7 +10,7 @@ use serde_json::json;
 use std::fmt::Write;
 
 use crate::openhuman::config::rpc as config_rpc;
-use crate::openhuman::memory::store::chunks::store::{get_chunk, list_chunks, ListChunksQuery};
+use crate::store::chunks::store::{get_chunk, list_chunks, ListChunksQuery};
 use crate::openhuman::tools::traits::{Tool, ToolResult};
 
 pub struct MemoryChunkContextTool;
@@ -91,7 +91,7 @@ impl Tool for MemoryChunkContextTool {
         // Per-profile memory-source gate: if the target chunk belongs to a
         // source the active profile didn't allow, surface nothing (its window
         // shares the same source). Non-source chunks always pass.
-        if !crate::openhuman::memory::source_scope::chunk_source_allowed(
+        if !crate::source_scope::chunk_source_allowed(
             &target.metadata.tags,
             &source_id,
         ) {
@@ -107,7 +107,7 @@ impl Tool for MemoryChunkContextTool {
             source_kind: Some(source_kind),
             source_id: Some(source_id.clone()),
             limit: Some(500),
-            source_scope: crate::openhuman::memory::source_scope::current_source_scope(),
+            source_scope: crate::source_scope::current_source_scope(),
             ..Default::default()
         };
         let mut source_chunks = list_chunks(&config, &source_query)

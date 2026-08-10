@@ -1,7 +1,7 @@
 //! ClickUp Composio provider — incremental Memory Tree ingest for
 //! tasks owned by (or assigned to) the connected user.
 //!
-//! Mirrors the [`crate::openhuman::memory::sync::composio::providers::notion`] layout
+//! Mirrors the [`crate::sync::composio::providers::notion`] layout
 //! so anyone familiar with Notion/Slack ingestion can read this without
 //! re-learning a new shape:
 //!

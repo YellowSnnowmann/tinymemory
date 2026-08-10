@@ -98,7 +98,7 @@ mod tests {
     /// malformed email source_ids) so any drift fails here, not on a user's disk.
     #[test]
     fn chunk_rel_path_host_crate_byte_parity() {
-        use crate::openhuman::memory::store::content::paths as host;
+        use crate::store::content::paths as host;
         use tinycortex::memory::store::content as cortex;
 
         let long_id = "x".repeat(300);
@@ -141,7 +141,7 @@ mod tests {
     /// re-open would not find an existing sealed summary in place.
     #[test]
     fn summary_rel_path_host_crate_byte_parity() {
-        use crate::openhuman::memory::store::content::paths as host;
+        use crate::store::content::paths as host;
         use tinycortex::memory::store::content as cortex;
 
         // (host kind, crate kind, scope_slug) — variants are 1:1 across sides.

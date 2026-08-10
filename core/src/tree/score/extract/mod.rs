@@ -19,9 +19,9 @@ pub struct LlmEntityExtractor(tinycortex::memory::score::extract::LlmEntityExtra
 impl LlmEntityExtractor {
     pub fn new(
         config: LlmExtractorConfig,
-        provider: Arc<dyn crate::openhuman::memory::chat::ChatProvider>,
+        provider: Arc<dyn crate::chat::ChatProvider>,
     ) -> Self {
-        let provider = Arc::new(crate::openhuman::memory::tinycortex::SeamChatProvider::new(
+        let provider = Arc::new(crate::tinycortex::SeamChatProvider::new(
             provider,
         ));
         Self(tinycortex::memory::score::extract::LlmEntityExtractor::new(
@@ -42,7 +42,7 @@ impl EntityExtractor for LlmEntityExtractor {
 }
 
 pub fn build_summary_extractor(config: &Config) -> Arc<dyn EntityExtractor> {
-    let (provider, model) = match crate::openhuman::memory::chat::build_chat_runtime(config) {
+    let (provider, model) = match crate::chat::build_chat_runtime(config) {
         Ok(runtime) => runtime,
         Err(error) => {
             log::warn!(

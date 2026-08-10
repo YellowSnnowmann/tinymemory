@@ -5,12 +5,12 @@
 //! family (`agent/learning/*`, `memory/sync/composio/providers/profile.rs`),
 //! two of which wrote SQL inline at the call site. Every SQL statement against
 //! profile/facet rows now lives either here or in
-//! [`super::namespace_store::profile`], both inside `crate::openhuman::memory`;
+//! [`super::namespace_store::profile`], both inside `crate`;
 //! callers outside the family hold this handle and never a `Connection`.
 //!
 //! **This is not a guard win.** The profile/facet tables have no capability
 //! family in the `tinycortex_api` contract, so reads and writes through this
-//! type still run beneath [`crate::openhuman::memory::guard::MemoryGuard`]'s
+//! type still run beneath [`crate::guard::MemoryGuard`]'s
 //! seven policy steps: no tier check, no source-scope predicate, no taint
 //! stamping, no redaction, no budget, no audit event. What changed is the shape
 //! of the door — raw SQLite reachable from three domains became one typed store
@@ -34,7 +34,7 @@ pub struct ProfileStore {
 impl ProfileStore {
     /// The single production construction site is
     /// [`super::MemoryClient::profile_store`].
-    pub(in crate::openhuman::memory) fn from_conn(conn: Arc<Mutex<Connection>>) -> Self {
+    pub(in crate) fn from_conn(conn: Arc<Mutex<Connection>>) -> Self {
         Self { conn }
     }
 
@@ -43,7 +43,7 @@ impl ProfileStore {
     /// Not a hole — the caller already holds the `Connection`, so this hands
     /// out nothing a [`super::MemoryClient`] owns. Confinement is about not
     /// *extracting* the client's connection, and `profile_conn()` stays
-    /// `pub(in crate::openhuman::memory)`.
+    /// `pub(in crate)`.
     ///
     /// Deliberately **not** `#[cfg(test)]`: integration tests under `tests/`
     /// link the lib compiled without `cfg(test)`, so a test-gated constructor

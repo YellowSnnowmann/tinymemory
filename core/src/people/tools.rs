@@ -3,7 +3,7 @@
 //! These tools let the agent rank known contacts, resolve handles to stable
 //! person ids, inspect closeness scores, attach aliases, log interactions,
 //! and read a person record. Read + bounded-write tools delegate to
-//! [`crate::openhuman::memory::people::rpc`] (which returns `RpcOutcome`) or to
+//! [`crate::people::rpc`] (which returns `RpcOutcome`) or to
 //! `PeopleStore` methods; results are emitted as JSON.
 //!
 //! All tools here are device-local and default-enabled EXCEPT
@@ -16,9 +16,9 @@ use chrono::Utc;
 use serde_json::json;
 
 use crate::core::runtime::context::CoreContext;
-use crate::openhuman::memory::people::rpc;
-use crate::openhuman::memory::people::store::PeopleStore;
-use crate::openhuman::memory::people::types::{Handle, Interaction, PersonId};
+use crate::people::rpc;
+use crate::people::store::PeopleStore;
+use crate::people::types::{Handle, Interaction, PersonId};
 use crate::openhuman::tools::traits::{PermissionLevel, Tool, ToolResult};
 
 /// Acquire the people store for the current runtime context.

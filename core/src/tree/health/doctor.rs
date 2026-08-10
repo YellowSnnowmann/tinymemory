@@ -94,9 +94,9 @@ pub struct DoctorReport {
 /// convenience, not an audit) and never fail the whole call. Stage order is
 /// the pipeline order so the first non-ok stage is the first blocking cause.
 pub fn run_doctor(config: &Config) -> DoctorReport {
-    use crate::openhuman::memory::queue::store as queue;
-    use crate::openhuman::memory::queue::types::JobStatus;
-    use crate::openhuman::memory::store::chunks::store as chunks;
+    use crate::queue::store as queue;
+    use crate::queue::types::JobStatus;
+    use crate::store::chunks::store as chunks;
 
     let degraded = current_degraded_state();
     let counters = DoctorCounters {
@@ -225,7 +225,7 @@ pub fn run_doctor(config: &Config) -> DoctorReport {
     //    the configured cloud provider when local AI is off, so local-AI-off is
     //    NOT a fault by itself. Only `bad` when no provider resolves at all.
     let (summary_ok, summary_note) =
-        crate::openhuman::memory::tree::tree_runtime::ops::summarizer_available(config);
+        crate::tree::tree_runtime::ops::summarizer_available(config);
     stages.push(if summary_ok {
         StageHealth::ok("summary_tree", summary_note)
     } else {
@@ -413,7 +413,7 @@ mod tests {
         // summary_tree must mirror summarizer_available precisely.
         assert_eq!(
             tree.ok,
-            crate::openhuman::memory::tree::tree_runtime::ops::summarizer_available(&cfg).0,
+            crate::tree::tree_runtime::ops::summarizer_available(&cfg).0,
             "summary_tree health must mirror the runtime capability check"
         );
         // Without opt-in, the note names the "no summarization provider" case.

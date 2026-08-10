@@ -39,7 +39,7 @@ pub fn start(config: Config) {
 /// Unrecoverable failures stay parked — see
 /// [`store::requeue_transient_failed`].
 fn retry_transient_failures(config: &Config) {
-    let memory = crate::openhuman::memory::tinycortex::memory_config_from(
+    let memory = crate::tinycortex::memory_config_from(
         config,
         config.workspace_dir.clone(),
     );
@@ -71,7 +71,7 @@ fn retry_transient_failures(config: &Config) {
 /// `LabelStrategy` for every tree, which no production caller uses and which
 /// would apply one tree kind's labelling to all of them.
 pub(crate) fn enqueue_flush_stale_job(config: &Config) -> Result<bool, String> {
-    let memory = crate::openhuman::memory::tinycortex::memory_config_from(
+    let memory = crate::tinycortex::memory_config_from(
         config,
         config.workspace_dir.clone(),
     );
@@ -94,10 +94,10 @@ fn enqueue_flush_stale(config: &Config) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::memory::queue::store::{
+    use crate::queue::store::{
         claim_next, count_by_status, DEFAULT_LOCK_DURATION_MS,
     };
-    use crate::openhuman::memory::queue::types::{FlushStalePayload, JobKind, JobStatus};
+    use crate::queue::types::{FlushStalePayload, JobKind, JobStatus};
     use tempfile::TempDir;
 
     fn test_config() -> (TempDir, Config) {

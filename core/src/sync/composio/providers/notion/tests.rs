@@ -2,7 +2,7 @@
 
 use super::normalization::{extract_notion_cursor, extract_page_title, extract_results};
 use super::NotionProvider;
-use crate::openhuman::memory::sync::composio::providers::ComposioProvider;
+use crate::sync::composio::providers::ComposioProvider;
 use serde_json::json;
 
 #[test]

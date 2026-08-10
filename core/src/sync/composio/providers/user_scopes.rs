@@ -14,7 +14,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::openhuman::memory::store::MemoryClientRef;
+use crate::store::MemoryClientRef;
 
 use super::tool_scope::ToolScope;
 
@@ -138,7 +138,7 @@ pub async fn save(
 /// from the meta-tool layer where we don't have a `MemoryClientRef` in
 /// scope. Falls back to the default pref when memory isn't initialised.
 pub async fn load_or_default(toolkit: &str) -> UserScopePref {
-    match crate::openhuman::memory::global::client_if_ready() {
+    match crate::global::client_if_ready() {
         Some(client) => load(&client, toolkit).await,
         None => {
             // Match the normalized key form `load()` logs so traces

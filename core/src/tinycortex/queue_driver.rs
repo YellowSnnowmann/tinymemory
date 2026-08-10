@@ -39,20 +39,20 @@ use tinycortex::memory::queue::{
 use tinycortex::memory::MemoryConfig;
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::store::chunks::store as chunk_store;
-use crate::openhuman::memory::store::chunks::types::{
+use crate::store::chunks::store as chunk_store;
+use crate::store::chunks::types::{
     truncate_to_conservative_tokens, Chunk, Metadata,
 };
-use crate::openhuman::memory::store::content as content_store;
-use crate::openhuman::memory::store::content::read as content_read;
-use crate::openhuman::memory::store::content::tags as content_tags;
-use crate::openhuman::memory::store::trees::store as trees_store;
-use crate::openhuman::memory::tree::health;
-use crate::openhuman::memory::tree::score;
-use crate::openhuman::memory::tree::score::embed::{build_write_embedder, pack_checked, Embedder};
-use crate::openhuman::memory::tree::score::store as score_store;
-use crate::openhuman::memory::tree::tree::TreeFactory;
-use crate::openhuman::memory::tree_source::get_or_create_source_tree;
+use crate::store::content as content_store;
+use crate::store::content::read as content_read;
+use crate::store::content::tags as content_tags;
+use crate::store::trees::store as trees_store;
+use crate::tree::health;
+use crate::tree::score;
+use crate::tree::score::embed::{build_write_embedder, pack_checked, Embedder};
+use crate::tree::score::store as score_store;
+use crate::tree::tree::TreeFactory;
+use crate::tree_source::get_or_create_source_tree;
 
 // ── Pure scope helpers (ported verbatim from `memory_queue::handlers`) ────────
 // These pin the SAME source→tree mapping the append-buffer path uses, so reads
@@ -74,7 +74,7 @@ fn derive_tree_scope(source_id: &str) -> String {
 /// The source-tree scope a chunk appends under: its `path_scope` when set
 /// (shared-directory sources like Notion), else the GitHub-aware scope.
 ///
-/// `pub(crate)` and re-exported from [`crate::openhuman::memory::tinycortex`] so read
+/// `pub(crate)` and re-exported from [`crate::tinycortex`] so read
 /// paths (e.g. `memory_tree::retrieval::cover`) look up the tree the seal
 /// worker actually wrote to. This is the single canonical host copy — the
 /// legacy `memory_queue::handlers` copy was deleted at the W4 flip.

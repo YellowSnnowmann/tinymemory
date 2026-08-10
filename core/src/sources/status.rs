@@ -10,8 +10,8 @@
 use serde::Serialize;
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::sources::types::{MemorySourceEntry, SourceKind};
-use crate::openhuman::memory::store::chunks::store::with_connection;
+use crate::sources::types::{MemorySourceEntry, SourceKind};
+use crate::store::chunks::store::with_connection;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -96,7 +96,7 @@ pub async fn source_status(
 
 /// Compute status for all configured sources (one SQL roundtrip per source).
 pub async fn status_list(config: &Config) -> Result<Vec<SourceStatus>, String> {
-    let sources = crate::openhuman::memory::sources::registry::list_sources().await?;
+    let sources = crate::sources::registry::list_sources().await?;
     let mut out = Vec::with_capacity(sources.len());
     for source in sources {
         match source_status(config, &source).await {

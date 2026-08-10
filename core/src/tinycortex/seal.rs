@@ -8,12 +8,12 @@ use crate::core::bus::BUS;
 use crate::core::events::DomainEvent;
 use crate::openhuman::config::Config;
 #[cfg(feature = "memory-git")]
-use crate::openhuman::memory::store::content::wiki_git::{SummaryCommitBatch, SummaryCommitEntry};
-use crate::openhuman::memory::store::trees::types::{Buffer, SummaryNode, Tree};
-use crate::openhuman::memory::tree::score::embed::{
+use crate::store::content::wiki_git::{SummaryCommitBatch, SummaryCommitEntry};
+use crate::store::trees::types::{Buffer, SummaryNode, Tree};
+use crate::tree::score::embed::{
     build_write_embedder, Embedder as HostEmbedder,
 };
-use crate::openhuman::memory::tree::tree::bucket_seal::LabelStrategy;
+use crate::tree::tree::bucket_seal::LabelStrategy;
 
 use super::{memory_config_from, HostSummariser};
 
@@ -27,7 +27,7 @@ impl tinycortex::memory::score::embed::Embedder for EmbedderBridge<'_> {
 
     async fn embed(&self, text: &str) -> Result<Vec<f32>> {
         let vector = self.0.embed(text).await.map_err(|error| {
-            let failure = crate::openhuman::memory::tree::health::classify_embed_error(&error);
+            let failure = crate::tree::health::classify_embed_error(&error);
             // Correlation is the embedder identity + typed outcome only — never
             // the raw provider error, endpoint, or the text being embedded.
             log::debug!(
@@ -38,14 +38,14 @@ impl tinycortex::memory::score::embed::Embedder for EmbedderBridge<'_> {
             );
             // #5354: name the local-runtime fix on the status panel now rather
             // than after the retry budget drains.
-            crate::openhuman::memory::tree::health::mark_local_model_unavailable_if_applicable(
+            crate::tree::health::mark_local_model_unavailable_if_applicable(
                 &failure,
             );
             anyhow::Error::new(failure).context(format!("seal embedding failed: {error:#}"))
         })?;
-        crate::openhuman::memory::tree::score::embed::pack_checked(&vector)
+        crate::tree::score::embed::pack_checked(&vector)
             .context("seal embedding dimension check")?;
-        crate::openhuman::memory::tree::health::clear_semantic_recall_degraded();
+        crate::tree::health::clear_semantic_recall_degraded();
         Ok(vector)
     }
 }
@@ -91,7 +91,7 @@ impl tinycortex::memory::tree::SealObserver for Observer<'_> {
         content_path: &str,
         reason: &str,
     ) -> Result<()> {
-        crate::openhuman::memory::store::content::wiki_git::commit_summaries(
+        crate::store::content::wiki_git::commit_summaries(
             &self.config.memory_tree_content_root(),
             &SummaryCommitBatch {
                 reason: reason.to_string(),
@@ -118,7 +118,7 @@ pub async fn seal_one_level(
     strategy: &LabelStrategy,
     enqueue_follow_ups: bool,
 ) -> Result<String> {
-    if let Err(error) = crate::openhuman::memory::store::content::obsidian::ensure_obsidian_defaults(
+    if let Err(error) = crate::store::content::obsidian::ensure_obsidian_defaults(
         &config.memory_tree_content_root(),
     ) {
         log::warn!("[tree::bucket_seal] obsidian defaults failed: {error:#}");
@@ -161,7 +161,7 @@ pub async fn seal_document_subtree(
     chunk_ids: &[String],
     strategy: &LabelStrategy,
 ) -> Result<String> {
-    if let Err(error) = crate::openhuman::memory::store::content::obsidian::ensure_obsidian_defaults(
+    if let Err(error) = crate::store::content::obsidian::ensure_obsidian_defaults(
         &config.memory_tree_content_root(),
     ) {
         log::warn!("[tree::bucket_seal] obsidian defaults failed: {error:#}");

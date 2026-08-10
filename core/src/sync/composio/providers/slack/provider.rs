@@ -15,7 +15,7 @@
 //! Source id is `slack:{connection_id}` — stable per workspace. Chunk
 //! IDs are stable, so repeated synchronization updates the same documents.
 
-use crate::openhuman::memory::sync::composio::providers::{
+use crate::sync::composio::providers::{
     pick_str, resolve_sync_interval_secs, ComposioProvider, CuratedTool, ProviderContext,
     ProviderUserProfile, SyncOutcome,
 };
@@ -60,7 +60,7 @@ impl ComposioProvider for SlackProvider {
     }
 
     fn curated_tools(&self) -> Option<&'static [CuratedTool]> {
-        Some(crate::openhuman::memory::sync::composio::providers::catalogs::SLACK_CURATED)
+        Some(crate::sync::composio::providers::catalogs::SLACK_CURATED)
     }
 
     fn sync_interval_secs(&self) -> Option<u64> {
@@ -233,7 +233,7 @@ impl ComposioProvider for SlackProvider {
             let Some(connection_id) = ctx.connection_id.as_deref() else {
                 return Err("[composio:slack] trigger missing connection_id".to_string());
             };
-            if let Err(e) = crate::openhuman::memory::tinycortex::run_composio_connection(
+            if let Err(e) = crate::tinycortex::run_composio_connection(
                 "slack",
                 connection_id,
                 ctx.config.as_ref(),
@@ -262,7 +262,7 @@ pub async fn run_backfill_via_search(
         .as_deref()
         .ok_or_else(|| "[composio:slack] search backfill missing connection_id".to_string())?;
     let started_at_ms = now_ms();
-    let outcome = crate::openhuman::memory::tinycortex::run_slack_search_backfill(
+    let outcome = crate::tinycortex::run_slack_search_backfill(
         connection_id,
         backfill_days,
         ctx.config.as_ref(),

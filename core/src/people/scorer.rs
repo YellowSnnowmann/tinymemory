@@ -9,7 +9,7 @@
 
 use chrono::{DateTime, Utc};
 
-use crate::openhuman::memory::people::types::{Interaction, ScoreComponents};
+use crate::people::types::{Interaction, ScoreComponents};
 
 /// Recency half-life in days. An interaction this many days old contributes
 /// 0.5 to the recency signal; older interactions decay exponentially.
@@ -96,7 +96,7 @@ pub fn score(interactions: &[Interaction], now: DateTime<Utc>) -> ScoreComponent
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::memory::people::types::PersonId;
+    use crate::people::types::PersonId;
     use chrono::Duration;
 
     fn mk(ts: DateTime<Utc>, outbound: bool, length: u32) -> Interaction {

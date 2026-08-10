@@ -21,7 +21,7 @@
 //! [`thread_context`]: crate::openhuman::agent::tinyagents::thread_context
 //!
 //! ```ignore
-//! use crate::openhuman::memory::source_scope::{with_source_scope, current_source_scope};
+//! use crate::source_scope::{with_source_scope, current_source_scope};
 //!
 //! with_source_scope(Some(vec!["slack:#eng".into()]), async {
 //!     assert!(current_source_scope().unwrap().contains("slack:#eng"));
@@ -115,7 +115,7 @@ pub fn chunk_source_allowed_in(set: &HashSet<String>, tags: &[String], source_id
     if set.contains(source_id) {
         return true;
     }
-    crate::openhuman::memory::sync_events::extract_mem_src_id(source_id)
+    crate::sync_events::extract_mem_src_id(source_id)
         .is_some_and(|id| set.contains(id))
 }
 

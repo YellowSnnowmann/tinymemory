@@ -22,7 +22,7 @@ use async_trait::async_trait;
 use serde_json::json;
 
 use super::normalization;
-use crate::openhuman::memory::sync::composio::providers::{
+use crate::sync::composio::providers::{
     merge_extra, pick_str, resolve_sync_interval_secs, ComposioProvider, CuratedTool,
     NormalizedTask, ProviderContext, ProviderUserProfile, TaskFetchFilter, TaskKind,
 };
@@ -108,7 +108,7 @@ impl ComposioProvider for LinearProvider {
     }
 
     /// Incremental sync via the generic
-    /// [`orchestrator`](crate::openhuman::memory::sync::composio::providers::orchestrator):
+    /// [`orchestrator`](crate::sync::composio::providers::orchestrator):
     /// viewer resolution, pagination, dedup, the `max_items` cap, the
     /// `sync_depth_days` window, and cursor handling live in `run_sync`; the
     /// Linear-specific primitives live in [`super::source`].

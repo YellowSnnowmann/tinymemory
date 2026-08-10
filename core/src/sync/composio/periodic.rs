@@ -54,7 +54,7 @@ use crate::openhuman::config::rpc as config_rpc;
 use crate::openhuman::config::DEFAULT_MEMORY_SYNC_INTERVAL_SECS;
 use crate::openhuman::cron::scheduler_gate::gate::{current_policy, resume_notify};
 use crate::openhuman::cron::scheduler_gate::policy::PauseReason;
-use crate::openhuman::memory::sources::{
+use crate::sources::{
     memory_sync_defaults_for_toolkit, MemorySourceEntry, SourceKind,
 };
 
@@ -63,7 +63,7 @@ use crate::openhuman::integrations::composio::client::{
     create_composio_client, direct_list_connections, ComposioClientKind,
 };
 use crate::openhuman::integrations::composio::ops;
-use crate::openhuman::memory::tinycortex::{
+use crate::tinycortex::{
     append_audit_entry, try_read_audit_log, SyncAuditEntry,
 };
 use chrono::{DateTime, Utc};
@@ -580,7 +580,7 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
         );
         let sync_started = Instant::now();
         let result =
-            crate::openhuman::memory::tinycortex::run_source_pipeline(&source, &config).await;
+            crate::tinycortex::run_source_pipeline(&source, &config).await;
         let duration_ms = sync_started.elapsed().as_millis() as u64;
 
         match result {

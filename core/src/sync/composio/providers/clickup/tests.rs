@@ -4,7 +4,7 @@ use super::normalization::{
     extract_task_name, extract_task_updated, extract_tasks, extract_user_id, extract_workspace_ids,
 };
 use super::ClickUpProvider;
-use crate::openhuman::memory::sync::composio::providers::ComposioProvider;
+use crate::sync::composio::providers::ComposioProvider;
 use serde_json::json;
 
 #[test]

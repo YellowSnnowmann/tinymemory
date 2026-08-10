@@ -8,7 +8,7 @@
 //! rather than my reading of it.
 
 use super::*;
-use crate::openhuman::memory::store::profile::PROFILE_INIT_SQL;
+use crate::store::profile::PROFILE_INIT_SQL;
 
 fn seeded_store() -> ProfileStore {
     let conn = Connection::open_in_memory().unwrap();

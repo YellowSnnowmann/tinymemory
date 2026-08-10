@@ -35,12 +35,12 @@ use tokio::time::interval;
 use crate::openhuman::config::rpc as config_rpc;
 use crate::openhuman::config::DEFAULT_MEMORY_SYNC_INTERVAL_SECS;
 use crate::openhuman::cron::scheduler_gate::gate::resume_notify;
-use crate::openhuman::memory::sources::sync::sync_source;
-use crate::openhuman::memory::sources::types::{MemorySourceEntry, SourceKind};
-use crate::openhuman::memory::sync::composio::periodic::{
+use crate::sources::sync::sync_source;
+use crate::sources::types::{MemorySourceEntry, SourceKind};
+use crate::sync::composio::periodic::{
     connection_is_due, effective_interval_secs, periodic_pause_reason,
 };
-use crate::openhuman::memory::tinycortex::{try_read_audit_log, SyncAuditEntry};
+use crate::tinycortex::{try_read_audit_log, SyncAuditEntry};
 
 /// How often the scheduler wakes up to look for due syncs. Matches the
 /// Composio loop's cadence — per-source intervals (24h default) bound the

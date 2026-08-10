@@ -9,7 +9,7 @@
 use rusqlite::params;
 use std::collections::{HashMap, HashSet};
 
-use crate::openhuman::memory::store::types::{
+use crate::store::types::{
     GraphRelationRecord, MemoryItemKind, NamespaceMemoryHit, NamespaceQueryResult,
     NamespaceRetrievalContext, RetrievalScoreBreakdown,
 };
@@ -271,7 +271,7 @@ impl UnifiedMemory {
                 // KV rows have no provenance column; conservatively
                 // surface as Internal so the subconscious gate doesn't
                 // mis-escalate user-state writes.
-                taint: crate::openhuman::memory::MemoryTaint::Internal,
+                taint: crate::MemoryTaint::Internal,
             });
         }
 
@@ -349,7 +349,7 @@ impl UnifiedMemory {
                     // Episodic rows are derived from user chat turns and
                     // never carry sync-ingest content; surface as
                     // Internal so the subconscious gate trusts them.
-                    taint: crate::openhuman::memory::MemoryTaint::Internal,
+                    taint: crate::MemoryTaint::Internal,
                 });
             }
         }
@@ -391,7 +391,7 @@ impl UnifiedMemory {
                 // Event extractions are derived from chat segments;
                 // treat them as Internal until a future migration
                 // surfaces per-event provenance.
-                taint: crate::openhuman::memory::MemoryTaint::Internal,
+                taint: crate::MemoryTaint::Internal,
             });
         }
 
@@ -534,7 +534,7 @@ impl UnifiedMemory {
                 document_id: None,
                 chunk_id: None,
                 supporting_relations: Vec::new(),
-                taint: crate::openhuman::memory::MemoryTaint::Internal,
+                taint: crate::MemoryTaint::Internal,
             });
         }
 
@@ -656,7 +656,7 @@ impl UnifiedMemory {
     fn build_retrieval_plan(
         &self,
         query: &str,
-        docs: &[crate::openhuman::memory::store::types::StoredMemoryDocument],
+        docs: &[crate::store::types::StoredMemoryDocument],
         graph_relations: &[GraphRelationRecord],
     ) -> RetrievalPlan {
         let query_terms = Self::tokenize_search_terms(query);
@@ -688,7 +688,7 @@ impl UnifiedMemory {
     fn match_query_entities(
         &self,
         query: &str,
-        docs: &[crate::openhuman::memory::store::types::StoredMemoryDocument],
+        docs: &[crate::store::types::StoredMemoryDocument],
         graph_relations: &[GraphRelationRecord],
     ) -> Vec<String> {
         let normalized_query = Self::normalize_search_text(query);
@@ -980,7 +980,7 @@ impl UnifiedMemory {
 
     fn compute_graph_document_scores(
         &self,
-        docs: &[crate::openhuman::memory::store::types::StoredMemoryDocument],
+        docs: &[crate::store::types::StoredMemoryDocument],
         chunks: &[StoredChunk],
         relations: &[RelationMatch],
     ) -> HashMap<String, f64> {

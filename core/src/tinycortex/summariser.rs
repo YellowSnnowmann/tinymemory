@@ -23,7 +23,7 @@ impl HostSummariser {
         context: &SummaryContext<'_>,
     ) -> anyhow::Result<SummaryCall> {
         let output =
-            crate::openhuman::memory::tree::summarise::summarise(&self.config, inputs, context)
+            crate::tree::summarise::summarise(&self.config, inputs, context)
                 .await?;
         Ok(SummaryCall {
             output: SummaryOutput {

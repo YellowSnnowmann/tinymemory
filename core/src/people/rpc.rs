@@ -5,11 +5,11 @@
 use chrono::Utc;
 use serde_json::{json, Value};
 
-use crate::openhuman::memory::people::address_book::{AddressBookError, SystemContactsSource};
-use crate::openhuman::memory::people::resolver::HandleResolver;
-use crate::openhuman::memory::people::scorer::score;
-use crate::openhuman::memory::people::store::PeopleStore;
-use crate::openhuman::memory::people::types::{Handle, PersonId};
+use crate::people::address_book::{AddressBookError, SystemContactsSource};
+use crate::people::resolver::HandleResolver;
+use crate::people::scorer::score;
+use crate::people::store::PeopleStore;
+use crate::people::types::{Handle, PersonId};
 use crate::rpc::RpcOutcome;
 
 /// List people ranked by composite score, highest first.
@@ -162,7 +162,7 @@ pub async fn handle_score(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::memory::people::types::{Interaction, Person};
+    use crate::people::types::{Interaction, Person};
     use chrono::Duration;
 
     #[tokio::test]

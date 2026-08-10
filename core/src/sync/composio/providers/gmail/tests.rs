@@ -5,7 +5,7 @@
 
 use super::provider::{BASE_QUERY, SENT_QUERIES};
 use super::GmailProvider;
-use crate::openhuman::memory::sync::composio::providers::ComposioProvider;
+use crate::sync::composio::providers::ComposioProvider;
 
 #[test]
 fn provider_metadata_is_stable() {

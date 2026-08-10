@@ -1,5 +1,5 @@
 //! Source-tree registry — thin wrapper around the generic
-//! [`crate::openhuman::memory::tree::tree::registry::get_or_create_tree`]
+//! [`crate::tree::tree::registry::get_or_create_tree`]
 //! that adds the source-specific `_source.md` on-disk mirror write after
 //! every get-or-create call.
 
@@ -7,8 +7,8 @@ use anyhow::Result;
 
 use super::file;
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::store::trees::types::Tree;
-use crate::openhuman::memory::tree::tree::TreeFactory;
+use crate::store::trees::types::Tree;
+use crate::tree::tree::TreeFactory;
 
 /// Look up the source tree for `scope`, or create a new one.
 ///
@@ -22,13 +22,13 @@ use crate::openhuman::memory::tree::tree::TreeFactory;
 pub fn get_or_create_source_tree(config: &Config, scope: &str) -> Result<Tree> {
     log::debug!(
         "[sources::registry] get_or_create_source_tree scope={}",
-        crate::openhuman::memory::util::redact::redact(scope)
+        crate::util::redact::redact(scope)
     );
     let tree = TreeFactory::source(scope).get_or_create(config)?;
     if let Err(e) = file::write_source_file(config, &tree) {
         log::warn!(
             "[tree_source::registry] write_source_file failed scope={} err={e:#}",
-            crate::openhuman::memory::util::redact::redact(scope)
+            crate::util::redact::redact(scope)
         );
     }
     Ok(tree)
@@ -37,7 +37,7 @@ pub fn get_or_create_source_tree(config: &Config, scope: &str) -> Result<Tree> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::memory::store::trees::types::TreeKind;
+    use crate::store::trees::types::TreeKind;
     use tempfile::TempDir;
 
     fn test_config() -> (TempDir, Config) {

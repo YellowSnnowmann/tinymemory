@@ -9,8 +9,8 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::openhuman::config::rpc as config_rpc;
-use crate::openhuman::memory::store::chunks::store::{list_chunks, ListChunksQuery};
-use crate::openhuman::memory::store::chunks::types::SourceKind;
+use crate::store::chunks::store::{list_chunks, ListChunksQuery};
+use crate::store::chunks::types::SourceKind;
 use crate::openhuman::tools::traits::{Tool, ToolResult};
 
 pub struct MemoryStoreRawChunksTool;
@@ -102,7 +102,7 @@ impl Tool for MemoryStoreRawChunksTool {
             until_ms: parsed.until_ms,
             limit: parsed.limit,
             offset: None,
-            source_scope: crate::openhuman::memory::source_scope::current_source_scope(),
+            source_scope: crate::source_scope::current_source_scope(),
             exclude_dropped: false,
         };
         let mut rows = list_chunks(&cfg, &query)?;

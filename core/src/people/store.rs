@@ -12,8 +12,8 @@ use chrono::{DateTime, TimeZone, Utc};
 use rusqlite::{params, Connection, OptionalExtension, Result as SqlResult};
 use tokio::sync::Mutex;
 
-use crate::openhuman::memory::people::migrations;
-use crate::openhuman::memory::people::types::{Handle, Interaction, Person, PersonId};
+use crate::people::migrations;
+use crate::people::types::{Handle, Interaction, Person, PersonId};
 
 pub type ConnHandle = Arc<Mutex<Connection>>;
 type PersonRow = (
@@ -48,7 +48,7 @@ fn global_slot() -> &'static GlobalStoreSlot {
 /// directory, opening `<workspace>/people/people.db` (schema migrations run on
 /// open).
 ///
-/// Mirrors [`crate::openhuman::memory::global::init`]: safe to call repeatedly.
+/// Mirrors [`crate::global::init`]: safe to call repeatedly.
 /// A call for the **same** workspace returns the existing store; a call for a
 /// **different** workspace replaces the global handle so a post-login
 /// active-user switch (or `restart_core_process`, which restarts the embedded

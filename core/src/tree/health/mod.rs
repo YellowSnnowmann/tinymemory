@@ -25,7 +25,7 @@ pub(crate) mod user_error;
 pub(crate) use user_error::publish_local_model_unavailable_user_error;
 
 /// The failure taxonomy proper. Re-exported (rather than re-declared) so the
-/// ~30 `crate::openhuman::memory::tree::health::{…}` call sites across the host
+/// ~30 `crate::tree::health::{…}` call sites across the host
 /// are unaffected by the move, and so there is exactly one definition.
 pub use tinycortex::memory::health::{
     classify_embed_error, classify_embed_error_str, DegradedState, FailureClass, FailureCode,

@@ -1,9 +1,9 @@
 use anyhow::Result;
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::tinycortex::engine_config;
-use crate::openhuman::memory::tree::retrieval::types::EntityMatch;
-use crate::openhuman::memory::tree::score::extract::EntityKind;
+use crate::tinycortex::engine_config;
+use crate::tree::retrieval::types::EntityMatch;
+use crate::tree::score::extract::EntityKind;
 
 pub async fn search_entities(
     config: &Config,

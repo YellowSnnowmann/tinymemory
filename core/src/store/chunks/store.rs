@@ -6,9 +6,9 @@ use anyhow::Result;
 use rusqlite::Transaction;
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::store::chunks::types::{Chunk, SourceKind};
-use crate::openhuman::memory::store::content::StagedChunk;
-use crate::openhuman::memory::tinycortex::engine_config;
+use crate::store::chunks::types::{Chunk, SourceKind};
+use crate::store::content::StagedChunk;
+use crate::tinycortex::engine_config;
 
 pub use tinycortex::memory::chunks::{
     ListChunksQuery, RawRef, CHUNK_STATUS_ADMITTED, CHUNK_STATUS_BUFFERED, CHUNK_STATUS_DROPPED,

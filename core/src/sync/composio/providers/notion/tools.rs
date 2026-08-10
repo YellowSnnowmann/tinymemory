@@ -1,6 +1,6 @@
 //! Curated catalog of Notion Composio actions exposed to the agent.
 
-use crate::openhuman::memory::sync::composio::providers::tool_scope::{CuratedTool, ToolScope};
+use crate::sync::composio::providers::tool_scope::{CuratedTool, ToolScope};
 
 pub const NOTION_CURATED: &[CuratedTool] = &[
     // ── Read: search & fetch ────────────────────────────────────────

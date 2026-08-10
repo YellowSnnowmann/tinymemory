@@ -93,7 +93,7 @@ pub fn init_default_providers() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::memory::sync::composio::providers::{
+    use crate::sync::composio::providers::{
         ProviderContext, ProviderUserProfile,
     };
     use async_trait::async_trait;

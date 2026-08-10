@@ -10,8 +10,8 @@ use tinycortex::memory::sync::{
 };
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::sources::{MemorySourceEntry, SourceKind};
-use crate::openhuman::memory::store::MemoryClientRef;
+use crate::sources::{MemorySourceEntry, SourceKind};
+use crate::store::MemoryClientRef;
 
 pub const HOST_SYNC_STATE_NAMESPACE: &str = "composio-sync-state";
 pub use tinycortex::memory::sync::{
@@ -177,9 +177,9 @@ pub async fn run_github_sync(
     config: &Config,
 ) -> anyhow::Result<SyncOutcome> {
     tracing::info!("[tinycortex:sync] GitHub repository sync starting");
-    if crate::openhuman::memory::global::client_if_ready().is_none() {
+    if crate::global::client_if_ready().is_none() {
         tracing::debug!("[tinycortex:sync] GitHub sync initializing memory client");
-        crate::openhuman::memory::global::init(config.workspace_dir.clone())
+        crate::global::init(config.workspace_dir.clone())
             .map_err(anyhow::Error::msg)
             .map_err(|error| {
                 tracing::warn!(%error, "[tinycortex:sync] GitHub sync memory initialization failed");
@@ -213,7 +213,7 @@ impl ExternalSourceReader for HostSyncAdapter {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("external source reader requires host config"))?;
         let host_source: MemorySourceEntry = serde_json::from_value(serde_json::to_value(source)?)?;
-        let reader = crate::openhuman::memory::sources::readers::reader_for(&host_source.kind);
+        let reader = crate::sources::readers::reader_for(&host_source.kind);
         let items = reader
             .list_items(&host_source, config)
             .await
@@ -231,7 +231,7 @@ impl ExternalSourceReader for HostSyncAdapter {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("external source reader requires host config"))?;
         let host_source: MemorySourceEntry = serde_json::from_value(serde_json::to_value(source)?)?;
-        let reader = crate::openhuman::memory::sources::readers::reader_for(&host_source.kind);
+        let reader = crate::sources::readers::reader_for(&host_source.kind);
         let content = reader
             .read_item(&host_source, item_id, config)
             .await
@@ -271,7 +271,7 @@ pub async fn run_source_pipeline(
     source: &MemorySourceEntry,
     config: &Config,
 ) -> Result<SyncOutcome, SourcePipelineFailure> {
-    let memory = crate::openhuman::memory::global::client_if_ready()
+    let memory = crate::global::client_if_ready()
         .ok_or_else(|| SourcePipelineFailure::without_usage("memory client is not ready"))?;
     let mut memory_config = super::memory_config_from(config, config.workspace_dir.clone());
     memory_config.sync.interval_secs = config.memory_sync_interval_secs;
@@ -336,7 +336,7 @@ pub async fn run_composio_connection_with_budgets(
         .cloned()
         .unwrap_or_else(|| {
             let (max_items, sync_depth_days) =
-                crate::openhuman::memory::sources::memory_sync_defaults_for_toolkit(toolkit);
+                crate::sources::memory_sync_defaults_for_toolkit(toolkit);
             MemorySourceEntry {
                 id: format!("composio:{toolkit}:{connection_id}"),
                 kind: SourceKind::Composio,
@@ -380,7 +380,7 @@ pub async fn load_composio_sync_state(
     toolkit: &str,
     connection_id: &str,
 ) -> anyhow::Result<tinycortex::memory::sync::SyncState> {
-    let memory = crate::openhuman::memory::global::client_if_ready()
+    let memory = crate::global::client_if_ready()
         .ok_or_else(|| anyhow::anyhow!("memory client is not ready"))?;
     let adapter = HostSyncAdapter::new(memory);
     tinycortex::memory::sync::SyncState::load(&adapter, toolkit, connection_id).await
@@ -391,7 +391,7 @@ pub async fn run_slack_search_backfill(
     backfill_days: i64,
     config: &Config,
 ) -> Result<SyncOutcome, SourcePipelineFailure> {
-    let memory = crate::openhuman::memory::global::client_if_ready()
+    let memory = crate::global::client_if_ready()
         .ok_or_else(|| SourcePipelineFailure::without_usage("memory client is not ready"))?;
     let mut memory_config = super::memory_config_from(config, config.workspace_dir.clone());
     let composio = composio_config(config).map_err(SourcePipelineFailure::without_usage)?;
@@ -423,7 +423,7 @@ pub async fn run_gmail_backfill(
     page_size: usize,
     config: &Config,
 ) -> Result<SyncOutcome, SourcePipelineFailure> {
-    let memory = crate::openhuman::memory::global::client_if_ready()
+    let memory = crate::global::client_if_ready()
         .ok_or_else(|| SourcePipelineFailure::without_usage("memory client is not ready"))?;
     let mut memory_config = super::memory_config_from(config, config.workspace_dir.clone());
     let composio = composio_config(config).map_err(SourcePipelineFailure::without_usage)?;
@@ -617,7 +617,7 @@ impl LocalDocumentSink for HostSyncAdapter {
             modified_at: document.modified_at,
             source_ref: document.source_ref,
         };
-        crate::openhuman::memory::ingest_pipeline::ingest_document_with_scope(
+        crate::ingest_pipeline::ingest_document_with_scope(
             config,
             &document.source_id,
             &document.owner,
@@ -637,9 +637,9 @@ impl LocalDocumentSink for HostSyncAdapter {
             .ok_or_else(|| anyhow::anyhow!("local document sink missing host config"))?;
         let source_id = source_id.to_owned();
         tokio::task::spawn_blocking(move || {
-            crate::openhuman::memory::store::chunks::store::delete_chunks_by_source(
+            crate::store::chunks::store::delete_chunks_by_source(
                 &config,
-                crate::openhuman::memory::store::chunks::types::SourceKind::Document,
+                crate::store::chunks::types::SourceKind::Document,
                 &source_id,
             )
         })
@@ -704,8 +704,8 @@ mod tests {
         try_read_audit_log,
     };
     use crate::openhuman::config::Config;
-    use crate::openhuman::memory::sources::MemorySourceEntry;
-    use crate::openhuman::memory::sync::composio::{
+    use crate::sources::MemorySourceEntry;
+    use crate::sync::composio::{
         get_composio_sync_provider, init_default_composio_sync_providers,
     };
 

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::openhuman::memory::Memory;
+use crate::Memory;
 
 use tinycortex::memory::tool_memory::store::ToolMemoryStore;
 

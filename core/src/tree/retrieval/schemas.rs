@@ -16,7 +16,7 @@ use serde_json::{Map, Value};
 use crate::core::all::{ControllerFuture, RegisteredController};
 use crate::core::{ControllerSchema, FieldSchema, TypeSchema};
 use crate::openhuman::config::rpc as config_rpc;
-use crate::openhuman::memory::tree::retrieval::rpc as retrieval_rpc;
+use crate::tree::retrieval::rpc as retrieval_rpc;
 use crate::rpc::RpcOutcome;
 
 const NAMESPACE: &str = "memory_tree";

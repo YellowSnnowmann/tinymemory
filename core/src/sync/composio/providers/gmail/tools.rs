@@ -4,7 +4,7 @@
 //! the cases the agent actually plans for (read, compose, manage) and
 //! hides the long tail of edge-case admin endpoints.
 
-use crate::openhuman::memory::sync::composio::providers::tool_scope::{CuratedTool, ToolScope};
+use crate::sync::composio::providers::tool_scope::{CuratedTool, ToolScope};
 
 pub const GMAIL_CURATED: &[CuratedTool] = &[
     // ── Read: messages & threads ────────────────────────────────────

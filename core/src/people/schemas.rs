@@ -11,9 +11,9 @@ use serde_json::{Map, Value};
 use crate::core::all::{ControllerFuture, RegisteredController};
 use crate::core::runtime::context::CoreContext;
 use crate::core::{ControllerSchema, FieldSchema, TypeSchema};
-use crate::openhuman::memory::people::rpc;
-use crate::openhuman::memory::people::store::PeopleStore;
-use crate::openhuman::memory::people::types::{Handle, PersonId};
+use crate::people::rpc;
+use crate::people::store::PeopleStore;
+use crate::people::types::{Handle, PersonId};
 use crate::rpc::RpcOutcome;
 
 pub fn all_controller_schemas() -> Vec<ControllerSchema> {

@@ -4,8 +4,8 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::store::trees::types::{Buffer, Tree};
-use crate::openhuman::memory::tinycortex::engine_config;
+use crate::store::trees::types::{Buffer, Tree};
+use crate::tinycortex::engine_config;
 
 pub use tinycortex::memory::tree::{LabelStrategy, LeafRef, MERGE_LEVEL_BASE};
 
@@ -23,7 +23,7 @@ pub async fn append_leaf(
         leaf.token_count as i64,
         leaf.timestamp,
     )?;
-    crate::openhuman::memory::tinycortex::cascade_tree(config, tree, 0, false, strategy).await
+    crate::tinycortex::cascade_tree(config, tree, 0, false, strategy).await
 }
 
 pub fn append_leaf_deferred(config: &Config, tree: &Tree, leaf: &LeafRef) -> Result<bool> {
@@ -55,7 +55,7 @@ pub async fn cascade_all_from(
     force_now: Option<DateTime<Utc>>,
     strategy: &LabelStrategy,
 ) -> Result<Vec<String>> {
-    crate::openhuman::memory::tinycortex::cascade_tree(
+    crate::tinycortex::cascade_tree(
         config,
         tree,
         start_level,
@@ -73,7 +73,7 @@ pub async fn seal_document_subtree(
     chunk_ids: &[String],
     strategy: &LabelStrategy,
 ) -> Result<String> {
-    crate::openhuman::memory::tinycortex::seal_document_subtree(
+    crate::tinycortex::seal_document_subtree(
         config, tree, doc_id, version_ms, chunk_ids, strategy,
     )
     .await
@@ -86,7 +86,7 @@ pub(crate) async fn seal_one_level(
     strategy: &LabelStrategy,
     enqueue_follow_ups: bool,
 ) -> Result<String> {
-    crate::openhuman::memory::tinycortex::seal_tree_level(
+    crate::tinycortex::seal_tree_level(
         config,
         tree,
         buffer,

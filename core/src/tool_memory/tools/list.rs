@@ -1,6 +1,6 @@
 //! `memory_tools_list` — list every stored rule for a given tool.
 //!
-//! Routed through [`MemoryGuard`](crate::openhuman::memory::guard::MemoryGuard)
+//! Routed through [`MemoryGuard`](crate::guard::MemoryGuard)
 //! rather than a raw `ToolMemoryStore`. `MemoryToolMemory::tool_rules` on the
 //! embedded driver is literally `tool_memory_store(self.memory()).list_rules(…)`,
 //! and the wire type matches by identity, not conversion:
@@ -14,8 +14,8 @@ use serde::Deserialize;
 use serde_json::json;
 use tinycortex_api::provider::MemoryProvider;
 
-use crate::openhuman::memory::ops::guard::active_memory_guard;
-use crate::openhuman::memory::ops::tool_memory::NO_TOOL_MEMORY;
+use crate::ops::guard::active_memory_guard;
+use crate::ops::tool_memory::NO_TOOL_MEMORY;
 use crate::openhuman::tools::traits::{Tool, ToolResult};
 
 pub struct MemoryToolsListTool;

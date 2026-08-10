@@ -5,9 +5,9 @@
 //! factory.
 //!
 //! Flavor-specific policy (global digest, topic hotness, source file
-//! mirror) lives in [`crate::openhuman::memory::tree_global`],
-//! [`crate::openhuman::memory::tree_topic`], and
-//! [`crate::openhuman::memory::tree_source`] respectively.
+//! mirror) lives in [`crate::tree_global`],
+//! [`crate::tree_topic`], and
+//! [`crate::tree_source`] respectively.
 //!
 //! Persistence (store + types) has moved to `memory_store::trees`.
 
@@ -18,11 +18,11 @@ pub mod registry;
 pub mod rpc;
 
 // Re-export persistence from memory_store so callers using tree::store / tree::types still work.
-pub use crate::openhuman::memory::store::trees::store;
-pub use crate::openhuman::memory::store::trees::types;
+pub use crate::store::trees::store;
+pub use crate::store::trees::types;
 
-pub use crate::openhuman::memory::store::trees::{get_summary_embedding, set_summary_embedding};
-pub use crate::openhuman::memory::store::trees::{
+pub use crate::store::trees::{get_summary_embedding, set_summary_embedding};
+pub use crate::store::trees::{
     Buffer, SummaryNode, Tree, TreeKind, TreeStatus, INPUT_TOKEN_BUDGET, OUTPUT_TOKEN_BUDGET,
     SUMMARY_FANOUT,
 };

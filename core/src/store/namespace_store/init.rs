@@ -14,8 +14,8 @@ use parking_lot::Mutex;
 use rusqlite::Connection;
 
 use crate::openhuman::inference::embeddings::EmbeddingProvider;
-use crate::openhuman::memory::store::safety::canonical_identifier;
-use crate::openhuman::memory::store::types::GLOBAL_NAMESPACE;
+use crate::store::safety::canonical_identifier;
+use crate::store::types::GLOBAL_NAMESPACE;
 
 use super::UnifiedMemory;
 

@@ -21,7 +21,7 @@
 use async_trait::async_trait;
 use serde_json::{json, Value};
 
-use crate::openhuman::memory::sync::composio::providers::{
+use crate::sync::composio::providers::{
     pick_str, resolve_sync_interval_secs, ComposioProvider, CuratedTool, ProviderContext,
     ProviderUserProfile,
 };
@@ -144,7 +144,7 @@ impl ComposioProvider for GmailProvider {
     }
 
     /// Incremental sync via the generic
-    /// [`orchestrator`](crate::openhuman::memory::sync::composio::providers::orchestrator):
+    /// [`orchestrator`](crate::sync::composio::providers::orchestrator):
     /// pagination, dedup, the `max_items` cap, and cursor handling live in
     /// `run_sync`; the Gmail-specific primitives — the account-email preamble,
     /// server-side `after:` depth window, adaptive page ceiling, all-synced
@@ -167,7 +167,7 @@ impl ComposioProvider for GmailProvider {
             let Some(connection_id) = ctx.connection_id.as_deref() else {
                 return Err("[composio:gmail] trigger missing connection_id".to_string());
             };
-            if let Err(e) = crate::openhuman::memory::tinycortex::run_composio_connection(
+            if let Err(e) = crate::tinycortex::run_composio_connection(
                 "gmail",
                 connection_id,
                 ctx.config.as_ref(),

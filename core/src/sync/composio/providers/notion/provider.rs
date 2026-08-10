@@ -19,7 +19,7 @@ use async_trait::async_trait;
 use serde_json::{json, Value};
 
 use super::normalization;
-use crate::openhuman::memory::sync::composio::providers::{
+use crate::sync::composio::providers::{
     first_array_str, merge_extra, pick_str, resolve_sync_interval_secs, ComposioProvider,
     CuratedTool, NormalizedTask, ProviderContext, ProviderUserProfile, TaskContainer,
     TaskFetchFilter, TaskKind,
@@ -127,7 +127,7 @@ impl ComposioProvider for NotionProvider {
     }
 
     /// Incremental sync. Notion was the first provider migrated to the generic
-    /// [`orchestrator`](crate::openhuman::memory::sync::composio::providers::orchestrator):
+    /// [`orchestrator`](crate::sync::composio::providers::orchestrator):
     /// the per-item loop, dedup, `max_items` cap, `sync_depth_days` window, and
     /// cursor handling all live in `run_sync`; the Notion-specific primitives
     /// (page fetch, dedup key, body fetch, ingest) live in [`super::source`].
@@ -278,7 +278,7 @@ impl ComposioProvider for NotionProvider {
         let Some(connection_id) = ctx.connection_id.as_deref() else {
             return Err("[composio:notion] trigger missing connection_id".to_string());
         };
-        if let Err(e) = crate::openhuman::memory::tinycortex::run_composio_connection(
+        if let Err(e) = crate::tinycortex::run_composio_connection(
             "notion",
             connection_id,
             ctx.config.as_ref(),

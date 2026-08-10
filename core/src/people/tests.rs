@@ -5,10 +5,10 @@ use std::sync::Arc;
 use chrono::Utc;
 
 #[cfg(not(target_os = "macos"))]
-use crate::openhuman::memory::people::address_book;
-use crate::openhuman::memory::people::resolver::HandleResolver;
-use crate::openhuman::memory::people::store::PeopleStore;
-use crate::openhuman::memory::people::types::{Handle, PersonId};
+use crate::people::address_book;
+use crate::people::resolver::HandleResolver;
+use crate::people::store::PeopleStore;
+use crate::people::types::{Handle, PersonId};
 
 #[tokio::test]
 async fn resolver_and_store_cooperate_across_handle_kinds() {
@@ -48,7 +48,7 @@ fn address_book_is_empty_on_non_mac() {
 /// `refresh_address_book` is wired up.
 #[test]
 fn schema_exposes_four_controllers() {
-    use crate::openhuman::memory::people::schemas;
+    use crate::people::schemas;
     let names: Vec<_> = schemas::all_controller_schemas()
         .into_iter()
         .map(|s| s.function)
@@ -70,7 +70,7 @@ fn schema_exposes_four_controllers() {
 /// process-global store slot other people tests may observe via `get()`.
 #[test]
 fn init_from_workspace_seeds_and_rebinds_global_store() {
-    use crate::openhuman::memory::people::store;
+    use crate::people::store;
 
     let ws_a = tempfile::tempdir().unwrap();
     let store_a = store::init_from_workspace(ws_a.path()).unwrap();

@@ -17,7 +17,7 @@ use crate::openhuman::integrations::composio::client::{
     create_composio_client, direct_list_connections, ComposioClientKind,
 };
 use crate::openhuman::integrations::composio::types::ComposioConnectionsResponse;
-use crate::openhuman::memory::sync::composio::providers::SyncOutcome;
+use crate::sync::composio::providers::SyncOutcome;
 use crate::rpc::RpcOutcome;
 
 /// Optional connection-id override for the trigger. When absent, all
@@ -93,7 +93,7 @@ pub async fn sync_trigger_rpc(
 
     for conn in candidates {
         let started_at_ms = now_ms();
-        match crate::openhuman::memory::tinycortex::run_composio_connection(
+        match crate::tinycortex::run_composio_connection(
             "slack", &conn.id, config,
         )
         .await
@@ -185,7 +185,7 @@ pub async fn sync_status_rpc(
             continue;
         }
         let state =
-            match crate::openhuman::memory::tinycortex::load_composio_sync_state("slack", &conn.id)
+            match crate::tinycortex::load_composio_sync_state("slack", &conn.id)
                 .await
             {
                 Ok(s) => s,

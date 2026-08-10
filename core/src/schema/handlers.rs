@@ -1,16 +1,16 @@
 //! Handler functions for every `memory_tree` JSON-RPC method.
 //!
 //! Each `handle_*` function is a thin bridge from raw JSON params to the
-//! typed RPC calls in [`crate::openhuman::memory::tree::tree::rpc`] (write
-//! side) or [`crate::openhuman::memory::read_rpc`] (UI read side).
+//! typed RPC calls in [`crate::tree::tree::rpc`] (write
+//! side) or [`crate::read_rpc`] (UI read side).
 
 use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
 use crate::core::all::ControllerFuture;
 use crate::openhuman::config::rpc as config_rpc;
-use crate::openhuman::memory::read_rpc;
-use crate::openhuman::memory::tree::tree::rpc;
+use crate::read_rpc;
+use crate::tree::tree::rpc;
 use crate::rpc::RpcOutcome;
 
 // ── Write-side handlers (rpc::*) ─────────────────────────────────────────
@@ -252,7 +252,7 @@ pub(super) fn handle_set_enabled(params: Map<String, Value>) -> ControllerFuture
 
 pub(super) fn handle_smart_walk(params: Map<String, Value>) -> ControllerFuture {
     Box::pin(async move {
-        use crate::openhuman::memory::tree::retrieval::{fast_retrieve, FastRetrieveOptions};
+        use crate::tree::retrieval::{fast_retrieve, FastRetrieveOptions};
 
         // `max_turns`/`model` are accepted for backwards compatibility but
         // ignored — retrieval is now deterministic (E2GraphRAG), so there are

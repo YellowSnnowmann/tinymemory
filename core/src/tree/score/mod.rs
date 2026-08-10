@@ -16,9 +16,9 @@ pub use tinycortex::memory::score::{resolver, signals};
 
 /// Build crate scoring policy from product inference routing.
 pub fn scoring_config_from(config: &crate::openhuman::config::Config) -> ScoringConfig {
-    let (provider, model) = match crate::openhuman::memory::chat::build_chat_runtime(config) {
+    let (provider, model) = match crate::chat::build_chat_runtime(config) {
         Ok((provider, model)) => (
-            Arc::new(crate::openhuman::memory::tinycortex::SeamChatProvider::new(
+            Arc::new(crate::tinycortex::SeamChatProvider::new(
                 provider,
             )) as Arc<dyn tinycortex::memory::score::extract::ChatProvider>,
             model,

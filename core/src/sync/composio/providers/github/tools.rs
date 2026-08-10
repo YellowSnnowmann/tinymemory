@@ -5,7 +5,7 @@
 //! (browsing repos, reading/writing issues + PRs, code search, basic
 //! workflow control) and hides the long tail of admin endpoints.
 
-use crate::openhuman::memory::sync::composio::providers::tool_scope::{CuratedTool, ToolScope};
+use crate::sync::composio::providers::tool_scope::{CuratedTool, ToolScope};
 
 pub const GITHUB_CURATED: &[CuratedTool] = &[
     // ── Read: user / repos ──────────────────────────────────────────

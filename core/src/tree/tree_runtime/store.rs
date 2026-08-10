@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::tinycortex::engine_config;
+use crate::tinycortex::engine_config;
 use tinycortex::memory::tree::runtime::{TreeNode, TreeStatus};
 
 pub fn tree_dir(config: &Config, namespace: &str) -> PathBuf {

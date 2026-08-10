@@ -44,16 +44,16 @@ use anyhow::{Context as _, Result};
 use chrono::{DateTime, TimeZone, Utc};
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::ops::{
+use crate::ops::{
     doc_list, doc_put, graph_query, graph_upsert, kv_get, memory_query_namespace, GraphQueryParams,
     GraphUpsertParams, KvGetDeleteParams, KvSetParams, NamespaceOnlyParams, PutDocParams,
 };
-use crate::openhuman::memory::rpc_models::QueryNamespaceRequest;
-use crate::openhuman::memory::store::chunks;
-use crate::openhuman::memory::store::chunks::types::{Chunk, Metadata, SourceKind, SourceRef};
-use crate::openhuman::memory::store::namespace_store::{events, fts5, profile, segments};
-use crate::openhuman::memory::store::trees;
-use crate::openhuman::memory::store::trees::types::{SummaryNode, Tree, TreeKind, TreeStatus};
+use crate::rpc_models::QueryNamespaceRequest;
+use crate::store::chunks;
+use crate::store::chunks::types::{Chunk, Metadata, SourceKind, SourceRef};
+use crate::store::namespace_store::{events, fts5, profile, segments};
+use crate::store::trees;
+use crate::store::trees::types::{SummaryNode, Tree, TreeKind, TreeStatus};
 
 // ── Fixture identity ─────────────────────────────────────────────────────────
 //
@@ -142,7 +142,7 @@ pub async fn seed(workspace: &Path) -> Result<()> {
     seed_kv().await?;
     seed_graph().await?;
 
-    let client = crate::openhuman::memory::global::client()
+    let client = crate::global::client()
         .map_err(|e| anyhow::anyhow!("[golden] memory client not bound: {e}"))?;
     let conn = client.profile_conn();
 
@@ -190,7 +190,7 @@ async fn seed_documents() -> Result<()> {
 async fn seed_kv() -> Result<()> {
     for namespace in [None, Some(NAMESPACE_PRIMARY.to_string())] {
         tracing::debug!(?namespace, key = KV_KEY, "[golden] seeding kv");
-        crate::openhuman::memory::ops::kv_set(KvSetParams {
+        crate::ops::kv_set(KvSetParams {
             namespace: namespace.clone(),
             key: KV_KEY.to_string(),
             value: serde_json::json!({ "fixture": "golden", "v": 1 }),
@@ -413,7 +413,7 @@ pub async fn init_fresh_schema(workspace: &Path) -> Result<()> {
     std::fs::create_dir_all(workspace).context("[golden] create fresh workspace dir")?;
 
     // Host unified tier.
-    let memory = crate::openhuman::memory::store::UnifiedMemory::new(
+    let memory = crate::store::UnifiedMemory::new(
         workspace,
         std::sync::Arc::new(crate::openhuman::inference::embeddings::NoopEmbedding),
         None,
@@ -514,7 +514,7 @@ pub async fn read_back(workspace: &Path) -> Result<Readback> {
     .value
     .len();
 
-    let client = crate::openhuman::memory::global::client()
+    let client = crate::global::client()
         .map_err(|e| anyhow::anyhow!("[golden] memory client not bound: {e}"))?;
     let conn = client.profile_conn();
 

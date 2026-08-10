@@ -3,7 +3,7 @@
 //! This module provides the core tree mechanics: bucket-seal cascades,
 //! scoring, embedding, entity extraction, retrieval, and summarisation.
 //! It is flavor-agnostic; the specific tree instances (global, topic,
-//! source) and their policies live in [`crate::openhuman::memory`].
+//! source) and their policies live in [`crate`].
 
 pub mod graph;
 pub mod health;
@@ -27,13 +27,13 @@ pub use tinycortex::memory::tree::{
 };
 
 // Re-export controller registries.
-pub use crate::openhuman::memory::schema::{
+pub use crate::schema::{
     all_controller_schemas as all_memory_tree_controller_schemas,
     all_registered_controllers as all_memory_tree_registered_controllers,
 };
-pub use crate::openhuman::memory::tree::retrieval::{
+pub use crate::tree::retrieval::{
     all_retrieval_controller_schemas, all_retrieval_registered_controllers,
 };
-pub use crate::openhuman::memory::tree::tree_runtime::{
+pub use crate::tree::tree_runtime::{
     all_tree_summarizer_controller_schemas, all_tree_summarizer_registered_controllers,
 };

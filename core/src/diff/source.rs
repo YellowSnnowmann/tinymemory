@@ -24,7 +24,7 @@ use std::collections::HashMap;
 use tinycortex::memory::diff::{extract_item_id, SnapshotItem, SnapshotItemSource};
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::sources::types::{MemorySourceEntry, SourceKind};
+use crate::sources::types::{MemorySourceEntry, SourceKind};
 
 /// Host [`SnapshotItemSource`] backed by `mem_tree_chunks`.
 ///
@@ -75,7 +75,7 @@ impl SnapshotItemSource for ChunkStoreItemSource {
         };
 
         let result =
-            crate::openhuman::memory::store::chunks::store::with_connection(&self.config, |conn| {
+            crate::store::chunks::store::with_connection(&self.config, |conn| {
                 let mut stmt = conn.prepare(
                     "SELECT source_id, content \
                      FROM mem_tree_chunks \

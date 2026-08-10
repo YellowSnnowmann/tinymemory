@@ -51,8 +51,8 @@ pub async fn list_sync_targets(config: &Config) -> Result<Vec<SyncTarget>, Strin
     init_default_composio_sync_providers();
 
     // Try memory_sources registry first (user-curated list).
-    let registry_sources = crate::openhuman::memory::sources::list_enabled_by_kind(
-        crate::openhuman::memory::sources::SourceKind::Composio,
+    let registry_sources = crate::sources::list_enabled_by_kind(
+        crate::sources::SourceKind::Composio,
     )
     .await
     .unwrap_or_default();
@@ -154,8 +154,8 @@ pub async fn run_connection_sync(
     // Look up the source entry to obtain any user-configured caps.
     // Non-fatal: if the registry read fails we proceed uncapped.
     let (src_max_items, src_sync_depth_days) = {
-        let registry_sources = crate::openhuman::memory::sources::list_enabled_by_kind(
-            crate::openhuman::memory::sources::SourceKind::Composio,
+        let registry_sources = crate::sources::list_enabled_by_kind(
+            crate::sources::SourceKind::Composio,
         )
         .await
         .unwrap_or_default();
@@ -178,7 +178,7 @@ pub async fn run_connection_sync(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64;
-    match crate::openhuman::memory::tinycortex::run_composio_connection(
+    match crate::tinycortex::run_composio_connection(
         &target.toolkit,
         &target.connection_id,
         &config,

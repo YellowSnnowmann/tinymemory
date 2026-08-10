@@ -4,10 +4,10 @@ use anyhow::Result;
 use rusqlite::Transaction;
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::tree::health::PipelineFailure;
+use crate::tree::health::PipelineFailure;
 
 use super::types::{Job, JobFailure, JobStatus, NewJob};
-use crate::openhuman::memory::tinycortex::engine_config;
+use crate::tinycortex::engine_config;
 
 pub use tinycortex::memory::queue::DEFAULT_LOCK_DURATION_MS;
 

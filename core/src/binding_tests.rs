@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 // Imported here rather than re-exported from `binding.rs`: since admission
 // moved to `tinymemory::registry`, the production module no longer names this
 // constant and an import kept alive only for the tests would read as dead code.
-use crate::openhuman::memory::driver::embedded::EMBEDDED_DRIVER_ID;
+use crate::driver::embedded::EMBEDDED_DRIVER_ID;
 
 use async_trait::async_trait;
 use tinycortex_api::capabilities::Capability;

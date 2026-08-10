@@ -8,8 +8,8 @@
 //!
 //! Adding a new storage kind = adding a variant here, an impl of the
 //! [`VectorEmbeddable`] / [`ObsidianRepresentable`] traits
-//! ([`crate::openhuman::memory::store::traits`]), and a delegation in
-//! [`crate::openhuman::memory::store::retrieval`].
+//! ([`crate::store::traits`]), and a delegation in
+//! [`crate::store::retrieval`].
 
 use serde::{Deserialize, Serialize};
 
@@ -72,11 +72,11 @@ impl MemoryKind {
 /// Aliases (not re-exports) so the documentation lives here and the
 /// source-of-truth types stay in their owning modules.
 pub mod types {
-    pub use crate::openhuman::memory::people::types::Person as Contact;
-    pub use crate::openhuman::memory::store::chunks::types::Chunk;
-    pub use crate::openhuman::memory::store::entities::EntityHit as Entity;
-    pub use crate::openhuman::memory::store::trees::{SummaryNode as TreeNode, Tree, TreeKind};
-    pub use crate::openhuman::memory::store::types::MemoryKvRecord as Kv;
+    pub use crate::people::types::Person as Contact;
+    pub use crate::store::chunks::types::Chunk;
+    pub use crate::store::entities::EntityHit as Entity;
+    pub use crate::store::trees::{SummaryNode as TreeNode, Tree, TreeKind};
+    pub use crate::store::types::MemoryKvRecord as Kv;
 }
 
 #[cfg(test)]

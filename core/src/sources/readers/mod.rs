@@ -11,7 +11,7 @@ pub mod web_page;
 use async_trait::async_trait;
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::sources::types::{
+use crate::sources::types::{
     MemorySourceEntry, SourceContent, SourceItem, SourceKind,
 };
 

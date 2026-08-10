@@ -3,7 +3,7 @@
 //!
 //! Split out of `mod.rs` so the module root stays export-focused. Public paths
 //! are preserved via re-exports in [`super`], so callers keep using
-//! `crate::openhuman::memory::queue::<fn>`.
+//! `crate::queue::<fn>`.
 
 /// Mark whether a re-embed backfill currently has pending work.
 pub fn set_backfill_in_progress(v: bool) {
@@ -30,11 +30,11 @@ pub fn backfill_in_progress() -> bool {
 /// covered space enqueues nothing. Errors are logged, never propagated —
 /// a failed enqueue must not fail the user's settings save.
 pub fn ensure_reembed_backfill(config: &crate::openhuman::config::Config) {
-    let memory = crate::openhuman::memory::tinycortex::memory_config_from(
+    let memory = crate::tinycortex::memory_config_from(
         config,
         config.workspace_dir.clone(),
     );
-    let delegates = crate::openhuman::memory::tinycortex::HostQueueDelegates::new(config.clone());
+    let delegates = crate::tinycortex::HostQueueDelegates::new(config.clone());
     if let Err(error) = tinycortex::memory::queue::ensure_reembed_backfill(&memory, &delegates) {
         log::warn!("[memory::jobs] ensure_reembed_backfill failed: {error:#}");
     }
@@ -97,7 +97,7 @@ pub fn requeue_failed_after_provider_change(
 mod tests {
     use super::*;
     use crate::openhuman::config::Config;
-    use crate::openhuman::memory::tree::health::{FailureCode, PipelineFailure};
+    use crate::tree::health::{FailureCode, PipelineFailure};
     use tempfile::TempDir;
 
     fn test_config() -> (TempDir, Config) {
@@ -120,8 +120,8 @@ mod tests {
     /// flipped back to `ready` when the user changes their embedding provider.
     #[tokio::test]
     async fn requeue_after_provider_change_unparks_budget_exhausted_jobs() {
-        use crate::openhuman::memory::queue::store;
-        use crate::openhuman::memory::queue::types::{FlushStalePayload, JobStatus, NewJob};
+        use crate::queue::store;
+        use crate::queue::types::{FlushStalePayload, JobStatus, NewJob};
 
         let (_tmp, cfg) = test_config();
         let new_job = NewJob::flush_stale(&FlushStalePayload::default(), "2026-08-05", 3).unwrap();
@@ -162,8 +162,8 @@ mod tests {
     /// no-op, so re-saving settings repeatedly cannot spam the worker pool.
     #[tokio::test]
     async fn requeue_after_provider_change_is_idempotent() {
-        use crate::openhuman::memory::queue::store;
-        use crate::openhuman::memory::queue::types::{FlushStalePayload, NewJob};
+        use crate::queue::store;
+        use crate::queue::types::{FlushStalePayload, NewJob};
 
         let (_tmp, cfg) = test_config();
         let new_job = NewJob::flush_stale(&FlushStalePayload::default(), "2026-08-05", 3).unwrap();

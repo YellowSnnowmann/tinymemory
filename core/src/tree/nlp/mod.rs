@@ -18,10 +18,10 @@ pub use crate::openhuman::runtime::python_server::{
 };
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::tree::score::extract::{
+use crate::tree::score::extract::{
     EntityKind, ExtractedEntities, ExtractedEntity, ExtractedTopic,
 };
-use crate::openhuman::memory::tree::score::resolver::{canonicalise, CanonicalEntity};
+use crate::tree::score::resolver::{canonicalise, CanonicalEntity};
 
 /// Map a spaCy entity label to our [`EntityKind`]. Unknown labels collapse to
 /// [`EntityKind::Misc`] so they still participate as graph anchors.
@@ -108,7 +108,7 @@ fn spacy_to_extracted(resp: &SpacyResponse) -> ExtractedEntities {
 /// emails/urls/handles/hashtags in the query. Person/org recall is lost
 /// (spaCy's job), which simply biases retrieval toward the global branch.
 async fn fallback_extract(query: &str) -> Vec<CanonicalEntity> {
-    use crate::openhuman::memory::tree::score::extract::{CompositeExtractor, EntityExtractor};
+    use crate::tree::score::extract::{CompositeExtractor, EntityExtractor};
     let extractor = CompositeExtractor::regex_only();
     match extractor.extract(query).await {
         Ok(extracted) => {

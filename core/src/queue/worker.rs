@@ -1,6 +1,6 @@
 //! Worker pool: drives the crate queue engine (W4 flip). Each `run_once`
 //! delegates claim → dispatch → settle to `tinycortex::memory::queue::run_once`
-//! via [`crate::openhuman::memory::tinycortex::HostQueueDelegates`]; the legacy host
+//! via [`crate::tinycortex::HostQueueDelegates`]; the legacy host
 //! `handlers` engine that used to own dispatch was deleted at the flip.
 //!
 //! Concurrency control for LLM-bound work is delegated to
@@ -22,8 +22,8 @@ use crate::openhuman::config::Config;
 // legacy `handlers`, per-job settle (`mark_*`/`scrub_for_log`), and claim
 // helpers are gone from this module. Only startup lock recovery + the loop's
 // storage-degraded signalling remain host.
-use crate::openhuman::memory::queue::store::{recover_stale_locks, release_running_locks};
-use crate::openhuman::memory::tree::health::{
+use crate::queue::store::{recover_stale_locks, release_running_locks};
+use crate::tree::health::{
     clear_storage_degraded, mark_storage_degraded, FailureCode,
 };
 
@@ -284,11 +284,11 @@ pub async fn run_once(config: &Config) -> Result<bool> {
     // single-slot LLM gate serialises llm-bound jobs; the legacy per-job
     // local/cloud permit routing and the extract-batch coalescing are
     // intentionally dropped here (perf, not correctness — W4 follow-up).
-    let mc = crate::openhuman::memory::tinycortex::memory_config_from(
+    let mc = crate::tinycortex::memory_config_from(
         config,
         config.workspace_dir.clone(),
     );
-    let delegates = crate::openhuman::memory::tinycortex::HostQueueDelegates::new(config.clone());
+    let delegates = crate::tinycortex::HostQueueDelegates::new(config.clone());
     tinycortex::memory::queue::run_once(&mc, &delegates).await
 }
 
@@ -448,7 +448,7 @@ fn is_host_io_error(err: &anyhow::Error) -> bool {
 /// Handle a confirmed `SQLITE_CORRUPT` failure from the worker loop: report it
 /// to Sentry **once** (process-wide [`CORRUPT_REPORTED`] latch, not per-poll
 /// across the workers) and drive the quarantine+rebuild recovery in
-/// [`recover_corrupt_db`](crate::openhuman::memory::store::chunks::store::recover_corrupt_db).
+/// [`recover_corrupt_db`](crate::store::chunks::store::recover_corrupt_db).
 ///
 /// Factored out of [`start`]'s error arm so the report-once + recovery decision
 /// logic is unit-testable without spinning the live worker loop. The caller
@@ -466,7 +466,7 @@ fn recover_corrupt_db_once(idx: usize, err: &anyhow::Error, config: &Config) {
         "[memory::jobs] worker {idx} hit SQLITE_CORRUPT (malformed DB image), \
          attempting quarantine + rebuild recovery: {err:#}"
     );
-    match crate::openhuman::memory::store::chunks::store::recover_corrupt_db(config) {
+    match crate::store::chunks::store::recover_corrupt_db(config) {
         Ok(true) => {
             log::warn!(
                 "[memory::jobs] worker {idx} quarantined corrupt mem_tree DB and rebuilt \
@@ -495,17 +495,17 @@ fn recover_corrupt_db_once(idx: usize, err: &anyhow::Error, config: &Config) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::memory::queue::store::{count_by_status, enqueue, get_job};
-    use crate::openhuman::memory::queue::types::{
+    use crate::queue::store::{count_by_status, enqueue, get_job};
+    use crate::queue::types::{
         FlushStalePayload, JobKind, JobStatus, NewJob, ReembedBackfillPayload,
     };
-    use crate::openhuman::memory::store::chunks::store::{
+    use crate::store::chunks::store::{
         tree_active_signature, upsert_chunks, upsert_staged_chunks_tx, with_connection,
     };
-    use crate::openhuman::memory::store::chunks::types::{
+    use crate::store::chunks::types::{
         chunk_id, Chunk, Metadata, SourceKind, SourceRef,
     };
-    use crate::openhuman::memory::store::content as content_store;
+    use crate::store::content as content_store;
     use chrono::{TimeZone, Utc};
     use tempfile::TempDir;
 

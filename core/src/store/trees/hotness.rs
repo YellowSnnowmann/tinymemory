@@ -3,8 +3,8 @@
 use anyhow::Result;
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::store::trees::types::HotnessCounters;
-use crate::openhuman::memory::tinycortex::engine_config;
+use crate::store::trees::types::HotnessCounters;
+use crate::tinycortex::engine_config;
 
 pub fn get(config: &Config, entity_id: &str) -> Result<Option<HotnessCounters>> {
     tinycortex::memory::tree::store::hotness::get(&engine_config(config), entity_id)

@@ -24,7 +24,7 @@ use serde_json::{json, Value};
 use std::time::Duration;
 
 use super::normalization;
-use crate::openhuman::memory::sync::composio::providers::{
+use crate::sync::composio::providers::{
     merge_extra, pick_str, resolve_sync_interval_secs, ComposioProvider, CuratedTool,
     GithubFetchMode, NormalizedTask, ProviderContext, ProviderUserProfile, TaskFetchFilter,
     TaskKind,
@@ -113,7 +113,7 @@ impl ComposioProvider for GitHubProvider {
     }
 
     /// Incremental sync via the generic
-    /// [`orchestrator`](crate::openhuman::memory::sync::composio::providers::orchestrator):
+    /// [`orchestrator`](crate::sync::composio::providers::orchestrator):
     /// login resolution, pagination, dedup, the `max_items` cap, and cursor
     /// handling live in `run_sync`; the GitHub-specific primitives — including
     /// the **server-side** `sync_depth_days` window — live in [`super::source`].

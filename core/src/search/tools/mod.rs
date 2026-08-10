@@ -13,7 +13,7 @@ pub use hybrid_search::MemoryHybridSearchTool;
 pub use vector_search::MemoryVectorSearchTool;
 
 // Re-export existing tools from memory_store::tools (previously unregistered)
-pub use crate::openhuman::memory::store::tools::{
+pub use crate::store::tools::{
     MemoryStoreKindsTool, MemoryStoreRawChunksTool, MemoryStoreRawSearchTool,
 };
 
@@ -21,7 +21,7 @@ pub use crate::openhuman::memory::store::tools::{
 // `smart_walk` tools are gone — retrieval is now the deterministic
 // `fast_retrieve` exposed via the `memory_tree` tool's `walk`/`smart_walk`
 // modes (see `memory_tree::retrieval::fast`).
-pub use crate::openhuman::memory::query::{
+pub use crate::query::{
     MemoryTreeDrillDownTool, MemoryTreeFetchLeavesTool, MemoryTreeIngestDocumentTool,
     MemoryTreeQuerySourceTool, MemoryTreeSearchEntitiesTool,
 };

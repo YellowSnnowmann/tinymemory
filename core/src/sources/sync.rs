@@ -14,9 +14,9 @@ use std::collections::HashSet;
 use std::sync::Mutex;
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::sources::types::{MemorySourceEntry, SourceKind};
-use crate::openhuman::memory::sync::composio::ComposioUsage;
-use crate::openhuman::memory::sync_events::{emit_sync_stage, MemorySyncStage, MemorySyncTrigger};
+use crate::sources::types::{MemorySourceEntry, SourceKind};
+use crate::sync::composio::ComposioUsage;
+use crate::sync_events::{emit_sync_stage, MemorySyncStage, MemorySyncTrigger};
 
 static ACTIVE_SYNCS: std::sync::LazyLock<Mutex<HashSet<String>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashSet::new()));
@@ -65,7 +65,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Config) -> Result<()
         let inner = tokio::spawn(async move {
             // Retry any previously-failed pipeline jobs so the worker
             // resumes processing through all documents.
-            if let Ok(retried) = crate::openhuman::memory::queue::store::retry_all_failed(&config) {
+            if let Ok(retried) = crate::queue::store::retry_all_failed(&config) {
                 if retried > 0 {
                     tracing::info!(
                         retried = retried,
@@ -85,7 +85,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Config) -> Result<()
             let mut composio_usage = ComposioUsage::default();
             let outcome = match source.kind {
                 SourceKind::Composio => {
-                    match crate::openhuman::memory::tinycortex::run_source_pipeline(
+                    match crate::tinycortex::run_source_pipeline(
                         &source, &config,
                     )
                     .await
@@ -103,19 +103,19 @@ pub async fn sync_source(source: MemorySourceEntry, config: Config) -> Result<()
                     }
                 }
                 SourceKind::Conversation | SourceKind::Folder => {
-                    crate::openhuman::memory::tinycortex::run_source_pipeline(&source, &config)
+                    crate::tinycortex::run_source_pipeline(&source, &config)
                         .await
                         .map(|outcome| outcome.records_ingested as usize)
                         .map_err(|error| error.to_string())
                 }
                 SourceKind::GithubRepo => {
-                    crate::openhuman::memory::tinycortex::run_source_pipeline(&source, &config)
+                    crate::tinycortex::run_source_pipeline(&source, &config)
                         .await
                         .map(|outcome| outcome.records_ingested as usize)
                         .map_err(|error| error.to_string())
                 }
                 SourceKind::RssFeed | SourceKind::WebPage => {
-                    crate::openhuman::memory::tinycortex::run_source_pipeline(&source, &config)
+                    crate::tinycortex::run_source_pipeline(&source, &config)
                         .await
                         .map(|outcome| outcome.records_ingested as usize)
                         .map_err(|error| error.to_string())
@@ -144,7 +144,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Config) -> Result<()
                         Some(&source.id),
                     );
 
-                    use crate::openhuman::memory::tinycortex::{
+                    use crate::tinycortex::{
                         append_audit_entry, SyncAuditEntry,
                     };
                     append_audit_entry(
@@ -177,7 +177,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Config) -> Result<()
                     check_and_rebuild_tree(&source, &config).await;
 
                     // Auto-snapshot: capture post-sync state for diff tracking.
-                    if let Err(e) = crate::openhuman::memory::diff::ops::auto_snapshot_after_sync(
+                    if let Err(e) = crate::diff::ops::auto_snapshot_after_sync(
                         &source, &config,
                     )
                     .await
@@ -191,7 +191,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Config) -> Result<()
                 }
                 Err(error) => {
                     // Audit failed syncs too.
-                    use crate::openhuman::memory::tinycortex::{
+                    use crate::tinycortex::{
                         append_audit_entry, SyncAuditEntry,
                     };
                     append_audit_entry(
@@ -274,7 +274,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Config) -> Result<()
 
 /// Reconcile raw files that are not yet covered by tree summaries.
 pub(crate) async fn check_and_rebuild_tree(source: &MemorySourceEntry, config: &Config) {
-    use crate::openhuman::memory::tinycortex::{needs_rebuild, rebuild_tree_from_raw};
+    use crate::tinycortex::{needs_rebuild, rebuild_tree_from_raw};
 
     for scope in derive_scopes(source, config) {
         if !needs_rebuild(config, &scope.tree_scope, &scope.archive_source_id) {
@@ -320,7 +320,7 @@ pub(crate) struct SourceScope {
 
 /// Derive the tree scope(s) + raw-archive id(s) that a source maps to.
 pub(crate) fn derive_scopes(source: &MemorySourceEntry, config: &Config) -> Vec<SourceScope> {
-    use crate::openhuman::memory::sources::readers::github;
+    use crate::sources::readers::github;
 
     match source.kind {
         SourceKind::GithubRepo => {

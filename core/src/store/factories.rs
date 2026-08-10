@@ -20,8 +20,8 @@ use crate::openhuman::inference::embeddings::{
     self, format_embedding_signature, EmbeddingProvider, DEFAULT_CLOUD_EMBEDDING_DIMENSIONS,
     DEFAULT_CLOUD_EMBEDDING_MODEL, DEFAULT_OLLAMA_DIMENSIONS, DEFAULT_OLLAMA_MODEL,
 };
-use crate::openhuman::memory::store::namespace_store::UnifiedMemory;
-use crate::openhuman::memory::traits::Memory;
+use crate::store::namespace_store::UnifiedMemory;
+use crate::traits::Memory;
 
 /// One-shot guard so the Ollama health-gate fallback only reports to Sentry
 /// once per process lifetime. Memory is constructed many times per session
@@ -120,7 +120,7 @@ fn report_ollama_health_gate_once(base_url: &str, model: &str) -> bool {
 /// payload and publisher live in `memory::tree::health::user_error` so this
 /// producer and the embed-failure classifier emit one identical, tested shape.
 fn surface_local_model_unavailable_to_clients() {
-    crate::openhuman::memory::tree::health::publish_local_model_unavailable_user_error(
+    crate::tree::health::publish_local_model_unavailable_user_error(
         "health_gate",
     );
 }
@@ -584,7 +584,7 @@ pub fn create_memory_for_migration(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::memory::tree::health::user_error::LOCAL_MODEL_UNAVAILABLE_KIND;
+    use crate::tree::health::user_error::LOCAL_MODEL_UNAVAILABLE_KIND;
 
     use axum::{routing::get, Json, Router};
     use std::ffi::OsString;

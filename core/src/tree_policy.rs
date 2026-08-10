@@ -5,7 +5,7 @@
 //! label policy) is centralized here so per-flavor modules don't each own
 //! their own scattered constants and arithmetic.
 
-use crate::openhuman::memory::store::trees::types::{
+use crate::store::trees::types::{
     EntityIndexStats, TOPIC_ARCHIVE_THRESHOLD, TOPIC_CREATION_THRESHOLD, TOPIC_RECHECK_EVERY,
 };
 
@@ -56,7 +56,7 @@ impl TreePolicy {
         log::debug!(
             "[tree_topic::hotness] id={} mentions={} sources={} recency={:.3} centrality={:.3} \
              queries={} total={:.3}",
-            crate::openhuman::memory::util::redact::redact(entity_id),
+            crate::util::redact::redact(entity_id),
             idx.mention_count_30d,
             idx.distinct_sources,
             recency_weight,
@@ -93,7 +93,7 @@ impl TreePolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::openhuman::memory::store::trees::types::EntityIndexStats;
+    use crate::store::trees::types::EntityIndexStats;
 
     const DAY_MS: i64 = 86_400_000;
     const NOW_MS: i64 = 1_700_000_000_000;

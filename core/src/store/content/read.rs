@@ -1,5 +1,5 @@
 //! Product Config adapters over tinycortex content readers.
-use crate::openhuman::memory::tinycortex::engine_config;
+use crate::tinycortex::engine_config;
 
 pub use tinycortex::memory::store::content::{
     read_chunk_file, read_summary_file, verify_chunk_file, verify_summary_file, ChunkFileContents,

@@ -5,7 +5,7 @@ use super::normalization::{
     extract_viewer, extract_viewer_id,
 };
 use super::LinearProvider;
-use crate::openhuman::memory::sync::composio::providers::ComposioProvider;
+use crate::sync::composio::providers::ComposioProvider;
 use serde_json::json;
 
 // ── extract_issues ───────────────────────────────────────────────────

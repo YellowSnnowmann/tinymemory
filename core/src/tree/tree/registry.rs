@@ -10,8 +10,8 @@ use chrono::Utc;
 use uuid::Uuid;
 
 use crate::openhuman::config::Config;
-use crate::openhuman::memory::store::trees::types::{Tree, TreeKind, TreeStatus};
-use crate::openhuman::memory::tree::tree::store;
+use crate::store::trees::types::{Tree, TreeKind, TreeStatus};
+use crate::tree::tree::store;
 
 /// Generic get-or-create. All three tree flavors (Source, Global, Topic)
 /// share UNIQUE(kind, scope) and the same race-recovery dance — there's
@@ -19,7 +19,7 @@ use crate::openhuman::memory::tree::tree::store;
 ///
 /// Source-specific side-effects (writing the `_source.md` on-disk mirror)
 /// are NOT performed here; callers that need them should go through
-/// [`crate::openhuman::memory::tree_source::registry::get_or_create_source_tree`].
+/// [`crate::tree_source::registry::get_or_create_source_tree`].
 pub fn get_or_create_tree(config: &Config, kind: TreeKind, scope: &str) -> Result<Tree> {
     if let Some(existing) = store::get_tree_by_scope(config, kind, scope)? {
         log::debug!(

@@ -12,8 +12,8 @@ use std::sync::Arc;
 
 use crate::openhuman::config::rpc as config_rpc;
 use crate::openhuman::inference::embeddings::{provider_from_config, EmbeddingProvider};
-use crate::openhuman::memory::store::types::MemoryItemKind;
-use crate::openhuman::memory::store::UnifiedMemory;
+use crate::store::types::MemoryItemKind;
+use crate::store::UnifiedMemory;
 use crate::openhuman::tools::traits::{Tool, ToolResult};
 use tinycortex::memory::WeightProfile;
 
