@@ -127,8 +127,12 @@ impl EmbeddingHost for TestEmbeddingHost {
         Ok(Box::new(tinymemory_api::host::NoopEmbedding::default()))
     }
 
-    fn model_supports_dimensions(&self, _model: &str) -> bool {
-        true
+    fn model_supports_dimensions(&self, model: &str) -> bool {
+        // Mirrors the host's rule rather than answering `true`: the tests that
+        // reach this are about the *ladder's* reaction to a non-reducible
+        // model, so a stub that says everything is reducible would make them
+        // pass without exercising anything.
+        model.starts_with("text-embedding-3-")
     }
 
     fn cloud_embedding_provider(

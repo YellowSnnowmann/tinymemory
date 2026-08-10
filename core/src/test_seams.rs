@@ -5,12 +5,13 @@
 //! installed. These stubs are the smallest thing that makes the *core's*
 //! behaviour observable: a noop embedder, known cloud defaults.
 //!
-//! # What is NOT stubbed, on purpose
+//! # The chat stub answers availability, not routing
 //!
-//! There is no `ChatHost` stub. Which provider answers a role, and what model
-//! id that resolves to, is host routing policy — a stub could only assert
-//! itself. The tests that covered that behaviour moved to the host, where the
-//! real implementation is.
+//! [`TestChatHost`] reports that a summariser *is* available, so the doctor's
+//! aggregation — which is core logic — is reachable. It refuses to build a
+//! model. Which provider answers a role and what model id that resolves to is
+//! host routing policy that a stub could only assert against itself; those
+//! tests moved to the host, where the real implementation is.
 
 use std::sync::{Arc, Once};
 
@@ -49,5 +50,84 @@ pub(crate) fn init() {
     INIT.call_once(|| {
         crate::embedding_host::TestEmbeddingHost::install();
         crate::config_loader::set_config_loader(Arc::new(TestConfigLoader));
+        crate::chat_host::set_chat_host(Arc::new(TestChatHost));
+        crate::composio_host::set_composio_host(Arc::new(TestComposioHost));
     });
 }
+
+/// A [`ChatHost`] that reports an available summariser and nothing else.
+///
+/// The doctor aggregates summariser availability into its report, and that
+/// aggregation is core behaviour worth testing. Actually *building* a model is
+/// host routing, so this refuses — no test in this crate should need one.
+#[derive(Debug)]
+struct TestChatHost;
+
+impl crate::chat_host::ChatHost for TestChatHost {
+    fn provider_for_role(&self, _role: &str, _config: &Config) -> String {
+        "test".to_string()
+    }
+
+    fn create_chat_model_with_model_id(
+        &self,
+        _role: &str,
+        _config: &Config,
+        _temperature: f64,
+    ) -> Result<(Arc<dyn tinyagents::harness::model::ChatModel<()>>, String), String> {
+        Err("TestChatHost does not build models — model routing is host behaviour".to_string())
+    }
+
+    fn usage_from_response(
+        &self,
+        _response: &tinyagents::harness::model::ModelResponse,
+    ) -> Option<tinymemory_api::host::UsageInfo> {
+        None
+    }
+
+    fn summarizer_available(&self, _config: &Config) -> (bool, &'static str) {
+        (true, "test chat host reports a summariser")
+    }
+}
+
+/// A [`ComposioHost`] that behaves like a signed-out user.
+///
+/// Every method reports the no-backend-session state, which is the branch the
+/// core's own tests exercise; a stub that succeeded would need to fake Composio
+/// itself.
+#[derive(Debug)]
+struct TestComposioHost;
+
+#[async_trait]
+impl crate::composio_host::ComposioHost for TestComposioHost {
+    async fn list_connections(
+        &self,
+        _config: &Config,
+    ) -> Result<Vec<crate::composio_host::ComposioConnection>, String> {
+        Err(NO_SESSION.to_string())
+    }
+
+    async fn execute(
+        &self,
+        _config: &Config,
+        _tool: &str,
+        _arguments: Option<serde_json::Value>,
+        _entity_id: &str,
+        _connection_id: Option<&str>,
+    ) -> Result<crate::composio_host::ComposioExecuteResponse, String> {
+        Err(NO_SESSION.to_string())
+    }
+
+    fn api_key(&self, _config: &Config) -> Option<String> {
+        None
+    }
+
+    fn is_available(&self, _config: &Config) -> bool {
+        false
+    }
+}
+
+/// The message [`TestComposioHost`] reports. Matches the shape the real backend
+/// client produces when no session token is stored, which is what the tests
+/// assert on.
+const NO_SESSION: &str = "composio backend mode unavailable: no backend session token. \
+                          Sign in first (auth_store_session).";
