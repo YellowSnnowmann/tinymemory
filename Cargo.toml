@@ -1,15 +1,23 @@
+[workspace]
+members = [".", "api"]
+default-members = [".", "api"]
+# `vendor/` holds engine submodules (tinycortex, tinybus), each of which is its
+# own workspace with its own lockfile. Same exclusion `vendor/tinycortex` uses
+# for its own nested vendor directory.
+exclude = ["vendor"]
+
 [package]
-name = "rust-template"
+name = "tinymemory"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
 rust-version = "1.85"
-license = "GPL-3.0-only"
-description = "A production-ready Rust library template."
-repository = "https://github.com/tinyhumansai/rust-template"
-documentation = "https://docs.rs/rust-template"
+license = "MIT"
+description = "Engine-neutral memory contract, driver registry, and engine adapters"
+repository = "https://github.com/tinyhumansai/tinymemory"
+documentation = "https://docs.rs/tinymemory"
 readme = "README.md"
-keywords = ["template"]
-categories = ["development-tools"]
+keywords = ["memory", "agent", "llm", "retrieval"]
+categories = ["database"]
 # Keep the published package to what a consumer actually needs.
 exclude = [
     ".github/",
@@ -22,17 +30,21 @@ exclude = [
 ]
 
 [dependencies]
-# Derive macros for the crate-wide error type in `src/error/mod.rs`. Every
-# dependency entry should carry a comment like this one saying why it is here.
-thiserror = "2"
+# The contract itself. Re-exported wholesale from `src/lib.rs` so a host takes
+# one dependency rather than two, and so `tinymemory::MemoryProvider` and
+# `tinymemory_api::provider::MemoryProvider` are the same type.
+tinymemory-api = { path = "api", version = "0.1.1" }
 
 [dev-dependencies]
 
 [features]
 default = []
 
-# Lints apply to the whole crate and to every target. CI runs clippy with
-# `-D warnings`, so anything set to "warn" here fails the build in CI.
+# Lints apply to this package only, deliberately. `api/` is contract code moved
+# verbatim from `tinycortex-api` and is held byte-identical; subjecting it to a
+# stricter lint set than it was written under would force cosmetic edits through
+# a surface whose serde representations and enum wire strings are persisted on
+# disk. Adapter crates opt in individually.
 [lints.rust]
 unsafe_code = "forbid"
 missing_docs = "warn"

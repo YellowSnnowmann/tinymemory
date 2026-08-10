@@ -1,4 +1,4 @@
-//! Core public data contracts for the TinyCortex memory engine.
+//! Core public data contracts for the TinyMemory memory contract.
 //!
 //! These types are the stable surface shared across every layer (storage,
 //! ingestion, retrieval, RPC). They are pure data — no storage side effects,

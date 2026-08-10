@@ -28,7 +28,7 @@ use super::types::{MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary, R
 /// The core trait for memory storage and retrieval.
 ///
 /// Any persistence backend (SQLite, Postgres, vector DB, in-memory, …) should
-/// implement this to participate in the TinyCortex memory engine.
+/// implement this to participate in a TinyMemory-backed memory engine.
 #[async_trait]
 pub trait Memory: Send + Sync {
     /// Returns the backend name (e.g. `"sqlite"`, `"vector"`, `"in_memory"`).
