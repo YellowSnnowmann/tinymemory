@@ -21,7 +21,6 @@
 pub mod enrich;
 pub mod ops;
 mod schemas;
-pub mod tools;
 
 pub use enrich::{enrich_goals, spawn_enrich_goals, GOALS_AGENT_ID};
 pub use schemas::{all_memory_goals_controller_schemas, all_memory_goals_registered_controllers};

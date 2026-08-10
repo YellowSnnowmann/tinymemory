@@ -60,7 +60,6 @@ pub mod schemas;
 #[cfg(feature = "memory-git")]
 pub mod source;
 #[cfg(feature = "memory-git")]
-pub mod tools;
 
 #[cfg(not(feature = "memory-git"))]
 mod stub;

@@ -33,7 +33,6 @@ pub mod namespace_store;
 pub mod profile_store;
 pub mod retrieval;
 pub mod safety;
-pub mod tools;
 pub mod traits;
 pub mod trees;
 pub mod types;

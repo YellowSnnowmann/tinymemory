@@ -5,7 +5,6 @@
 //! `memory_tree`) provide persistence and tree traversal; this module composes
 //! them into tools the agent can invoke.
 
-pub mod tools;
 
 // ── Public re-exports ───────────────────────────────────────────────────────
 

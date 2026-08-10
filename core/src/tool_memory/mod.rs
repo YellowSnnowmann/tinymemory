@@ -38,7 +38,6 @@ pub mod prompt;
 mod store;
 #[cfg(test)]
 pub mod test_helpers;
-pub mod tools;
 
 pub use capture::ToolMemoryCaptureHook;
 pub use prompt::{render_tool_memory_rules, ToolMemoryRulesSection, TOOL_MEMORY_HEADING};
