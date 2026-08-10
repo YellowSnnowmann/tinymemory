@@ -398,7 +398,7 @@ mod tests {
     /// — the factory only checks presence.
     fn touch_auth_profile(cfg: &Config) {
         let path = cfg
-            .config_path
+            .config_path()
             .parent()
             .map(|p| p.join("auth-profiles.json"))
             .expect("config_path has a parent");

@@ -235,5 +235,5 @@ fn api_envelope_round_trip_preserves_data_and_meta() {
 #[test]
 fn default_memory_relative_dir_is_memory() {
     // Empty string == the memory root itself (`<workspace>/memory`).
-    assert_eq!(default_memory_relative_dir(), "");
+    assert_eq!(crate::rpc_models::default_memory_relative_dir(), "");
 }

@@ -197,7 +197,7 @@ mod tests {
 
     #[test]
     fn read_only_adapter_never_yields_items() {
-        let source = ChunkStoreItemSource::read_only(TestHostConfig::default());
+        let source = ChunkStoreItemSource::read_only(std::sync::Arc::new(TestHostConfig::default()) as std::sync::Arc<crate::Config>);
         assert!(source.items_for_source("anything").is_empty());
     }
 }

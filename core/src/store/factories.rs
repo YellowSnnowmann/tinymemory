@@ -728,7 +728,9 @@ mod tests {
         for local in [None, Some("nomic-embed-text:latest"), Some("bge-m3")] {
             let mem = MemoryConfig::default();
             let (provider, model, dims) = effective_embedding_settings(&mem, local);
-            let live = embeddings::create_embedding_provider(&provider, &model, dims)
+            let live = crate::embedding_host::require_embedding_host()
+                .expect("embedding host installed")
+                .create_embedding_provider_with_credentials(&provider, &model, dims, "", None)
                 .expect("provider builds for test triple");
             assert_eq!(
                 active_embedding_signature(&mem, local),
