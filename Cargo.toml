@@ -93,6 +93,7 @@ private_intra_doc_links = "warn"
 # of this workspace resolve them to the nested `vendor/` submodules.
 [patch.crates-io]
 tinycortex = { path = "vendor/tinycortex" }
+tinycortex-api = { path = "vendor/tinycortex/api" }
 
 [profile.release]
 # Cross-crate optimization and smaller, faster binaries for release builds.
