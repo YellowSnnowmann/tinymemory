@@ -831,7 +831,7 @@ mod tests {
         let audit_path = workspace.path().join("memory_tree/sync_audit.jsonl");
         std::fs::create_dir_all(&audit_path).expect("create directory at audit file path");
 
-        let mut config = TestHostConfig::default();
+        let mut config = tinymemory_api::host::test_support::TestHostConfig::default();
         config.workspace_dir = workspace.path().to_path_buf();
 
         let error = try_read_audit_log(&config).expect_err("directory read must fail");
