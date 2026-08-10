@@ -42,8 +42,11 @@ pub type SyncTrigger = String;
 /// Field names and types mirror the host's own event payloads exactly, so the
 /// host's [`MemoryEventSink`] impl is a straight structural mapping with no
 /// judgement calls in it.
+///
+/// Deliberately **not** `#[non_exhaustive]`: the host's mapping impl matches
+/// exhaustively on purpose, so adding a variant here is a compile error at the
+/// mapping site rather than an event that silently never reaches the bus.
 #[derive(Debug, Clone)]
-#[non_exhaustive]
 pub enum MemoryEvent {
     /// A sync run moved to a new stage.
     SyncStageChanged {
