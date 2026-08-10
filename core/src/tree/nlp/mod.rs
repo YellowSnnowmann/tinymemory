@@ -134,6 +134,8 @@ mod tests {
     use super::*;
 
     fn cfg_spacy_off() -> TestHostConfig {
+
+        crate::test_seams::init();
         let mut c = TestHostConfig::default();
         c.memory_tree.spacy_enabled = false;
         c

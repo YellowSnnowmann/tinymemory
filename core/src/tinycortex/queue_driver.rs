@@ -911,6 +911,8 @@ mod tests {
     }
 
     fn host_delegates_on_tempdir() -> (tempfile::TempDir, HostQueueDelegates) {
+
+        crate::test_seams::init();
         let tmp = tempfile::tempdir().expect("tempdir");
         let mut config = tinymemory_api::host::test_support::TestHostConfig::default();
         config.workspace_dir = tmp.path().to_path_buf();

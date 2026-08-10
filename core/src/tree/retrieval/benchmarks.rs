@@ -33,6 +33,7 @@ use tinycortex::memory::ingest::canonicalize::chat::{ChatBatch, ChatMessage};
 
 /// Shared test config — disables embedding for deterministic inert behaviour.
 fn bench_config() -> (TempDir, TestHostConfig) {
+    crate::test_seams::init();
     let tmp = TempDir::new().unwrap();
     let mut cfg = TestHostConfig::default();
     cfg.workspace_dir = tmp.path().to_path_buf();

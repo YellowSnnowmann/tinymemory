@@ -312,6 +312,8 @@ mod tests {
     use tinycortex::memory::diff::{Ledger, SnapshotMeta};
 
     fn test_config() -> TestHostConfig {
+
+        crate::test_seams::init();
         let dir = tempfile::tempdir().unwrap();
         let mut config = TestHostConfig::default();
         config.workspace_dir = dir.path().to_path_buf();

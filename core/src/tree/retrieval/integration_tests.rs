@@ -26,6 +26,8 @@ use crate::tree::retrieval::{
 use tinycortex::memory::ingest::canonicalize::chat::{ChatBatch, ChatMessage};
 
 fn test_config() -> (TempDir, TestHostConfig) {
+
+    crate::test_seams::init();
     let tmp = TempDir::new().unwrap();
     let mut cfg = TestHostConfig::default();
     cfg.workspace_dir = tmp.path().to_path_buf();

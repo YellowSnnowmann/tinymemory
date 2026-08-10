@@ -13,6 +13,7 @@ use tempfile::TempDir;
 /// storage surface (upsert, list, kv, graph) which does not require
 /// a working embedder.
 fn make_client() -> (TempDir, MemoryClient) {
+    crate::test_seams::init();
     let tmp = TempDir::new().unwrap();
     let client = MemoryClient::from_workspace_dir(tmp.path().join("workspace"))
         .expect("client should initialise against a fresh workspace");
