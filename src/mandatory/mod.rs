@@ -1,6 +1,6 @@
 //! The three mandatory capability families, composed over the storage trait.
 //!
-//! [`MemoryCore`], [`MemoryRecall`] and [`MemoryPortability`] are supertraits of
+//! [`MemoryCore`](tinymemory_api::provider::MemoryCore), [`MemoryRecall`](tinymemory_api::provider::MemoryRecall) and [`MemoryPortability`](tinymemory_api::provider::MemoryPortability) are supertraits of
 //! [`MemoryProvider`](tinymemory_api::provider::MemoryProvider): a driver
 //! missing any of them cannot be constructed at all. For a backend that already
 //! implements [`Memory`], almost all three are mechanical — and the parts that
@@ -10,9 +10,9 @@
 //! ## The four things that are not a straight delegation
 //!
 //! 1. **`store` maps onto [`Memory::store_with_taint`], never [`Memory::store`].**
-//!    The contract's `store` always carries a [`MemoryTaint`], because
+//!    The contract's `store` always carries a [`MemoryTaint`](tinymemory_api::types::MemoryTaint), because
 //!    provenance is stamped by the host's policy layer *before* the call.
-//!    [`Memory::store`] hard-codes [`MemoryTaint::Internal`], so routing through
+//!    [`Memory::store`] hard-codes [`MemoryTaint::Internal`](tinymemory_api::types::MemoryTaint::Internal), so routing through
 //!    it would launder externally-sourced content into internal-trust content —
 //!    the one failure mode a provenance guard exists to prevent. Note
 //!    [`Memory::store_with_taint`]'s *trait default* also silently drops the
@@ -22,7 +22,7 @@
 //! 2. **`list(None, ..)` spans every namespace.** The contract says an
 //!    all-`None` list returns everything the driver holds. A typical [`Memory`]
 //!    implementation normalises a `None` namespace to
-//!    [`GLOBAL_NAMESPACE`], so a naive delegation returns one namespace and
+//!    [`GLOBAL_NAMESPACE`](tinymemory_api::types::GLOBAL_NAMESPACE), so a naive delegation returns one namespace and
 //!    calls it "everything". [`list_everything`] composes `namespace_summaries`
 //!    with a per-namespace `list` instead.
 //!
@@ -43,7 +43,7 @@ use tinymemory_api::error::MemoryError;
 use tinymemory_api::provider::types::{ExportPage, ExportRecord, ImportOutcome, SourceScope};
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::traits::Memory;
-use tinymemory_api::types::{MemoryCategory, MemoryEntry, MemoryTaint, RecallOpts, GLOBAL_NAMESPACE};
+use tinymemory_api::types::{MemoryCategory, MemoryEntry, RecallOpts, GLOBAL_NAMESPACE};
 
 mod provider;
 
@@ -327,10 +327,10 @@ pub async fn export_page(
 
 /// `MemoryPortability::import_records` over a [`Memory`] backend.
 ///
-/// Each record is stored with its **own** [`MemoryTaint`] via
+/// Each record is stored with its **own** [`MemoryTaint`](tinymemory_api::types::MemoryTaint) via
 /// [`Memory::store_with_taint`]: an importing driver must persist the
 /// provenance it is given and must not re-stamp it. [`Memory::store`] would
-/// stamp [`MemoryTaint::Internal`], quietly upgrading the trust of every
+/// stamp [`MemoryTaint::Internal`](tinymemory_api::types::MemoryTaint::Internal), quietly upgrading the trust of every
 /// externally-sourced record in a restore.
 ///
 /// Per-record rejection is reported in [`ImportOutcome`], never fatal: a
@@ -379,9 +379,3 @@ pub async fn import_records(
     Ok(outcome)
 }
 
-/// Re-exported so a driver delegating [`import_records`] can name the taint type
-/// without a second contract import.
-pub use tinymemory_api::types::MemoryTaint as Taint;
-
-#[allow(unused_imports)]
-use MemoryTaint as _EnsureTaintDocLinkResolves;
