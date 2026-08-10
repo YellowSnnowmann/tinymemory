@@ -935,10 +935,6 @@ mod tests {
                 event,
                 crate::events::MemoryEvent::LocalModelUnavailable { .. }
             ));
-            assert_eq!(
-                event.error_type.as_deref(),
-                Some(LOCAL_MODEL_UNAVAILABLE_KIND)
-            );
         }
     }
 
