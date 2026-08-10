@@ -20,7 +20,7 @@
 //!
 //! ## Taint conversion is the security-relevant one
 //!
-//! [`MemoryTaint`] records whether content came from outside. Mapping it
+//! [`tinymemory_api::types::MemoryTaint`] records whether content came from outside. Mapping it
 //! wrongly — or defaulting it on an unrecognised value — would let
 //! externally-sourced content be treated as internal-trust content. Both sides
 //! fail closed to `ExternalSync` when decoding an unknown persisted string, and

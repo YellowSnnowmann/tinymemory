@@ -15,7 +15,7 @@
 //!   [`Memory`](tinymemory_api::traits::Memory).
 //! - [`provider`] — the one call that turns a TinyCortex backend into a bound
 //!   driver, by pairing [`TinycortexMemory`] with
-//!   [`MemoryTraitProvider`](tinymemory::mandatory::MemoryTraitProvider).
+//!   [`MemoryTraitProvider`].
 //!
 //! ## Scope: the mandatory three, not the whole engine
 //!
