@@ -1,6 +1,6 @@
 [workspace]
-members = [".", "api"]
-default-members = [".", "api"]
+members = [".", "api", "adapters/tinycortex"]
+default-members = [".", "api", "adapters/tinycortex"]
 # `vendor/` holds engine submodules (tinycortex, tinybus), each of which is its
 # own workspace with its own lockfile. Same exclusion `vendor/tinycortex` uses
 # for its own nested vendor directory.
@@ -86,6 +86,13 @@ must_use_candidate = "warn"
 [lints.rustdoc]
 broken_intra_doc_links = "warn"
 private_intra_doc_links = "warn"
+
+# The engine adapters name their engines by version requirement, not by path,
+# so a host that already pins its own engine checkout unifies onto one copy
+# through its own patch table. These entries are what make a *standalone* build
+# of this workspace resolve them to the nested `vendor/` submodules.
+[patch.crates-io]
+tinycortex = { path = "vendor/tinycortex" }
 
 [profile.release]
 # Cross-crate optimization and smaller, faster binaries for release builds.

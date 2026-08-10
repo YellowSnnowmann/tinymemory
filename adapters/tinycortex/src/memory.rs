@@ -106,7 +106,7 @@ impl Memory for TinycortexMemory {
         limit: usize,
         opts: RecallOpts<'_>,
     ) -> anyhow::Result<Vec<MemoryEntry>> {
-        let owned = OwnedRecallOpts::from(&opts);
+        let owned = OwnedRecallOpts::from(opts);
         let engine_owned = recall_opts_to_tinycortex(&owned);
         let hits = self
             .inner
