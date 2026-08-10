@@ -186,9 +186,26 @@ pub async fn apply_composio_source_caps_migration() -> Result<(), String> {
         "[memory_sources:reconcile] applying composio source caps migration"
     );
 
-    let migrated_count = apply_caps_defaults_to_entries(&mut config.memory_sources);
+    // The source registry crosses the host seam as JSON. `MemorySourceEntry` is
+    // defined by the engine crate, which `tinymemory-api` must not depend on
+    // (it would drag SQLite into the dependency-light contract crate), so the
+    // host hands the registry over serialized and takes it back the same way.
+    let mut entries: Vec<MemorySourceEntry> = serde_json::from_value(
+        config
+            .memory_sources_json()
+            .map_err(|e| format!("caps migration: failed to read memory sources: {e:#}"))?,
+    )
+    .map_err(|e| format!("caps migration: failed to decode memory sources: {e:#}"))?;
 
-    config.composio_source_caps_migration_version() = CURRENT_CAPS_MIGRATION_VERSION;
+    let migrated_count = apply_caps_defaults_to_entries(&mut entries);
+
+    config
+        .set_memory_sources_json(
+            serde_json::to_value(&entries)
+                .map_err(|e| format!("caps migration: failed to encode memory sources: {e:#}"))?,
+        )
+        .map_err(|e| format!("caps migration: failed to write memory sources: {e:#}"))?;
+    config.set_composio_source_caps_migration_version(CURRENT_CAPS_MIGRATION_VERSION);
     config
         .save()
         .await
