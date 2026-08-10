@@ -4,30 +4,19 @@ This file is the single source of truth for how humans and coding agents work
 in this repository. `CLAUDE.md` is a symlink to this file, so every agent reads
 the same instructions.
 
-When you generate a new project from this template, keep this file and adapt
-the project-specific parts (crate name, module map, feature flags, commands).
-Delete guidance that no longer applies rather than leaving it to rot.
-
-## Template Checklist
-
-Do this once, in a single commit, before writing feature code:
-
-- [ ] Set `name`, `description`, `repository`, `keywords`, and `categories` in
-      `Cargo.toml`.
-- [ ] Rename the crate references in `README.md`, `src/lib.rs`, `examples/`,
-      and `tests/` (search for `rust_template` and `rust-template`).
-- [ ] Replace the placeholder `greeting` module with the first real feature
-      area, keeping the `mod.rs` / `types.rs` / `test.rs` layout.
-- [ ] Confirm `license` and `LICENSE` match the project's intended license.
-- [ ] Update the security contact in `SECURITY.md`.
-- [ ] Replace `ROADMAP.md` with the real plan, or delete it.
-- [ ] Decide whether the project uses TinyBus. Keep `vendor/tinybus` pinned and
-      wire the required crate/features, or remove the submodule deliberately.
-- [ ] Rewrite the "Project Structure" section below to describe this crate.
+Adapt the project-specific parts as the crate changes, and delete guidance that
+no longer applies rather than leaving it to rot.
 
 ## Project Structure
 
-This is a Rust 2024 library crate rooted at `Cargo.toml`.
+This is a Cargo **workspace**: the `tinymemory` facade at the root, the
+`tinymemory-api` contract in `api/`, and one engine adapter per directory under
+`adapters/`. Engines themselves are submodules under `vendor/`, excluded from
+the workspace.
+
+See [`README.md`](README.md) for the layout and the rules that govern it — in
+particular, why policy stays in the host and why adapters name their engines by
+version requirement rather than by path.
 
 ```text
 src/
