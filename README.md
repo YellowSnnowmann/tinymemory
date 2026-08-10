@@ -1,107 +1,86 @@
-# Rust Template
+# TinyMemory
 
-A production-ready Rust 2024 library template used by TinyHumans AI. It ships
-the module layout, lint configuration, error handling, testing, documentation,
-CI, and release workflow that every new crate in this organization starts from —
-plus one small feature module that demonstrates the conventions end to end.
+The engine-neutral memory layer for TinyHumans agents.
 
-## Use This Template
-
-Choose **Use this template** on GitHub, create a repository, then work through
-the checklist at the top of [`AGENTS.md`](AGENTS.md):
-
-- update the package name, description, repository, keywords, and categories in
-  `Cargo.toml`;
-- update this README and the crate documentation in `src/lib.rs`;
-- replace the placeholder `greeting` module with the first real feature area;
-- update the security contact and repository links in the community files;
-- replace `ROADMAP.md` with the real plan, or delete it;
-- change the license if GPL-3.0-only is not appropriate.
-
-Search for `rust-template` and `rust_template` to find every remaining
-template-specific value.
-
-## What You Get
-
-| Area | What is configured |
-| --- | --- |
-| Layout | Directory modules with `mod.rs` / `types.rs` / `test.rs`, a crate-wide error type, integration tests, and a runnable example |
-| Lints | `unsafe_code` forbidden, `missing_docs`, clippy `all` + `pedantic`, no `unwrap`/`expect`/`panic`/`todo` in library code — all declared in `[lints]` so local and CI runs agree |
-| CI | Format, clippy, build, test (default and all features), rustdoc with `-D warnings`, an MSRV build, and a `cargo-deny` supply-chain check |
-| Release | Manual `workflow_dispatch` bump that validates, versions, tags, and publishes to crates.io |
-| Community | Issue and pull request templates, Dependabot, contributing, security, support, and code of conduct docs |
-| Agents | [`AGENTS.md`](AGENTS.md) as the single source of truth, symlinked as `CLAUDE.md`, plus a `.claude/settings.json` allowlist for the standard commands |
-| Vendor | TinyBus pinned as the `vendor/tinybus` submodule, initialized by CI and release workflows |
+A host that embeds TinyMemory performs every memory operation through one
+contract, and picks which engine answers it by configuration rather than by
+recompiling. [TinyCortex](https://github.com/tinyhumansai/tinycortex) is the
+default embedded engine; a second engine implements the same traits and binds in
+its place without the host learning anything new.
 
 ## Layout
 
 ```text
+api/                    tinymemory-api — the contract. Dependency-light on
+                        purpose: depending on it never drags in SQLite, git2,
+                        reqwest, or an async runtime.
 src/
-├── lib.rs              # crate docs + the entire public re-export surface
-├── error/
-│   ├── mod.rs          # crate-wide `Error` and `Result<T>`
-│   └── test.rs
-└── greeting/           # one directory per feature area
-    ├── mod.rs          # module docs, wiring, smallest useful public API
-    └── test.rs         # module-local unit tests
-tests/
-└── public_api.rs       # integration tests against the public API only
-examples/
-└── basic.rs            # compiled and linted in CI
+├── lib.rs              re-exports the contract wholesale, so a host takes one
+│                       dependency and the types are the same types
+├── registry/           driver admission — which ids exist, what class each
+│                       binds as, and the fail-closed external-driver gate
+└── mandatory/          the three mandatory capability families, composed once
+                        over the `Memory` storage trait
+adapters/
+└── tinycortex/         the TinyCortex engine seen through the contract
 vendor/
-└── tinybus/            # pinned TinyBus git submodule
-docs/
-├── README.md           # documentation index and conventions
-├── specs/              # behavior and architecture specifications
-├── plans/              # implementation-ordered delivery plans
-└── adr/                # immutable architecture decision records
+├── tinycortex/         the engine, pinned as a submodule
+└── tinybus/            pinned TinyBus submodule
 ```
 
-Feature areas use directory modules: implementation and exports live in
-`mod.rs`, substantial types move to `types.rs`, and unit tests live in
-`test.rs`. [`AGENTS.md`](AGENTS.md) holds the complete repository guidance, and
-`CLAUDE.md` is a symlink to it so every coding agent reads one source of truth.
+## The contract
+
+`MemoryProvider` is an object-safe trait with **three mandatory** capability
+families and **ten optional** ones. The mandatory three are supertraits, so a
+driver missing any of them cannot be constructed; the optional ten are reached
+through `as_ingest()` / `as_tree()` / … accessors that default to `None`, so a
+minimal driver implements what it supports and inherits correct absence for
+everything else.
+
+A driver's advertised set and its reachable accessors must agree.
+`audit_provider` checks exactly that, which turns "advertised but not
+implemented" into a detectable, testable mistake rather than a runtime surprise
+on the first call.
+
+Capabilities are asked **once, at bind time, and cached**: a host filters its RPC
+surface and its agent-tool list from the answer, so a set that changed
+afterwards would not be noticed.
+
+## What lives here, and what deliberately does not
+
+| Here | In the host |
+| --- | --- |
+| the contract; capability negotiation; driver admission; the shared mandatory families; per-engine adapters | RPC surface, agent tools, security policy, credentials, schedulers, event bus, config mapping |
+
+**Policy is not here, on purpose.** Tier enforcement, scope predicates, taint
+stamping, redaction, egress checks and audit belong in a decorator the *host*
+owns, on the path every caller takes. A driver that could be swapped for one
+that skips enforcement is the entire reason the policy layer exists.
+
+## Adding an engine
+
+1. Implement `tinymemory_api::traits::Memory` for the backend, **overriding
+   `store_with_taint`** — the trait default silently drops the taint, which
+   would launder externally-sourced content into internal-trust content.
+2. Wrap it: `MemoryTraitProvider::new(backend, "my-engine")`. That yields a
+   driver advertising Core, Recall and Portability, with the four
+   easy-to-get-wrong parts (see `src/mandatory/mod.rs`) already handled.
+3. Implement any optional families over the engine's own entry points, and
+   widen `capabilities()` in lockstep with the accessors.
+4. Reserve the driver id: `DriverRegistry::builtin().with_reserved("my-engine", DriverClass::Embedded)`.
 
 ## Development
 
-Clone with submodules, or initialize them before building:
-
-```sh
+```bash
 git submodule update --init --recursive
-```
-
-```sh
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --all -- --check
-cargo clippy --all-targets --all-features -- -D warnings
-cargo build --all-targets --all-features
-cargo test --all-features
-cargo run --example basic
 ```
 
-Those four checks are exactly what CI runs. Optional extras:
-
-```sh
-cargo doc --no-deps --all-features   # CI builds this with RUSTDOCFLAGS="-D warnings"
-cargo deny check all                 # supply-chain check; see deny.toml
-```
-
-## Releasing
-
-Run the **Release** workflow from the Actions tab with a `patch`, `minor`, or
-`major` bump. It revalidates the crate, bumps the version, commits, tags
-`vX.Y.Z`, and publishes to crates.io. Do not hand-edit the version in
-`Cargo.toml`.
-
-## Documentation
-
-- [`AGENTS.md`](AGENTS.md) — repository guidelines for humans and agents
-- [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to propose a change
-- [`docs/specs/`](docs/specs/README.md) — behavior and architecture specs
-- [`docs/plans/`](docs/plans/README.md) — test-first implementation plans
-- [`docs/adr/`](docs/adr/0001-record-architecture-decisions.md) — architecture
-  decision records
-- [`SECURITY.md`](SECURITY.md) — how to report a vulnerability
-
-## License
-
-GPL-3.0-only. See [LICENSE](LICENSE).
+Engine adapters name their engines by **version requirement, not path**, so a
+host that already pins its own engine checkout unifies onto one copy through its
+own `[patch.crates-io]`. The workspace root patches them to the nested `vendor/`
+submodules for a standalone build. A path dependency in an adapter would defeat
+that and hand a host two copies of one engine with two incompatible `Memory`
+traits.

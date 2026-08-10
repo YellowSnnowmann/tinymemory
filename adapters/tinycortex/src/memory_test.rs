@@ -11,6 +11,7 @@ use tinymemory_api::provider::{audit_provider, MemoryCore, MemoryPortability, Me
 use tinymemory_api::types::{MemoryCategory, MemoryTaint, GLOBAL_NAMESPACE};
 
 use super::*;
+use crate::TINYCORTEX_DRIVER_ID;
 
 fn engine() -> Arc<dyn tinycortex::memory::Memory> {
     Arc::new(InMemoryMemoryStore::new())
@@ -72,7 +73,11 @@ async fn provenance_survives_the_seam_in_both_directions() {
         .await
         .expect("store");
 
-    let entry = driver.get("ns", "synced").await.expect("get").expect("present");
+    let entry = driver
+        .get("ns", "synced")
+        .await
+        .expect("get")
+        .expect("present");
     assert_eq!(
         entry.taint,
         MemoryTaint::ExternalSync,

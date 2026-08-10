@@ -10,7 +10,9 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::traits::Memory;
-use tinymemory_api::types::{MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary, RecallOpts};
+use tinymemory_api::types::{
+    MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary, RecallOpts,
+};
 
 use crate::convert::{
     category_to_tinycortex, entry_to_tinymemory, namespace_summary_to_tinymemory,
