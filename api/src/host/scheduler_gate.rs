@@ -106,3 +106,84 @@ impl Default for SchedulerGateConfig {
         }
     }
 }
+
+// ── Gate decision vocabulary ────────────────────────────────────────────────
+//
+// `Policy` and `PauseReason` moved here from the host's
+// `cron::scheduler_gate::policy` because the extracted sync loops read them on
+// every tick to decide whether to back off. They are inert `Copy` enums with no
+// dependencies; the *decision function* that produces a `Policy` from sampled
+// signals stays in the host, where the signals are.
+
+/// Why the gate is currently paused. Carried by [`Policy::Paused`] so
+/// downstream consumers (UI, logging, observability) can surface a
+/// specific user-facing reason instead of a generic "paused" label.
+///
+/// New variants will land alongside #1073's full power-aware work
+/// (`OnBattery`, `CpuPressure`); `UserDisabled` covers the existing
+/// `SchedulerGateMode::Off` path and `Unknown` is the safe fallback for
+/// callers that don't have specific context yet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PauseReason {
+    /// User explicitly turned the gate off in config.
+    UserDisabled,
+    /// Host on battery and gate's power-aware mode kicked in (#1073).
+    OnBattery,
+    /// CPU pressure exceeded the gate threshold (#1073).
+    CpuPressure,
+    /// No active app session — background AI work is suspended until the
+    /// user signs in again. Trumps every other signal: while signed out
+    /// the host should do *no* LLM-bound work, period. Set by
+    /// `gate::set_signed_out(true)` from the credentials lifecycle and
+    /// from 401-detection sites.
+    SignedOut,
+    /// Pause reason not yet classified — placeholder while #1073 is in flight.
+    Unknown,
+}
+
+impl PauseReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::UserDisabled => "user_disabled",
+            Self::OnBattery => "on_battery",
+            Self::CpuPressure => "cpu_pressure",
+            Self::SignedOut => "signed_out",
+            Self::Unknown => "unknown",
+        }
+    }
+}
+
+/// Background-AI scheduling tier. See module docs in `mod.rs` for semantics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Policy {
+    Aggressive,
+    Normal,
+    Throttled,
+    /// Gate paused. The `reason` is rendered to users in the memory-sync
+    /// status UI (#1136) and recorded in observability.
+    Paused {
+        reason: PauseReason,
+    },
+}
+
+impl Policy {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Aggressive => "aggressive",
+            Self::Normal => "normal",
+            Self::Throttled => "throttled",
+            Self::Paused { .. } => "paused",
+        }
+    }
+
+    /// `Some(reason)` when paused, `None` otherwise. Convenience for
+    /// callers that only need the reason and don't want to pattern-match
+    /// the whole enum (UI badges, log line construction).
+    pub fn pause_reason(self) -> Option<PauseReason> {
+        match self {
+            Self::Paused { reason } => Some(reason),
+            _ => None,
+        }
+    }
+}
+

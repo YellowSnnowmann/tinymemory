@@ -70,7 +70,7 @@ pub use events::{
     LOCAL_MODEL_UNAVAILABLE_KIND, MEMORY_USER_ERROR_SOURCE,
 };
 pub use local_ai::{LocalAiConfig, LocalAiUsage};
-pub use scheduler_gate::{SchedulerGateConfig, SchedulerGateMode};
+pub use scheduler_gate::{PauseReason, Policy, SchedulerGateConfig, SchedulerGateMode};
 pub use storage_memory::{
     LlmBackend, MemoryConfig, MemoryTreeConfig, StorageConfig, StorageProviderConfig,
     StorageProviderSection, DEFAULT_CLOUD_LLM_MODEL,
