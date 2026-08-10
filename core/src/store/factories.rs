@@ -848,6 +848,9 @@ mod tests {
         // leave the latch tripped and silently turn this assertion green.
         reset_health_gate_for_test();
 
+        // The cloud defaults are the host's to state, so the fallback tuple is
+        // only meaningful with an embedding host installed.
+        crate::embedding_host::TestEmbeddingHost::install();
         let mem = MemoryConfig::default();
 
         let (provider, model, dims) =
@@ -857,8 +860,8 @@ mod tests {
             provider, "cloud",
             "opted-in but unreachable Ollama must fall back to cloud"
         );
-        assert_eq!(model, CLOUD_TEST_MODEL);
-        assert_eq!(dims, CLOUD_TEST_DIMENSIONS);
+        assert_eq!(model, crate::embedding_host::TestEmbeddingHost::CLOUD_MODEL);
+        assert_eq!(dims, crate::embedding_host::TestEmbeddingHost::CLOUD_DIMENSIONS);
     }
 
     #[tokio::test]
