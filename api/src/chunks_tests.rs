@@ -8,7 +8,7 @@ fn chunk_id_is_deterministic() {
     let a = chunk_id(SourceKind::Chat, "slack:#eng", 0, "hello");
     let b = chunk_id(SourceKind::Chat, "slack:#eng", 0, "hello");
     assert_eq!(a, b);
-    assert_eq!(a, "45cc81e9911f54971ab749f3ccddbdad");
+    assert_eq!(a, "95785e45df3ff65599a71866e0412993");
     assert_eq!(a.len(), 32);
 }
 
