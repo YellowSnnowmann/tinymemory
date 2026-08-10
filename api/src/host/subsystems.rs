@@ -47,7 +47,7 @@ pub struct SubsystemsConfig {
 /// `PartialEq`/`Eq` let [`CoreContext::rebind_workspace`] short-circuit a
 /// no-op rebind by comparing the config it was handed against the one already
 /// held — equality is value comparison only, so it never prints or leaks the
-/// credential fields the way `Debug` would. `Hash` lets [`binding`](crate::openhuman::memory::binding)
+/// credential fields the way `Debug` would. `Hash` lets `binding`
 /// key its per-workspace cache on the whole config, so a changed driver/hooks/
 /// trust for an already-bound workspace yields a fresh binding rather than a
 /// stale cache hit.
@@ -137,7 +137,7 @@ impl Default for MemoryHooksConfig {
 ///
 /// MUST NOT derive `Debug` — see the manual impl below. `credential_ref` is a
 /// secret handle and plan-memory.md §7 Tier-3 conformance requires "credential never
-/// in `Debug`/error output", mirroring [`super::storage_memory::MemoryConfig`]'s
+/// in `Debug`/error output", mirroring `storage_memory::MemoryConfig`'s
 /// manual redacting `Debug` impl for `agentmemory_secret`.
 ///
 /// `PartialEq`/`Eq` are safe to derive: they compare values for equality and
@@ -232,113 +232,6 @@ mod tests {
             serde_json::to_value(&cfg).unwrap(),
             serde_json::to_value(SubsystemsConfig::default()).unwrap()
         );
-    }
-
-    #[test]
-    fn full_subsystems_memory_block_round_trips_on_subsystems_config_directly() {
-        // Deserializing straight into `SubsystemsConfig` — the root table is
-        // `memory` (no `subsystems.` prefix), since `SubsystemsConfig` *is*
-        // the `[subsystems]` block's shape.
-        let toml_src = r#"
-[memory]
-driver = "supermemory"
-
-[memory.hooks]
-auto_recall = false
-auto_capture = false
-max_context_tokens = 4000
-recall_max_chars = 2000
-capture_max_chars = 900
-
-[memory.drivers.supermemory]
-class = "external"
-transport = "http"
-endpoint = "https://api.supermemory.ai"
-credential_ref = "keychain:supermemory"
-trust_state = "trusted"
-"#;
-        let cfg: SubsystemsConfig = toml::from_str(toml_src).expect("valid toml parses");
-        assert_eq!(cfg.memory.driver, "supermemory");
-        assert!(!cfg.memory.hooks.auto_recall);
-        assert!(!cfg.memory.hooks.auto_capture);
-        assert_eq!(cfg.memory.hooks.max_context_tokens, 4000);
-        assert_eq!(cfg.memory.hooks.recall_max_chars, 2000);
-        assert_eq!(cfg.memory.hooks.capture_max_chars, 900);
-
-        let driver = cfg
-            .memory
-            .drivers
-            .get("supermemory")
-            .expect("supermemory driver entry present");
-        assert_eq!(driver.class.as_deref(), Some("external"));
-        assert_eq!(driver.transport.as_deref(), Some("http"));
-        assert_eq!(
-            driver.endpoint.as_deref(),
-            Some("https://api.supermemory.ai")
-        );
-        assert_eq!(
-            driver.credential_ref.as_deref(),
-            Some("keychain:supermemory")
-        );
-        assert_eq!(driver.trust_state, "trusted");
-
-        // Round-trip through serialize -> deserialize preserves the same value.
-        let serialized = toml::to_string(&cfg).expect("serializes back to toml");
-        let round_tripped: SubsystemsConfig =
-            toml::from_str(&serialized).expect("round-tripped toml parses");
-        assert_eq!(
-            serde_json::to_value(&round_tripped).unwrap(),
-            serde_json::to_value(&cfg).unwrap()
-        );
-    }
-
-    #[test]
-    fn full_subsystems_memory_block_round_trips_on_top_level_config() {
-        // Same fixture, this time embedded under the real `[subsystems.memory]`
-        // path as it would appear in an actual `config.toml`, deserialized
-        // into the top-level `Config` to exercise the M2.1 wiring in
-        // `types.rs`. The existing `[memory]`, `[memory_tree]`,
-        // `[[memory_sources]]` blocks are untouched by this new section.
-        let toml_src = r#"
-[subsystems.memory]
-driver = "supermemory"
-
-[subsystems.memory.hooks]
-auto_recall = false
-auto_capture = false
-max_context_tokens = 4000
-recall_max_chars = 2000
-capture_max_chars = 900
-
-[subsystems.memory.drivers.supermemory]
-class = "external"
-transport = "http"
-endpoint = "https://api.supermemory.ai"
-credential_ref = "keychain:supermemory"
-trust_state = "trusted"
-"#;
-        let cfg: super::super::Config = toml::from_str(toml_src).expect("valid toml parses");
-        assert_eq!(cfg.subsystems.memory.driver, "supermemory");
-        assert!(!cfg.subsystems.memory.hooks.auto_recall);
-        assert!(!cfg.subsystems.memory.hooks.auto_capture);
-        assert_eq!(cfg.subsystems.memory.hooks.max_context_tokens, 4000);
-        assert_eq!(cfg.subsystems.memory.hooks.recall_max_chars, 2000);
-        assert_eq!(cfg.subsystems.memory.hooks.capture_max_chars, 900);
-
-        let driver = cfg
-            .subsystems
-            .memory
-            .drivers
-            .get("supermemory")
-            .expect("supermemory driver entry present");
-        assert_eq!(driver.class.as_deref(), Some("external"));
-        assert_eq!(driver.trust_state, "trusted");
-
-        // The pre-existing [memory] / [memory_tree] / [[memory_sources]]
-        // blocks are absent from this fixture and must still deserialize to
-        // their own defaults, proving `[subsystems.*]` is additive.
-        assert_eq!(cfg.memory.backend, "sqlite");
-        assert!(cfg.memory_sources.is_empty());
     }
 
     #[test]

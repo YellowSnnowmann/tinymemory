@@ -2,7 +2,7 @@
 //!
 //! Each entry in `Config::cloud_providers` represents one configured LLM
 //! backend. Providers are keyed by a user-chosen `slug` (e.g. `"openai"`,
-//! `"my-deepseek"`). The factory in `crate::openhuman::inference::provider::factory`
+//! `"my-deepseek"`). The factory in `inference::provider::factory`
 //! resolves workload-to-provider strings against this list at runtime using
 //! the grammar `"<slug>:<model>"`.
 //!
@@ -269,7 +269,7 @@ pub(crate) fn endpoint_host(endpoint: &str) -> Option<String> {
 /// # Why this exists
 ///
 /// `config.api_url` is overloaded: it is the chat/inference endpoint, but
-/// [`crate::api::config::effective_backend_api_url`] also reuses it as the
+/// `api::config::effective_backend_api_url` also reuses it as the
 /// OpenHuman **backend** base for team/billing/auth calls. A BYO user who
 /// points `api_url` at a provider's canonical base (`https://openrouter.ai/api/v1`)
 /// would otherwise have every backend domain call routed to the inference host
@@ -348,10 +348,10 @@ impl AuthStyle {
 /// Endpoint config for one cloud LLM provider.
 ///
 /// **Note on secrets**: API keys are NOT stored on this struct. They live in
-/// `auth-profiles.json` via [`crate::openhuman::security::credentials::AuthService`],
+/// `auth-profiles.json` via `security::credentials::AuthService`,
 /// keyed by `provider:<slug>` (falling back to bare `<slug>` for legacy
 /// entries). The factory looks up the token at call time via
-/// [`crate::openhuman::inference::provider::factory::auth_key_for_slug`].
+/// `inference::provider::factory::auth_key_for_slug`.
 ///
 /// ## Back-compat
 ///
@@ -413,7 +413,7 @@ impl Default for CloudProviderCreds {
 /// never reaches `make_cloud_provider_by_slug`. When no `cloud_providers`
 /// row exists (config drift, upgrade from a build that only persisted
 /// `config.local_ai.base_url`, flush-vs-probe race),
-/// [`crate::openhuman::inference::provider::ops::list_configured_models`]
+/// `inference::provider::ops::list_configured_models`
 /// falls back to a synthetic entry via `synthesize_local_runtime_entry`
 /// (Sentry TAURI-RUST-28Z fix). The same fallback applies to `lmstudio`.
 pub fn is_slug_reserved(s: &str) -> bool {

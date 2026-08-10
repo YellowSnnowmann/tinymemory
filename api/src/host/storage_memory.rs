@@ -87,7 +87,7 @@ fn default_embedding_provider() -> String {
     // fresh install works without requiring a local Ollama daemon. Users
     // who want fully-local embeddings can flip this to "ollama" in
     // `config.toml` or enable `local_ai.usage.embeddings = true`, which is
-    // wired into the memory factory via [`LocalAiConfig::use_local_for_embeddings`].
+    // wired into the memory factory via `LocalAiConfig::use_local_for_embeddings`.
     "cloud".into()
 }
 fn default_embedding_model() -> String {
@@ -220,7 +220,7 @@ fn default_cloud_llm_model() -> Option<String> {
 /// - `true` (default): ingest/seal bail with a clear config error.
 /// - `false`: fall back to the inert zero-vector embedder and warn.
 ///
-/// Env overrides apply in [`super::load`]:
+/// Env overrides apply in `openhuman::config::schema::load`:
 /// - `OPENHUMAN_MEMORY_EMBED_ENDPOINT`
 /// - `OPENHUMAN_MEMORY_EMBED_MODEL`
 /// - `OPENHUMAN_MEMORY_EMBED_TIMEOUT_MS`
@@ -300,7 +300,7 @@ pub struct MemoryTreeConfig {
 
     /// Phase MD-content: root directory where chunk `.md` files are stored.
     ///
-    /// Resolved at runtime via [`super::types::Config::memory_tree_content_root`]:
+    /// Resolved at runtime via `MemoryHostConfig::memory_tree_content_root`:
     /// - `Some(path)` → use that path verbatim.
     /// - `None` → default `<workspace_dir>/memory_tree/content/`.
     ///
@@ -323,7 +323,7 @@ pub struct MemoryTreeConfig {
     /// **Deprecated / inert.** Formerly the model identifier for managed
     /// (`llm_backend = "cloud"`) summarization. The managed summarization tier is
     /// now fixed at `summarization-v1`
-    /// ([`crate::openhuman::inference::provider::factory::summarization_tier_model`])
+    /// (`inference::provider::factory::summarization_tier_model`)
     /// and this field is no longer consumed — the hosted backend serves exactly
     /// one tier for this workload. Kept for config back-compat (existing
     /// `config.toml` / `OPENHUMAN_MEMORY_TREE_CLOUD_LLM_MODEL` still parse without

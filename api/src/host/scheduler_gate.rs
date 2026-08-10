@@ -1,6 +1,6 @@
 //! Scheduler-gate configuration — controls when background AI work runs.
 //!
-//! Consumed by [`crate::openhuman::cron::scheduler_gate`].
+//! Consumed by `openhuman::cron::scheduler_gate`.
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
