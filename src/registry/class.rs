@@ -15,15 +15,21 @@ use std::fmt;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 
 /// Error returned when a driver class is not recognized.
-#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DriverClassParseError {
     /// The raw class value is unsupported.
-    #[error("unknown driver class")]
     Unknown { raw: String },
 }
+
+impl fmt::Display for DriverClassParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("unknown driver class")
+    }
+}
+
+impl std::error::Error for DriverClassParseError {}
 
 /// How a bound driver is reached.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

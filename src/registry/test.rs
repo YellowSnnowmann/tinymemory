@@ -242,7 +242,7 @@ fn driver_class_round_trips_through_its_config_form() {
     }
     assert_eq!(
         DriverClass::parse("nope").expect_err("rejected"),
-        "unknown driver class: nope"
+        DriverClassParseError::Unknown { raw: "nope".into() }
     );
 }
 
