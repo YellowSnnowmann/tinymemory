@@ -197,7 +197,9 @@ impl std::fmt::Debug for BusEmbeddingProvider {
             .field("name", &self.name)
             .field("model_id", &self.model_id)
             .field("dimensions", &self.dimensions)
-            .finish()
+            // Non-exhaustive on purpose: `connection` is deliberately omitted, so
+            // `Debug` output can never become a place a transport detail leaks.
+            .finish_non_exhaustive()
     }
 }
 
