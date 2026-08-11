@@ -261,14 +261,14 @@ pub struct MemoryTreeConfig {
     /// Ollama endpoint for the LLM entity extractor
     /// (`memory::tree::score::extract::llm::LlmEntityExtractor`).
     /// Defaults to `Some("http://localhost:11434")` — the standard
-    /// Ollama listener — see [`default_memory_tree_llm_endpoint`].
+    /// Ollama listener — see `default_memory_tree_llm_endpoint`.
     /// Soft failures in the LLM path fall back to regex-only for
     /// that chunk.
     #[serde(default = "default_memory_tree_llm_endpoint")]
     pub llm_extractor_endpoint: Option<String>,
 
     /// Model name for the entity extractor. Defaults to `gemma3:4b`
-    /// (see [`default_memory_tree_llm_model`] for the rationale);
+    /// (see `default_memory_tree_llm_model` for the rationale);
     /// override to a smaller model on resource-constrained hosts.
     #[serde(default = "default_memory_tree_llm_model")]
     pub llm_extractor_model: Option<String>,
