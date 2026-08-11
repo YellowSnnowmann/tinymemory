@@ -1,0 +1,67 @@
+[package]
+name = "tinymemory-module"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.96"
+license = "MIT"
+description = "Trusted TinyBus module adapter for TinyMemory."
+repository = "https://github.com/tinyhumansai/tinymemory"
+publish = false
+
+[lib]
+# `rlib` as well as `cdylib` so the service can be unit-tested in-process
+# without going through the loader; the `cdylib` is what a release ships.
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+# The contract. Every type crossing the bus is one of these, and all of them
+# already carry serde impls — which is why this module needs no `wire` module of
+# its own, unlike the tinywallet one.
+tinymemory-api = { path = "../../api", version = "0.1.1" }
+# `MemoryTraitProvider`, which pairs a `Memory` backend with a driver id.
+tinymemory = { path = "../..", version = "0.1.0" }
+# The engine and the seam that adapts it. Carrying these is the entire point of
+# the module: they are 14.7s of the host's critical build path, and a host that
+# loads this binary compiles neither.
+tinymemory-core = { path = "../../core", version = "0.1.0" }
+tinymemory-tinycortex = { path = "../../adapters/tinycortex", version = "0.1.0" }
+tinycortex = { version = "0.1" }
+# TinyBus provides the typed service interface and the dynamic module host ABI.
+tinybus = { version = "0.1.0", path = "../../vendor/tinybus/crates/tinybus", default-features = false, features = [
+    "macros",
+    "modules",
+] }
+# The module-side SDK owns its runtime and exports the stable C entrypoints.
+tinybus-module = { version = "0.1.0", path = "../../vendor/tinybus/crates/tinybus-module" }
+# `EmbeddingProvider::embed` is an `async fn` on an object-safe trait.
+async-trait = "0.1"
+# `EmbeddingProvider::embed` is anyhow-typed.
+anyhow = "1"
+# Diagnostics. Never carries a namespace key or entry content — see `service`.
+log = "0.4"
+# Module configuration is JSON supplied by the host at load time.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The interface macro requires every method to be `async fn`, so a runtime has
+# to exist.
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+tempfile = "3"
+
+[lints.rust]
+unsafe_code = "deny"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+doc_markdown = "warn"
