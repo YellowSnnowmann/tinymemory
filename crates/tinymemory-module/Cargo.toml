@@ -60,6 +60,22 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 tempfile = "3"
 
+# Its own table, because a patch table only applies from the workspace root being
+# built and this crate is now its own root — the parent workspace's identical
+# entries do not reach here. `tinycortex` and `tinyagents` are named by version
+# requirement upstream and neither is published, so without these the resolver
+# goes to crates.io and fails.
+#
+# The paths reach up out of this crate into the parent checkout's `vendor/`,
+# which is unusual but correct: these are the same submodules the parent builds
+# against, and pointing somewhere else would compile the module against a
+# different engine than the workspace it ships from.
+[patch.crates-io]
+tinycortex = { path = "../../vendor/tinycortex" }
+tinycortex-api = { path = "../../vendor/tinycortex/api" }
+tinyagents = { path = "../../vendor/tinyagents" }
+tempfile = "3"
+
 # Mirrors the root package's set. `unsafe_code = "forbid"` holds even though
 # `module_export!` emits `unsafe extern "C"` symbols: the macro's expansion
 # carries its own hygiene context, so the C ABI surface does not trip the lint
