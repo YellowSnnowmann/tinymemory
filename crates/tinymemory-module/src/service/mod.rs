@@ -70,7 +70,10 @@ use tinymemory_api::capabilities::Capabilities;
 use tinymemory_api::error::MemoryError;
 use tinymemory_api::health::MemoryHealth;
 use tinymemory_api::provider::types::{ExportPage, ExportRecord, ImportOutcome, SourceScope};
-use tinymemory_api::provider::{MemoryCore, MemoryPortability, MemoryProvider, MemoryRecall};
+// `MemoryCore`, `MemoryRecall` and `MemoryPortability` are deliberately not
+// imported: they are supertraits of `MemoryProvider`, so their methods are
+// already callable on the trait object.
+use tinymemory_api::provider::MemoryProvider;
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::types::{MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary};
 use tinymemory_api::wire;
