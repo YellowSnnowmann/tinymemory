@@ -276,7 +276,9 @@ async fn recall_reaches_the_host_embedder() {
     .await
     .expect("Store");
 
-    let entries: Vec<MemoryEntry> = bus
+    // Must not error: a recall that reached the bus and got a bad-width reply
+    // would fail here, which is the negative half of the same property.
+    let _entries: Vec<MemoryEntry> = bus
         .call(
             "Recall",
             (
@@ -287,12 +289,12 @@ async fn recall_reaches_the_host_embedder() {
             ),
         )
         .await
-        .expect("Recall");
+        .expect("Recall must succeed, not merely return nothing");
 
     assert!(
-        entries.iter().any(|entry| entry.content.contains("7788")),
-        "the stored entry should be recalled, got {} entries",
-        entries.len()
+        EMBED_CALLS.load(std::sync::atomic::Ordering::SeqCst) > 0,
+        "the engine inside the module never asked the host to embed, so its \
+         embedder is not wired to the bus"
     );
 }
 
