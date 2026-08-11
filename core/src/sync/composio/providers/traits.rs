@@ -44,7 +44,7 @@ pub trait ComposioProvider: Send + Sync {
 
     /// Fetch a normalized user profile for the current connection in
     /// `ctx`. Most providers implement this by calling a provider
-    /// "get profile / about me" action via [`super::super::ops::composio_execute`].
+    /// "get profile / about me" action via `super::super::ops::composio_execute`.
     async fn fetch_user_profile(
         &self,
         ctx: &ProviderContext,

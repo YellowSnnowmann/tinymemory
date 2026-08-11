@@ -9,7 +9,7 @@
 //! with lower person/org recall.
 //!
 //! Output is intentionally `Vec<CanonicalEntity>`: it reuses
-//! [`score::resolver::canonicalise`] so query entity ids land in the exact
+//! `score::resolver::canonicalise` so query entity ids land in the exact
 //! same `<kind>:<value>` namespace as the indexed chunk entities. No id
 //! mismatch, no bespoke join.
 

@@ -7,7 +7,7 @@
 //! - Agent tools, to surface a kind filter to LLM callers.
 //!
 //! Adding a new storage kind = adding a variant here, an impl of the
-//! [`VectorEmbeddable`] / [`ObsidianRepresentable`] traits
+//! `VectorEmbeddable` / `ObsidianRepresentable` traits
 //! ([`crate::store::traits`]), and a delegation in
 //! [`crate::store::retrieval`].
 

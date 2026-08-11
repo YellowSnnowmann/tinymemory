@@ -128,7 +128,7 @@ impl UnifiedMemory {
     ///
     /// This is the entry point every writer should use. It runs the gate
     /// documented at the module level and then delegates to
-    /// [`Self::upsert_document_presanitized`], which does the persistence
+    /// `Self::upsert_document_presanitized`, which does the persistence
     /// (markdown sidecar, `memory_docs` upsert, chunking, embedding).
     ///
     /// # Errors

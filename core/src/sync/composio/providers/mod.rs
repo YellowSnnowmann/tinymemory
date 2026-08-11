@@ -6,7 +6,7 @@
 //!   * Fetch a normalized **user profile** for a connected account.
 //!   * Run an **initial / periodic sync** that pulls fresh data from the
 //!     upstream service via the backend-proxied
-//!     [`ComposioClient`](super::client::ComposioClient).
+//!     `ComposioClient`.
 //!   * React to **trigger webhooks** that arrive over the
 //!     `composio:trigger` Socket.IO bridge.
 //!   * React to **OAuth handoff completion** so the very first sync can
@@ -21,7 +21,7 @@
 //!
 //! The [`registry`] module owns a process-global `HashMap<toolkit_slug,
 //! Arc<dyn ComposioProvider>>`. The composio event bus subscriber
-//! ([`super::bus::ComposioTriggerSubscriber`]) and the periodic sync
+//! (`super::bus::ComposioTriggerSubscriber`) and the periodic sync
 //! task both look up providers by toolkit slug and call into them.
 //!
 //! ## Why a trait, not a giant `match`

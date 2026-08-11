@@ -10,7 +10,7 @@
 //!
 //! **This is not a guard win.** The profile/facet tables have no capability
 //! family in the `tinycortex_api` contract, so reads and writes through this
-//! type still run beneath [`crate::guard::MemoryGuard`]'s
+//! type still run beneath `crate::guard::MemoryGuard`'s
 //! seven policy steps: no tier check, no source-scope predicate, no taint
 //! stamping, no redaction, no budget, no audit event. What changed is the shape
 //! of the door — raw SQLite reachable from three domains became one typed store

@@ -1,7 +1,7 @@
 //! Scoring: recency × frequency × reciprocity × depth.
 //!
 //! Each component is deterministic given the same interaction list + `now`
-//! timestamp, and each is clamped to [0,1]. The composite is the product;
+//! timestamp, and each is clamped to `[0,1]`. The composite is the product;
 //! clamping the product is redundant but kept for defense-in-depth.
 //!
 //! Weights (half-life / caps) are module constants so tests are stable.

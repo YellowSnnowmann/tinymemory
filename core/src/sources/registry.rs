@@ -43,18 +43,18 @@ pub async fn get_source(id: &str) -> Result<Option<MemorySourceEntry>, String> {
 /// [`get_source`] against an **explicit** config rather than the process-global
 /// one.
 ///
-/// [`registry`] resolves its config path through
+/// `registry` resolves its config path through
 /// `config_rpc::load_config_with_timeout`, i.e. from the process environment.
 /// That is right for RPC handlers, which serve the active user, and wrong for
 /// the embedded memory driver
-/// ([`crate::driver::embedded`]), which is bound to one
+/// (`crate::driver::embedded`), which is bound to one
 /// workspace and holds a `Config` re-anchored to it. Reading the global path
 /// there would let a driver bound to workspace B answer with workspace A's
 /// sources — the cross-workspace leak the workspace-keyed binding map exists to
 /// prevent.
 ///
 /// Synchronous because the registry read itself is; only the config lookup in
-/// [`registry`] was ever async.
+/// `registry` was ever async.
 pub fn get_source_in(
     config: &crate::Config,
     id: &str,

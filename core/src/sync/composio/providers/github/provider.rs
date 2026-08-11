@@ -113,10 +113,10 @@ impl ComposioProvider for GitHubProvider {
     }
 
     /// Incremental sync via the generic
-    /// [`orchestrator`](crate::sync::composio::providers::orchestrator):
+    /// `orchestrator`:
     /// login resolution, pagination, dedup, the `max_items` cap, and cursor
     /// handling live in `run_sync`; the GitHub-specific primitives — including
-    /// the **server-side** `sync_depth_days` window — live in [`super::source`].
+    /// the **server-side** `sync_depth_days` window — live in `super::source`.
     async fn fetch_tasks(
         &self,
         ctx: &ProviderContext,

@@ -2,20 +2,20 @@
 //!
 //! Resolution order:
 //! 1. **Explicit override** — `memory_tree.embedding_endpoint` +
-//!    `memory_tree.embedding_model` both Some → [`OllamaEmbedder`] with
+//!    `memory_tree.embedding_model` both Some → `OllamaEmbedder` with
 //!    those exact values. For power users / E2E test rigs that want to
 //!    point at a non-default Ollama endpoint.
 //! 2. **Local-AI usage flag** — `config.local_ai().use_local_for_embeddings()`
-//!    (i.e. `runtime_enabled && usage.embeddings`) → [`OllamaEmbedder`]
-//!    against [`ollama_base_url`] with the user's chosen
+//!    (i.e. `runtime_enabled && usage.embeddings`) → `OllamaEmbedder`
+//!    against `ollama_base_url` with the user's chosen
 //!    `config.local_ai().embedding_model_id`. This is the path driven by
 //!    the "Memory embeddings" checkbox in Local AI Settings.
-//! 3. **Default** — [`CloudEmbedder`] (OpenHuman backend / Voyage,
+//! 3. **Default** — `CloudEmbedder` (OpenHuman backend / Voyage,
 //!    1024 dims). Auth failures surface at the first `embed()` call so
 //!    ingest's existing retry-with-backoff logic handles them.
 //!
 //! NOTE on dimensions: the memory tree on-disk format is hard-coded at
-//! [`EMBEDDING_DIM`](super::EMBEDDING_DIM) (1024). If the user picks a
+//! [`EMBEDDING_DIM`] (1024). If the user picks a
 //! local embedding model whose output is a different dimensionality,
 //! the trait's post-call validator rejects each embed with a clear
 //! `expected N dims, got M` error. Switching the local model picker in
@@ -302,7 +302,7 @@ fn redact_ladder_error(config: &Config, err: &anyhow::Error) -> String {
 }
 
 /// Slug naming the embedder ingestion will **actually** use, walking the same
-/// [`resolve_embedder_choice`] ladder the read and write factories walk.
+/// `resolve_embedder_choice` ladder the read and write factories walk.
 ///
 /// This exists because `config.memory().embedding_provider` is *not* authoritative
 /// for how embeddings are funded, and reading it as if it were produces a false

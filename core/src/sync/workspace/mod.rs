@@ -14,7 +14,7 @@
 //! Mostly scaffold. Today folder ingestion lives in
 //! `memory_sources/readers/folder.rs`, harness capture in
 //! `agent_experience/`, and dictation in `dictation_hotkeys/`. Each will
-//! land here as a [`SyncPipeline`] impl in a follow-up.
+//! land here as a `SyncPipeline` impl in a follow-up.
 //!
 //! [`periodic`] is live: the background cadence driver that keeps
 //! workspace-kind memory sources (GitHub repos, folders, RSS, web pages)

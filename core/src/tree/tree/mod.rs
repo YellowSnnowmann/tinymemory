@@ -5,8 +5,8 @@
 //! factory.
 //!
 //! Flavor-specific policy (global digest, topic hotness, source file
-//! mirror) lives in [`crate::tree_global`],
-//! [`crate::tree_topic`], and
+//! mirror) lives in `crate::tree_global`,
+//! `crate::tree_topic`, and
 //! [`crate::tree_source`] respectively.
 //!
 //! Persistence (store + types) has moved to `memory_store::trees`.

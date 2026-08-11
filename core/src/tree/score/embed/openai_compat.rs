@@ -14,7 +14,7 @@
 //! ## How
 //!
 //! It wraps the unified [`EmbeddingProvider`] built by
-//! [`create_embedding_provider_with_credentials`] (the same construction the
+//! `create_embedding_provider_with_credentials` (the same construction the
 //! Settings "Test connection" + main embed RPC use, so there is one source of
 //! truth for OpenAI/custom embeddings) and adapts it to the memory-tree
 //! [`Embedder`] trait. Dimensions are pinned to [`EMBEDDING_DIM`] (1024) — the

@@ -10,12 +10,12 @@
 //! appear in `composio_list_tools`, so extras are harmless.
 //!
 //! Data is split into category submodules:
-//! - [`catalogs_messaging`] — Slack, Discord, Telegram, WhatsApp, MS Teams
-//! - [`catalogs_google`]    — GoogleCalendar, GoogleDrive, GoogleDocs, GoogleSheets
-//! - [`catalogs_microsoft`] — OneDrive, Excel
-//! - [`catalogs_productivity`] — Outlook, Linear, Jira, Trello, Asana, Dropbox, Todoist
-//! - [`catalogs_social_media`] — Twitter, Spotify, YouTube
-//! - [`catalogs_business`]  — Shopify, Stripe, HubSpot, Salesforce, Airtable, Figma
+//! - `catalogs_messaging` — Slack, Discord, Telegram, WhatsApp, MS Teams
+//! - `catalogs_google`    — GoogleCalendar, GoogleDrive, GoogleDocs, GoogleSheets
+//! - `catalogs_microsoft` — OneDrive, Excel
+//! - `catalogs_productivity` — Outlook, Linear, Jira, Trello, Asana, Dropbox, Todoist
+//! - `catalogs_social_media` — Twitter, Spotify, YouTube
+//! - `catalogs_business`  — Shopify, Stripe, HubSpot, Salesforce, Airtable, Figma
 
 pub use super::catalogs_business::{
     AIRTABLE_CURATED, FIGMA_CURATED, HUBSPOT_CURATED, SALESFORCE_CURATED, SHOPIFY_CURATED,

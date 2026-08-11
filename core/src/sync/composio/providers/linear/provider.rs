@@ -108,10 +108,10 @@ impl ComposioProvider for LinearProvider {
     }
 
     /// Incremental sync via the generic
-    /// [`orchestrator`](crate::sync::composio::providers::orchestrator):
+    /// `orchestrator`:
     /// viewer resolution, pagination, dedup, the `max_items` cap, the
     /// `sync_depth_days` window, and cursor handling live in `run_sync`; the
-    /// Linear-specific primitives live in [`super::source`].
+    /// Linear-specific primitives live in `super::source`.
     async fn fetch_tasks(
         &self,
         ctx: &ProviderContext,

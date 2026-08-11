@@ -127,10 +127,10 @@ impl ComposioProvider for NotionProvider {
     }
 
     /// Incremental sync. Notion was the first provider migrated to the generic
-    /// [`orchestrator`](crate::sync::composio::providers::orchestrator):
+    /// `orchestrator`:
     /// the per-item loop, dedup, `max_items` cap, `sync_depth_days` window, and
     /// cursor handling all live in `run_sync`; the Notion-specific primitives
-    /// (page fetch, dedup key, body fetch, ingest) live in [`super::source`].
+    /// (page fetch, dedup key, body fetch, ingest) live in `super::source`.
     async fn fetch_tasks(
         &self,
         ctx: &ProviderContext,

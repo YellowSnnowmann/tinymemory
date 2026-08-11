@@ -82,7 +82,7 @@ impl MemoryClient {
     ///
     /// **Not guarded.** The profile tables have no capability family in the
     /// thirteen-family `tinycortex_api` contract, so these reads and writes
-    /// still run beneath [`crate::guard::MemoryGuard`]'s
+    /// still run beneath `crate::guard::MemoryGuard`'s
     /// seven steps. What this buys is confinement, not policy: the SQL is in
     /// the memory family and the compiler keeps it there.
     pub fn profile_store(&self) -> crate::store::ProfileStore {
@@ -345,7 +345,7 @@ impl MemoryClient {
     ///
     /// `pub(crate)` on the same reasoning as [`Self::memory_handle`]: the only
     /// in-crate consumer is the embedded memory driver
-    /// ([`crate::driver::embedded`]), which needs a read-one
+    /// (`crate::driver::embedded`), which needs a read-one
     /// path that [`Self::list_documents`] cannot provide — the latter's SELECT
     /// carries no `content` column.
     pub async fn get_document(

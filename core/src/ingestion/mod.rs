@@ -50,10 +50,10 @@ impl UnifiedMemory {
     }
 
     /// Extract entities/relations and write them to the graph for a document
-    /// that has already been stored via [`upsert_document`].
+    /// that has already been stored via `upsert_document`.
     ///
     /// This avoids the redundant second upsert that would happen if the
-    /// background ingestion queue called [`ingest_document`] on an already-
+    /// background ingestion queue called `ingest_document` on an already-
     /// persisted document.
     pub async fn extract_graph(
         &self,

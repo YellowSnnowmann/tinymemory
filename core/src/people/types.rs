@@ -96,7 +96,7 @@ pub struct Interaction {
     pub length: u32,
 }
 
-/// Per-component breakdown of a person-score in [0,1]. Exposed so that
+/// Per-component breakdown of a person-score in `[0,1]`. Exposed so that
 /// callers (UI, nudge engine) can explain ranking.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ScoreComponents {
@@ -105,7 +105,7 @@ pub struct ScoreComponents {
     pub reciprocity: f32,
     pub depth: f32,
     /// Final composite score. `recency * frequency * reciprocity * depth`,
-    /// clamped to [0,1].
+    /// clamped to `[0,1]`.
     pub score: f32,
 }
 

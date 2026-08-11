@@ -5,7 +5,7 @@
 //! chunks / tree / retrieval / queue / ingest / score + the long tail). This
 //! module is the **adapter seam**, mirroring `src/openhuman/agent/tinyagents/`: it
 //! implements the crate's engine traits over OpenHuman services and derives the
-//! engine's [`tinycortex::memory::MemoryConfig`] from the host [`Config`]. Nothing here contains
+//! engine's [`tinycortex::memory::MemoryConfig`] from the host `Config`. Nothing here contains
 //! engine logic — that lives in the crate.
 //!
 //! ## Ownership boundary (the seam contract)

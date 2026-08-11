@@ -4,7 +4,7 @@
 //! [issue #1400](https://github.com/tinyhumansai/openhuman/issues/1400):
 //! a first-class storage and retrieval surface for **actionable**
 //! tool-specific guidance, distinct from the
-//! [`tool_effectiveness`](the host's `agent::learning::tool_tracker`)
+//! `tool_effectiveness`
 //! statistics namespace and from the generic `global` / `skill-*`
 //! namespaces.
 //!
@@ -22,16 +22,16 @@
 //!   [`ToolMemoryPriority`], and [`ToolMemorySource`].
 //! - [`tinycortex::memory::tool_memory::store`] owns [`ToolMemoryStore`], the
 //!   put/list/delete/prompt API built on top of an `Arc<dyn Memory>`.
-//! - [`capture`] — [`ToolMemoryCaptureHook`], the post-turn
-//!   [`PostTurnHook`] that records user edicts and repeated tool
+//! - `capture` — `ToolMemoryCaptureHook`, the post-turn
+//!   `PostTurnHook` that records user edicts and repeated tool
 //!   failures.
-//! - [`prompt`]  — [`ToolMemoryRulesSection`], the prompt section that
+//! - `prompt`  — `ToolMemoryRulesSection`, the prompt section that
 //!   pins Critical / High rules into the system prompt so they survive
 //!   mid-session compression.
-//! - [`tools`]   — agent-facing read/write tools:
-//!   [`tools::MemoryToolsListTool`], [`tools::MemoryToolsPutTool`].
+//! - `tools`   — agent-facing read/write tools:
+//!   `tools::MemoryToolsListTool`, `tools::MemoryToolsPutTool`.
 //!
-//! [`PostTurnHook`]: the host's `agent::hooks::PostTurnHook`
+//! `PostTurnHook`: the host's `agent::hooks::PostTurnHook`
 
 mod store;
 #[cfg(any(test, feature = "test-support"))]

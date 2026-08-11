@@ -238,7 +238,7 @@ pub(crate) async fn probe_ollama_reachable(base_url: &str) -> bool {
 /// The user-facing default is `"cloud"` (OpenHuman backend, Voyage-backed) so
 /// fresh installs work without a local Ollama daemon. When the user has
 /// explicitly opted into local AI for embeddings —
-/// [`LocalAiConfig::use_local_for_embeddings`] — we route through the local
+/// `LocalAiConfig::use_local_for_embeddings` — we route through the local
 /// Ollama embedder regardless of what `memory.embedding_provider` says, since
 /// that toggle is a stronger statement of intent than the per-section default.
 ///
@@ -366,7 +366,7 @@ pub fn create_memory(
 ///
 /// `embedding_api_key` is the user's stored credential for the selected BYO
 /// embedding provider, resolved by the caller via
-/// the host's [`EmbeddingHost::resolve_api_key`] (empty string when none is
+/// the host's `EmbeddingHost::resolve_api_key` (empty string when none is
 /// configured). It is threaded into the keyed providers (cohere/openai/voyage/
 /// custom) so they authenticate instead of sending an empty bearer; cloud /
 /// managed / ollama / none ignore it.

@@ -9,11 +9,11 @@
 //! ## Direct mode (`[composio-direct]`)
 //!
 //! As of #1710 Wave 1, the scheduler is **mode-aware**: it resolves the
-//! client via [`create_composio_client`] each tick so a direct-mode
+//! client via `create_composio_client` each tick so a direct-mode
 //! user's personal Composio v3 tenant gets walked (via
 //! `direct_list_connections`) instead of returning an empty list from
 //! the tinyhumans tenant. The per-connection sync calls go through
-//! [`ProviderContext::execute`] which is itself mode-aware.
+//! `ProviderContext::execute` which is itself mode-aware.
 //!
 //! Real-time trigger webhooks (`composio:trigger` socket.io events
 //! fanned out from `wss://api.tinyhumans.ai`) still do not reach the
@@ -37,8 +37,8 @@
 //!     the scheduler from redundantly re-firing. The map is rebuilt on
 //!     restart; to keep a user-configured cadence (e.g. "Sync every 24h",
 //!     #3302) from re-firing on every cold start, the due-check falls back
-//!     to the **persisted** sync-audit timestamp ([`read_audit_log`]) when
-//!     the in-memory record is absent — see [`persisted_since_last_sync`].
+//!     to the **persisted** sync-audit timestamp (`read_audit_log`) when
+//!     the in-memory record is absent — see `persisted_since_last_sync`.
 //!   * Errors are logged and swallowed; the scheduler must never panic
 //!     out of its loop or periodic sync stops silently for the rest of
 //!     the process lifetime.

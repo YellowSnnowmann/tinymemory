@@ -68,7 +68,7 @@ pub trait Embedder: Send + Sync {
     /// call per text: correct for any provider, but with no batching win.
     /// Providers whose backend accepts many texts in a single request
     /// (cloud / OpenAI-compatible) override this to collapse N network
-    /// round-trips into one — see [`embed_batch_via_provider`].
+    /// round-trips into one — see `embed_batch_via_provider`.
     ///
     /// The returned vector always has `texts.len()` elements.
     async fn embed_batch(&self, texts: &[&str]) -> Vec<Result<Vec<f32>>> {

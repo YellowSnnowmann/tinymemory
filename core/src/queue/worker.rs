@@ -70,7 +70,7 @@ static CORRUPT_REPORTED: AtomicBool = AtomicBool::new(false);
 static STORAGE_IO_REPORTED: AtomicBool = AtomicBool::new(false);
 
 /// Notify any idle workers so they re-poll immediately instead of waiting
-/// out [`POLL_INTERVAL`]. Cheap no-op before [`start`] has run.
+/// out `POLL_INTERVAL`. Cheap no-op before [`start`] has run.
 pub fn wake_workers() {
     if let Some(notify) = WORKER_NOTIFY.get() {
         notify.notify_waiters();

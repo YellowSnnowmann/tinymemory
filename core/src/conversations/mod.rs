@@ -8,7 +8,7 @@
 //! longer re-exports that surface under a second path.
 //!
 //! Host-retained:
-//! - [`bus`] — the `core::bus` persistence subscriber that bridges typed channel
+//! - `bus` — the `core::bus` persistence subscriber that bridges typed channel
 //!   events onto the crate store (the crate abstracts the bus behind its own
 //!   `ConversationEventBus` trait; the host wires the real one).
 //! - [`blocking`] — `spawn_blocking` wrappers around the store's synchronous

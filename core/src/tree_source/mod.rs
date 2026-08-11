@@ -1,7 +1,7 @@
 //! Source tree instance — policy layer for per-ingest-source trees.
 //!
 //! This module owns the parts of the source-tree path that are not generic:
-//! - [`file`] — the `_source.md` on-disk mirror (one file per ingest source)
+//! - [`mod@file`] — the `_source.md` on-disk mirror (one file per ingest source)
 //! - [`registry`] — `get_or_create_source_tree`: wraps the generic
 //!   [`crate::tree::tree::registry::get_or_create_tree`]
 //!   and triggers the `_source.md` write as a source-specific side-effect.

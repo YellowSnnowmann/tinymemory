@@ -144,11 +144,11 @@ impl ComposioProvider for GmailProvider {
     }
 
     /// Incremental sync via the generic
-    /// [`orchestrator`](crate::sync::composio::providers::orchestrator):
+    /// `orchestrator`:
     /// pagination, dedup, the `max_items` cap, and cursor handling live in
     /// `run_sync`; the Gmail-specific primitives — the account-email preamble,
     /// server-side `after:` depth window, adaptive page ceiling, all-synced
-    /// stop, and batch ingest — live in [`super::source`].
+    /// stop, and batch ingest — live in `super::source`.
     async fn on_trigger(
         &self,
         ctx: &ProviderContext,

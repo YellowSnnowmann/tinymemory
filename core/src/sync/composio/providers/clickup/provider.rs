@@ -129,11 +129,11 @@ impl ComposioProvider for ClickUpProvider {
     }
 
     /// Incremental sync via the generic
-    /// [`orchestrator`](crate::sync::composio::providers::orchestrator):
+    /// `orchestrator`:
     /// user/workspace resolution, the per-workspace page loop, dedup, the
     /// `max_items` cap, the epoch-ms `sync_depth_days` window, and cursor
     /// handling live in `run_sync`; the ClickUp-specific primitives live in
-    /// [`super::source`].
+    /// `super::source`.
     async fn fetch_tasks(
         &self,
         ctx: &ProviderContext,

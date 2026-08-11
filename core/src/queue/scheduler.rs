@@ -1,4 +1,4 @@
-//! Wall-clock scheduler that periodically enqueues a [`JobKind::FlushStale`]
+//! Wall-clock scheduler that periodically enqueues a `JobKind::FlushStale`
 //! so low-volume source-tree L0 buffers seal promptly.
 //!
 //! The daily global-digest loop was removed along with the global tree —

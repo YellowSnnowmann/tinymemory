@@ -79,7 +79,7 @@ impl UnifiedMemory {
     /// asked not to see. `None` applies no exclusion at all.
     ///
     /// The host policy that decides *what* to exclude lives in
-    /// [`crate::store::recall_policy`]; the [`Memory::recall`]
+    /// `crate::store::recall_policy`; the [`Memory::recall`]
     /// impl below is the thin adapter that joins the two.
     pub async fn recall_excluding_session(
         &self,

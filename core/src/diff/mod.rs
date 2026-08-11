@@ -17,7 +17,7 @@
 //! `tinycortex::memory::diff::DiffEngine` (a byte-identical port over the same
 //! `<workspace>/memory_diff/repo` git layout). This module is a thin host shim:
 //! [`ops`] async-wraps the engine, [`source`] supplies the chunk-store item
-//! seam (`DiffEngine`'s `SnapshotItemSource`), and [`rpc`]/[`schemas`]/[`tools`]
+//! seam (`DiffEngine`'s `SnapshotItemSource`), and `rpc`/`schemas`/`tools`
 //! keep the RPC + agent surface. The wire types are the crate's, named directly
 //! (`tinycortex::memory::diff::types`) rather than through a host re-export
 //! module.

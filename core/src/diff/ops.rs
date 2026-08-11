@@ -84,7 +84,7 @@ pub async fn auto_snapshot_after_sync(
 /// List snapshots, newest first — for one source when `source_id` is `Some`,
 /// across every source otherwise.
 ///
-/// Lifted verbatim out of [`super::rpc::list_snapshots_rpc`], which had the
+/// Lifted verbatim out of `super::rpc::list_snapshots_rpc`, which had the
 /// only copy of this query and returned it wrapped in an `RpcOutcome`. The
 /// embedded memory driver's `MemoryDiff::snapshots` needs the same read without
 /// the RPC envelope, and a second `Ledger::open` call site would make this

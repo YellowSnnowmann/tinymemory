@@ -11,7 +11,7 @@
 //! - [`mcp`] — Third-party MCP servers. Pulls via the MCP protocol over
 //!   stdio/SSE.
 //!
-//! All three implement the [`SyncPipeline`] trait so the orchestrator
+//! All three implement the `SyncPipeline` trait so the orchestrator
 //! (`memory::jobs`) can drive them uniformly: `init` → `tick` → repeat.
 //!
 //! ## Layer rules

@@ -259,7 +259,7 @@ impl TaskFetchFilter {
 /// already iterated). For per-connection paths it is always populated.
 ///
 /// **Mode-aware dispatch (#1710)**: pre-fix, `ProviderContext` cached a
-/// pre-baked [`ComposioClient`] built once at construction time. Toggling
+/// pre-baked `ComposioClient` built once at construction time. Toggling
 /// `composio.mode = "direct"` mid-session left provider syncs still
 /// routing through the backend tinyhumans tenant. The current shape
 /// keeps an [`Arc<Config>`] and resolves the underlying client per call
@@ -358,7 +358,7 @@ impl ProviderContext {
     /// honoured on every call (#1710).
     ///
     /// Returns the same [`ComposioExecuteResponse`] shape that
-    /// [`ComposioClient::execute_tool`] used to return so existing
+    /// `ComposioClient::execute_tool` used to return so existing
     /// provider call-sites can swap `ctx.client.execute_tool(...)` for
     /// `ctx.execute(...)` with no other changes.
     pub async fn execute(

@@ -218,11 +218,11 @@ impl ComposioProvider for SlackProvider {
     }
 
     /// Slack rides the generic orchestrator. Channel enumeration + the user
-    /// directory backfill happen in [`super::source::SlackSource::preamble`];
+    /// directory backfill happen in `super::source::SlackSource::preamble`;
     /// per-channel `conversations.history` pagination, the per-channel `oldest`
     /// watermark, dedup, the `max_items` cap, and per-channel error tolerance
     /// all live in `run_sync`. The Slack-specific primitives live in
-    /// [`super::source`].
+    /// `super::source`.
     async fn on_trigger(
         &self,
         ctx: &ProviderContext,

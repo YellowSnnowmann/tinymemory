@@ -8,7 +8,7 @@
 //! - **Explicitly** — via RPC (`openhuman.memory_goals_{list,add,edit,delete}`)
 //!   or the matching agent tools (`goals_list` / `goals_add` / `goals_edit` /
 //!   `goals_delete`).
-//! - **By reflection** — a turn-based [`enrich`]ment agent (`goals_agent`) that
+//! - **By reflection** — a turn-based `enrich`ment agent (`goals_agent`) that
 //!   reads context + memory and applies add/edit/delete over several turns. On
 //!   an empty list it performs an initial population.
 //! - **Automatically** — the reflection agent is fired (best-effort) when the

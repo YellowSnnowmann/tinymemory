@@ -45,7 +45,7 @@ pub trait ChatProvider: Send + Sync {
         self.chat_for_json(prompt).await
     }
 
-    /// Like [`chat_for_text`], but also surfaces the provider-reported
+    /// Like `chat_for_text`, but also surfaces the provider-reported
     /// [`UsageInfo`] (real token counts + `charged_amount_usd`) when the
     /// backing provider returns it.
     ///
