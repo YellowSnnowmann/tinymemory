@@ -1174,6 +1174,13 @@ mod tests {
     async fn run_one_tick_returns_ok_when_no_client() {
         // Isolate the workspace/env so config loading doesn't contend with
         // sibling tests mutating OPENHUMAN_WORKSPACE in parallel.
+        // Held deliberately across the `run_one_tick().await` below: this is a
+        // std::sync::Mutex used purely as a test-isolation gate around the
+        // process-global `OPENHUMAN_WORKSPACE` env var, not an async resource
+        // lock guarding shared runtime state. Dropping it before the await
+        // would let a sibling test mutate the env var mid-tick, defeating the
+        // isolation this guard exists to provide.
+        #[allow(clippy::await_holding_lock)]
         let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let tmp = tempdir().expect("tempdir");
         unsafe {
