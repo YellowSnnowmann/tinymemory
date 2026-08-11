@@ -3,12 +3,12 @@
 //! One module for the full chunk lifecycle:
 //!
 //! - [`types`]    — `Chunk`, `Metadata`, `SourceKind`, `RawRef`,
-//!                  `ListChunksQuery`. The persisted shape.
+//!   `ListChunksQuery`. The persisted shape.
 //! - [`store`]    — SQLite persistence (`chunks` table + connection cache).
 //! - [`semantic`] — heading- and paragraph-aware chunker used by the
-//!                  unified memory writer to split large documents into
-//!                  LLM-context-sized pieces while preserving heading
-//!                  context.
+//!   unified memory writer to split large documents into
+//!   LLM-context-sized pieces while preserving heading
+//!   context.
 //!
 //! The source-kind-dispatch chunker ([`chunk_markdown`], the default — chat /
 //! email / document, with stable per-source sequence numbers and bounded
