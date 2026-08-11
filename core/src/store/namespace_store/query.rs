@@ -36,9 +36,7 @@ const RECALL_FRESHNESS_WEIGHT: f64 = 0.25;
 struct StoredChunk {
     document_id: String,
     chunk_id: String,
-    text: String,
     embedding: Option<Vec<f32>>,
-    updated_at: f64,
     /// Signature of the embedding model that produced `embedding`. `None` for
     /// rows written before model tagging was introduced. Used to exclude
     /// cross-model vectors from cosine scoring.
@@ -583,7 +581,7 @@ impl UnifiedMemory {
         let conn = self.conn.lock();
         let mut stmt = conn
             .prepare(
-                "SELECT document_id, chunk_id, text, embedding, updated_at, model_signature
+                "SELECT document_id, chunk_id, embedding, model_signature
                  FROM vector_chunks
                  WHERE namespace = ?1",
             )
@@ -596,14 +594,12 @@ impl UnifiedMemory {
             .next()
             .map_err(|e| format!("row load_chunks_for_scope: {e}"))?
         {
-            let embedding_blob: Option<Vec<u8>> = row.get(3).map_err(|e| e.to_string())?;
+            let embedding_blob: Option<Vec<u8>> = row.get(2).map_err(|e| e.to_string())?;
             chunks.push(StoredChunk {
                 document_id: row.get(0).map_err(|e| e.to_string())?,
                 chunk_id: row.get(1).map_err(|e| e.to_string())?,
-                text: row.get(2).map_err(|e| e.to_string())?,
                 embedding: embedding_blob.as_deref().map(Self::bytes_to_vec),
-                updated_at: row.get(4).map_err(|e| e.to_string())?,
-                model_signature: row.get(5).map_err(|e| e.to_string())?,
+                model_signature: row.get(3).map_err(|e| e.to_string())?,
             });
         }
         Ok(chunks)
