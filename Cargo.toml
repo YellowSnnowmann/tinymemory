@@ -4,7 +4,8 @@ default-members = [".", "api", "core", "adapters/tinycortex", "crates/tinymemory
 # `vendor/` holds engine submodules (tinycortex, tinybus), each of which is its
 # own workspace with its own lockfile. Same exclusion `vendor/tinycortex` uses
 # for its own nested vendor directory.
-exclude = ["vendor"]
+exclude = ["vendor/tinybus", "vendor/tinycortex", "vendor/tinyagents"]
+resolver = "3"
 
 [package]
 name = "tinymemory"
@@ -109,6 +110,16 @@ tinycortex-api = { path = "vendor/tinycortex/api" }
 # apply from the workspace root being built — so this entry affects standalone
 # builds and `cargo test` here, and nothing downstream.
 tinyagents = { path = "vendor/tinyagents" }
+# `tinymemory-module` names the bus by version requirement for the same reason
+# the engines above are named that way: a `path` dependency reaching into
+# `vendor/` makes cargo try to resolve that package's workspace from *this*
+# root, which fails because the nested checkout is its own workspace with its
+# own `[workspace.package]` to inherit from. Patching it here keeps the
+# dependency edge declarative and lets a host that already pins its own tinybus
+# unify onto one copy.
+tinybus = { path = "vendor/tinybus/crates/tinybus" }
+tinybus-macros = { path = "vendor/tinybus/crates/tinybus-macros" }
+tinybus-module = { path = "vendor/tinybus/crates/tinybus-module" }
 
 [profile.release]
 # Cross-crate optimization and smaller, faster binaries for release builds.
