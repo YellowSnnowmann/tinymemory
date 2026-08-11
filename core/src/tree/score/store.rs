@@ -3,7 +3,6 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use rusqlite::Transaction;
 
 use crate::tinycortex::engine_config;
 use crate::Config;

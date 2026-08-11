@@ -327,7 +327,7 @@ pub async fn run_composio_connection_with_budgets(
     max_items: Option<u32>,
     sync_depth_days: Option<u32>,
 ) -> Result<SyncOutcome, SourcePipelineFailure> {
-    let mut source = crate::sources::decode_memory_sources(&*config)
+    let mut source = crate::sources::decode_memory_sources(config)
         .iter()
         .find(|source| {
             source.kind == SourceKind::Composio

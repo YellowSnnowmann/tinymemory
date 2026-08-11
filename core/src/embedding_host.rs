@@ -71,7 +71,6 @@ pub fn default_embedding_provider(
 /// tests link into their own binary and therefore their own process, so a shared
 /// lock would buy nothing and would mean the contract crate owning a mutex for
 /// the host's benefit.
-#[must_use]
 pub fn embedding_test_guard() -> std::sync::MutexGuard<'static, ()> {
     static GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
     GUARD

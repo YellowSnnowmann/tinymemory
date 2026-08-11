@@ -356,7 +356,7 @@ mod tests {
         taken_at_ms: i64,
         items: &[(&str, &str)],
     ) -> Snapshot {
-        let ledger = Ledger::open(&config.workspace_dir()).unwrap();
+        let ledger = Ledger::open(config.workspace_dir()).unwrap();
         let items: Vec<(String, String)> = items
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
