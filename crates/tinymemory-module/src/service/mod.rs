@@ -246,7 +246,7 @@ impl MemoryService {
 /// give the contract two definitions free to drift — and the drift that matters
 /// is silent: a `PathEscape` arriving as an `Invalid` reclassifies a sandbox
 /// escape as a caller mistake.
-fn into_bus_error(error: MemoryError) -> BusError {
+fn into_bus_error(error: &MemoryError) -> BusError {
     BusError::MethodFailed {
         name: wire::wire_name(&error).to_string(),
         message: wire::wire_message(&error),
