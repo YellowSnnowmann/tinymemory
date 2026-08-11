@@ -5,10 +5,10 @@
 //! module hosts:
 //! - `store`    — generic CRUD over the trees + summaries + buffers tables.
 //! - `types`    — Tree, SummaryNode, TreeKind, TreeStatus, Buffer, and the
-//!                entity-hotness types ([`HotnessCounters`], thresholds).
+//!   entity-hotness types ([`HotnessCounters`], thresholds).
 //! - `registry` — generic list / archive helpers.
 //! - `hotness`  — entity-hotness side-table (now a read-only subconscious
-//!                signal; the topic curator that wrote it was removed).
+//!   signal; the topic curator that wrote it was removed).
 //!
 //! Tree _logic_ (bucket_seal, flush, generic registry, source policy) stays
 //! in `memory_tree`.
