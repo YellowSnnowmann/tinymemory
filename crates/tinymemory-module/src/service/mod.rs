@@ -53,11 +53,11 @@
 //!
 //! # Errors are named, and the names are the contract
 //!
-//! [`MemoryError`] is a rich enum host-side, but a bus error is a name plus a
-//! string. The name is what a host maps back onto a variant; the string is for a
-//! human. An unrecognised name must be treated as a backend failure, never as
-//! invalid input — telling a caller its request was wrong when it was not sends
-//! it into a rewrite loop over something already correct.
+//! [`MemoryError`] is a rich enum, but a bus error is a name plus a string. The
+//! table that maps between them lives in [`tinymemory_api::wire`] and is used by
+//! **both** ends, so the module and the host cannot drift into disagreeing about
+//! what a name means. See that module for why there is one name per variant
+//! rather than one per outcome class.
 //!
 //! **No method here logs a namespace key, an entry's content, or a recall
 //! query.** All three are user memory content, and a module error must not carry
