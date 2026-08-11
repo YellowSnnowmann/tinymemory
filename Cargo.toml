@@ -5,6 +5,7 @@ default-members = [".", "api", "core", "adapters/tinycortex", "crates/tinymemory
 # own workspace with its own lockfile. Same exclusion `vendor/tinycortex` uses
 # for its own nested vendor directory.
 exclude = ["vendor"]
+resolver = "2"
 
 [package]
 name = "tinymemory"
