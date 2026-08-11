@@ -75,7 +75,6 @@ tempfile = "3"
 tinycortex = { path = "../../vendor/tinycortex" }
 tinycortex-api = { path = "../../vendor/tinycortex/api" }
 tinyagents = { path = "../../vendor/tinyagents" }
-tempfile = "3"
 
 # Mirrors the root package's set. `unsafe_code = "forbid"` holds even though
 # `module_export!` emits `unsafe extern "C"` symbols: the macro's expansion
