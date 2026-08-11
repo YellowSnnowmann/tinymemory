@@ -605,7 +605,7 @@ fn decode_embedding_row(bytes: &[u8], dim: i64) -> anyhow::Result<Option<Vec<f32
     if dim < 0 {
         anyhow::bail!("segment embedding has negative dimension {dim}");
     }
-    if !bytes.len().is_multiple_of(4) {
+    if bytes.len() % 4 != 0 {
         anyhow::bail!(
             "segment embedding blob length {} not a multiple of 4",
             bytes.len()
