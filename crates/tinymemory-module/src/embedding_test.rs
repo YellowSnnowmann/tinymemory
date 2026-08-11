@@ -14,7 +14,7 @@ use tinybus::{Connection, Result as BusResult};
 use tinymemory_api::host::{EmbeddingHost, EmbeddingProvider};
 
 use super::{
-    BusEmbeddingHost, EMBEDDING_HOST_BUS_NAME, EMBEDDING_HOST_INTERFACE, EMBEDDING_HOST_OBJECT_PATH,
+    BusEmbeddingHost, EMBEDDING_HOST_BUS_NAME, EMBEDDING_HOST_OBJECT_PATH,
 };
 use crate::config::ModuleConfig;
 

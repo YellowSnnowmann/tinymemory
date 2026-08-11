@@ -131,7 +131,7 @@ impl MemoryService {
     /// module: `TinyBus` never unloads a library, so a host that shuts the
     /// driver down and rebinds gets a fresh engine inside the same mapped image.
     async fn shutdown(&self) -> BusResult<()> {
-        self.provider.shutdown().await.map_err(into_bus_error)
+        self.provider.shutdown().await.map_err(|error| into_bus_error(&error))
     }
 
     /// Upsert an entry keyed by `(namespace, key)`.
@@ -159,7 +159,7 @@ impl MemoryService {
                 taint,
             )
             .await
-            .map_err(into_bus_error)
+            .map_err(|error| into_bus_error(&error))
     }
 
     /// Fetch the entry at an exact `(namespace, key)`.
@@ -167,7 +167,7 @@ impl MemoryService {
         self.provider
             .get(&namespace, &key)
             .await
-            .map_err(into_bus_error)
+            .map_err(|error| into_bus_error(&error))
     }
 
     /// Delete the entry at `(namespace, key)`, reporting whether it existed.
@@ -175,7 +175,7 @@ impl MemoryService {
         self.provider
             .forget(&namespace, &key)
             .await
-            .map_err(into_bus_error)
+            .map_err(|error| into_bus_error(&error))
     }
 
     /// List entries, narrowing by namespace, category and session.
@@ -192,12 +192,12 @@ impl MemoryService {
                 session_id.as_deref(),
             )
             .await
-            .map_err(into_bus_error)
+            .map_err(|error| into_bus_error(&error))
     }
 
     /// Enumerate namespaces with their aggregate counts.
     async fn namespaces(&self) -> BusResult<Vec<NamespaceSummary>> {
-        self.provider.namespaces().await.map_err(into_bus_error)
+        self.provider.namespaces().await.map_err(|error| into_bus_error(&error))
     }
 
     /// Ranked retrieval.
@@ -216,7 +216,7 @@ impl MemoryService {
         self.provider
             .recall(&query, limit, &opts, scope.as_ref())
             .await
-            .map_err(into_bus_error)
+            .map_err(|error| into_bus_error(&error))
     }
 
     /// Read one page of the export, continuing from `cursor`.
@@ -224,7 +224,7 @@ impl MemoryService {
         self.provider
             .export_page(cursor.as_deref(), limit)
             .await
-            .map_err(into_bus_error)
+            .map_err(|error| into_bus_error(&error))
     }
 
     /// Write a batch of previously-exported records.
@@ -235,7 +235,7 @@ impl MemoryService {
         self.provider
             .import_records(records)
             .await
-            .map_err(into_bus_error)
+            .map_err(|error| into_bus_error(&error))
     }
 }
 
