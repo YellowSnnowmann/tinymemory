@@ -126,7 +126,8 @@ pub fn create_chat_model_with_model_id(
 /// Serialises tests that mutate inference-related process environment. See
 /// [`crate::embedding_host::embedding_test_guard`] for why this is a separate
 /// lock from the host's.
-#[must_use]
+#[must_use = "bind the guard for the whole test (`let _guard = inference_test_guard();`); \
+              dropping it straight away releases the lock and the test races"]
 pub fn inference_test_guard() -> std::sync::MutexGuard<'static, ()> {
     static GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
     GUARD
