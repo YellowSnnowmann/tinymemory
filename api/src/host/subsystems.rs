@@ -44,7 +44,7 @@ pub struct SubsystemsConfig {
 /// `[subsystems.memory]` — which driver is bound for the memory subsystem,
 /// its hook budgets, and the per-driver option table.
 ///
-/// `PartialEq`/`Eq` let [`CoreContext::rebind_workspace`] short-circuit a
+/// `PartialEq`/`Eq` let `CoreContext::rebind_workspace` short-circuit a
 /// no-op rebind by comparing the config it was handed against the one already
 /// held — equality is value comparison only, so it never prints or leaks the
 /// credential fields the way `Debug` would. `Hash` lets `binding`
