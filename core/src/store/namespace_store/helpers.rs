@@ -168,19 +168,6 @@ impl UnifiedMemory {
         items
     }
 
-    pub(crate) fn merge_unique_string_arrays(
-        current: &serde_json::Value,
-        incoming: &serde_json::Value,
-        primary_key: &str,
-        singular_key: &str,
-    ) -> Vec<String> {
-        let mut merged = Self::json_string_array(current, primary_key, singular_key);
-        merged.extend(Self::json_string_array(incoming, primary_key, singular_key));
-        merged.sort();
-        merged.dedup();
-        merged
-    }
-
     pub(crate) fn json_i64(value: &serde_json::Value, key: &str) -> Option<i64> {
         value.get(key).and_then(|raw| {
             raw.as_i64().or_else(|| {
@@ -352,16 +339,6 @@ mod tests {
         let val = json!({"tags": ["", "  ", "valid"]});
         let result = UnifiedMemory::json_string_array(&val, "tags", "tag");
         assert_eq!(result, vec!["valid"]);
-    }
-
-    // ── merge_unique_string_arrays ───────────────────────────────────
-
-    #[test]
-    fn merge_unique_string_arrays_combines_and_deduplicates() {
-        let a = json!({"tags": ["x", "y"]});
-        let b = json!({"tags": ["y", "z"]});
-        let merged = UnifiedMemory::merge_unique_string_arrays(&a, &b, "tags", "tag");
-        assert_eq!(merged, vec!["x", "y", "z"]);
     }
 
     // ── json_i64 ─────────────────────────────────────────────────────

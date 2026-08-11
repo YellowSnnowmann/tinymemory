@@ -14,10 +14,6 @@ pub fn upsert_score(config: &Config, row: &ScoreRow) -> Result<()> {
     tinycortex::memory::score::store::upsert_score(&engine_config(config), row)
 }
 
-pub(crate) fn upsert_score_tx(tx: &Transaction<'_>, row: &ScoreRow) -> Result<()> {
-    tinycortex::memory::score::store::upsert_score_tx(tx, row)
-}
-
 pub fn get_score(config: &Config, chunk_id: &str) -> Result<Option<ScoreRow>> {
     tinycortex::memory::score::store::get_score(&engine_config(config), chunk_id)
 }
@@ -61,54 +57,6 @@ pub fn index_entities(
         node_kind,
         timestamp_ms,
         tree_id,
-    )
-}
-
-pub(crate) fn clear_entity_index_for_node_tx(tx: &Transaction<'_>, node_id: &str) -> Result<usize> {
-    tinycortex::memory::score::store::clear_entity_index_for_node_tx(tx, node_id)
-}
-
-pub(crate) fn index_summary_entity_ids_tx(
-    tx: &Transaction<'_>,
-    entity_ids: &[String],
-    node_id: &str,
-    score: f32,
-    timestamp_ms: i64,
-    tree_id: Option<&str>,
-) -> Result<usize> {
-    let identity = crate::store::entities::host_self_identity();
-    tinycortex::memory::store::entity_index::index_summary_entity_ids_tx_with_identity(
-        tx,
-        entity_ids,
-        node_id,
-        score,
-        timestamp_ms,
-        tree_id,
-        identity.as_ref(),
-    )
-}
-
-pub(crate) fn index_entities_tx(
-    tx: &Transaction<'_>,
-    entities: &[tinycortex::memory::score::resolver::CanonicalEntity],
-    node_id: &str,
-    node_kind: &str,
-    timestamp_ms: i64,
-    tree_id: Option<&str>,
-) -> Result<usize> {
-    let identity = crate::store::entities::host_self_identity();
-    let entities: Vec<tinycortex::memory::store::CanonicalEntity> = entities
-        .iter()
-        .map(to_store_entity)
-        .collect::<Result<_>>()?;
-    tinycortex::memory::store::entity_index::index_entities_tx_with_identity(
-        tx,
-        &entities,
-        node_id,
-        node_kind,
-        timestamp_ms,
-        tree_id,
-        identity.as_ref(),
     )
 }
 

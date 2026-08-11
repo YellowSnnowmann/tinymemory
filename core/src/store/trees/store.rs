@@ -11,33 +11,12 @@ use crate::store::trees::types::{Buffer, SummaryNode, Tree, TreeKind};
 use crate::tinycortex::engine_config;
 use crate::Config;
 
-pub(crate) use tinycortex::memory::tree::store::TreeCascadeDeletion;
-
 pub fn insert_tree(config: &Config, tree: &Tree) -> Result<()> {
     tinycortex::memory::tree::store::insert_tree(&engine_config(config), tree)
 }
 
-pub(crate) fn insert_tree_conn(conn: &Connection, tree: &Tree) -> Result<()> {
-    tinycortex::memory::tree::store::insert_tree_conn(conn, tree)
-}
-
-pub(crate) fn delete_tree_cascade_tx(
-    tx: &Transaction<'_>,
-    tree_id: &str,
-) -> Result<TreeCascadeDeletion> {
-    tinycortex::memory::tree::store::delete_tree_cascade_tx(tx, tree_id)
-}
-
 pub fn get_tree_by_scope(config: &Config, kind: TreeKind, scope: &str) -> Result<Option<Tree>> {
     tinycortex::memory::tree::store::get_tree_by_scope(&engine_config(config), kind, scope)
-}
-
-pub(crate) fn get_tree_by_scope_conn(
-    conn: &Connection,
-    kind: TreeKind,
-    scope: &str,
-) -> Result<Option<Tree>> {
-    tinycortex::memory::tree::store::get_tree_by_scope_conn(conn, kind, scope)
 }
 
 pub fn get_tree(config: &Config, id: &str) -> Result<Option<Tree>> {
@@ -219,10 +198,6 @@ pub(crate) fn get_buffer_conn(conn: &Connection, tree_id: &str, level: u32) -> R
 
 pub fn upsert_buffer_tx(tx: &Transaction<'_>, buffer: &Buffer) -> Result<()> {
     tinycortex::memory::tree::store::upsert_buffer_tx(tx, buffer)
-}
-
-pub(crate) fn clear_buffer_tx(tx: &Transaction<'_>, tree_id: &str, level: u32) -> Result<()> {
-    tinycortex::memory::tree::store::clear_buffer_tx(tx, tree_id, level)
 }
 
 pub fn list_stale_buffers(config: &Config, older_than: DateTime<Utc>) -> Result<Vec<Buffer>> {

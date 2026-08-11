@@ -33,10 +33,6 @@ fn index(config: &Config) -> Result<EntityIndex> {
     EntityIndex::from_shared_connection(connection, Arc::new(HostSelfIdentity))
 }
 
-pub(crate) fn host_self_identity() -> Arc<dyn SelfIdentity> {
-    Arc::new(HostSelfIdentity)
-}
-
 pub fn index_entity(
     config: &Config,
     entity: &CanonicalEntity,
