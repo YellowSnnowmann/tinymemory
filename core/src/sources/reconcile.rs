@@ -278,7 +278,7 @@ mod tests {
 
     /// Exercises the real migration transform (`apply_caps_defaults_to_entries`)
     /// so the tests cannot drift from the production predicate.
-    fn run_migration_on_entries(sources: &mut Vec<MemorySourceEntry>) -> u32 {
+    fn run_migration_on_entries(sources: &mut [MemorySourceEntry]) -> u32 {
         apply_caps_defaults_to_entries(sources)
     }
 
