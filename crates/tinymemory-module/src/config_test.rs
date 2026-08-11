@@ -82,6 +82,47 @@ fn there_is_no_field_that_could_hold_a_credential() {
 }
 
 #[test]
+fn a_credential_nested_in_the_memory_config_is_stripped() {
+    // The hole the test above cannot see. `MemoryConfig` is carried verbatim and
+    // contains `agentmemory_secret`, a bearer token — so "this struct has no
+    // credential field" was true and still not enough.
+    let mut config = ModuleConfig {
+        workspace_dir: "/tmp/w".into(),
+        ..ModuleConfig::default()
+    };
+    config.memory.agentmemory_secret = Some("bearer-token-value".to_string());
+
+    assert!(config.strip_host_credentials(), "it should report removing one");
+    assert!(config.memory.agentmemory_secret.is_none());
+
+    // And the token must not survive anywhere in the serialized form.
+    let json = serde_json::to_string(&config).expect("serializes");
+    assert!(!json.contains("bearer-token-value"), "{json}");
+}
+
+#[test]
+fn stripping_a_config_without_a_credential_reports_nothing_removed() {
+    // So the caller's warning fires only when something actually was removed.
+    let mut config = ModuleConfig {
+        workspace_dir: "/tmp/w".into(),
+        ..ModuleConfig::default()
+    };
+    assert!(!config.strip_host_credentials());
+}
+
+#[test]
+fn stripping_is_idempotent() {
+    // Setup runs it once, but a second call must not report a phantom removal.
+    let mut config = ModuleConfig {
+        workspace_dir: "/tmp/w".into(),
+        ..ModuleConfig::default()
+    };
+    config.memory.agentmemory_secret = Some("t".to_string());
+    assert!(config.strip_host_credentials());
+    assert!(!config.strip_host_credentials());
+}
+
+#[test]
 fn a_populated_config_round_trips() {
     let config = ModuleConfig {
         workspace_dir: "/tmp/w".into(),
