@@ -162,7 +162,7 @@ fn curated_tools_contains_core_sync_surface() {
 #[test]
 fn default_impl_matches_new() {
     let a = LinearProvider::new();
-    let b = LinearProvider::default();
+    let b = <LinearProvider as Default>::default();
     assert_eq!(a.toolkit_slug(), b.toolkit_slug());
     assert_eq!(a.sync_interval_secs(), b.sync_interval_secs());
     assert_eq!(

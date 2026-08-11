@@ -17,7 +17,7 @@ fn provider_metadata_is_stable() {
 #[test]
 fn default_impl_matches_new() {
     let _new = GmailProvider::new();
-    let _default = GmailProvider::default();
+    let _default = <GmailProvider as Default>::default();
 }
 
 #[test]

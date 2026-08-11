@@ -145,7 +145,7 @@ fn default_impl_matches_new() {
     // future regression where `new()` and `default()` drift apart
     // (e.g. one is given an extra field but the other is forgotten).
     let a = ClickUpProvider::new();
-    let b = ClickUpProvider::default();
+    let b = <ClickUpProvider as Default>::default();
     assert_eq!(a.toolkit_slug(), b.toolkit_slug());
     assert_eq!(a.sync_interval_secs(), b.sync_interval_secs());
     assert_eq!(

@@ -187,7 +187,7 @@ fn curated_tools_contains_core_actions() {
 #[test]
 fn default_impl_matches_new() {
     let a = GitHubProvider::new();
-    let b = GitHubProvider::default();
+    let b = <GitHubProvider as Default>::default();
     assert_eq!(a.toolkit_slug(), b.toolkit_slug());
     assert_eq!(a.sync_interval_secs(), b.sync_interval_secs());
     assert_eq!(

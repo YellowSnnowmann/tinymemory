@@ -69,7 +69,7 @@ fn provider_metadata_is_stable() {
 #[test]
 fn default_impl_matches_new() {
     let _a = NotionProvider::new();
-    let _b = NotionProvider::default();
+    let _b = <NotionProvider as Default>::default();
 }
 
 // ── parse_database_results (list_databases parser) ───────────────────────────
