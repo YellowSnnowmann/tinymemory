@@ -41,7 +41,6 @@ pub mod embedding_adapter;
 pub mod embedding_host;
 pub mod events;
 pub mod global;
-pub mod goals;
 pub mod ingest_pipeline;
 pub mod ingestion;
 pub mod learning_candidate;
