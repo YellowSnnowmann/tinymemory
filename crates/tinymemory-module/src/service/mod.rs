@@ -238,19 +238,15 @@ impl MemoryService {
 
 /// Map a [`MemoryError`] onto a named bus error.
 ///
-/// Three names, not one per variant. The host only needs to distinguish what a
-/// caller can act on: a rejected request, a capability that is absent, and
-/// everything else. Splitting `Io` from `Other` on the wire would give a host a
-/// distinction it has no different response to.
+/// Both the name and the message come from [`tinymemory_api::wire`], which the
+/// host's client also uses to map them back. Deriving them here instead would
+/// give the contract two definitions free to drift — and the drift that matters
+/// is silent: a `PathEscape` arriving as an `Invalid` reclassifies a sandbox
+/// escape as a caller mistake.
 fn into_bus_error(error: MemoryError) -> BusError {
-    let (name, message) = match &error {
-        MemoryError::Invalid(message) => (INVALID_INPUT_ERROR, message.clone()),
-        MemoryError::Unsupported(capability) => (UNSUPPORTED_ERROR, capability.to_string()),
-        other => (BACKEND_ERROR, other.to_string()),
-    };
     BusError::MethodFailed {
-        name: name.to_string(),
-        message,
+        name: wire::wire_name(&error).to_string(),
+        message: wire::wire_message(&error),
     }
 }
 
