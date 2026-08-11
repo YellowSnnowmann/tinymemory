@@ -264,7 +264,7 @@ pub mod test_override {
     }
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 mod tests {
     use super::*;
     use tinymemory_api::host::DEFAULT_CLOUD_LLM_MODEL;

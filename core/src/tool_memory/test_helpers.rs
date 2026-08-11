@@ -107,7 +107,7 @@ impl Memory for MockMemory {
     }
 }
 
-#[cfg(any(test, feature = "test-support"))]
+#[cfg(test)]
 mod tests {
     use super::*;
 
