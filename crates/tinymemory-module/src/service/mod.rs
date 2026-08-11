@@ -254,8 +254,8 @@ impl MemoryService {
 /// escape as a caller mistake.
 fn into_bus_error(error: &MemoryError) -> BusError {
     BusError::MethodFailed {
-        name: wire::wire_name(&error).to_string(),
-        message: wire::wire_message(&error),
+        name: wire::wire_name(error).to_string(),
+        message: wire::wire_message(error),
     }
 }
 
