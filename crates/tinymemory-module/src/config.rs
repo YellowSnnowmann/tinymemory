@@ -126,6 +126,42 @@ impl ModuleConfig {
         }
         Ok(())
     }
+
+    /// Drop any credential that rode in on the embedded `MemoryConfig`.
+    ///
+    /// # Why this exists
+    ///
+    /// [`Self::memory`] is `tinymemory_api::host::MemoryConfig` carried verbatim,
+    /// which is the right call for every other field — but it contains
+    /// `agentmemory_secret`, a bearer token for a *remote* memory backend. So the
+    /// module's "no credentials" property is not a property of
+    /// [`ModuleConfig`]'s own field list after all; it has to be enforced, and
+    /// this is where.
+    ///
+    /// Found by reading `MemoryConfig` field by field while debugging something
+    /// unrelated. The structural test over this struct's own keys did not catch
+    /// it, because the key is one level down — which is the general lesson:
+    /// "carried verbatim" means credentials are carried verbatim too.
+    ///
+    /// # Why strip rather than refuse
+    ///
+    /// This module serves the local `tinycortex` engine. A remote-backend token
+    /// is not something it can use, so refusing the whole load would turn an
+    /// irrelevant leftover config field into a hard failure for a host whose
+    /// memory would otherwise work. Stripping is silent to the engine and
+    /// removes the token from this address space.
+    ///
+    /// A host that genuinely wants a remote memory backend should bind that
+    /// driver directly rather than through this module, which is why the warning
+    /// says so.
+    ///
+    /// Returns whether anything was removed, so the caller can log it once.
+    pub fn strip_host_credentials(&mut self) -> bool {
+        if self.memory.agentmemory_secret.take().is_some() {
+            return true;
+        }
+        false
+    }
 }
 
 #[cfg(test)]
