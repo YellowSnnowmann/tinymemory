@@ -6,3 +6,7 @@
 	path = vendor/tinycortex
 	url = https://github.com/tinyhumansai/tinycortex.git
 	branch = main
+[submodule "vendor/tinyagents"]
+	path = vendor/tinyagents
+	url = https://github.com/tinyhumansai/tinyagents
+	branch = main

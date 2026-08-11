@@ -1,0 +1,92 @@
+[package]
+name = "tinymemory-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+description = "The engine-neutral memory subsystem: store, summary tree, sync pipelines, ingestion and recall"
+repository = "https://github.com/tinyhumansai/tinymemory"
+readme = "../README.md"
+
+[dependencies]
+# The contract. `tinymemory-core` implements and consumes it; the host seam
+# traits (config, event sink, embeddings, chat) live in `tinymemory_api::host`.
+tinymemory-api = { path = "../api", version = "0.1.1" }
+tinymemory = { path = "..", version = "0.1.0" }
+
+# The default embedded engine. `store/`, `tree/` and `sync/` drive it directly;
+# `tinycortex-api` is a direct dependency because `tinycortex::memory` aliases
+# back only `{error, traits, types}`.
+tinycortex = { version = "0.1", features = ["obsidian", "persona", "sync"] }
+tinycortex-api = { version = "0.1" }
+
+# Chat-model and embedding primitives used by the tree summarizer and the
+# embedding factory.
+tinyagents = { version = "2.1", features = ["sqlite"] }
+anyhow = "1.0"
+async-trait = "0.1"
+# Only under `memory-git`; see the feature's comment.
+git2 = { version = "0.21", optional = true, default-features = false, features = ["vendored-libgit2"] }
+# `store/factories.rs` exposes a tiny health router for the embedded provider.
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query", "ws", "macros"] }
+chrono = { version = "0.4", features = ["serde"] }
+# `tinycortex/persona.rs` resolves the user's home directory for the obsidian
+# vault default.
+dirs = "5"
+futures = "0.3"
+log = "0.4"
+parking_lot = "0.12"
+# `tree/tree/registry.rs` salts a tree id; the sync readers talk HTTP to the
+# provider APIs; the pipelines are `tracing`-instrumented.
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
+tracing = "0.1"
+regex = "1.10"
+rusqlite = { version = "=0.40.0", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "2.0"
+tokio = { version = "1", features = ["full"] }
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+walkdir = "2"
+
+# macOS address-book reader behind `people/address_book.rs`. Gated by the
+# host's `contacts` feature, forwarded here.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { version = "0.6", optional = true }
+objc2-foundation = { version = "0.3", features = ["NSArray", "NSError", "NSObject", "NSString", "NSPredicate"], optional = true }
+objc2-contacts = { version = "0.3.2", features = ["CNContact", "CNContactFetchRequest", "CNContactStore", "CNLabeledValue", "CNPhoneNumber"], optional = true }
+block2 = { version = "0.6", optional = true }
+
+[dev-dependencies]
+# `TestHostConfig` — the concrete `MemoryHostConfig` the extracted test suites
+# build, since `Config` is a trait object and cannot be `Default`ed.
+tinymemory-api = { path = "../api", version = "0.1.1", features = ["test-support"] }
+tempfile = "3"
+tokio = { version = "1", features = ["test-util"] }
+
+[features]
+default = []
+# Git-backed diff snapshots and the wiki git mirror. Gated because it is what
+# drags `git2` / `libgit2-sys` / `libz-sys` — a native build — into the graph.
+# The host forwards its own `memory-git` feature to this one; when off, the
+# `diff` domain's ops are stubbed rather than `#[cfg]`'d at each call site, so a
+# diff simply never materialises.
+#
+# NOT in `default`, matching the host. The off-path builds because tinycortex
+# makes the same carve-out: its `memory::diff::{types, source}` are serde-only
+# and stay compiled, so only the git-touching half disappears.
+memory-git = ["dep:git2", "tinycortex/git-diff", "tinycortex/wiki-git"]
+# Exposes the crate's test helpers (`chat::test_override`,
+# `chat::StaticChatProvider`, `tool_memory::test_helpers`) to *other* crates'
+# tests. They were `#[cfg(test)]` before the extraction, when the host and the
+# memory subsystem were one crate and that was enough; a downstream test
+# harness cannot see `#[cfg(test)]` items across a crate boundary.
+#
+# Not in `default`: a production build must not carry them.
+test-support = ["tinymemory-api/test-support"]
+
+# The macOS CNContactStore address-book seeding path. No-op off macOS.
+contacts = ["dep:objc2", "dep:objc2-foundation", "dep:objc2-contacts", "dep:block2"]

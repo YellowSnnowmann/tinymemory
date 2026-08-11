@@ -57,12 +57,16 @@
 //!   [`tree::NodeLevel`], [`tree::TreeStatus`], …).
 //! - [`tool_memory`]: tool-scoped rule contracts ([`tool_memory::ToolMemoryRule`], …).
 //! - [`goals`]: the long-term goals document ([`goals::GoalsDoc`], [`goals::GoalItem`]).
+//! - [`host`]: the **host seam** — [`host::MemoryHostConfig`],
+//!   [`host::EmbeddingProvider`], [`host::MemoryEventSink`], and the memory
+//!   config sections whose serde form is persisted in a host's `config.toml`.
 
 pub mod capabilities;
 pub mod chunks;
 pub mod error;
 pub mod goals;
 pub mod health;
+pub mod host;
 pub mod null;
 pub mod provider;
 pub mod recall;
