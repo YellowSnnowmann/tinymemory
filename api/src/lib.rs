@@ -60,6 +60,9 @@
 //! - [`host`]: the **host seam** — [`host::MemoryHostConfig`],
 //!   [`host::EmbeddingProvider`], [`host::MemoryEventSink`], and the memory
 //!   config sections whose serde form is persisted in a host's `config.toml`.
+//! - [`wire`]: the error-name table a driver reached over a bus or a socket
+//!   round-trips [`error::MemoryError`] through. Shared by both ends of every
+//!   such transport, so the names cannot drift apart.
 
 pub mod capabilities;
 pub mod chunks;
