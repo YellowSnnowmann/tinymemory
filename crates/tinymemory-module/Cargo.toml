@@ -50,11 +50,16 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
 tempfile = "3"
 
+# Mirrors the root package's set. `unsafe_code = "forbid"` holds even though
+# `module_export!` emits `unsafe extern "C"` symbols: the macro's expansion
+# carries its own hygiene context, so the C ABI surface does not trip the lint
+# here. Verified against `tinywallet-module`, which forbids it too and builds.
 [lints.rust]
-unsafe_code = "deny"
+unsafe_code = "forbid"
 missing_docs = "warn"
 missing_debug_implementations = "warn"
 unreachable_pub = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
@@ -62,6 +67,12 @@ pedantic = { level = "warn", priority = -1 }
 unwrap_used = "warn"
 expect_used = "warn"
 panic = "warn"
+todo = "warn"
+unimplemented = "warn"
 missing_errors_doc = "warn"
 missing_panics_doc = "warn"
 doc_markdown = "warn"
+
+[lints.rustdoc]
+broken_intra_doc_links = "warn"
+private_intra_doc_links = "warn"
