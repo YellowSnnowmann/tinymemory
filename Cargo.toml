@@ -1,6 +1,6 @@
 [workspace]
-members = [".", "api", "core", "adapters/tinycortex"]
-default-members = [".", "api", "core", "adapters/tinycortex"]
+members = [".", "api", "core", "adapters/tinycortex", "crates/tinymemory-module"]
+default-members = [".", "api", "core", "adapters/tinycortex", "crates/tinymemory-module"]
 # `vendor/` holds engine submodules (tinycortex, tinybus), each of which is its
 # own workspace with its own lockfile. Same exclusion `vendor/tinycortex` uses
 # for its own nested vendor directory.
