@@ -27,21 +27,6 @@ use crate::sync::composio::providers::{
 };
 
 pub(super) const ACTION_GET_PROFILE: &str = "GMAIL_GET_PROFILE";
-pub(super) const ACTION_FETCH_EMAILS: &str = "GMAIL_FETCH_EMAILS";
-
-/// Base Gmail search query used on every sync pass.
-///
-/// Excludes spam and trash but intentionally does NOT restrict to `in:inbox` —
-/// that restriction (issue #1713) prevented sent emails from ever being ingested.
-/// Exported `pub(super)` so `tests.rs` can assert against the canonical value
-/// rather than a duplicated literal.
-pub(super) const BASE_QUERY: &str = "-in:spam -in:trash";
-
-/// Gmail search query strings that retrieve sent mail.
-///
-/// Any of these can be passed as the `query` parameter to `GMAIL_FETCH_EMAILS`
-/// to fetch outbound messages. Exported `pub(super)` for use in regression tests.
-pub(super) const SENT_QUERIES: &[&str] = &["from:me", "label:SENT", "in:sent"];
 
 pub struct GmailProvider;
 
@@ -184,7 +169,7 @@ impl ComposioProvider for GmailProvider {
     }
 }
 
-// The `max_items` cap math (`ItemCap`) lives in the orchestrator now that it is
-// the sole consumer; the `sync_depth_days` date floor (`epoch_floor_from_depth`)
-// stays in `super::super::helpers` because `gmail::source` builds an
-// `after:<epoch>` filter from it.
+// Message fetching (the `GMAIL_FETCH_EMAILS` action, the search query, the
+// `max_items` cap math and the `sync_depth_days` `after:<epoch>` floor) is owned
+// by `tinycortex::memory::sync::GmailSyncPipeline`. What stays here is the
+// host-side provider surface: profile lookup and trigger dispatch.
