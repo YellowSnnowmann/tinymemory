@@ -24,7 +24,6 @@ use std::sync::Arc;
 
 use tinycortex::memory::diff::{extract_item_id, SnapshotItem, SnapshotItemSource};
 
-
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 

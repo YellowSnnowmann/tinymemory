@@ -10,8 +10,6 @@ use tinycortex::memory::sync::{
     SyncEventSink, SyncOutcome, SyncPipeline, SyncStage, SyncStateStore, WorkspaceSourcePipeline,
 };
 
-
-
 use crate::sources::{MemorySourceEntry, SourceKind};
 use crate::store::MemoryClientRef;
 use crate::Config;

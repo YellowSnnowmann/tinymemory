@@ -16,7 +16,6 @@ use std::time::Instant;
 
 use tokio::sync::mpsc;
 
-
 use super::state::IngestionState;
 use super::MemoryIngestionConfig;
 use crate::store::{NamespaceDocumentInput, UnifiedMemory};

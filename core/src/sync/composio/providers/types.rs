@@ -6,9 +6,9 @@ use std::sync::{Arc, Mutex};
 // Only the tests below call `MemoryHostConfig` methods directly; the production
 // paths in this module go through `crate::Config`.
 #[cfg(test)]
-use tinymemory_api::host::MemoryHostConfig;
-#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
+#[cfg(test)]
+use tinymemory_api::host::MemoryHostConfig;
 
 use crate::composio_host::{self, ComposioExecuteResponse};
 use crate::config_loader as config_rpc;

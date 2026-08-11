@@ -39,8 +39,6 @@ use tinycortex::memory::queue::{
 };
 use tinycortex::memory::MemoryConfig;
 
-
-
 use crate::store::chunks::store as chunk_store;
 use crate::store::chunks::types::{truncate_to_conservative_tokens, Chunk, Metadata};
 use crate::store::content as content_store;

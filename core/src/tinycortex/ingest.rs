@@ -5,7 +5,6 @@ use tinycortex::memory::ingest::{QueueJobSink, TreeJobSink};
 use tinycortex::memory::score::extract::{LlmEntityExtractor, LlmExtractorConfig};
 use tinycortex::memory::score::ScoringConfig;
 
-
 use crate::Config;
 
 #[derive(Default)]

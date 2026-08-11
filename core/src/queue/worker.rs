@@ -20,9 +20,9 @@ use tokio::sync::Notify;
 // Only the tests below call `MemoryHostConfig` methods directly; the production
 // paths in this module go through `crate::Config`.
 #[cfg(test)]
-use tinymemory_api::host::MemoryHostConfig;
-#[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
+#[cfg(test)]
+use tinymemory_api::host::MemoryHostConfig;
 
 use crate::Config;
 // W4 flip: `run_once` now delegates claim/dispatch/settle to the crate, so the

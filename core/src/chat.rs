@@ -11,7 +11,6 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 
-
 use crate::chat_host::{create_chat_model_with_model_id, provider_for_role, UsageInfo};
 use crate::Config;
 use tinyagents::harness::message::Message;

@@ -11,7 +11,6 @@ use serde_json::json;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-
 use crate::embedding_host::require_embedding_host;
 use crate::ingestion::queue as ingestion_queue;
 use crate::ingestion::{
