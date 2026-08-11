@@ -45,6 +45,9 @@ impl tinycortex::memory::score::embed::Embedder for EmbedderBridge<'_> {
 }
 
 struct Observer<'a> {
+    // Only read by the `memory-git` `summary_committed` impl below; with the
+    // feature off that impl is a no-op and never touches `config`.
+    #[cfg_attr(not(feature = "memory-git"), allow(dead_code))]
     config: &'a Config,
 }
 
