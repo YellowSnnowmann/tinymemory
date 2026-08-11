@@ -33,8 +33,15 @@
 //! The engine needs embeddings, embeddings need an inference credential, and
 //! that credential stays in the host. The module asks the host to embed over the
 //! bus instead — see [`embedding`], which is the same split the `tinywallet`
-//! module makes with a signing key. [`config::ModuleConfig`] has no field that
-//! could hold a key.
+//! module makes with a signing key.
+//!
+//! [`config::ModuleConfig`]'s own fields cannot hold a key, but that is not
+//! sufficient on its own and it is worth saying why: it embeds
+//! `tinymemory_api::host::MemoryConfig` **verbatim**, and that struct contains
+//! `agentmemory_secret`, a bearer token for a remote memory backend. So the
+//! property is *enforced* at setup by
+//! [`config::ModuleConfig::strip_host_credentials`], not merely asserted about a
+//! field list. "Carried verbatim" carries credentials verbatim too.
 //!
 //! # Scope: the mandatory three
 //!
