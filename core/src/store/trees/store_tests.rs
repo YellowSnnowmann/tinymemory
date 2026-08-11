@@ -297,7 +297,7 @@ fn buffer_upsert_and_clear() {
 
     with_connection(&cfg, |conn| {
         let tx = conn.unchecked_transaction()?;
-        clear_buffer_tx(&tx, "tree-1", 0)?;
+        tinycortex::memory::tree::store::clear_buffer_tx(&tx, "tree-1", 0)?;
         tx.commit()?;
         Ok(())
     })
