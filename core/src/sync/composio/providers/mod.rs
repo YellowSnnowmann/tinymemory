@@ -321,9 +321,11 @@ mod tests {
 
     #[test]
     fn sync_outcome_elapsed_ms_is_safe_when_finish_lt_start() {
-        let mut o = SyncOutcome::default();
-        o.started_at_ms = 100;
-        o.finished_at_ms = 50;
+        let mut o = SyncOutcome {
+            started_at_ms: 100,
+            finished_at_ms: 50,
+            ..Default::default()
+        };
         assert_eq!(o.elapsed_ms(), 0);
         o.finished_at_ms = 250;
         assert_eq!(o.elapsed_ms(), 150);
