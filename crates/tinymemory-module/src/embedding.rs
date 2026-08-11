@@ -240,7 +240,11 @@ impl EmbeddingProvider for BusEmbeddingProvider {
 
         let proxy = self
             .connection
-            .proxy(EMBEDDING_HOST_BUS_NAME, EMBEDDING_HOST_OBJECT_PATH)
+            .proxy(
+                EMBEDDING_HOST_BUS_NAME,
+                EMBEDDING_HOST_OBJECT_PATH,
+                EMBEDDING_HOST_INTERFACE,
+            )
             .map_err(|error| anyhow::anyhow!("embedding host unreachable: {error}"))?;
 
         let owned: Vec<String> = texts.iter().map(|text| (*text).to_string()).collect();
