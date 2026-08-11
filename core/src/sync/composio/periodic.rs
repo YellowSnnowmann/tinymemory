@@ -711,8 +711,8 @@ mod tests {
     #[test]
     fn tick_seconds_is_sane_default() {
         // Sanity check: don't accidentally ship a 1-second tick.
-        assert!(TICK_SECONDS >= 30);
-        assert!(TICK_SECONDS <= 3600);
+        const _: () = assert!(TICK_SECONDS >= 30);
+        const _: () = assert!(TICK_SECONDS <= 3600);
     }
 
     #[test]
