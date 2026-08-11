@@ -199,6 +199,11 @@ const TOPIC_CHANGE_MARKERS: &[&str] = &[
 ];
 
 /// Create a new open segment.
+///
+/// Each parameter names a distinct column of the row being inserted; grouping
+/// them into a struct would just move the same 8 fields one level out without
+/// reducing the information the caller has to supply.
+#[allow(clippy::too_many_arguments)]
 pub fn segment_create(
     conn: &Arc<Mutex<Connection>>,
     segment_id: &str,
