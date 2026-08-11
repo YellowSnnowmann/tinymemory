@@ -109,11 +109,29 @@ async fn admit_module(
     std::mem::forget(host_side);
 
     let modules = ModuleHost::new(broker);
+    // The `memory` block is set explicitly rather than left to default, because
+    // the engine sizes its vector store from `memory.embedding_dimensions` (1024
+    // by default) while the bus provider reports the `cloud_embedding_dimensions`
+    // above. Left mismatched, the store and the embedder disagree about the width
+    // of the space and recall returns nothing — which is exactly the failure the
+    // provider's width check exists to make loud, so the two are pinned equal
+    // here on purpose.
+    //
+    // `min_relevance_score` is dropped to 0 because the fake embedder's vectors
+    // are content-derived noise, not real semantics; the default 0.4 floor would
+    // filter out a correct match for reasons that have nothing to do with the
+    // module.
     let config = serde_json::json!({
         "workspace_dir": workspace,
         "cloud_embedding_model": "e2e-model",
         "cloud_embedding_dimensions": DIMS,
         "models_supporting_dimensions": ["e2e-model"],
+        "memory": {
+            "embedding_provider": "cloud",
+            "embedding_model": "e2e-model",
+            "embedding_dimensions": DIMS,
+            "min_relevance_score": 0.0,
+        },
     });
 
     let loaded = modules
