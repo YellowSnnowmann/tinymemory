@@ -66,6 +66,7 @@ impl HostEmbedder {
         _dimensions: usize,
         texts: Vec<String>,
     ) -> BusResult<Vec<Vec<f32>>> {
+        EMBED_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // A crude content-derived vector: enough that identical text embeds
         // identically and different text does not, which is all recall needs
         // here.
