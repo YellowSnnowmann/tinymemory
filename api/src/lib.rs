@@ -75,5 +75,6 @@ pub mod traits;
 pub mod tree;
 pub mod types;
 pub mod version;
+pub mod wire;
 
 pub use version::{is_compatible, CONTRACT_VERSION};
