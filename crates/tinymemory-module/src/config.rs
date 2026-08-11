@@ -2,7 +2,7 @@
 //!
 //! # Why configuration and not a constructor argument
 //!
-//! A module is `dlopen`ed; there is no Rust call to pass a struct to. TinyBus
+//! A module is `dlopen`ed; there is no Rust call to pass a struct to. `TinyBus`
 //! carries borrowed JSON in the host vtable and the SDK copies and deserializes
 //! it during initialization, which is what [`ModuleConfig`] is deserialized
 //! from. The host supplies it with `ModuleHost::set_config` before the load.
