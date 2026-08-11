@@ -1,0 +1,165 @@
+//! Loadable `TinyBus` module adapter for `TinyMemory`.
+//!
+//! This private workspace crate keeps the vendored `TinyBus` dependency out of
+//! the published `tinymemory` crates. Its `cdylib` output is the
+//! target-specific binary distributed in GitHub releases.
+//!
+//! # What this module is for, stated honestly
+//!
+//! It carries the memory **engine** — `tinycortex` and `tinymemory-core` — so a
+//! host that loads it compiles neither.
+//!
+//! It is worth being precise about the benefit, because the obvious guess is
+//! wrong. This module sheds **no third-party dependencies** from a host. Every
+//! crate the engine uses (`rusqlite`, `reqwest`, `chrono`, `regex`, `uuid`,
+//! `walkdir`, `sha2`, `tokio`) is shared with surface a host keeps, and
+//! `libsqlite3-sys` in particular has several other parents — `tinyagents`'
+//! session store among them — so the native `SQLite` build does not leave. That
+//! was measured on `OpenHuman`, on both its kernel and its shipping feature
+//! profiles: four crate names leave, and all four are ours.
+//!
+//! What it does buy is **compile time on the critical path**, and that was
+//! measured too. `tinycortex` and `tinymemory-core` compile strictly serially
+//! ahead of the host crate — `tinyagents` → `tinycortex` → `tinymemory-core` →
+//! host, each starting as the previous one ends — putting 14.7s directly in
+//! front of the host's own compilation. Removing them from the host's graph
+//! moved a full build from 176s to about 161s.
+//!
+//! Do not re-justify this module on dependency count. The number is zero and it
+//! is written down here so nobody re-derives it optimistically.
+//!
+//! # It carries no credentials
+//!
+//! The engine needs embeddings, embeddings need an inference credential, and
+//! that credential stays in the host. The module asks the host to embed over the
+//! bus instead — see [`embedding`], which is the same split the `tinywallet`
+//! module makes with a signing key. [`config::ModuleConfig`] has no field that
+//! could hold a key.
+//!
+//! # Scope: the mandatory three
+//!
+//! The served surface is `tinymemory_api`'s mandatory capability families —
+//! Core, Recall, Portability — which is exactly what `tinymemory-tinycortex`
+//! can provide. The ten optional families need a host's configuration, embedding
+//! compute and job queue, and a host that has those implements them itself.
+//! See [`service`] for the method list.
+
+pub mod config;
+pub mod embedding;
+mod service;
+
+pub use config::ModuleConfig;
+pub use embedding::{
+    BusEmbeddingHost, BusEmbeddingProvider, EMBEDDING_HOST_BUS_NAME, EMBEDDING_HOST_INTERFACE,
+    EMBEDDING_HOST_OBJECT_PATH,
+};
+pub use service::{BUS_NAME, OBJECT_PATH};
+
+use std::sync::Arc;
+
+use tinybus::{Connection, Error as BusError, Result as BusResult};
+
+/// The module refused its configuration or could not bring up a store.
+const SETUP_FAILED_ERROR: &str = "ai.tinyhumans.tinymemory.Error.SetupFailed";
+
+/// Bring up the engine and serve it.
+///
+/// # Order matters
+///
+/// The bus-backed [`BusEmbeddingHost`] is installed **before** the engine is
+/// constructed. `tinymemory-core` resolves its embedder through a process-global
+/// during construction, and a store built before the host is installed would
+/// either fail or — worse — bind the inert zero-dimension provider and write
+/// vectors nobody can search. The global is why this is a `set` and not an
+/// argument: the construction sites sit deep inside retrieval and sealing call
+/// stacks that already thread a config and a store handle.
+///
+/// # The empty API key is deliberate
+///
+/// `create_memory_with_local_ai` is handed `""`. Every embed goes over the bus to
+/// the host, which holds the real credential, so there is nothing to pass and
+/// nothing here that could leak one.
+async fn setup(connection: Connection, config: ModuleConfig) -> BusResult<()> {
+    config.validate().map_err(setup_error)?;
+
+    log::debug!(
+        "[tinymemory:module] setup driver_id={} routes={} cloud_dims={}",
+        config.driver_id,
+        config.embedding_routes.len(),
+        config.cloud_embedding_dimensions
+    );
+
+    // Install the embedder first. See the doc comment.
+    tinymemory_core::embedding_host::set_embedding_host(Arc::new(BusEmbeddingHost::new(
+        connection.clone(),
+        &config,
+    )));
+
+    let memory = tinymemory_core::store::factories::create_memory_with_local_ai(
+        &config.memory,
+        None,
+        "",
+        &config.embedding_routes,
+        config.storage_provider.as_ref(),
+        &config.workspace_dir,
+    )
+    .map_err(|error| setup_error(format!("create memory store: {error}")))?;
+
+    let provider = tinymemory_tinycortex::provider(Arc::from(memory));
+    service::serve(&connection, Arc::new(provider)).await
+}
+
+/// A setup failure, carrying no path and no credential.
+fn setup_error(message: impl Into<String>) -> BusError {
+    BusError::MethodFailed {
+        name: SETUP_FAILED_ERROR.to_string(),
+        message: message.into(),
+    }
+}
+
+// Isolate the generated public C symbols so the lint exception cannot hide
+// undocumented Rust API. Their contract is TinyBus ABI v1, and none is a
+// Rust-callable export from this crate.
+#[allow(
+    missing_docs,
+    unreachable_pub,
+    reason = "generated C ABI symbols are documented by the TinyBus module SDK"
+)]
+mod exports {
+    tinybus_module::module_export! {
+        setup = super::setup,
+        config = super::ModuleConfig,
+        // Two, not one: a recall that triggers an embed makes an outbound call
+        // while still inside its own inbound call, so a single worker would
+        // deadlock on the first semantic query.
+        worker_threads = 2,
+        provides = ["ai.tinyhumans.tinymemory.Memory"],
+        methods = [
+            "DriverId",
+            "Capabilities",
+            "Health",
+            "Shutdown",
+            "Store",
+            "Get",
+            "Forget",
+            "List",
+            "Namespaces",
+            "Recall",
+            "ExportPage",
+            "ImportRecords",
+        ],
+        signals = [],
+        // The host's embedder is deliberately NOT declared as `requires`. That
+        // field is resolved against already-loaded *modules*, and this dependency
+        // is served by the host itself, which would leave the module permanently
+        // unresolved. It is dialled lazily on the first embed instead, and a host
+        // that has not served it gets a named error rather than a module that
+        // never starts.
+        requires = [],
+        optional = [],
+        // Eager: bringing up a store opens a database and may run migrations,
+        // and charging that to whichever call happens to be first would make an
+        // ordinary recall time out on a cold start.
+        lazy = false,
+    }
+}
