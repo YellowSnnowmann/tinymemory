@@ -43,6 +43,14 @@ const MEMORY_INTERFACE: &str = "ai.tinyhumans.tinymemory.Memory";
 /// Width of the vectors this fake host returns.
 const DIMS: usize = 8;
 
+/// Counts embed calls the module made, across the process.
+///
+/// A process-global rather than a field because the served object is moved into
+/// the connection and there is no handle left to read afterwards. One module per
+/// process is already a hard constraint here (see the module docs), so a global
+/// is not shared between tests in practice.
+static EMBED_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 /// Stands in for the host's embedder so recall has something to work with.
 ///
 /// Deterministic rather than random: a recall assertion that depended on a
