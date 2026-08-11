@@ -13,9 +13,7 @@ use tinybus::transport::memory::MemoryBus;
 use tinybus::{Connection, Result as BusResult};
 use tinymemory_api::host::{EmbeddingHost, EmbeddingProvider};
 
-use super::{
-    BusEmbeddingHost, EMBEDDING_HOST_BUS_NAME, EMBEDDING_HOST_OBJECT_PATH,
-};
+use super::{BusEmbeddingHost, EMBEDDING_HOST_BUS_NAME, EMBEDDING_HOST_OBJECT_PATH};
 use crate::config::ModuleConfig;
 
 /// A stand-in for the host's embedder, returning vectors of a chosen width.

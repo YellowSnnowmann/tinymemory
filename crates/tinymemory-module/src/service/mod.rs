@@ -131,7 +131,10 @@ impl MemoryService {
     /// module: `TinyBus` never unloads a library, so a host that shuts the
     /// driver down and rebinds gets a fresh engine inside the same mapped image.
     async fn shutdown(&self) -> BusResult<()> {
-        self.provider.shutdown().await.map_err(|error| into_bus_error(&error))
+        self.provider
+            .shutdown()
+            .await
+            .map_err(|error| into_bus_error(&error))
     }
 
     /// Upsert an entry keyed by `(namespace, key)`.
@@ -197,7 +200,10 @@ impl MemoryService {
 
     /// Enumerate namespaces with their aggregate counts.
     async fn namespaces(&self) -> BusResult<Vec<NamespaceSummary>> {
-        self.provider.namespaces().await.map_err(|error| into_bus_error(&error))
+        self.provider
+            .namespaces()
+            .await
+            .map_err(|error| into_bus_error(&error))
     }
 
     /// Ranked retrieval.
