@@ -1,3 +1,11 @@
+# Its own workspace root, deliberately — see the long note on `exclude` in
+# `../../Cargo.toml`. In short: this crate depends on the vendored tinybus,
+# whose manifest inherits fields from its own nested `[workspace.package]`, and
+# being a member of the tinymemory workspace makes cargo resolve that
+# inheritance against the wrong root. A separately released artifact wants its
+# own lockfile regardless.
+[workspace]
+
 [package]
 name = "tinymemory-module"
 version = "0.1.0"
