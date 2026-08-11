@@ -51,6 +51,13 @@ pub const EMBEDDING_HOST_BUS_NAME: &str = "ai.tinyhumans.tinymemory.EmbeddingHos
 /// Object path the host serves its embedder at.
 pub const EMBEDDING_HOST_OBJECT_PATH: &str = "/ai/tinyhumans/tinymemory/EmbeddingHost";
 
+/// Interface the host serves at [`EMBEDDING_HOST_OBJECT_PATH`].
+///
+/// Equal to [`EMBEDDING_HOST_BUS_NAME`] by convention, but a separate constant
+/// because they are separate concepts to `TinyBus`: one addresses a peer, the
+/// other selects a dispatch table on that peer's object.
+pub const EMBEDDING_HOST_INTERFACE: &str = "ai.tinyhumans.tinymemory.EmbeddingHost";
+
 /// The method the host exports.
 const EMBED_METHOD: &str = "Embed";
 
