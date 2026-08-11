@@ -69,26 +69,17 @@ use tinybus::{Connection, Error as BusError, Result as BusResult};
 use tinymemory_api::capabilities::Capabilities;
 use tinymemory_api::error::MemoryError;
 use tinymemory_api::health::MemoryHealth;
+use tinymemory_api::provider::types::{ExportPage, ExportRecord, ImportOutcome, SourceScope};
 use tinymemory_api::provider::{MemoryCore, MemoryPortability, MemoryProvider, MemoryRecall};
 use tinymemory_api::recall::OwnedRecallOpts;
-use tinymemory_api::source_scope::SourceScope;
-use tinymemory_api::types::{
-    ExportPage, ExportRecord, ImportOutcome, MemoryCategory, MemoryEntry, MemoryTaint,
-    NamespaceSummary,
-};
+use tinymemory_api::types::{MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary};
+use tinymemory_api::wire;
 
 /// Well-known name exported by the `TinyMemory` module.
 pub const BUS_NAME: &str = "ai.tinyhumans.tinymemory.Memory";
 
 /// Object path exported by the `TinyMemory` module.
 pub const OBJECT_PATH: &str = "/ai/tinyhumans/tinymemory/Memory";
-
-/// The caller's request was rejected. It can fix this.
-const INVALID_INPUT_ERROR: &str = "ai.tinyhumans.tinymemory.Error.InvalidInput";
-/// A capability the bound driver does not advertise.
-const UNSUPPORTED_ERROR: &str = "ai.tinyhumans.tinymemory.Error.Unsupported";
-/// The backend failed. The caller cannot fix this.
-const BACKEND_ERROR: &str = "ai.tinyhumans.tinymemory.Error.Backend";
 
 /// The served object: a bound driver and nothing else.
 pub(crate) struct MemoryService {
