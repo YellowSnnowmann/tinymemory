@@ -25,11 +25,9 @@ pub async fn summarise(
     inputs: &[SummaryInput],
     context: &SummaryContext<'_>,
 ) -> Result<SummaryOutput> {
-    let Some(prepared) = tinycortex::memory::tree::prepare_summary_prompt(
-        inputs,
-        context,
-        config.output_language(),
-    ) else {
+    let Some(prepared) =
+        tinycortex::memory::tree::prepare_summary_prompt(inputs, context, config.output_language())
+    else {
         return Ok(SummaryOutput::default());
     };
     let provider =
