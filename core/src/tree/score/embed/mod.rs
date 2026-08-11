@@ -440,9 +440,9 @@ mod tests {
 
     // --- batch-embedding (variant B) scaffolding + tests ---
 
-    use tinymemory_api::host::EmbeddingProvider;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use tinymemory_api::host::EmbeddingProvider;
 
     fn ok_vec() -> Vec<f32> {
         vec![0.5_f32; EMBEDDING_DIM]

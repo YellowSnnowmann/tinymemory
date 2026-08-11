@@ -11,9 +11,7 @@
 //! The low-level provider implementations live in `memory_sync/*`; this module
 //! is the orchestration seam the `memory` domain presents to RPC/tools/UI.
 
-
 use serde::{Deserialize, Serialize};
-
 
 /// Why a sync run was requested.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -117,4 +115,3 @@ pub fn extract_mem_src_id(composite_source_id: &str) -> Option<&str> {
     }
     Some(source_id)
 }
-

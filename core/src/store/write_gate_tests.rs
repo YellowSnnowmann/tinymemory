@@ -18,8 +18,8 @@ use std::sync::Arc;
 use serde_json::json;
 use tempfile::TempDir;
 
-use tinymemory_api::host::NoopEmbedding;
 use crate::store::{NamespaceDocumentInput, UnifiedMemory};
+use tinymemory_api::host::NoopEmbedding;
 
 /// A private key body, split so this source file does not itself contain a
 /// scanner-tripping literal in one piece.

@@ -1,10 +1,10 @@
 use anyhow::Result;
 
-use crate::Config;
 use crate::source_scope::current_source_scope;
 use crate::store::chunks::types::SourceKind;
 use crate::tinycortex::engine_config;
 use crate::tree::retrieval::types::QueryResponse;
+use crate::Config;
 
 const DEFAULT_LIMIT: usize = 200;
 

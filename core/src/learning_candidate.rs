@@ -88,7 +88,6 @@ impl CueFamily {
 /// [`tinymemory_api::host::EvidenceRef`].
 pub use tinymemory_api::host::EvidenceRef;
 
-
 // ── Learning candidate ───────────────────────────────────────────────────────
 
 /// A single unit of learning evidence emitted by a producer and queued in the

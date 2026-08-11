@@ -231,8 +231,7 @@ impl DriverRegistry {
                 // offending value, and a config typo is the only way to get
                 // here, so naming it is the difference between a refusal an
                 // operator can act on and one they cannot.
-                let class =
-                    DriverClass::parse(raw).map_err(|error| refuse(&error.to_string()))?;
+                let class = DriverClass::parse(raw).map_err(|error| refuse(&error.to_string()))?;
                 // A reserved id names a fixed implementation, so an explicit
                 // `class` line may confirm it but never override it.
                 if let Some(fixed) = self.reserved_class(id) {

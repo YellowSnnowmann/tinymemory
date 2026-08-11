@@ -32,9 +32,6 @@ pub use tinycortex::memory::store::content::{
 /// extraction job runs.
 ///
 /// Delegates to [`tags::update_summary_tags`].
-pub fn update_summary_tags(
-    config: &crate::Config,
-    summary_id: &str,
-) -> anyhow::Result<()> {
+pub fn update_summary_tags(config: &crate::Config, summary_id: &str) -> anyhow::Result<()> {
     tags::update_summary_tags(config, summary_id)
 }

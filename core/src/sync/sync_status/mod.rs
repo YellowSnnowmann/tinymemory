@@ -13,5 +13,4 @@
 //!   * `openhuman.memory_sync_status_list` — handler in [`rpc`]
 //!   * Controller registration via [`schemas::all_registered_controllers`]
 
-
 pub use tinycortex::memory::sync::{FreshnessLabel, MemorySyncStatus};

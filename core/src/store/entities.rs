@@ -7,11 +7,9 @@ use tinycortex::memory::store::entity_index::{
     CanonicalEntity, EntityIndex, EntityKind, SelfIdentity,
 };
 
-use crate::Config;
-use crate::sync::composio::providers::profile::{
-    is_self_identity_any_toolkit, IdentityKind,
-};
+use crate::sync::composio::providers::profile::{is_self_identity_any_toolkit, IdentityKind};
 use crate::tinycortex::memory_config_from;
+use crate::Config;
 
 pub use tinycortex::memory::store::entity_index::EntityHit;
 

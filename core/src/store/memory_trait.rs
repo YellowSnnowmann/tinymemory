@@ -425,9 +425,7 @@ impl Memory for UnifiedMemory {
                 session_id: row.get(4)?,
                 timestamp: timestamp_to_rfc3339(row.get(5)?),
                 score: None,
-                taint: crate::MemoryTaint::from_db_str(
-                    &row.get::<_, String>(6)?,
-                ),
+                taint: crate::MemoryTaint::from_db_str(&row.get::<_, String>(6)?),
             })
         })?;
         let mut entries = rows.collect::<rusqlite::Result<Vec<_>>>()?;
@@ -505,9 +503,9 @@ impl Memory for UnifiedMemory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tinymemory_api::host::NoopEmbedding;
     use std::sync::Arc;
     use tempfile::TempDir;
+    use tinymemory_api::host::NoopEmbedding;
 
     fn fresh_mem() -> (TempDir, UnifiedMemory) {
         let tmp = TempDir::new().unwrap();
@@ -1116,19 +1114,16 @@ mod tests {
 
         // Inside an ambient turn scope, yet passed `None`: the engine must
         // honour the argument, not the task-local.
-        let entries = crate::thread_context::with_thread_id(
-            "thread-current",
-            async {
-                mem.recall_excluding_session(
-                    "Jordan Rivera chat platform user ID",
-                    10,
-                    self_echo_opts(),
-                    None,
-                )
-                .await
-                .unwrap()
-            },
-        )
+        let entries = crate::thread_context::with_thread_id("thread-current", async {
+            mem.recall_excluding_session(
+                "Jordan Rivera chat platform user ID",
+                10,
+                self_echo_opts(),
+                None,
+            )
+            .await
+            .unwrap()
+        })
         .await;
 
         assert!(

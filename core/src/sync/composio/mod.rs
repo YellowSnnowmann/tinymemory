@@ -17,8 +17,8 @@ use std::sync::Arc;
 pub mod periodic;
 pub mod providers;
 
-use crate::Config;
 use crate::composio_host::{self, ComposioConnection};
+use crate::Config;
 
 pub use periodic::{record_sync_success, start_periodic_sync};
 pub use providers::{
@@ -44,11 +44,10 @@ pub async fn list_sync_targets(config: &Config) -> Result<Vec<SyncTarget>, Strin
     init_default_composio_sync_providers();
 
     // Try memory_sources registry first (user-curated list).
-    let registry_sources = crate::sources::list_enabled_by_kind(
-        crate::sources::SourceKind::Composio,
-    )
-    .await
-    .unwrap_or_default();
+    let registry_sources =
+        crate::sources::list_enabled_by_kind(crate::sources::SourceKind::Composio)
+            .await
+            .unwrap_or_default();
 
     if !registry_sources.is_empty() {
         let from_registry: Vec<SyncTarget> = registry_sources
@@ -139,11 +138,10 @@ pub async fn run_connection_sync(
     // Look up the source entry to obtain any user-configured caps.
     // Non-fatal: if the registry read fails we proceed uncapped.
     let (src_max_items, src_sync_depth_days) = {
-        let registry_sources = crate::sources::list_enabled_by_kind(
-            crate::sources::SourceKind::Composio,
-        )
-        .await
-        .unwrap_or_default();
+        let registry_sources =
+            crate::sources::list_enabled_by_kind(crate::sources::SourceKind::Composio)
+                .await
+                .unwrap_or_default();
         registry_sources
             .iter()
             .find(|s| s.connection_id.as_deref() == Some(&target.connection_id))

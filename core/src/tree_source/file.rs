@@ -33,9 +33,9 @@ use chrono::{DateTime, Utc};
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
-use crate::Config;
 use crate::store::content::raw::raw_source_dir;
 use crate::store::trees::types::Tree;
+use crate::Config;
 
 /// Filename of the per-source registry mirror inside `raw/<source_slug>/`.
 pub const SOURCE_FILE_NAME: &str = "_source.md";
@@ -142,7 +142,6 @@ mod tests {
     use tempfile::TempDir;
 
     fn cfg() -> (TempDir, TestHostConfig) {
-
         crate::test_seams::init();
         let tmp = TempDir::new().unwrap();
         let mut cfg = TestHostConfig::default();

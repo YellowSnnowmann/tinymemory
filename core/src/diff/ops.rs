@@ -13,8 +13,8 @@
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
-use crate::Config;
 use crate::sources::types::MemorySourceEntry;
+use crate::Config;
 
 use tinycortex::memory::diff::{DiffEngine, SourceDescriptor};
 
@@ -313,7 +313,6 @@ mod tests {
     use tinycortex::memory::diff::{Ledger, SnapshotMeta};
 
     fn test_config() -> TestHostConfig {
-
         crate::test_seams::init();
         let dir = tempfile::tempdir().unwrap();
         let mut config = TestHostConfig::default();

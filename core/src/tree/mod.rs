@@ -25,4 +25,3 @@ pub use tinycortex::memory::tree::{
     TreeLabelStrategy, TreeLeafPayload, TreeReadHit, TreeReadRequest, TreeReadResult,
     TreeWriteOutcome, TreeWriteRequest,
 };
-

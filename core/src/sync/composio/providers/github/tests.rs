@@ -12,9 +12,7 @@ use super::provider::{
 use super::tools::GITHUB_CURATED;
 use super::GitHubProvider;
 use crate::sync::composio::providers::ComposioProvider;
-use crate::sync::composio::providers::{
-    GithubFetchMode, TaskFetchFilter, TaskKind,
-};
+use crate::sync::composio::providers::{GithubFetchMode, TaskFetchFilter, TaskKind};
 use serde_json::json;
 
 // ── extract_issues ───────────────────────────────────────────────────────────

@@ -701,9 +701,9 @@ fn phase3_indexes_idempotent() {
 #[test]
 fn unified_memory_new_applies_phase3_indexes_to_existing_db() {
     use super::super::UnifiedMemory;
-    use tinymemory_api::host::NoopEmbedding;
     use rusqlite::Connection;
     use std::sync::Arc;
+    use tinymemory_api::host::NoopEmbedding;
 
     let dir = tempfile::tempdir().unwrap();
     let workspace = dir.path();

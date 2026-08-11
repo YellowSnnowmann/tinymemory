@@ -11,8 +11,8 @@ use tinycortex::memory::tree::runtime::{
     NodeLevel, RuntimeObserver, Summariser, TreeNode, TreeStatus,
 };
 
-use crate::Config;
 use crate::tinycortex::engine_config;
+use crate::Config;
 
 const SUMMARIZATION_TEMP: f64 = 0.3;
 

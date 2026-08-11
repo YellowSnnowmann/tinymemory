@@ -256,12 +256,13 @@ pub async fn ingest_coding_sessions(
         );
     })?;
     let summariser = super::HostSummariser::new(config.to_arc());
-    let store = FileStateStore::open_in_workspace(&config.workspace_dir()).inspect_err(|error| {
-        tracing::error!(
-            error = %error,
-            "[memory_persona] coding session ingestion: open state store failed"
-        );
-    })?;
+    let store =
+        FileStateStore::open_in_workspace(&config.workspace_dir()).inspect_err(|error| {
+            tracing::error!(
+                error = %error,
+                "[memory_persona] coding session ingestion: open state store failed"
+            );
+        })?;
     let report = Pipeline {
         config: &memory_config,
         persona: &persona,

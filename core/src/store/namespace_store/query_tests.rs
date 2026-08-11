@@ -5,9 +5,9 @@ use std::sync::Arc;
 use serde_json::json;
 use tempfile::TempDir;
 
-use tinymemory_api::host::NoopEmbedding;
 use crate::store::{NamespaceDocumentInput, UnifiedMemory};
 use crate::Memory;
+use tinymemory_api::host::NoopEmbedding;
 
 #[tokio::test]
 async fn graph_duplicate_upsert_aggregates_evidence_count() {
@@ -143,10 +143,9 @@ async fn recall_namespace_memories_includes_namespace_kv() {
         .unwrap();
 
     let hits = memory.recall_namespace_memories("team", 5).await.unwrap();
-    assert!(hits.iter().any(|hit| matches!(
-        hit.kind,
-        crate::store::MemoryItemKind::Kv
-    )));
+    assert!(hits
+        .iter()
+        .any(|hit| matches!(hit.kind, crate::store::MemoryItemKind::Kv)));
 }
 
 #[tokio::test]

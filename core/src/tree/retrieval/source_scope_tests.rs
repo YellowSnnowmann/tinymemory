@@ -33,20 +33,16 @@ use tempfile::TempDir;
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
-use crate::Config;
 use crate::source_scope::{chunk_source_allowed_in, with_source_scope};
 use crate::store::chunks::store::{
     list_chunks, upsert_chunks, upsert_staged_chunks_tx, with_connection, ListChunksQuery,
 };
-use crate::store::chunks::types::{
-    chunk_id, Chunk, Metadata, SourceKind, SourceRef,
-};
+use crate::store::chunks::types::{chunk_id, Chunk, Metadata, SourceKind, SourceRef};
 use crate::store::content as content_store;
 use crate::store::trees::store::{insert_summary_tx, insert_tree};
 use crate::store::trees::types::{SummaryNode, Tree, TreeKind, TreeStatus};
-use crate::tree::retrieval::{
-    cover_window, drill_down, fetch_leaves, query_source,
-};
+use crate::tree::retrieval::{cover_window, drill_down, fetch_leaves, query_source};
+use crate::Config;
 
 const BASE_MS: i64 = 1_700_000_000_000;
 const MEMORY_SOURCES: &str = "memory_sources";
@@ -54,7 +50,6 @@ const MEMORY_SOURCES: &str = "memory_sources";
 // ── fixtures ─────────────────────────────────────────────────────────────
 
 fn test_config() -> (TempDir, TestHostConfig) {
-
     crate::test_seams::init();
     let tmp = TempDir::new().unwrap();
     let mut cfg = TestHostConfig::default();

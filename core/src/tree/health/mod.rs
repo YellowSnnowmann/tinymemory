@@ -322,7 +322,10 @@ mod tests {
         assert_eq!(recorded.len(), 1, "transition must broadcast");
         let event = &recorded[0];
         assert!(
-            matches!(event, crate::events::MemoryEvent::LocalModelUnavailable { .. }),
+            matches!(
+                event,
+                crate::events::MemoryEvent::LocalModelUnavailable { .. }
+            ),
             "the transition must publish the local-model-unavailable event, got {event:?}"
         );
 

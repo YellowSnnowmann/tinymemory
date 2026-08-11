@@ -1,11 +1,11 @@
 use anyhow::Result;
 
-use crate::Config;
 use crate::source_scope::chunk_source_allowed_in;
 use crate::source_scope::current_source_scope;
 use crate::store::chunks::store::get_chunks_batch;
 use crate::tinycortex::engine_config;
 use crate::tree::retrieval::types::RetrievalHit;
+use crate::Config;
 
 pub use tinycortex::memory::retrieval::MAX_BATCH;
 

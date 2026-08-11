@@ -59,8 +59,8 @@ pub fn require_embedding_host() -> Result<Arc<dyn EmbeddingHost>, String> {
 /// # Errors
 ///
 /// Returns `Err` when no [`EmbeddingHost`] has been installed.
-pub fn default_embedding_provider() -> Result<Arc<dyn tinymemory_api::host::EmbeddingProvider>, String>
-{
+pub fn default_embedding_provider(
+) -> Result<Arc<dyn tinymemory_api::host::EmbeddingProvider>, String> {
     Ok(require_embedding_host()?.default_embedding_provider())
 }
 
@@ -74,7 +74,9 @@ pub fn default_embedding_provider() -> Result<Arc<dyn tinymemory_api::host::Embe
 #[must_use]
 pub fn embedding_test_guard() -> std::sync::MutexGuard<'static, ()> {
     static GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    GUARD.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    GUARD
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// A stub [`EmbeddingHost`] for tests.

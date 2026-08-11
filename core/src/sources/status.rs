@@ -9,9 +9,9 @@
 
 use serde::Serialize;
 
-use crate::Config;
 use crate::sources::types::{MemorySourceEntry, SourceKind};
 use crate::store::chunks::store::with_connection;
+use crate::Config;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]

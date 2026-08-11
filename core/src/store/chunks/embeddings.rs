@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use anyhow::Result;
 use rusqlite::{Connection, Transaction};
 
-use crate::Config;
 use crate::tinycortex::engine_config;
+use crate::Config;
 
 pub(crate) fn tree_active_signature(config: &Config) -> String {
     tinycortex::memory::chunks::tree_active_signature(&engine_config(config))

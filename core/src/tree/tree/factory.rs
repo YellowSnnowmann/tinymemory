@@ -11,7 +11,6 @@ use std::borrow::Cow;
 
 use anyhow::Result;
 
-use crate::Config;
 use crate::store::content::paths::slugify_source_id;
 use crate::store::content::SummaryTreeKind;
 use crate::store::trees::archive_tree;
@@ -20,6 +19,7 @@ use crate::tree::score::extract::build_summary_extractor;
 use crate::tree::tree::bucket_seal::{append_leaf, LabelStrategy, LeafRef};
 use crate::tree::tree::flush::force_flush_tree;
 use crate::tree::tree::registry::get_or_create_tree;
+use crate::Config;
 
 pub use tinycortex::memory::tree::{TreeProfile, GLOBAL_SCOPE};
 

@@ -2,8 +2,8 @@
 
 use anyhow::Result;
 
-use crate::Config;
 use crate::store::chunks::store::RawRef;
+use crate::Config;
 use tinycortex::memory::ingest::canonicalize::{
     chat::{self, ChatBatch},
     document::{self, DocumentInput},

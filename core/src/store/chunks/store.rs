@@ -5,10 +5,10 @@ use std::collections::HashMap;
 use anyhow::Result;
 use rusqlite::Transaction;
 
-use crate::Config;
 use crate::store::chunks::types::{Chunk, SourceKind};
 use crate::store::content::StagedChunk;
 use crate::tinycortex::engine_config;
+use crate::Config;
 
 pub use tinycortex::memory::chunks::{
     ListChunksQuery, RawRef, CHUNK_STATUS_ADMITTED, CHUNK_STATUS_BUFFERED, CHUNK_STATUS_DROPPED,
@@ -23,10 +23,7 @@ pub fn upsert_chunks_tx(tx: &Transaction<'_>, chunks: &[Chunk]) -> Result<usize>
     tinycortex::memory::chunks::upsert_chunks_tx(tx, chunks)
 }
 
-pub fn upsert_staged_chunks_tx(
-    tx: &Transaction<'_>,
-    chunks: &[StagedChunk],
-) -> Result<usize> {
+pub fn upsert_staged_chunks_tx(tx: &Transaction<'_>, chunks: &[StagedChunk]) -> Result<usize> {
     tinycortex::memory::chunks::upsert_staged_chunks_tx(tx, chunks)
 }
 
@@ -82,10 +79,7 @@ pub fn get_chunk_lifecycle_status(config: &Config, id: &str) -> Result<Option<St
     tinycortex::memory::chunks::get_chunk_lifecycle_status(&engine_config(config), id)
 }
 
-pub fn get_chunk_lifecycle_status_tx(
-    tx: &Transaction<'_>,
-    id: &str,
-) -> Result<Option<String>> {
+pub fn get_chunk_lifecycle_status_tx(tx: &Transaction<'_>, id: &str) -> Result<Option<String>> {
     tinycortex::memory::chunks::get_chunk_lifecycle_status_tx(tx, id)
 }
 

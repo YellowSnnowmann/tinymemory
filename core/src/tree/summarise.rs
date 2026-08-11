@@ -2,8 +2,8 @@
 
 use anyhow::{Context, Result};
 
-use crate::Config;
 use crate::chat::{build_chat_provider, ChatPrompt};
+use crate::Config;
 
 pub use tinycortex::memory::tree::{SummaryContext, SummaryInput};
 

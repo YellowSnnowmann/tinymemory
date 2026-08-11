@@ -2,9 +2,9 @@
 
 use anyhow::Result;
 
-use crate::Config;
 use crate::store::trees::types::{Tree, TreeKind};
 use crate::tinycortex::engine_config;
+use crate::Config;
 
 pub fn list_trees_by_kind(config: &Config, kind: TreeKind) -> Result<Vec<Tree>> {
     tinycortex::memory::tree::store::list_trees_by_kind(&engine_config(config), kind)

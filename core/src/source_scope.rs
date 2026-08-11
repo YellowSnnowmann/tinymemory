@@ -115,8 +115,7 @@ pub fn chunk_source_allowed_in(set: &HashSet<String>, tags: &[String], source_id
     if set.contains(source_id) {
         return true;
     }
-    crate::sync_events::extract_mem_src_id(source_id)
-        .is_some_and(|id| set.contains(id))
+    crate::sync_events::extract_mem_src_id(source_id).is_some_and(|id| set.contains(id))
 }
 
 #[cfg(test)]

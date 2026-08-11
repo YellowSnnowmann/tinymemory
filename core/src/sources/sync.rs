@@ -10,17 +10,17 @@
 //! A per-source mutex prevents duplicate concurrent syncs when the user
 //! presses the sync button multiple times.
 
-use std::sync::Arc;
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::sync::Mutex;
 
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
-use crate::Config;
 use crate::sources::types::{MemorySourceEntry, SourceKind};
 use crate::sync::composio::ComposioUsage;
 use crate::sync_events::{emit_sync_stage, MemorySyncStage, MemorySyncTrigger};
+use crate::Config;
 
 static ACTIVE_SYNCS: std::sync::LazyLock<Mutex<HashSet<String>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashSet::new()));
@@ -89,11 +89,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
             let mut composio_usage = ComposioUsage::default();
             let outcome = match source.kind {
                 SourceKind::Composio => {
-                    match crate::tinycortex::run_source_pipeline(
-                        &source, &*config,
-                    )
-                    .await
-                    {
+                    match crate::tinycortex::run_source_pipeline(&source, &*config).await {
                         Ok(outcome) => {
                             composio_usage.actions_called = outcome.actions_called;
                             composio_usage.cost_usd = outcome.provider_cost_usd;
@@ -112,12 +108,10 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
                         .map(|outcome| outcome.records_ingested as usize)
                         .map_err(|error| error.to_string())
                 }
-                SourceKind::GithubRepo => {
-                    crate::tinycortex::run_source_pipeline(&source, &*config)
-                        .await
-                        .map(|outcome| outcome.records_ingested as usize)
-                        .map_err(|error| error.to_string())
-                }
+                SourceKind::GithubRepo => crate::tinycortex::run_source_pipeline(&source, &*config)
+                    .await
+                    .map(|outcome| outcome.records_ingested as usize)
+                    .map_err(|error| error.to_string()),
                 SourceKind::RssFeed | SourceKind::WebPage => {
                     crate::tinycortex::run_source_pipeline(&source, &*config)
                         .await
@@ -148,9 +142,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
                         Some(&source.id),
                     );
 
-                    use crate::tinycortex::{
-                        append_audit_entry, SyncAuditEntry,
-                    };
+                    use crate::tinycortex::{append_audit_entry, SyncAuditEntry};
                     append_audit_entry(
                         &*config,
                         &SyncAuditEntry {
@@ -181,10 +173,8 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
                     check_and_rebuild_tree(&source, &*config).await;
 
                     // Auto-snapshot: capture post-sync state for diff tracking.
-                    if let Err(e) = crate::diff::ops::auto_snapshot_after_sync(
-                        &source, &*config,
-                    )
-                    .await
+                    if let Err(e) =
+                        crate::diff::ops::auto_snapshot_after_sync(&source, &*config).await
                     {
                         tracing::warn!(
                             source_id = %source.id,
@@ -195,9 +185,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
                 }
                 Err(error) => {
                     // Audit failed syncs too.
-                    use crate::tinycortex::{
-                        append_audit_entry, SyncAuditEntry,
-                    };
+                    use crate::tinycortex::{append_audit_entry, SyncAuditEntry};
                     append_audit_entry(
                         &*config,
                         &SyncAuditEntry {

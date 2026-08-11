@@ -15,8 +15,8 @@
 use anyhow::Result;
 use rusqlite::Transaction;
 
-use crate::Config;
 use crate::tinycortex::engine_config;
+use crate::Config;
 
 // `RawRef` is re-exported from the crate (identical fields + serde derives), so
 // every `chunks::RawRef { path, start, end }` construction site keeps compiling.

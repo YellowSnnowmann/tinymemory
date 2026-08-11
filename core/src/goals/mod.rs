@@ -17,5 +17,3 @@
 //! Persistence + cap enforcement live in `tinycortex::memory::goals::store`;
 //! the file is stored state,
 //! not injected into the main system prompt.
-
-

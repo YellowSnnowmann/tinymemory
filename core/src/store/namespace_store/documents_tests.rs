@@ -5,8 +5,8 @@ use std::sync::Arc;
 use serde_json::json;
 use tempfile::TempDir;
 
-use tinymemory_api::host::NoopEmbedding;
 use crate::store::{NamespaceDocumentInput, UnifiedMemory};
+use tinymemory_api::host::NoopEmbedding;
 
 fn make_doc_input(
     namespace: &str,

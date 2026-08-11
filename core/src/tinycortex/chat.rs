@@ -21,11 +21,11 @@ use tinycortex::memory::score::extract::{
     ChatPrompt as CortexChatPrompt, ChatProvider as CortexChatProvider,
 };
 
-use crate::Config;
 use crate::chat::{
     build_chat_provider as build_host_chat_provider, ChatPrompt as HostChatPrompt,
     ChatProvider as HostChatProvider,
 };
+use crate::Config;
 
 /// Wraps an OpenHuman [`HostChatProvider`] as the crate's [`CortexChatProvider`].
 pub struct SeamChatProvider {

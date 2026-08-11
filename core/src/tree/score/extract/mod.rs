@@ -17,13 +17,8 @@ pub mod regex {
 pub struct LlmEntityExtractor(tinycortex::memory::score::extract::LlmEntityExtractor);
 
 impl LlmEntityExtractor {
-    pub fn new(
-        config: LlmExtractorConfig,
-        provider: Arc<dyn crate::chat::ChatProvider>,
-    ) -> Self {
-        let provider = Arc::new(crate::tinycortex::SeamChatProvider::new(
-            provider,
-        ));
+    pub fn new(config: LlmExtractorConfig, provider: Arc<dyn crate::chat::ChatProvider>) -> Self {
+        let provider = Arc::new(crate::tinycortex::SeamChatProvider::new(provider));
         Self(tinycortex::memory::score::extract::LlmEntityExtractor::new(
             config, provider,
         ))

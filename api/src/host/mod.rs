@@ -49,35 +49,33 @@ pub mod subsystems;
 
 mod config;
 mod embedding_host;
+mod embeddings;
+mod error_reporter;
+mod events;
 mod evidence;
 mod nlp;
 mod routes;
-mod error_reporter;
 mod usage;
-mod embeddings;
-mod events;
 
 #[cfg(feature = "test-support")]
 pub mod test_support;
 
 pub use cloud_providers::{
-    endpoint_host,
-    generate_provider_id, is_slug_reserved, migrate_legacy_fields, AuthStyle, CloudProviderCreds,
-    CloudProviderType,
+    endpoint_host, generate_provider_id, is_slug_reserved, migrate_legacy_fields, AuthStyle,
+    CloudProviderCreds, CloudProviderType,
 };
 pub use config::{ComposioMode, MemoryHostConfig, COMPOSIO_MODE_BACKEND, COMPOSIO_MODE_DIRECT};
 pub use embedding_host::EmbeddingHost;
-pub use error_reporter::ErrorReporter;
-pub use evidence::EvidenceRef;
-pub use nlp::{SpacyEntity, SpacyResponse};
-pub use routes::EmbeddingRouteConfig;
-pub use usage::UsageInfo;
 pub use embeddings::{format_embedding_signature, EmbeddingProvider, NoopEmbedding};
+pub use error_reporter::ErrorReporter;
 pub use events::{
     EmbeddingHealthReason, MemoryEvent, MemoryEventSink, NoopEventSink, SyncTrigger,
     LOCAL_MODEL_UNAVAILABLE_KIND, MEMORY_USER_ERROR_SOURCE,
 };
+pub use evidence::EvidenceRef;
 pub use local_ai::{LocalAiConfig, LocalAiUsage};
+pub use nlp::{SpacyEntity, SpacyResponse};
+pub use routes::EmbeddingRouteConfig;
 pub use scheduler_gate::{PauseReason, Policy, SchedulerGateConfig, SchedulerGateMode};
 pub use storage_memory::{
     LlmBackend, MemoryConfig, MemoryTreeConfig, StorageConfig, StorageProviderConfig,
@@ -86,6 +84,7 @@ pub use storage_memory::{
 pub use subsystems::{
     MemoryDriverConfig, MemoryHooksConfig, MemorySubsystemConfig, SubsystemsConfig,
 };
+pub use usage::UsageInfo;
 
 /// Effective default global memory-sync cadence (seconds) used when
 /// [`MemoryHostConfig::memory_sync_interval_secs`] is `None` — i.e. the user has

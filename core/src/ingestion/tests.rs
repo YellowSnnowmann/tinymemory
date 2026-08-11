@@ -6,11 +6,11 @@ use std::sync::Arc;
 use serde_json::json;
 use tempfile::TempDir;
 
-use tinymemory_api::host::NoopEmbedding;
-#[cfg(test)]
-use tinymemory_api::host::test_support::TestHostConfig;
 use crate::store::{NamespaceDocumentInput, UnifiedMemory};
 use crate::{MemoryIngestionConfig, MemoryIngestionRequest};
+#[cfg(test)]
+use tinymemory_api::host::test_support::TestHostConfig;
+use tinymemory_api::host::NoopEmbedding;
 
 /// Test config for the heuristic-only ingestion pipeline.
 fn ci_safe_config() -> MemoryIngestionConfig {
@@ -111,10 +111,9 @@ async fn gmail_fixture_ingestion_recovers_required_signals() {
         .await
         .unwrap();
     assert!(memories.iter().any(|hit| hit.content.contains("JSON-RPC")));
-    assert!(memories.iter().any(|hit| matches!(
-        hit.kind,
-        crate::store::MemoryItemKind::Document
-    )));
+    assert!(memories
+        .iter()
+        .any(|hit| matches!(hit.kind, crate::store::MemoryItemKind::Document)));
     assert!(memories
         .iter()
         .any(|hit| !hit.supporting_relations.is_empty()));
@@ -208,10 +207,9 @@ async fn notion_fixture_ingestion_recovers_required_signals() {
     assert!(memories
         .iter()
         .any(|hit| hit.content.contains("OpenHuman") || hit.content.contains("core-first")));
-    assert!(memories.iter().any(|hit| matches!(
-        hit.kind,
-        crate::store::MemoryItemKind::Document
-    )));
+    assert!(memories
+        .iter()
+        .any(|hit| matches!(hit.kind, crate::store::MemoryItemKind::Document)));
     assert!(memories
         .iter()
         .any(|hit| !hit.supporting_relations.is_empty()));

@@ -4,7 +4,6 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 fn make_client() -> (TempDir, Arc<MemoryClient>) {
-
     crate::test_seams::init();
     let tmp = TempDir::new().unwrap();
     let client = Arc::new(

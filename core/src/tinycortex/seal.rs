@@ -4,14 +4,12 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::Duration;
 
-use crate::Config;
 #[cfg(feature = "memory-git")]
 use crate::store::content::wiki_git::{SummaryCommitBatch, SummaryCommitEntry};
 use crate::store::trees::types::{Buffer, SummaryNode, Tree};
-use crate::tree::score::embed::{
-    build_write_embedder, Embedder as HostEmbedder,
-};
+use crate::tree::score::embed::{build_write_embedder, Embedder as HostEmbedder};
 use crate::tree::tree::bucket_seal::LabelStrategy;
+use crate::Config;
 
 use super::{memory_config_from, HostSummariser};
 
@@ -36,9 +34,7 @@ impl tinycortex::memory::score::embed::Embedder for EmbedderBridge<'_> {
             );
             // #5354: name the local-runtime fix on the status panel now rather
             // than after the retry budget drains.
-            crate::tree::health::mark_local_model_unavailable_if_applicable(
-                &failure,
-            );
+            crate::tree::health::mark_local_model_unavailable_if_applicable(&failure);
             anyhow::Error::new(failure).context(format!("seal embedding failed: {error:#}"))
         })?;
         crate::tree::score::embed::pack_checked(&vector)

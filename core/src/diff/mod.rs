@@ -61,7 +61,6 @@ pub use stub::ops;
 #[cfg(feature = "memory-git")]
 pub mod source;
 
-
 // Ungated in both builds, mirroring tinycortex's own carve-out: its
 // `memory::diff::{types, source}` are serde-only wire types and stay compiled;
 // only the git-touching `ledger`/`DiffEngine` half sits behind `git-diff`. A

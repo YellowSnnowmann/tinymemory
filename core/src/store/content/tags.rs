@@ -6,12 +6,12 @@
 
 use std::path::Path;
 
-use crate::Config;
 use crate::store::chunks::store::get_summary_content_pointers;
 use crate::store::content::compose::{
     rewrite_summary_tags, scan_fm_field, source_tag, split_front_matter,
 };
 use crate::tree::score::store::list_entity_ids_for_node;
+use crate::Config;
 
 pub use tinycortex::memory::store::content::tags::{
     entity_tag, slugify_tag_kind, slugify_tag_value, update_chunk_tags,

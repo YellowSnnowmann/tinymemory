@@ -514,9 +514,9 @@ impl UnifiedMemory {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tinymemory_api::host::NoopEmbedding;
     use std::sync::Arc;
     use tempfile::TempDir;
+    use tinymemory_api::host::NoopEmbedding;
 
     #[test]
     fn merge_graph_attrs_accumulates_evidence_and_dedupes_ids() {

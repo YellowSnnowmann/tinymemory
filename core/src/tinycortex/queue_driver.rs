@@ -44,11 +44,8 @@ use tinymemory_api::host::MemoryHostConfig;
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
-use crate::Config;
 use crate::store::chunks::store as chunk_store;
-use crate::store::chunks::types::{
-    truncate_to_conservative_tokens, Chunk, Metadata,
-};
+use crate::store::chunks::types::{truncate_to_conservative_tokens, Chunk, Metadata};
 use crate::store::content as content_store;
 use crate::store::content::read as content_read;
 use crate::store::content::tags as content_tags;
@@ -59,6 +56,7 @@ use crate::tree::score::embed::{build_write_embedder, pack_checked, Embedder};
 use crate::tree::score::store as score_store;
 use crate::tree::tree::TreeFactory;
 use crate::tree_source::get_or_create_source_tree;
+use crate::Config;
 
 // ── Pure scope helpers (ported verbatim from `memory_queue::handlers`) ────────
 // These pin the SAME source→tree mapping the append-buffer path uses, so reads
@@ -557,7 +555,8 @@ impl QueueDelegates for HostQueueDelegates {
             return Ok(None);
         }
         let strategy = TreeFactory::from_tree(&tree).label_strategy(&*self.config);
-        let summary_id = super::seal_tree_level(&*self.config, &tree, &buf, &strategy, true).await?;
+        let summary_id =
+            super::seal_tree_level(&*self.config, &tree, &buf, &strategy, true).await?;
         // Best-effort: rewrite the sealed summary's on-disk obsidian tags. Entity
         // rows were committed inside seal_one_level, so they are visible here.
         if let Err(e) = content_store::update_summary_tags(&*self.config, &summary_id) {
@@ -912,12 +911,14 @@ mod tests {
     }
 
     fn host_delegates_on_tempdir() -> (tempfile::TempDir, HostQueueDelegates) {
-
         crate::test_seams::init();
         let tmp = tempfile::tempdir().expect("tempdir");
         let mut config = tinymemory_api::host::test_support::TestHostConfig::default();
         config.workspace_dir = tmp.path().to_path_buf();
-        (tmp, HostQueueDelegates::new(std::sync::Arc::new(config) as std::sync::Arc<crate::Config>))
+        (
+            tmp,
+            HostQueueDelegates::new(std::sync::Arc::new(config) as std::sync::Arc<crate::Config>),
+        )
     }
 
     /// The self-contained `HostQueueDelegates` methods bind to the real host

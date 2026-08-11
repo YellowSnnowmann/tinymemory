@@ -2,11 +2,9 @@
 
 use async_trait::async_trait;
 
-use crate::Config;
 use crate::sources::readers::SourceReader;
-use crate::sources::types::{
-    MemorySourceEntry, SourceContent, SourceItem, SourceKind,
-};
+use crate::sources::types::{MemorySourceEntry, SourceContent, SourceItem, SourceKind};
+use crate::Config;
 
 /// Product adapter retaining the engine reader for a complete sync pass.
 ///
@@ -45,10 +43,7 @@ impl SourceReader for RssReader {
         tinycortex::memory::sources::SourceReader::list_items(
             &self.inner,
             source,
-            &crate::tinycortex::memory_config_from(
-                config,
-                config.workspace_dir().clone(),
-            ),
+            &crate::tinycortex::memory_config_from(config, config.workspace_dir().clone()),
         )
         .await
         .map_err(|error| error.to_string())
@@ -64,10 +59,7 @@ impl SourceReader for RssReader {
             &self.inner,
             source,
             item_id,
-            &crate::tinycortex::memory_config_from(
-                config,
-                config.workspace_dir().clone(),
-            ),
+            &crate::tinycortex::memory_config_from(config, config.workspace_dir().clone()),
         )
         .await
         .map_err(|error| error.to_string())

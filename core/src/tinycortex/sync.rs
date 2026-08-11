@@ -1,7 +1,7 @@
 //! OpenHuman service adapters for tinycortex live synchronization.
 
-use std::sync::Arc;
 use async_trait::async_trait;
+use std::sync::Arc;
 use tinycortex::memory::sync::{
     ClickUpSyncPipeline, ComposioClient, ExternalSourceReader, GitHubSyncPipeline,
     GithubRepoSyncPipeline, GmailSyncPipeline, LinearSyncPipeline, LocalDocument,
@@ -15,9 +15,9 @@ use tinymemory_api::host::MemoryHostConfig;
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
-use crate::Config;
 use crate::sources::{MemorySourceEntry, SourceKind};
 use crate::store::MemoryClientRef;
+use crate::Config;
 
 pub const HOST_SYNC_STATE_NAMESPACE: &str = "composio-sync-state";
 pub use tinycortex::memory::sync::{
@@ -555,7 +555,8 @@ fn composio_config(
             entity_id: Some(config.composio().entity_id.clone()),
         })
     } else {
-        let bearer = config.session_token()?
+        let bearer = config
+            .session_token()?
             .ok_or_else(|| "OpenHuman backend bearer token is not configured".to_string())?;
         Ok(ComposioSyncConfig {
             mode: ComposioMode::Proxied,
@@ -708,11 +709,9 @@ mod tests {
         build_pipeline, is_composio_toolkit_syncable, syncable_composio_toolkits,
         try_read_audit_log,
     };
-    use crate::Config;
     use crate::sources::MemorySourceEntry;
-    use crate::sync::composio::{
-        get_composio_sync_provider, init_default_composio_sync_providers,
-    };
+    use crate::sync::composio::{get_composio_sync_provider, init_default_composio_sync_providers};
+    use crate::Config;
 
     /// The advertised set (`memory_sources.supported_toolkits`, sourced from the
     /// provider registry) and the syncable set (`build_pipeline`) must not

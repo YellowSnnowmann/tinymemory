@@ -12,10 +12,7 @@ pub fn pair_distances(
     max_h: u32,
 ) -> Result<Vec<PairDistance>> {
     tinycortex::memory::graph::pair_distances(
-        &crate::tinycortex::memory_config_from(
-            config,
-            config.workspace_dir().clone(),
-        ),
+        &crate::tinycortex::memory_config_from(config, config.workspace_dir().clone()),
         entity_ids,
         max_h,
     )

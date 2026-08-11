@@ -1,11 +1,11 @@
 use anyhow::Result;
 
-use crate::Config;
 use crate::source_scope::current_source_scope;
 use crate::tinycortex::engine_config;
 use crate::tree::retrieval::engine::EmbedderBridge;
 use crate::tree::retrieval::types::RetrievalHit;
 use crate::tree::score::embed::{build_embedder_from_config, InertEmbedder};
+use crate::Config;
 
 pub async fn drill_down(
     config: &Config,
@@ -22,8 +22,7 @@ pub async fn drill_down(
     );
     let embedder = if query.is_none() || max_depth == 0 {
         log::debug!("[retrieval::drill_down] using inert embedder for non-semantic traversal");
-        Box::new(InertEmbedder::new())
-            as Box<dyn crate::tree::score::embed::Embedder>
+        Box::new(InertEmbedder::new()) as Box<dyn crate::tree::score::embed::Embedder>
     } else {
         build_embedder_from_config(config)?
     };

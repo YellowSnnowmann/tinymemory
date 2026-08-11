@@ -93,9 +93,7 @@ pub fn init_default_providers() {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sync::composio::providers::{
-        ProviderContext, ProviderUserProfile,
-    };
+    use crate::sync::composio::providers::{ProviderContext, ProviderUserProfile};
     use async_trait::async_trait;
 
     struct DummyProvider {

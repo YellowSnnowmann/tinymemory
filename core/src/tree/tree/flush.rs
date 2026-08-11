@@ -3,9 +3,9 @@
 use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
 
-use crate::Config;
 use crate::store::trees::types::DEFAULT_FLUSH_AGE_SECS;
 use crate::tree::tree::bucket_seal::{cascade_all_from, LabelStrategy};
+use crate::Config;
 
 pub async fn flush_stale_buffers(
     config: &Config,

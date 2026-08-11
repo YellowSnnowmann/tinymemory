@@ -132,10 +132,10 @@ pub async fn recall_related_preferences(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tinymemory_api::host::NoopEmbedding;
     use crate::store::UnifiedMemory;
     use crate::MemoryCategory;
     use tempfile::TempDir;
+    use tinymemory_api::host::NoopEmbedding;
 
     #[tokio::test]
     async fn load_general_preferences_returns_values_newest_first_capped() {

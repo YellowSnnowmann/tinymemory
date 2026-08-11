@@ -3,8 +3,8 @@
 use anyhow::Result;
 use rusqlite::Connection;
 
-use crate::Config;
 use crate::tinycortex::engine_config;
+use crate::Config;
 
 #[doc(hidden)]
 pub fn with_connection<T>(config: &Config, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {

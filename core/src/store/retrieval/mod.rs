@@ -32,12 +32,12 @@ use std::sync::Arc;
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
-use crate::Config;
 use crate::store::chunks::store::list_chunks;
 use crate::store::chunks::types::{Chunk, SourceKind};
 use crate::store::types::NamespaceMemoryHit;
 use crate::store::UnifiedMemory;
 use crate::tree::retrieval::types::RetrievalHit;
+use crate::Config;
 
 /// Optional filter set for `param_tag_search`. All `Some` fields are AND-ed
 /// together; `None` fields are unconstrained.
@@ -80,10 +80,8 @@ impl RetrievalFacade {
         query: Option<&str>,
         limit: Option<usize>,
     ) -> Result<Vec<RetrievalHit>> {
-        crate::tree::retrieval::drill_down::drill_down(
-            config, node_id, max_depth, query, limit,
-        )
-        .await
+        crate::tree::retrieval::drill_down::drill_down(config, node_id, max_depth, query, limit)
+            .await
     }
 
     /// Hybrid vector + graph + freshness retrieval. Same underlying scorer as
@@ -156,14 +154,13 @@ impl RetrievalFacade {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tinymemory_api::host::NoopEmbedding;
     use crate::store::chunks::store::upsert_chunks;
     use crate::store::chunks::types::{Chunk, Metadata};
     use chrono::{TimeZone, Utc};
     use tempfile::TempDir;
+    use tinymemory_api::host::NoopEmbedding;
 
     fn test_config() -> (TempDir, TestHostConfig) {
-
         crate::test_seams::init();
         let tmp = TempDir::new().unwrap();
         let mut cfg = TestHostConfig::default();

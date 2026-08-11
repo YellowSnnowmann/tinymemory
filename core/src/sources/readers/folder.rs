@@ -2,11 +2,9 @@
 
 use async_trait::async_trait;
 
-use crate::Config;
 use crate::sources::readers::SourceReader;
-use crate::sources::types::{
-    MemorySourceEntry, SourceContent, SourceItem, SourceKind,
-};
+use crate::sources::types::{MemorySourceEntry, SourceContent, SourceItem, SourceKind};
+use crate::Config;
 
 pub struct FolderReader;
 
@@ -24,10 +22,7 @@ impl SourceReader for FolderReader {
         tinycortex::memory::sources::SourceReader::list_items(
             &tinycortex::memory::sources::readers::folder::FolderReader,
             source,
-            &crate::tinycortex::memory_config_from(
-                config,
-                config.workspace_dir().clone(),
-            ),
+            &crate::tinycortex::memory_config_from(config, config.workspace_dir().clone()),
         )
         .await
         .map_err(|error| error.to_string())
@@ -43,10 +38,7 @@ impl SourceReader for FolderReader {
             &tinycortex::memory::sources::readers::folder::FolderReader,
             source,
             item_id,
-            &crate::tinycortex::memory_config_from(
-                config,
-                config.workspace_dir().clone(),
-            ),
+            &crate::tinycortex::memory_config_from(config, config.workspace_dir().clone()),
         )
         .await
         .map_err(|error| error.to_string())

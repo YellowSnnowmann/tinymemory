@@ -23,8 +23,8 @@
 //! already knows how to log and skip. Failing closed matters more than being
 //! quiet: the caller in `profiles/memory.rs` logs and moves on.
 
-use crate::Config;
 use crate::sources::types::MemorySourceEntry;
+use crate::Config;
 
 use tinycortex::memory::diff::types::{Checkpoint, CrossSourceDiff, Snapshot};
 
@@ -62,4 +62,3 @@ pub mod ops {
         Err(DISABLED.to_string())
     }
 }
-

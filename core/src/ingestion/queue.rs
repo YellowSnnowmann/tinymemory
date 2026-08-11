@@ -411,8 +411,8 @@ mod tests {
     #[tokio::test]
     #[should_panic(expected = "ingestion queue capacity must be greater than zero")]
     async fn start_worker_rejects_zero_capacity() {
-        use tinymemory_api::host::NoopEmbedding;
         use tempfile::TempDir;
+        use tinymemory_api::host::NoopEmbedding;
         let tmp = TempDir::new().unwrap();
         let memory = UnifiedMemory::new(tmp.path(), Arc::new(NoopEmbedding), None).unwrap();
         // Panic must surface from our own assert, not from the Tokio

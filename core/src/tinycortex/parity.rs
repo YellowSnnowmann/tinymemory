@@ -198,8 +198,8 @@ mod tests {
     /// over a corpus (real provider triples plus empties / special chars).
     #[test]
     fn embedding_signature_host_crate_byte_parity() {
-        use tinymemory_api::host::format_embedding_signature as host_sig;
         use tinycortex::memory::store::vectors::format_embedding_signature as cortex_sig;
+        use tinymemory_api::host::format_embedding_signature as host_sig;
 
         // (name, model_id, dims, expected golden)
         let corpus: &[(&str, &str, usize, &str)] = &[

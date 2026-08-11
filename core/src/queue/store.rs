@@ -3,8 +3,8 @@
 use anyhow::Result;
 use rusqlite::Transaction;
 
-use crate::Config;
 use crate::tree::health::PipelineFailure;
+use crate::Config;
 
 use super::types::{Job, JobFailure, JobStatus, NewJob};
 use crate::tinycortex::engine_config;

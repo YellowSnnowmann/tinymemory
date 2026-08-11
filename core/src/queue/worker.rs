@@ -28,9 +28,7 @@ use crate::Config;
 // helpers are gone from this module. Only startup lock recovery + the loop's
 // storage-degraded signalling remain host.
 use crate::queue::store::{recover_stale_locks, release_running_locks};
-use crate::tree::health::{
-    clear_storage_degraded, mark_storage_degraded, FailureCode,
-};
+use crate::tree::health::{clear_storage_degraded, mark_storage_degraded, FailureCode};
 
 /// Number of concurrent job-worker tasks. Each worker claims one job
 /// at a time via `claim_next` (atomic UPDATE under SQLite WAL with
@@ -289,10 +287,7 @@ pub async fn run_once(config: &Config) -> Result<bool> {
     // single-slot LLM gate serialises llm-bound jobs; the legacy per-job
     // local/cloud permit routing and the extract-batch coalescing are
     // intentionally dropped here (perf, not correctness — W4 follow-up).
-    let mc = crate::tinycortex::memory_config_from(
-        config,
-        config.workspace_dir().clone(),
-    );
+    let mc = crate::tinycortex::memory_config_from(config, config.workspace_dir().clone());
     let delegates = crate::tinycortex::HostQueueDelegates::new(config.to_arc());
     tinycortex::memory::queue::run_once(&mc, &delegates).await
 }
@@ -507,15 +502,12 @@ mod tests {
     use crate::store::chunks::store::{
         tree_active_signature, upsert_chunks, upsert_staged_chunks_tx, with_connection,
     };
-    use crate::store::chunks::types::{
-        chunk_id, Chunk, Metadata, SourceKind, SourceRef,
-    };
+    use crate::store::chunks::types::{chunk_id, Chunk, Metadata, SourceKind, SourceRef};
     use crate::store::content as content_store;
     use chrono::{TimeZone, Utc};
     use tempfile::TempDir;
 
     fn test_config() -> (TempDir, TestHostConfig) {
-
         crate::test_seams::init();
         let tmp = TempDir::new().unwrap();
         let mut cfg = TestHostConfig::default();

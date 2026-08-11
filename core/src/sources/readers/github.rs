@@ -8,11 +8,9 @@
 
 use async_trait::async_trait;
 
-use crate::Config;
 use crate::sources::readers::SourceReader;
-use crate::sources::types::{
-    MemorySourceEntry, SourceContent, SourceItem, SourceKind,
-};
+use crate::sources::types::{MemorySourceEntry, SourceContent, SourceItem, SourceKind};
+use crate::Config;
 
 pub use tinycortex::memory::sources::readers::github::{repo_archive_source_id, repo_chunk_scope};
 
@@ -32,10 +30,7 @@ impl SourceReader for GithubReader {
         tinycortex::memory::sources::SourceReader::list_items(
             &tinycortex::memory::sources::readers::github::GithubReader,
             source,
-            &crate::tinycortex::memory_config_from(
-                config,
-                config.workspace_dir().clone(),
-            ),
+            &crate::tinycortex::memory_config_from(config, config.workspace_dir().clone()),
         )
         .await
         .map_err(|error| error.to_string())
@@ -51,10 +46,7 @@ impl SourceReader for GithubReader {
             &tinycortex::memory::sources::readers::github::GithubReader,
             source,
             item_id,
-            &crate::tinycortex::memory_config_from(
-                config,
-                config.workspace_dir().clone(),
-            ),
+            &crate::tinycortex::memory_config_from(config, config.workspace_dir().clone()),
         )
         .await
         .map_err(|error| error.to_string())

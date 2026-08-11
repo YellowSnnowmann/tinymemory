@@ -275,9 +275,7 @@ mod tests {
             primary_email: Some("alice@example.com".into()),
             primary_phone: Some("+1 555 0100".into()),
             handles: vec![
-                crate::people::types::Handle::DisplayName(
-                    "Alice Example".into(),
-                ),
+                crate::people::types::Handle::DisplayName("Alice Example".into()),
                 crate::people::types::Handle::Email("alice@example.com".into()),
             ],
             created_at: now,

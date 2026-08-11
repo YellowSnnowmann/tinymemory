@@ -10,10 +10,8 @@ pub mod web_page;
 
 use async_trait::async_trait;
 
+use crate::sources::types::{MemorySourceEntry, SourceContent, SourceItem, SourceKind};
 use crate::Config;
-use crate::sources::types::{
-    MemorySourceEntry, SourceContent, SourceItem, SourceKind,
-};
 
 /// A reader that can list items and read content from a memory source.
 #[async_trait]

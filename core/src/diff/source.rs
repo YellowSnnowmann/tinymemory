@@ -19,8 +19,8 @@
 //! built from the full [`MemorySourceEntry`] list (which carries `toolkit`) and
 //! resolves each id → prefix up front.
 
-use std::sync::Arc;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use tinycortex::memory::diff::{extract_item_id, SnapshotItem, SnapshotItemSource};
 
@@ -29,8 +29,8 @@ use tinymemory_api::host::MemoryHostConfig;
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
-use crate::Config;
 use crate::sources::types::{MemorySourceEntry, SourceKind};
+use crate::Config;
 
 /// Host [`SnapshotItemSource`] backed by `mem_tree_chunks`.
 ///
@@ -80,35 +80,34 @@ impl SnapshotItemSource for ChunkStoreItemSource {
             return Vec::new();
         };
 
-        let result =
-            crate::store::chunks::store::with_connection(&*self.config, |conn| {
-                let mut stmt = conn.prepare(
-                    "SELECT source_id, content \
+        let result = crate::store::chunks::store::with_connection(&*self.config, |conn| {
+            let mut stmt = conn.prepare(
+                "SELECT source_id, content \
                      FROM mem_tree_chunks \
                      WHERE source_id LIKE ?1 \
                      ORDER BY source_id, seq_in_source",
-                )?;
+            )?;
 
-                let mut groups: HashMap<String, Vec<String>> = HashMap::new();
-                let rows = stmt.query_map([prefix], |r| {
-                    Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-                })?;
-                for row in rows {
-                    let (composite_source_id, content) = row?;
-                    let item_id = extract_item_id(&composite_source_id);
-                    groups.entry(item_id).or_default().push(content);
-                }
+            let mut groups: HashMap<String, Vec<String>> = HashMap::new();
+            let rows = stmt.query_map([prefix], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (composite_source_id, content) = row?;
+                let item_id = extract_item_id(&composite_source_id);
+                groups.entry(item_id).or_default().push(content);
+            }
 
-                let mut items: Vec<SnapshotItem> = groups
-                    .into_iter()
-                    .map(|(item_id, parts)| SnapshotItem {
-                        item_id,
-                        content: parts.join(""),
-                    })
-                    .collect();
-                items.sort_by(|a, b| a.item_id.cmp(&b.item_id));
-                Ok(items)
-            });
+            let mut items: Vec<SnapshotItem> = groups
+                .into_iter()
+                .map(|(item_id, parts)| SnapshotItem {
+                    item_id,
+                    content: parts.join(""),
+                })
+                .collect();
+            items.sort_by(|a, b| a.item_id.cmp(&b.item_id));
+            Ok(items)
+        });
 
         match result {
             Ok(items) => items,
@@ -198,7 +197,9 @@ mod tests {
 
     #[test]
     fn read_only_adapter_never_yields_items() {
-        let source = ChunkStoreItemSource::read_only(std::sync::Arc::new(TestHostConfig::default()) as std::sync::Arc<crate::Config>);
+        let source = ChunkStoreItemSource::read_only(
+            std::sync::Arc::new(TestHostConfig::default()) as std::sync::Arc<crate::Config>,
+        );
         assert!(source.items_for_source("anything").is_empty());
     }
 }

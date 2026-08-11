@@ -15,15 +15,15 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use rusqlite::Connection;
 
-use tinymemory_api::host::MemoryConfig;
-use tinymemory_api::host::{EmbeddingRouteConfig, StorageProviderConfig};
-#[cfg(test)]
-use tinymemory_api::host::test_support::TestHostConfig;
 use crate::embedding_host::require_embedding_host;
-use tinyagents::harness::embeddings::{DEFAULT_OLLAMA_DIMENSIONS, DEFAULT_OLLAMA_MODEL};
-use tinymemory_api::host::{format_embedding_signature, EmbeddingProvider};
 use crate::store::namespace_store::UnifiedMemory;
 use crate::traits::Memory;
+use tinyagents::harness::embeddings::{DEFAULT_OLLAMA_DIMENSIONS, DEFAULT_OLLAMA_MODEL};
+#[cfg(test)]
+use tinymemory_api::host::test_support::TestHostConfig;
+use tinymemory_api::host::MemoryConfig;
+use tinymemory_api::host::{format_embedding_signature, EmbeddingProvider};
+use tinymemory_api::host::{EmbeddingRouteConfig, StorageProviderConfig};
 
 /// One-shot guard so the Ollama health-gate fallback only reports to Sentry
 /// once per process lifetime. Memory is constructed many times per session
@@ -124,9 +124,7 @@ fn report_ollama_health_gate_once(base_url: &str, model: &str) -> bool {
 /// payload and publisher live in `memory::tree::health::user_error` so this
 /// producer and the embed-failure classifier emit one identical, tested shape.
 fn surface_local_model_unavailable_to_clients() {
-    crate::tree::health::publish_local_model_unavailable_user_error(
-        "health_gate",
-    );
+    crate::tree::health::publish_local_model_unavailable_user_error("health_gate");
 }
 
 /// Resets the once-per-process Sentry latch. Test-only — any test that
@@ -604,7 +602,7 @@ pub fn create_memory_for_migration(
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use axum::{routing::get, Json, Router};
     use std::ffi::OsString;
     use std::net::SocketAddr;
@@ -710,7 +708,6 @@ mod tests {
             tinyagents::harness::embeddings::DEFAULT_OLLAMA_DIMENSIONS
         );
     }
-
 
     #[test]
     fn active_signature_ignores_probe_fallback() {
@@ -835,7 +832,10 @@ mod tests {
             "opted-in but unreachable Ollama must fall back to cloud"
         );
         assert_eq!(model, crate::embedding_host::TestEmbeddingHost::CLOUD_MODEL);
-        assert_eq!(dims, crate::embedding_host::TestEmbeddingHost::CLOUD_DIMENSIONS);
+        assert_eq!(
+            dims,
+            crate::embedding_host::TestEmbeddingHost::CLOUD_DIMENSIONS
+        );
     }
 
     #[tokio::test]
@@ -911,7 +911,10 @@ mod tests {
             .drain()
             .into_iter()
             .filter(|event| {
-                matches!(event, crate::events::MemoryEvent::LocalModelUnavailable { .. })
+                matches!(
+                    event,
+                    crate::events::MemoryEvent::LocalModelUnavailable { .. }
+                )
             })
             .count();
         assert_eq!(

@@ -18,9 +18,8 @@ pub use tinycortex::memory::score::{resolver, signals};
 pub fn scoring_config_from(config: &crate::Config) -> ScoringConfig {
     let (provider, model) = match crate::chat::build_chat_runtime(config) {
         Ok((provider, model)) => (
-            Arc::new(crate::tinycortex::SeamChatProvider::new(
-                provider,
-            )) as Arc<dyn tinycortex::memory::score::extract::ChatProvider>,
+            Arc::new(crate::tinycortex::SeamChatProvider::new(provider))
+                as Arc<dyn tinycortex::memory::score::extract::ChatProvider>,
             model,
         ),
         Err(error) => {

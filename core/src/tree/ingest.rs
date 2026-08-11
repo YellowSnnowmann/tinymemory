@@ -4,11 +4,11 @@
 use anyhow::Context;
 use anyhow::Result;
 
-use crate::Config;
 #[cfg(feature = "memory-git")]
 use crate::store::content::wiki_git::{SummaryCommitBatch, SummaryCommitEntry};
 use crate::store::trees::types::Tree;
 use crate::tinycortex::{memory_config_from, HostSummariser};
+use crate::Config;
 
 pub use tinycortex::memory::tree::{SummaryIngestInput, SummaryIngestOutcome};
 
@@ -23,9 +23,7 @@ pub async fn ingest_summary(
         input.child_labels.len()
     );
     let content_root = config.memory_tree_content_root();
-    if let Err(error) =
-        crate::store::content::obsidian::ensure_obsidian_defaults(&content_root)
-    {
+    if let Err(error) = crate::store::content::obsidian::ensure_obsidian_defaults(&content_root) {
         log::warn!("[memory_tree::ingest] obsidian defaults failed: {error:#}");
     }
 

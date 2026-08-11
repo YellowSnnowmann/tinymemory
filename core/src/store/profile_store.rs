@@ -34,7 +34,7 @@ pub struct ProfileStore {
 impl ProfileStore {
     /// The single production construction site is
     /// [`super::MemoryClient::profile_store`].
-    pub(in crate) fn from_conn(conn: Arc<Mutex<Connection>>) -> Self {
+    pub(crate) fn from_conn(conn: Arc<Mutex<Connection>>) -> Self {
         Self { conn }
     }
 

@@ -3,8 +3,8 @@
 use anyhow::Result;
 use rusqlite::Transaction;
 
-use crate::Config;
 use crate::tinycortex::engine_config;
+use crate::Config;
 
 pub use tinycortex::memory::graph::pairs_from_entities;
 

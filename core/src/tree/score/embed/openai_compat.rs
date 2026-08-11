@@ -167,17 +167,16 @@ impl OpenAiCompatEmbedder {
             );
         }
 
-        let inner =
-            crate::embedding_host::require_embedding_host()
-                .map_err(|e| anyhow::anyhow!(e))?
-                .create_embedding_provider_with_credentials(
-                    slug,
-                    model,
-                    EMBEDDING_DIM,
-                    &api_key,
-                    custom_endpoint,
-                )
-                .map_err(|e| anyhow::anyhow!(e))
+        let inner = crate::embedding_host::require_embedding_host()
+            .map_err(|e| anyhow::anyhow!(e))?
+            .create_embedding_provider_with_credentials(
+                slug,
+                model,
+                EMBEDDING_DIM,
+                &api_key,
+                custom_endpoint,
+            )
+            .map_err(|e| anyhow::anyhow!(e))
             .with_context(|| {
                 format!("build {label} embedder for memory tree (provider='{provider}')")
             })?;
@@ -232,7 +231,6 @@ mod tests {
     use tempfile::TempDir;
 
     fn cfg_with_provider(p: &str) -> (TempDir, TestHostConfig) {
-
         crate::test_seams::init();
         let tmp = TempDir::new().unwrap();
         let mut cfg = TestHostConfig::default();
@@ -283,9 +281,7 @@ mod tests {
 
     /// Build a `cloud_providers` entry the way AI Settings persists a local
     /// OpenAI-compatible server.
-    fn lmstudio_entry(
-        endpoint: &str,
-    ) -> tinymemory_api::host::cloud_providers::CloudProviderCreds {
+    fn lmstudio_entry(endpoint: &str) -> tinymemory_api::host::cloud_providers::CloudProviderCreds {
         tinymemory_api::host::cloud_providers::CloudProviderCreds {
             id: "p_lmstudio_test".to_string(),
             slug: "lmstudio".to_string(),

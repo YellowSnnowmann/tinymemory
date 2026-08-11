@@ -23,7 +23,9 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-pub use tinymemory_api::host::{EmbeddingHealthReason, MemoryEvent, MemoryEventSink, NoopEventSink};
+pub use tinymemory_api::host::{
+    EmbeddingHealthReason, MemoryEvent, MemoryEventSink, NoopEventSink,
+};
 
 static SINK: RwLock<Option<Arc<dyn MemoryEventSink>>> = RwLock::new(None);
 

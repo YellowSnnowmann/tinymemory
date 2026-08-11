@@ -15,7 +15,6 @@ use std::sync::Arc;
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::embedding_host::require_embedding_host;
-use tinymemory_api::host::EmbeddingProvider;
 use crate::ingestion::queue as ingestion_queue;
 use crate::ingestion::{
     IngestionJob, IngestionQueue, IngestionState, MemoryIngestionConfig, MemoryIngestionRequest,
@@ -26,6 +25,7 @@ use crate::store::types::{
     GraphRelationRecord, MemoryKvRecord, NamespaceDocumentInput, NamespaceMemoryHit,
     NamespaceRetrievalContext, StoredMemoryDocument,
 };
+use tinymemory_api::host::EmbeddingProvider;
 
 /// Reference-counted handle to a `MemoryClient`.
 pub type MemoryClientRef = Arc<MemoryClient>;
@@ -74,9 +74,7 @@ impl MemoryClient {
     /// `profile_conn_is_confined_to_the_memory_family` in the host, which scans
     /// the host tree and names the offending file; a visibility error read as
     /// "private method", not as "you are reaching around the guard".
-    pub fn profile_conn(
-        &self,
-    ) -> std::sync::Arc<parking_lot::Mutex<rusqlite::Connection>> {
+    pub fn profile_conn(&self) -> std::sync::Arc<parking_lot::Mutex<rusqlite::Connection>> {
         std::sync::Arc::clone(&self.inner.conn)
     }
 
@@ -495,10 +493,7 @@ impl MemoryClient {
     /// [`Self::kv_list_namespace`], which returns a camelCase
     /// `Vec<serde_json::Value>` with no `updated_at` and no global slice —
     /// re-parsing that back into [`MemoryKvRecord`] would be lossy new logic.
-    pub async fn kv_records(
-        &self,
-        namespace: Option<&str>,
-    ) -> Result<Vec<MemoryKvRecord>, String> {
+    pub async fn kv_records(&self, namespace: Option<&str>) -> Result<Vec<MemoryKvRecord>, String> {
         match namespace {
             Some(ns) => self.inner.kv_records_namespace(ns).await,
             None => self.inner.kv_records_global().await,

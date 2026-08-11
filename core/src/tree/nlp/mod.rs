@@ -21,11 +21,9 @@ pub use crate::nlp_host::{SpacyEntity, SpacyResponse};
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
-use crate::Config;
-use crate::tree::score::extract::{
-    EntityKind, ExtractedEntities, ExtractedEntity, ExtractedTopic,
-};
+use crate::tree::score::extract::{EntityKind, ExtractedEntities, ExtractedEntity, ExtractedTopic};
 use crate::tree::score::resolver::{canonicalise, CanonicalEntity};
+use crate::Config;
 
 /// Map a spaCy entity label to our [`EntityKind`]. Unknown labels collapse to
 /// [`EntityKind::Misc`] so they still participate as graph anchors.
@@ -135,7 +133,6 @@ mod tests {
     use super::*;
 
     fn cfg_spacy_off() -> TestHostConfig {
-
         crate::test_seams::init();
         let mut c = TestHostConfig::default();
         c.memory_tree.spacy_enabled = false;
@@ -174,14 +171,12 @@ mod tests {
     #[test]
     fn spacy_response_maps_nouns_to_topics() {
         let resp = SpacyResponse {
-            entities: vec![
-                crate::nlp_host::SpacyEntity {
-                    text: "Alice".into(),
-                    label: "PERSON".into(),
-                    start: 0,
-                    end: 5,
-                },
-            ],
+            entities: vec![crate::nlp_host::SpacyEntity {
+                text: "Alice".into(),
+                label: "PERSON".into(),
+                start: 0,
+                end: 5,
+            }],
             nouns: vec!["migration".into()],
         };
         let extracted = spacy_to_extracted(&resp);

@@ -8,9 +8,9 @@ use tinymemory_api::host::MemoryHostConfig;
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
+use crate::composio_host::{self, ComposioExecuteResponse};
 use crate::config_loader as config_rpc;
 use crate::Config;
-use crate::composio_host::{self, ComposioExecuteResponse};
 
 /// Reason a sync was triggered. Providers can use this to decide
 /// whether to do a full backfill or an incremental pull.
@@ -485,7 +485,6 @@ mod tests {
     // rather than from the process-global `OPENHUMAN_WORKSPACE`. Tests
     // therefore only need to persist the config to `config_path` — no env var
     // manipulation required.
-
 
     #[tokio::test]
     async fn provider_context_execute_backend_branch_without_session_errors_cleanly() {

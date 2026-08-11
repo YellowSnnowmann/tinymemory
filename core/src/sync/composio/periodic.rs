@@ -51,18 +51,14 @@ use std::time::{Duration, Instant};
 use tokio::time::interval;
 
 use crate::config_loader as config_rpc;
-use tinymemory_api::host::DEFAULT_MEMORY_SYNC_INTERVAL_SECS;
-use crate::scheduler_gate::{current_policy, resume_notify};
 use crate::scheduler_gate::PauseReason;
-use crate::sources::{
-    memory_sync_defaults_for_toolkit, MemorySourceEntry, SourceKind,
-};
+use crate::scheduler_gate::{current_policy, resume_notify};
+use crate::sources::{memory_sync_defaults_for_toolkit, MemorySourceEntry, SourceKind};
+use tinymemory_api::host::DEFAULT_MEMORY_SYNC_INTERVAL_SECS;
 
 use super::providers::{get_provider, ComposioUsage};
 use crate::composio_host;
-use crate::tinycortex::{
-    append_audit_entry, try_read_audit_log, SyncAuditEntry,
-};
+use crate::tinycortex::{append_audit_entry, try_read_audit_log, SyncAuditEntry};
 use chrono::{DateTime, Utc};
 
 /// How often the scheduler wakes up to look for due syncs. Independent
@@ -453,11 +449,12 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
     // re-enabling background sync for sources the user switched off on a
     // transient config-read failure. Reusing the tick's snapshot is fail-closed
     // (a disabled row stays disabled) and avoids the extra read entirely.
-    let composio_sources: HashMap<String, MemorySourceEntry> = crate::sources::decode_memory_sources(&*config)
-        .iter()
-        .filter(|s| s.kind == SourceKind::Composio)
-        .filter_map(|s| s.connection_id.clone().map(|id| (id, s.clone())))
-        .collect();
+    let composio_sources: HashMap<String, MemorySourceEntry> =
+        crate::sources::decode_memory_sources(&*config)
+            .iter()
+            .filter(|s| s.kind == SourceKind::Composio)
+            .filter_map(|s| s.connection_id.clone().map(|id| (id, s.clone())))
+            .collect();
 
     let mut considered = 0usize;
     let mut fired = 0usize;
@@ -558,8 +555,7 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
             "[composio:periodic] firing sync"
         );
         let sync_started = Instant::now();
-        let result =
-            crate::tinycortex::run_source_pipeline(&source, &*config).await;
+        let result = crate::tinycortex::run_source_pipeline(&source, &*config).await;
         let duration_ms = sync_started.elapsed().as_millis() as u64;
 
         match result {

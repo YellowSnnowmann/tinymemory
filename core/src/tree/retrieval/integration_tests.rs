@@ -18,16 +18,13 @@ use tinymemory_api::host::MemoryHostConfig;
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
-use crate::Config;
 use crate::ingest_pipeline::ingest_chat;
 use crate::store::chunks::types::SourceKind;
-use crate::tree::retrieval::{
-    drill_down, fetch_leaves, query_source, search_entities,
-};
+use crate::tree::retrieval::{drill_down, fetch_leaves, query_source, search_entities};
+use crate::Config;
 use tinycortex::memory::ingest::canonicalize::chat::{ChatBatch, ChatMessage};
 
 fn test_config() -> (TempDir, TestHostConfig) {
-
     crate::test_seams::init();
     let tmp = TempDir::new().unwrap();
     let mut cfg = TestHostConfig::default();
@@ -179,9 +176,7 @@ async fn ingest_populates_chunk_embeddings() {
 async fn seal_populates_summary_embedding() {
     use crate::chat::{test_override, ChatProvider, StaticChatProvider};
     use crate::store::chunks::store::upsert_chunks;
-    use crate::store::chunks::types::{
-        chunk_id, Chunk, Metadata, SourceKind, SourceRef,
-    };
+    use crate::store::chunks::types::{chunk_id, Chunk, Metadata, SourceKind, SourceRef};
     use crate::store::content as content_store;
     use crate::tree::score::embed::EMBEDDING_DIM;
     use crate::tree::tree::bucket_seal::{append_leaf, LabelStrategy, LeafRef};

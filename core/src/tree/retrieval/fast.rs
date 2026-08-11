@@ -2,13 +2,13 @@
 
 use anyhow::Result;
 
-use crate::Config;
 use crate::source_scope::current_source_scope;
 use crate::tinycortex::engine_config;
 use crate::tree::nlp;
 use crate::tree::retrieval::engine::EmbedderBridge;
 use crate::tree::retrieval::types::QueryResponse;
 use crate::tree::score::embed::build_embedder_from_config;
+use crate::Config;
 
 pub use tinycortex::memory::retrieval::FastRetrieveOptions;
 

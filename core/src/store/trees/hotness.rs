@@ -2,9 +2,9 @@
 
 use anyhow::Result;
 
-use crate::Config;
 use crate::store::trees::types::HotnessCounters;
 use crate::tinycortex::engine_config;
+use crate::Config;
 
 pub fn get(config: &Config, entity_id: &str) -> Result<Option<HotnessCounters>> {
     tinycortex::memory::tree::store::hotness::get(&engine_config(config), entity_id)

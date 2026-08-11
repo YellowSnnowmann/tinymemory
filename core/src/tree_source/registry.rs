@@ -9,9 +9,9 @@ use anyhow::Result;
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use super::file;
-use crate::Config;
 use crate::store::trees::types::Tree;
 use crate::tree::tree::TreeFactory;
+use crate::Config;
 
 /// Look up the source tree for `scope`, or create a new one.
 ///
@@ -44,7 +44,6 @@ mod tests {
     use tempfile::TempDir;
 
     fn test_config() -> (TempDir, TestHostConfig) {
-
         crate::test_seams::init();
         let tmp = TempDir::new().unwrap();
         let mut cfg = TestHostConfig::default();

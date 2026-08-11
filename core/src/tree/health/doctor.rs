@@ -228,8 +228,7 @@ pub fn run_doctor(config: &Config) -> DoctorReport {
     //    "Build Summary Trees" will actually do — since #002 FR-007 it runs on
     //    the configured cloud provider when local AI is off, so local-AI-off is
     //    NOT a fault by itself. Only `bad` when no provider resolves at all.
-    let (summary_ok, summary_note) =
-        crate::chat_host::summarizer_available(config);
+    let (summary_ok, summary_note) = crate::chat_host::summarizer_available(config);
     stages.push(if summary_ok {
         StageHealth::ok("summary_tree", summary_note)
     } else {
@@ -285,7 +284,6 @@ mod tests {
     use tempfile::TempDir;
 
     fn test_config() -> (TempDir, TestHostConfig) {
-
         crate::test_seams::init();
         let tmp = TempDir::new().unwrap();
         let mut cfg = TestHostConfig::default();
@@ -397,7 +395,6 @@ mod tests {
         assert!(gate.ok);
         assert!(gate.note.contains("paused"));
     }
-
 
     /// A host-FS storage failure must surface as the doctor's
     /// `first_blocking_cause` (stage 0), outranking everything else — even a

@@ -12,9 +12,9 @@ use uuid::Uuid;
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
-use crate::Config;
 use crate::store::trees::types::{Tree, TreeKind, TreeStatus};
 use crate::tree::tree::store;
+use crate::Config;
 
 /// Generic get-or-create. All three tree flavors (Source, Global, Topic)
 /// share UNIQUE(kind, scope) and the same race-recovery dance — there's
@@ -118,7 +118,6 @@ mod tests {
     use tempfile::TempDir;
 
     fn test_config() -> (TempDir, TestHostConfig) {
-
         crate::test_seams::init();
         let tmp = TempDir::new().unwrap();
         let mut cfg = TestHostConfig::default();

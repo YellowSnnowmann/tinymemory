@@ -44,7 +44,6 @@ fn address_book_is_empty_on_non_mac() {
     assert!(address_book::read().unwrap().is_empty());
 }
 
-
 /// Regression for Sentry TAURI-RUST-8NM (store never seeded → `get()` always
 /// errored) and its #4378 follow-up (store stayed bound to the pre-login
 /// workspace after an active-user switch). Verify `init_from_workspace` seeds

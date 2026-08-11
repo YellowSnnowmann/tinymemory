@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use anyhow::Result;
 use rusqlite::Transaction;
 
-use crate::Config;
 use crate::tinycortex::engine_config;
+use crate::Config;
 
 pub use tinycortex::memory::score::store::{EntityHit, ScoreRow};
 
@@ -39,14 +39,7 @@ pub fn index_entity(
     tree_id: Option<&str>,
 ) -> Result<()> {
     let entity = to_store_entity(entity)?;
-    crate::store::entities::index_entity(
-        config,
-        &entity,
-        node_id,
-        node_kind,
-        timestamp_ms,
-        tree_id,
-    )
+    crate::store::entities::index_entity(config, &entity, node_id, node_kind, timestamp_ms, tree_id)
 }
 
 pub fn index_entities(

@@ -129,7 +129,9 @@ pub fn create_chat_model_with_model_id(
 #[must_use]
 pub fn inference_test_guard() -> std::sync::MutexGuard<'static, ()> {
     static GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    GUARD.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    GUARD
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 /// Token accounting from a completed model response, or `None` when the

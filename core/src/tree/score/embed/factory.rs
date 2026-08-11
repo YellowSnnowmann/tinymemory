@@ -37,8 +37,8 @@ use std::time::Duration;
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use super::{Embedder, InertEmbedder, ProviderEmbedder, EMBEDDING_DIM};
-use crate::Config;
 use crate::embedding_host::require_embedding_host;
+use crate::Config;
 use tinyagents::harness::embeddings::{OllamaEmbeddingModel, RECOMMENDED_OLLAMA_CONTEXT_TOKENS};
 
 /// Cheap heuristic for "is a backend session reachable?" — the cloud
@@ -384,7 +384,6 @@ mod tests {
     use tempfile::TempDir;
 
     fn test_config() -> (TempDir, TestHostConfig) {
-
         crate::test_seams::init();
         let tmp = TempDir::new().unwrap();
         let mut cfg = TestHostConfig::default();
@@ -495,9 +494,7 @@ mod tests {
 
     #[test]
     fn write_embedder_none_provider_is_inert_not_skip() {
-        use crate::tree::health::{
-            clear_semantic_recall_degraded, current_degraded_state,
-        };
+        use crate::tree::health::{clear_semantic_recall_degraded, current_degraded_state};
         let _guard = degraded_flag_lock();
         clear_semantic_recall_degraded();
         let (_tmp, mut cfg) = test_config();
@@ -650,10 +647,10 @@ mod tests {
         // the same way the LLM extractor already resolves the `lmstudio` slug —
         // and NOT fall through to the managed cloud budget (which 400s with
         // "Insufficient budget" and fails the seal job unrecoverably).
-        use tinymemory_api::host::cloud_providers::CloudProviderCreds;
         use crate::tree::health::{
             current_degraded_state, mark_semantic_recall_degraded, FailureCode,
         };
+        use tinymemory_api::host::cloud_providers::CloudProviderCreds;
         let _guard = degraded_flag_lock();
         mark_semantic_recall_degraded(FailureCode::EmbeddingsUnconfigured);
         let (_tmp, mut cfg) = test_config();
