@@ -655,10 +655,12 @@ mod tests {
 
     #[test]
     fn embedding_settings_uses_memory_config_when_local_disabled() {
-        let mut mem = MemoryConfig::default();
-        mem.embedding_provider = "openai".to_string();
-        mem.embedding_model = "text-embedding-3-small".to_string();
-        mem.embedding_dimensions = 1536;
+        let mem = MemoryConfig {
+            embedding_provider: "openai".to_string(),
+            embedding_model: "text-embedding-3-small".to_string(),
+            embedding_dimensions: 1536,
+            ..Default::default()
+        };
 
         // Local embedding model = None means workload routes to cloud.
         let (provider, model, dims) = effective_embedding_settings(&mem, None);
