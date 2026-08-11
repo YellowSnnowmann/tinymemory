@@ -280,7 +280,7 @@ pub struct MemoryTreeConfig {
     /// Ollama endpoint for the summariser
     /// (`memory::tree::tree_source::summariser::llm::LlmSummariser`).
     /// Defaults to `Some("http://localhost:11434")` — see
-    /// [`default_memory_tree_llm_endpoint`]. Soft failures fall back
+    /// `default_memory_tree_llm_endpoint`. Soft failures fall back
     /// to `InertSummariser` per seal.
     #[serde(default = "default_memory_tree_llm_endpoint")]
     pub llm_summariser_endpoint: Option<String>,
@@ -288,7 +288,7 @@ pub struct MemoryTreeConfig {
     /// Model name for the summariser. Defaults to `gemma3:4b` —
     /// larger Gemma tiers (`gemma3:12b-it-qat`, `gemma3:27b`) produce
     /// more coherent abstractive summaries at higher latency. See
-    /// [`default_memory_tree_llm_model`].
+    /// `default_memory_tree_llm_model`.
     #[serde(default = "default_memory_tree_llm_model")]
     pub llm_summariser_model: Option<String>,
 
