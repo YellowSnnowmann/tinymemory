@@ -276,23 +276,19 @@ async fn the_signature_matches_what_the_contract_formats() {
     );
 }
 
-#[test]
-fn the_debug_form_carries_no_connection_and_no_key() {
+#[tokio::test]
+async fn the_debug_form_carries_no_connection_and_no_key() {
     // `Debug` output reaches logs. It must not become a place a credential or a
     // transport detail leaks.
+    //
+    // Async despite testing a synchronous formatter: `Broker::spawn` needs a
+    // reactor, so building a connection at all requires a runtime.
     let bus = MemoryBus::new();
     let broker = Broker::new();
     let _task = broker.spawn(bus.clone());
-
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .expect("runtime");
-    let connection = runtime.block_on(async {
-        Connection::connect(bus.connect().await.expect("transport"))
-            .await
-            .expect("connection")
-    });
+    let connection = Connection::connect(bus.connect().await.expect("transport"))
+        .await
+        .expect("connection");
 
     let host = BusEmbeddingHost::new(connection, &config_with_dims(4));
     let rendered = format!("{host:?}");
