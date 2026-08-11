@@ -14,8 +14,7 @@ use tinybus::{Connection, Result as BusResult};
 use tinymemory_api::host::{EmbeddingHost, EmbeddingProvider};
 
 use super::{
-    BusEmbeddingHost, EMBEDDING_HOST_BUS_NAME, EMBEDDING_HOST_INTERFACE,
-    EMBEDDING_HOST_OBJECT_PATH,
+    BusEmbeddingHost, EMBEDDING_HOST_BUS_NAME, EMBEDDING_HOST_INTERFACE, EMBEDDING_HOST_OBJECT_PATH,
 };
 use crate::config::ModuleConfig;
 
@@ -154,7 +153,10 @@ async fn a_zero_dimension_provider_is_exempt_from_the_width_check() {
     let host = BusEmbeddingHost::new(connection, &config_with_dims(0));
     let provider = host.default_embedding_provider();
 
-    let vectors = provider.embed(&["alpha"]).await.expect("zero dims is legal");
+    let vectors = provider
+        .embed(&["alpha"])
+        .await
+        .expect("zero dims is legal");
     assert_eq!(vectors.len(), 1);
     assert!(vectors[0].is_empty());
 }
@@ -174,7 +176,10 @@ async fn an_empty_batch_never_reaches_the_bus() {
     let host = BusEmbeddingHost::new(connection, &config_with_dims(4));
     let provider = host.default_embedding_provider();
 
-    let vectors = provider.embed(&[]).await.expect("an empty batch is trivial");
+    let vectors = provider
+        .embed(&[])
+        .await
+        .expect("an empty batch is trivial");
     assert!(vectors.is_empty());
 }
 

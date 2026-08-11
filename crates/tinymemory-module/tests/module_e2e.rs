@@ -88,7 +88,11 @@ impl HostEmbedder {
 /// dropping the host is what would release the module's transport.
 async fn admit_module(
     workspace: &std::path::Path,
-) -> (Connection, ModuleHost, tokio::task::JoinHandle<BusResult<()>>) {
+) -> (
+    Connection,
+    ModuleHost,
+    tokio::task::JoinHandle<BusResult<()>>,
+) {
     let artifact = std::env::var_os("TINYMEMORY_TEST_MODULE")
         .expect("TINYMEMORY_TEST_MODULE must point at the built cdylib");
 
@@ -218,7 +222,10 @@ async fn an_entry_stored_over_the_bus_is_read_back() {
 
     // Idempotent by contract: forgetting reports whether it existed, and a
     // second forget is `false` rather than an error.
-    let forgotten: bool = bus.call("Forget", ("e2e", "greeting")).await.expect("Forget");
+    let forgotten: bool = bus
+        .call("Forget", ("e2e", "greeting"))
+        .await
+        .expect("Forget");
     assert!(forgotten);
     let again: bool = bus
         .call("Forget", ("e2e", "greeting"))
@@ -352,8 +359,9 @@ async fn a_rejected_request_comes_back_under_its_contract_name() {
 
     // A zero limit is the clearest driver-rejected input that needs no store
     // state to provoke.
-    let outcome: Result<tinymemory_api::provider::types::ExportPage, _> =
-        proxy(&client).call("ExportPage", (Option::<String>::None, 0_usize)).await;
+    let outcome: Result<tinymemory_api::provider::types::ExportPage, _> = proxy(&client)
+        .call("ExportPage", (Option::<String>::None, 0_usize))
+        .await;
 
     if let Err(error) = outcome {
         let name = error.wire_name();
@@ -378,7 +386,8 @@ async fn the_module_matches_the_in_process_engine_for_the_same_input() {
     let (client, _host, _task) = admit_module(workspace.path()).await;
     let bus = proxy(&client);
 
-    let content = "unicode survives: \u{e9}\u{4e2d}\u{6587} \u{1f600} and \"quotes\" and \\slashes\\";
+    let content =
+        "unicode survives: \u{e9}\u{4e2d}\u{6587} \u{1f600} and \"quotes\" and \\slashes\\";
     bus.call::<()>(
         "Store",
         (

@@ -271,7 +271,10 @@ impl EmbeddingProvider for BusEmbeddingProvider {
             );
         }
         if self.dimensions > 0 {
-            if let Some(bad) = vectors.iter().find(|vector| vector.len() != self.dimensions) {
+            if let Some(bad) = vectors
+                .iter()
+                .find(|vector| vector.len() != self.dimensions)
+            {
                 anyhow::bail!(
                     "host returned a {}-dimension vector for a {}-dimension space",
                     bad.len(),

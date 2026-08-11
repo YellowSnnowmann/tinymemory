@@ -71,7 +71,14 @@ fn there_is_no_field_that_could_hold_a_credential() {
 
     for key in object.keys() {
         let lowered = key.to_ascii_lowercase();
-        for forbidden in ["api_key", "apikey", "token", "secret", "password", "credential"] {
+        for forbidden in [
+            "api_key",
+            "apikey",
+            "token",
+            "secret",
+            "password",
+            "credential",
+        ] {
             assert!(
                 !lowered.contains(forbidden),
                 "config field {key:?} looks like it carries a credential; \
@@ -92,7 +99,10 @@ fn a_credential_nested_in_the_memory_config_is_stripped() {
     };
     config.memory.agentmemory_secret = Some("bearer-token-value".to_string());
 
-    assert!(config.strip_host_credentials(), "it should report removing one");
+    assert!(
+        config.strip_host_credentials(),
+        "it should report removing one"
+    );
     assert!(config.memory.agentmemory_secret.is_none());
 
     // And the token must not survive anywhere in the serialized form.
