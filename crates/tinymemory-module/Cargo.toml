@@ -27,12 +27,14 @@ tinymemory-core = { path = "../../core", version = "0.1.0" }
 tinymemory-tinycortex = { path = "../../adapters/tinycortex", version = "0.1.0" }
 tinycortex = { version = "0.1" }
 # TinyBus provides the typed service interface and the dynamic module host ABI.
-tinybus = { version = "0.1.0", path = "../../vendor/tinybus/crates/tinybus", default-features = false, features = [
+# Named by version requirement, not by path — the workspace root's
+# `[patch.crates-io]` points it at `vendor/tinybus`. See the note there.
+tinybus = { version = "0.1", default-features = false, features = [
     "macros",
     "modules",
 ] }
 # The module-side SDK owns its runtime and exports the stable C entrypoints.
-tinybus-module = { version = "0.1.0", path = "../../vendor/tinybus/crates/tinybus-module" }
+tinybus-module = { version = "0.1" }
 # `EmbeddingProvider::embed` is an `async fn` on an object-safe trait.
 async-trait = "0.1"
 # `EmbeddingProvider::embed` is anyhow-typed.
