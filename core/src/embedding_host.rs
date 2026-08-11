@@ -115,7 +115,7 @@ impl EmbeddingHost for TestEmbeddingHost {
     }
 
     fn default_embedding_provider(&self) -> Arc<dyn tinymemory_api::host::EmbeddingProvider> {
-        Arc::new(tinymemory_api::host::NoopEmbedding::default())
+        Arc::new(tinymemory_api::host::NoopEmbedding)
     }
 
     fn create_embedding_provider_with_credentials(
@@ -126,7 +126,7 @@ impl EmbeddingHost for TestEmbeddingHost {
         _api_key: &str,
         _custom_endpoint: Option<&str>,
     ) -> Result<Box<dyn tinymemory_api::host::EmbeddingProvider>, String> {
-        Ok(Box::new(tinymemory_api::host::NoopEmbedding::default()))
+        Ok(Box::new(tinymemory_api::host::NoopEmbedding))
     }
 
     fn model_supports_dimensions(&self, model: &str) -> bool {
@@ -142,7 +142,7 @@ impl EmbeddingHost for TestEmbeddingHost {
         _model: &str,
         _dims: usize,
     ) -> Result<Box<dyn tinymemory_api::host::EmbeddingProvider>, String> {
-        Ok(Box::new(tinymemory_api::host::NoopEmbedding::default()))
+        Ok(Box::new(tinymemory_api::host::NoopEmbedding))
     }
 
     fn default_cloud_embedding_model(&self) -> &str {
@@ -159,6 +159,6 @@ impl EmbeddingHost for TestEmbeddingHost {
         _model: &str,
         _dims: usize,
     ) -> Result<Box<dyn tinymemory_api::host::EmbeddingProvider>, String> {
-        Ok(Box::new(tinymemory_api::host::NoopEmbedding::default()))
+        Ok(Box::new(tinymemory_api::host::NoopEmbedding))
     }
 }
