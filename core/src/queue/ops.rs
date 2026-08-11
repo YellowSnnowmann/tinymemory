@@ -92,7 +92,6 @@ pub fn requeue_failed_after_provider_change(config: &crate::Config) -> Result<u6
 mod tests {
     use super::*;
     use crate::tree::health::{FailureCode, PipelineFailure};
-    use crate::Config;
     use tempfile::TempDir;
     use tinymemory_api::host::test_support::TestHostConfig;
 

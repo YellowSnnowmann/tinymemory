@@ -8,8 +8,6 @@ use tempfile::TempDir;
 
 use crate::store::{NamespaceDocumentInput, UnifiedMemory};
 use crate::{MemoryIngestionConfig, MemoryIngestionRequest};
-#[cfg(test)]
-use tinymemory_api::host::test_support::TestHostConfig;
 use tinymemory_api::host::NoopEmbedding;
 
 /// Test config for the heuristic-only ingestion pipeline.

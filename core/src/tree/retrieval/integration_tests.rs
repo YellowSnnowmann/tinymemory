@@ -21,7 +21,6 @@ use tinymemory_api::host::test_support::TestHostConfig;
 use crate::ingest_pipeline::ingest_chat;
 use crate::store::chunks::types::SourceKind;
 use crate::tree::retrieval::{drill_down, fetch_leaves, query_source, search_entities};
-use crate::Config;
 use tinycortex::memory::ingest::canonicalize::chat::{ChatBatch, ChatMessage};
 
 fn test_config() -> (TempDir, TestHostConfig) {

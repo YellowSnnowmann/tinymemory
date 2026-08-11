@@ -3,7 +3,6 @@
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
-use tinymemory_api::host::MemoryHostConfig;
 
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;

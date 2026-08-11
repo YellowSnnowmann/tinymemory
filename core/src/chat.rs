@@ -11,8 +11,6 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 
-#[cfg(any(test, feature = "test-support"))]
-use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::chat_host::{create_chat_model_with_model_id, provider_for_role, UsageInfo};
 use crate::Config;
@@ -267,7 +265,6 @@ pub mod test_override {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tinymemory_api::host::DEFAULT_CLOUD_LLM_MODEL;
 
     #[tokio::test]
     async fn static_chat_provider_returns_response_and_counts() {

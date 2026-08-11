@@ -19,8 +19,6 @@ use crate::embedding_host::require_embedding_host;
 use crate::store::namespace_store::UnifiedMemory;
 use crate::traits::Memory;
 use tinyagents::harness::embeddings::{DEFAULT_OLLAMA_DIMENSIONS, DEFAULT_OLLAMA_MODEL};
-#[cfg(test)]
-use tinymemory_api::host::test_support::TestHostConfig;
 use tinymemory_api::host::MemoryConfig;
 use tinymemory_api::host::{format_embedding_signature, EmbeddingProvider};
 use tinymemory_api::host::{EmbeddingRouteConfig, StorageProviderConfig};

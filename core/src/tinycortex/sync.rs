@@ -10,10 +10,7 @@ use tinycortex::memory::sync::{
     SyncEventSink, SyncOutcome, SyncPipeline, SyncStage, SyncStateStore, WorkspaceSourcePipeline,
 };
 
-use tinymemory_api::host::MemoryHostConfig;
 
-#[cfg(test)]
-use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::sources::{MemorySourceEntry, SourceKind};
 use crate::store::MemoryClientRef;
@@ -711,7 +708,6 @@ mod tests {
     };
     use crate::sources::MemorySourceEntry;
     use crate::sync::composio::{get_composio_sync_provider, init_default_composio_sync_providers};
-    use crate::Config;
 
     /// The advertised set (`memory_sources.supported_toolkits`, sourced from the
     /// provider registry) and the syncable set (`build_pipeline`) must not
