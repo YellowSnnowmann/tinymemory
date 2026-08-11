@@ -1012,7 +1012,7 @@ mod tests {
             created_at: ts,
             partial_message: false,
         };
-        upsert_chunks(&cfg, &[chunk.clone()]).unwrap();
+        upsert_chunks(&cfg, std::slice::from_ref(&chunk)).unwrap();
         let content_root = cfg.memory_tree_content_root();
         std::fs::create_dir_all(&content_root).unwrap();
         let staged = content_store::stage_chunks(&content_root, &[chunk]).unwrap();
