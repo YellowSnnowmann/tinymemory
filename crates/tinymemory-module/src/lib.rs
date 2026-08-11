@@ -79,8 +79,19 @@ const SETUP_FAILED_ERROR: &str = "ai.tinyhumans.tinymemory.Error.SetupFailed";
 /// `create_memory_with_local_ai` is handed `""`. Every embed goes over the bus to
 /// the host, which holds the real credential, so there is nothing to pass and
 /// nothing here that could leak one.
-async fn setup(connection: Connection, config: ModuleConfig) -> BusResult<()> {
+async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()> {
     config.validate().map_err(setup_error)?;
+
+    // `MemoryConfig` travels verbatim, and it contains a bearer token field for a
+    // remote memory backend. Carried credentials are exactly what this module
+    // refuses to hold, so it goes before anything else touches the config.
+    if config.strip_host_credentials() {
+        log::warn!(
+            "[tinymemory:module] discarded a remote-backend credential from the \
+             supplied config; this module serves the local engine only, so bind a \
+             remote memory driver directly instead of through it"
+        );
+    }
 
     log::debug!(
         "[tinymemory:module] setup driver_id={} routes={} cloud_dims={}",
