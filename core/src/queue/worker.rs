@@ -17,12 +17,11 @@ use std::time::Duration;
 use anyhow::Result;
 use tokio::sync::Notify;
 
-// Only the tests below call `MemoryHostConfig` methods directly; the production
-// paths in this module go through `crate::Config`.
+// Test-only: the tests below build a `TestHostConfig` and call
+// `MemoryHostConfig` methods on it directly. Production code in this module
+// goes through `crate::Config`, so neither name is needed in a non-test build.
 #[cfg(test)]
-use tinymemory_api::host::test_support::TestHostConfig;
-#[cfg(test)]
-use tinymemory_api::host::MemoryHostConfig;
+use tinymemory_api::host::{test_support::TestHostConfig, MemoryHostConfig};
 
 use crate::Config;
 // W4 flip: `run_once` now delegates claim/dispatch/settle to the crate, so the
