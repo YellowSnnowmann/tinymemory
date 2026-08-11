@@ -12,7 +12,6 @@
 //! credentials, schedulers, the event bus, and config mapping. The host
 //! supplies those through the seam traits in [`tinymemory_api::host`].
 
-use std::sync::Arc;
 /// The host's configuration, as this crate sees it.
 ///
 /// This is the load-bearing trick of the whole extraction. Before the move,
