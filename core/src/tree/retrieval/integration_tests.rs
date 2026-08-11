@@ -64,10 +64,9 @@ fn chat_about_phoenix(seq: u32) -> ChatBatch {
                 timestamp: Utc
                     .timestamp_millis_opt(1_700_000_001_000 + (seq as i64) * 10_000)
                     .unwrap(),
-                text: format!(
-                    "Confirmed. I'll handle coordination. #launch-q2 tracked in \
+                text: "Confirmed. I'll handle coordination. #launch-q2 tracked in \
                      Notion. bob@example.com will cut the release."
-                ),
+                    .to_string(),
                 source_ref: Some(format!("slack://phoenix/{seq}-reply")),
             },
         ],

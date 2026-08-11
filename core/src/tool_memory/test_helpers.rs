@@ -75,7 +75,7 @@ impl Memory for MockMemory {
                 .filter(|((n, _), _)| n == ns)
                 .map(|(_, v)| v.clone())
                 .collect(),
-            None => lock.iter().map(|(_, v)| v.clone()).collect(),
+            None => lock.values().cloned().collect(),
         })
     }
     async fn forget(&self, namespace: &str, key: &str) -> anyhow::Result<bool> {

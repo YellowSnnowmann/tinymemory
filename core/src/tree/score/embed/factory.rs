@@ -158,8 +158,7 @@ fn resolve_embedder_choice(config: &Config) -> Result<EmbedderChoice> {
     // 2. Deliberate opt-out — vector search off by user choice.
     if config
         .embeddings_provider()
-        .as_deref()
-        .map(|s| s.trim())
+        .map(str::trim)
         .is_some_and(|s| s == "none")
     {
         return Ok(EmbedderChoice::OptOut);

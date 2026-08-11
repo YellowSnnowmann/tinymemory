@@ -345,7 +345,7 @@ mod tests {
 
     #[test]
     fn status_scan_stops_parsing_at_the_configured_limit() {
-        let paths = vec![PathBuf::from("one"), PathBuf::from("two")];
+        let paths = [PathBuf::from("one"), PathBuf::from("two")];
         let reads = std::cell::Cell::new(0);
         let status = source_status(
             "fixture",
