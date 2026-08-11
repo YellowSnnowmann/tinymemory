@@ -49,6 +49,71 @@ jobs:
       - name: Test default features
         run: cargo test
 
+  # The module crate is its own workspace root (see the `exclude` note in the
+  # root Cargo.toml), so NONE of the steps above touch it: `--all-targets`,
+  # `--all-features` and `--workspace` all stop at the workspace boundary and
+  # exit 0 without having compiled a line of it.
+  #
+  # That silence is the hazard. A cdylib that fails to build is a release that
+  # cannot be cut, and it would be discovered at release time rather than on the
+  # PR that broke it. So it gets its own job with the same gates.
+  module:
+    name: Module (own workspace)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path crates/tinymemory-module/Cargo.toml --all -- --check
+
+      - name: Clippy
+        run: >-
+          cargo clippy --manifest-path crates/tinymemory-module/Cargo.toml
+          --all-targets -- -D warnings
+
+      - name: Build the cdylib
+        run: cargo build --manifest-path crates/tinymemory-module/Cargo.toml --release
+
+      - name: Unit tests
+        run: cargo test --manifest-path crates/tinymemory-module/Cargo.toml --lib
+
+      # The loader E2E drives a real dlopen'ed module, and tinybus binds its
+      # broker tasks to the runtime that created them. The module is loaded once
+      # per process and never unloaded, so two such tests in one process leave the
+      # second talking to a dead broker and it HANGS rather than failing. Hence
+      # one process per test, with a timeout so a hang is a red build and not a
+      # six-hour job.
+      - name: Loader E2E (one process per test)
+        env:
+          TINYMEMORY_TEST_MODULE: >-
+            ${{ github.workspace }}/crates/tinymemory-module/target/release/libtinymemory_module.so
+        run: |
+          set -euo pipefail
+          tests=$(
+            cargo test --manifest-path crates/tinymemory-module/Cargo.toml \
+              --test module_e2e -- --ignored --list \
+              | sed -n 's/^\(.*\): test$/\1/p'
+          )
+          if [ -z "$tests" ]; then
+            echo "No ignored E2E tests were found — the list step is broken." >&2
+            exit 1
+          fi
+          for test in $tests; do
+            echo "::group::$test"
+            timeout 300 cargo test --manifest-path crates/tinymemory-module/Cargo.toml \
+              --test module_e2e -- --ignored --exact "$test"
+            echo "::endgroup::"
+          done
+
   docs:
     name: Docs
     runs-on: ubuntu-latest
