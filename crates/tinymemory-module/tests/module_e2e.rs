@@ -25,6 +25,14 @@
 //! `--ignored` alone runs them all in one process and the second will hang. This
 //! is the same constraint the `tinywallet` module's loader tests carry.
 
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::cast_precision_loss,
+    reason = "test code may panic, and the fake embedder derives a vector from a length"
+)]
+
 use std::sync::Arc;
 
 use tinybus::broker::Broker;

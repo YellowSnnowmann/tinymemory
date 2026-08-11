@@ -44,6 +44,18 @@
 //! compute and job queue, and a host that has those implements them itself.
 //! See [`service`] for the method list.
 
+// Test code may panic; library code may not. The `[lints]` table cannot be
+// scoped to non-test builds, so the exemption is expressed here instead.
+#![cfg_attr(
+    test,
+    allow(
+        clippy::expect_used,
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::cast_precision_loss
+    )
+)]
+
 pub mod config;
 pub mod embedding;
 mod service;
