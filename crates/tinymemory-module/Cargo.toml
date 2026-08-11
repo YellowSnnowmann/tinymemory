@@ -58,6 +58,8 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+# The loader E2E and the store tests need a throwaway workspace directory.
+tempfile = "3"
 
 # Its own table, because a patch table only applies from the workspace root being
 # built and this crate is now its own root — the parent workspace's identical
