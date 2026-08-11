@@ -3,12 +3,11 @@
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
-// Only the tests below call `MemoryHostConfig` methods directly; the production
-// paths in this module go through `crate::Config`.
+// Test-only: the tests below build a `TestHostConfig` and call
+// `MemoryHostConfig` methods on it directly. Production code in this module
+// goes through `crate::Config`, so neither name is needed in a non-test build.
 #[cfg(test)]
-use tinymemory_api::host::test_support::TestHostConfig;
-#[cfg(test)]
-use tinymemory_api::host::MemoryHostConfig;
+use tinymemory_api::host::{test_support::TestHostConfig, MemoryHostConfig};
 
 use crate::composio_host::{self, ComposioExecuteResponse};
 use crate::config_loader as config_rpc;
