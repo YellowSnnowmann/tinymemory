@@ -392,8 +392,8 @@ mod tests {
         // Guardrail so future changes don't accidentally regress to an
         // arbitrarily large default (or `usize::MAX`) without thinking about
         // the producer-side memory bound.
-        assert!(DEFAULT_QUEUE_CAPACITY > 0);
-        assert!(
+        const _: () = assert!(DEFAULT_QUEUE_CAPACITY > 0);
+        const _: () = assert!(
             DEFAULT_QUEUE_CAPACITY <= 8 * 1024,
             "default capacity is the memory ceiling under sustained overflow — keep it tight"
         );
