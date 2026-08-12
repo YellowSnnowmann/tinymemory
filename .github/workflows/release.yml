@@ -11,6 +11,13 @@ on:
           - patch
           - minor
           - major
+      existing_tag:
+        description: >-
+          Re-cut module artifacts for a tag that already exists, skipping the
+          crate publish. Leave empty for a normal release.
+        type: string
+        required: false
+        default: ""
 
 concurrency:
   group: release-${{ github.ref_name }}
@@ -23,6 +30,12 @@ jobs:
   publish:
     name: Publish crate
     if: ${{ github.ref == 'refs/heads/main' }}
+    # Consumed by `release-target`. The `version` step already writes both to
+    # `$GITHUB_OUTPUT`; without this block they stop at the job boundary and the
+    # module bundles resolve an empty tag.
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      next_version: ${{ steps.version.outputs.next_version }}
     runs-on: ubuntu-latest
     environment: Production
     steps:
