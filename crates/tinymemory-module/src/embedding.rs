@@ -272,17 +272,22 @@ impl EmbeddingProvider for BusEmbeddingProvider {
                 texts.len()
             );
         }
-        if self.dimensions > 0 {
-            if let Some(bad) = vectors
-                .iter()
-                .find(|vector| vector.len() != self.dimensions)
-            {
-                anyhow::bail!(
-                    "host returned a {}-dimension vector for a {}-dimension space",
-                    bad.len(),
-                    self.dimensions
-                );
-            }
+        // Checked unconditionally, including for a zero-dimension provider. An
+        // earlier revision skipped the check entirely when `dimensions == 0`,
+        // which let a host answer a "semantic search off" request with real
+        // 768-wide vectors and pass — precisely the split-embedding-space
+        // failure this check exists to prevent, except that the engine would
+        // additionally believe no vectors existed at all. Zero dimensions means
+        // empty vectors, and this is what says so.
+        if let Some(bad) = vectors
+            .iter()
+            .find(|vector| vector.len() != self.dimensions)
+        {
+            anyhow::bail!(
+                "host returned a {}-dimension vector for a {}-dimension space",
+                bad.len(),
+                self.dimensions
+            );
         }
 
         Ok(vectors)
