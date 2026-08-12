@@ -143,9 +143,6 @@ jobs:
           git commit -m "Release ${RELEASE_TAG}"
           git tag -a "${RELEASE_TAG}" -m "Release ${RELEASE_TAG}"
 
-      - name: Package crate
-        run: cargo package --locked
-
       - name: Push release commit and tag
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
@@ -154,17 +151,12 @@ jobs:
           git push origin "HEAD:${GITHUB_REF_NAME}"
           git push origin "${RELEASE_TAG}"
 
-      - name: Publish to crates.io
-        run: cargo publish --locked
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-
   release-target:
     name: Resolve release target
-    needs: publish
-    # `always()` so a skipped or failed publish still yields a target: the two
-    # are genuinely independent releases that happened to share a job.
-    if: ${{ always() && (inputs.existing_tag != '' || needs.publish.result == 'success') }}
+    needs: tag
+    # `always()` so a skipped tag job still yields a target: re-cutting the
+    # module artifacts for an existing tag is a genuinely independent release.
+    if: ${{ always() && (inputs.existing_tag != '' || needs.tag.result == 'success') }}
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
