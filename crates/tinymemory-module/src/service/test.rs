@@ -142,7 +142,9 @@ fn a_response_over_the_ceiling_is_refused_as_a_budget_error() {
     // individually valid `Store` calls until the response cannot cross a
     // 16 MiB frame. Without this check the caller gets a transport failure it
     // cannot act on; with it, a named error that says how to narrow the query.
-    let entries: Vec<_> = (0..2).map(|_| entry_of(super::MAX_RESPONSE_BYTES)).collect();
+    let entries: Vec<_> = (0..2)
+        .map(|_| entry_of(super::MAX_RESPONSE_BYTES))
+        .collect();
 
     let error = super::ensure_response_fits(&entries, "List")
         .expect_err("a response over the ceiling must be refused");
@@ -168,7 +170,9 @@ fn the_refusal_decodes_host_side_as_a_budget_error() {
     // The whole point of reusing an existing name: a new one would decode to
     // `Other` on any host older than the module, turning an actionable "narrow
     // your query" into an opaque backend failure.
-    let entries: Vec<_> = (0..2).map(|_| entry_of(super::MAX_RESPONSE_BYTES)).collect();
+    let entries: Vec<_> = (0..2)
+        .map(|_| entry_of(super::MAX_RESPONSE_BYTES))
+        .collect();
 
     let BusError::MethodFailed { name, message } =
         super::ensure_response_fits(&entries, "List").expect_err("refused")
@@ -188,7 +192,9 @@ fn the_refusal_message_carries_no_entry_content() {
     // Entry content is user memory. The message names sizes and the method, and
     // nothing that was stored.
     let secret = "correct-horse-battery-staple";
-    let mut entries: Vec<_> = (0..2).map(|_| entry_of(super::MAX_RESPONSE_BYTES)).collect();
+    let mut entries: Vec<_> = (0..2)
+        .map(|_| entry_of(super::MAX_RESPONSE_BYTES))
+        .collect();
     entries[0].content.push_str(secret);
 
     let BusError::MethodFailed { message, .. } =

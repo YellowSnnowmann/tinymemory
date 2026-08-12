@@ -407,9 +407,7 @@ async fn a_rejected_request_comes_back_under_its_contract_name() {
     // tried to provoke a contract error through `ExportPage` with a zero limit;
     // since a driver that accepts a zero limit is equally legitimate, that test
     // asserted nothing whenever it passed.
-    let outcome: Result<serde_json::Value, _> = proxy(&client)
-        .call("NoSuchMethod", ())
-        .await;
+    let outcome: Result<serde_json::Value, _> = proxy(&client).call("NoSuchMethod", ()).await;
 
     let error = outcome.expect_err("an unknown member must be refused");
     let name = error.wire_name();
