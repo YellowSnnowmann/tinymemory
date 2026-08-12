@@ -27,8 +27,17 @@ permissions:
   contents: write
 
 jobs:
-  publish:
-    name: Publish crate
+  # Cuts the version bump and the tag. It deliberately does **not** publish to
+  # crates.io, and that is not an omission to be fixed later: `tinymemory-core`
+  # depends on `tinycortex-api`, which is consumed by path and is not on
+  # crates.io, so `cargo package` cannot resolve it (`no matching package named
+  # 'tinycortex-api' found`). Every consumer takes this repo by path or git.
+  # The crates are `publish = false` so the two facts cannot drift apart.
+  #
+  # What a release produces is the tag plus the per-platform module archives and
+  # their `checksum.toml` — that is what a host pins and verifies.
+  tag:
+    name: Tag release
     if: ${{ github.ref == 'refs/heads/main' }}
     # Consumed by `release-target`. The `version` step already writes both to
     # `$GITHUB_OUTPUT`; without this block they stop at the job boundary and the
