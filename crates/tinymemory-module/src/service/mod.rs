@@ -1,7 +1,7 @@
 //! `TinyBus` service boundary for the memory surface.
 //!
-//! One object, `/ai/tinyhumans/tinymemory/Memory`, exporting the mandatory
-//! capability families plus the four driver-level methods:
+//! One object, `/ai/tinyhumans/tinymemory/Memory`, exporting every capability
+//! family plus the four driver-level methods.
 //!
 //! ```text
 //! DriverId()                                        -> String
@@ -21,22 +21,13 @@
 //!
 //! # Why the method list mirrors a trait exactly
 //!
-//! These twelve are `tinymemory_api`'s [`MemoryProvider`] plus its three
-//! mandatory supertraits, with the borrows replaced by owned equivalents. That
+//! These are `tinymemory_api`'s [`MemoryProvider`] and all of its capability
+//! traits, with the borrows replaced by owned equivalents. That
 //! is deliberate: the host binds an `Arc<dyn MemoryProvider>`, so a host-side
 //! client that forwards each method one-for-one is a *complete* provider with no
 //! translation layer in between. Anything cleverer — batching, a combined
 //! "recall and store" call — would put engine semantics on the wire, where two
 //! sides could disagree about them.
-//!
-//! # Why only the mandatory families
-//!
-//! `tinymemory-tinycortex` advertises Core, Recall and Portability and nothing
-//! else, because the ten optional families are reached through engine entry
-//! points that need a host's configuration, embedding compute and job queue.
-//! This module serves exactly what that adapter can provide. Serving more would
-//! mean advertising capabilities whose accessors return nothing, which
-//! `audit_provider` is specifically written to catch.
 //!
 //! # Everything travels inline
 //!
@@ -80,16 +71,26 @@
 use std::sync::Arc;
 
 use tinybus::{Connection, Error as BusError, Result as BusResult};
-use tinymemory_api::capabilities::Capabilities;
+use tinymemory_api::capabilities::{Capabilities, Capability};
+use tinymemory_api::chunks::Chunk;
 use tinymemory_api::error::MemoryError;
+use tinymemory_api::goals::GoalsDoc;
 use tinymemory_api::health::MemoryHealth;
-use tinymemory_api::provider::types::{ExportPage, ExportRecord, ImportOutcome, SourceScope};
+use tinymemory_api::provider::types::{
+    DiffReport, EntityHit, ExportPage, ExportRecord, ImportOutcome, IngestItem, IngestOutcome,
+    MaintenanceReport, SnapshotRef, SourceItem, SourceScope,
+};
 // `MemoryCore`, `MemoryRecall` and `MemoryPortability` are deliberately not
 // imported: they are supertraits of `MemoryProvider`, so their methods are
 // already callable on the trait object.
 use tinymemory_api::provider::MemoryProvider;
 use tinymemory_api::recall::OwnedRecallOpts;
-use tinymemory_api::types::{MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary};
+use tinymemory_api::tool_memory::ToolMemoryRule;
+use tinymemory_api::tree::{IngestRequest, QueryResult, TreeStatus};
+use tinymemory_api::types::{
+    GraphRelationRecord, MemoryCategory, MemoryEntry, MemoryKvRecord, MemoryTaint,
+    NamespaceDocumentInput, NamespaceRetrievalContext, NamespaceSummary, StoredMemoryDocument,
+};
 use tinymemory_api::wire;
 
 /// Well-known name exported by the `TinyMemory` module.
@@ -108,6 +109,15 @@ impl MemoryService {
     pub(crate) fn new(provider: Arc<dyn MemoryProvider>) -> Self {
         Self { provider }
     }
+}
+
+macro_rules! require_family {
+    ($service:expr, $accessor:ident, $capability:expr) => {
+        $service
+            .provider
+            .$accessor()
+            .ok_or_else(|| into_bus_error(&MemoryError::unsupported($capability)))?
+    };
 }
 
 #[tinybus::interface(name = "ai.tinyhumans.tinymemory.Memory")]
@@ -270,6 +280,301 @@ impl MemoryService {
             .await
             .map_err(|error| into_bus_error(&error))
     }
+
+    async fn ingest_document(&self, item: IngestItem) -> BusResult<IngestOutcome> {
+        require_family!(self, as_ingest, Capability::Ingest)
+            .ingest_document(item)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn ingest_chat(&self, messages: Vec<IngestItem>) -> BusResult<IngestOutcome> {
+        require_family!(self, as_ingest, Capability::Ingest)
+            .ingest_chat(messages)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn put_document(&self, input: NamespaceDocumentInput) -> BusResult<String> {
+        require_family!(self, as_documents, Capability::Documents)
+            .put_document(input)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn get_document(
+        &self,
+        namespace: String,
+        key: String,
+    ) -> BusResult<Option<StoredMemoryDocument>> {
+        require_family!(self, as_documents, Capability::Documents)
+            .get_document(&namespace, &key)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn query_documents(
+        &self,
+        namespace: String,
+        query: String,
+        limit: usize,
+    ) -> BusResult<NamespaceRetrievalContext> {
+        let response = require_family!(self, as_documents, Capability::Documents)
+            .query_documents(&namespace, &query, limit)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&response, "QueryDocuments")?;
+        Ok(response)
+    }
+
+    async fn append(&self, request: IngestRequest) -> BusResult<()> {
+        require_family!(self, as_tree, Capability::Tree)
+            .append(request)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn query_source(
+        &self,
+        namespace: String,
+        source_id: String,
+        limit: usize,
+        scope: Option<SourceScope>,
+    ) -> BusResult<Vec<Chunk>> {
+        let response = require_family!(self, as_tree, Capability::Tree)
+            .query_source(&namespace, &source_id, limit, scope.as_ref())
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&response, "QuerySource")?;
+        Ok(response)
+    }
+
+    async fn drill_down(&self, namespace: String, node_id: String) -> BusResult<QueryResult> {
+        require_family!(self, as_tree, Capability::Tree)
+            .drill_down(&namespace, &node_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn seal(&self, namespace: String) -> BusResult<TreeStatus> {
+        require_family!(self, as_tree, Capability::Tree)
+            .seal(&namespace)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn cascade(&self, namespace: String) -> BusResult<TreeStatus> {
+        require_family!(self, as_tree, Capability::Tree)
+            .cascade(&namespace)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn entities(
+        &self,
+        namespace: String,
+        query: Option<String>,
+        limit: usize,
+    ) -> BusResult<Vec<EntityHit>> {
+        let response = require_family!(self, as_entities, Capability::Entities)
+            .entities(&namespace, query.as_deref(), limit)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&response, "Entities")?;
+        Ok(response)
+    }
+
+    async fn entity_edges(
+        &self,
+        namespace: String,
+        entity_id: String,
+        limit: usize,
+    ) -> BusResult<Vec<GraphRelationRecord>> {
+        require_family!(self, as_entities, Capability::Entities)
+            .entity_edges(&namespace, &entity_id, limit)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn touch_entities(&self, namespace: String, entity_ids: Vec<String>) -> BusResult<()> {
+        require_family!(self, as_entities, Capability::Entities)
+            .touch_entities(&namespace, &entity_ids)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn kv_get(
+        &self,
+        namespace: Option<String>,
+        key: String,
+    ) -> BusResult<Option<MemoryKvRecord>> {
+        require_family!(self, as_graph, Capability::Graph)
+            .kv_get(namespace.as_deref(), &key)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn kv_put(
+        &self,
+        namespace: Option<String>,
+        key: String,
+        value: serde_json::Value,
+    ) -> BusResult<()> {
+        require_family!(self, as_graph, Capability::Graph)
+            .kv_put(namespace.as_deref(), &key, value)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn kv_list(
+        &self,
+        namespace: Option<String>,
+        prefix: Option<String>,
+        limit: usize,
+    ) -> BusResult<Vec<MemoryKvRecord>> {
+        let response = require_family!(self, as_graph, Capability::Graph)
+            .kv_list(namespace.as_deref(), prefix.as_deref(), limit)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&response, "KvList")?;
+        Ok(response)
+    }
+
+    async fn relations(
+        &self,
+        namespace: Option<String>,
+        subject: Option<String>,
+        predicate: Option<String>,
+        limit: usize,
+    ) -> BusResult<Vec<GraphRelationRecord>> {
+        let response = require_family!(self, as_graph, Capability::Graph)
+            .relations(
+                namespace.as_deref(),
+                subject.as_deref(),
+                predicate.as_deref(),
+                limit,
+            )
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&response, "Relations")?;
+        Ok(response)
+    }
+
+    async fn put_relation(&self, relation: GraphRelationRecord) -> BusResult<()> {
+        require_family!(self, as_graph, Capability::Graph)
+            .put_relation(relation)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn capture_snapshot(&self, source_id: String) -> BusResult<SnapshotRef> {
+        require_family!(self, as_diff, Capability::Diff)
+            .capture_snapshot(&source_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn snapshots(&self, source_id: String, limit: usize) -> BusResult<Vec<SnapshotRef>> {
+        require_family!(self, as_diff, Capability::Diff)
+            .snapshots(&source_id, limit)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn diff(
+        &self,
+        source_id: String,
+        from: Option<String>,
+        to: String,
+    ) -> BusResult<DiffReport> {
+        require_family!(self, as_diff, Capability::Diff)
+            .diff(&source_id, from.as_deref(), &to)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn goals(&self) -> BusResult<GoalsDoc> {
+        require_family!(self, as_goals, Capability::Goals)
+            .goals()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn set_goals(&self, goals: GoalsDoc) -> BusResult<()> {
+        require_family!(self, as_goals, Capability::Goals)
+            .set_goals(goals)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn tool_rules(&self, tool_name: String) -> BusResult<Vec<ToolMemoryRule>> {
+        require_family!(self, as_tool_memory, Capability::ToolMemory)
+            .tool_rules(&tool_name)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn put_tool_rule(&self, rule: ToolMemoryRule) -> BusResult<()> {
+        require_family!(self, as_tool_memory, Capability::ToolMemory)
+            .put_tool_rule(rule)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn delete_tool_rule(&self, tool_name: String, rule_id: String) -> BusResult<bool> {
+        require_family!(self, as_tool_memory, Capability::ToolMemory)
+            .delete_tool_rule(&tool_name, &rule_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn accept_source_items(
+        &self,
+        source_id: String,
+        source_kind: String,
+        items: Vec<SourceItem>,
+        taint: MemoryTaint,
+    ) -> BusResult<IngestOutcome> {
+        require_family!(self, as_sources, Capability::Sources)
+            .accept_source_items(&source_id, &source_kind, items, taint)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn forget_source(&self, source_id: String) -> BusResult<u64> {
+        require_family!(self, as_sources, Capability::Sources)
+            .forget_source(&source_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn reembed(&self) -> BusResult<MaintenanceReport> {
+        require_family!(self, as_maintenance, Capability::Maintenance)
+            .reembed()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn compact(&self) -> BusResult<MaintenanceReport> {
+        require_family!(self, as_maintenance, Capability::Maintenance)
+            .compact()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn consolidate(&self) -> BusResult<MaintenanceReport> {
+        require_family!(self, as_maintenance, Capability::Maintenance)
+            .consolidate()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn doctor(&self) -> BusResult<MaintenanceReport> {
+        require_family!(self, as_maintenance, Capability::Maintenance)
+            .doctor()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
 }
 
 /// The response-size ceiling for a method that returns a list of entries.
@@ -278,14 +583,6 @@ impl MemoryService {
 /// room for the JSON structure around it and for escaping, which can double a
 /// pathological string, so a response that passes this check fits with margin.
 pub(crate) const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
-
-/// Per-entry allowance for the fields that are not `content`.
-///
-/// Keys, namespaces, timestamps, category and taint. Deliberately generous: this
-/// check exists to stop a response overflowing a frame, and over-estimating
-/// refuses slightly early while under-estimating fails at the transport with an
-/// error the caller cannot act on.
-const PER_ENTRY_OVERHEAD_BYTES: usize = 512;
 
 /// Refuse a response that would not fit in a frame.
 ///
@@ -310,25 +607,22 @@ const PER_ENTRY_OVERHEAD_BYTES: usize = 512;
 ///
 /// [`wire::BUDGET_EXCEEDED`], when the estimate exceeds [`MAX_RESPONSE_BYTES`].
 /// The message names the method and the sizes, never entry content.
-fn ensure_response_fits(entries: &[MemoryEntry], method: &str) -> BusResult<()> {
-    let estimate: usize = entries
-        .iter()
-        .map(|entry| entry.content.len().saturating_add(PER_ENTRY_OVERHEAD_BYTES))
-        .sum();
+fn ensure_response_fits<T: serde::Serialize>(response: &T, method: &str) -> BusResult<()> {
+    let estimate = serde_json::to_vec(response)
+        .map_err(|error| BusError::Protocol(error.to_string()))?
+        .len();
 
     if estimate > MAX_RESPONSE_BYTES {
         log::warn!(
-            "[tinymemory:module] {method} refused: {} entries estimated at {estimate} bytes \
-             exceeds the {MAX_RESPONSE_BYTES} byte response ceiling",
-            entries.len()
+            "[tinymemory:module] {method} refused: response estimated at {estimate} bytes \
+             exceeds the {MAX_RESPONSE_BYTES} byte response ceiling"
         );
         return Err(BusError::MethodFailed {
             name: wire::BUDGET_EXCEEDED.to_string(),
             message: format!(
-                "{method} would return {} entries (~{estimate} bytes), over the \
+                "{method} would return ~{estimate} bytes, over the \
                  {MAX_RESPONSE_BYTES} byte response ceiling; narrow the query by \
-                 namespace, category or session",
-                entries.len()
+                 namespace, category or session"
             ),
         });
     }
