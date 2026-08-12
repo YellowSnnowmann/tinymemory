@@ -31,6 +31,23 @@ confidence-threshold = 0.9
 # Duplicate versions bloat build times; review them rather than ignoring them.
 multiple-versions = "warn"
 wildcards = "deny"
+# ...except on a path dependency of a crate that is never published.
+#
+# `wildcards = "deny"` exists to stop an *unpinned registry* dependency, where
+# "any version" means whatever crates.io serves next. A version-less `{ path =
+# "api" }` is not that: it resolves to the copy in this repo, at this commit, and
+# cannot float.
+#
+# The version keys were removed from the intra-workspace path deps deliberately
+# (see the release workflow's bump step): they only ever existed to satisfy
+# crates.io publishing, which this repo does not do, and a sibling requiring
+# `^0.1.0` makes a `minor` release bump fail to resolve. cargo-deny scores those
+# as wildcards, so without this the two requirements contradict each other.
+#
+# Scoped, not blanket: cargo-deny only applies it to crates marked
+# `publish = false`, which every crate here is. Publishing one again would put
+# this error back, correctly.
+allow-wildcard-paths = true
 # Crates that must never enter the dependency graph.
 deny = []
 
