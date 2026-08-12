@@ -13,8 +13,8 @@ repository = "https://github.com/tinyhumansai/tinymemory"
 
 [dependencies]
 # The contract this adapter targets.
-tinymemory = { path = "../..", version = "0.1" }
-tinymemory-api = { path = "../../api", version = "0.1.1" }
+tinymemory = { path = "../.." }
+tinymemory-api = { path = "../../api" }
 # The engine being adapted. A version requirement rather than a path, so a host
 # that already pins its own TinyCortex checkout unifies both onto one copy
 # through its `[patch.crates-io]`; the workspace root patches it to the nested
