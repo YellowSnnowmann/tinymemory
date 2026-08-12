@@ -98,12 +98,18 @@ impl HostEmbedder {
 ///
 /// The returned `ModuleHost` and broker task must be kept alive by the caller:
 /// dropping the host is what would release the module's transport.
-async fn admit_module(
+/// [`admit_module`], additionally handing back the admitted [`ModuleInfo`].
+///
+/// The manifest is only observable through a real admission — it is produced by
+/// the `cdylib`'s exported `tinybus_module_manifest_v1` and parsed by the host —
+/// so a test that wants to inspect the declared surface has to go through here.
+async fn admit_module_detailed(
     workspace: &std::path::Path,
 ) -> (
     Connection,
     ModuleHost,
     tokio::task::JoinHandle<BusResult<()>>,
+    tinybus::module::ModuleInfo,
 ) {
     let artifact = std::env::var_os("TINYMEMORY_TEST_MODULE")
         .expect("TINYMEMORY_TEST_MODULE must point at the built cdylib");
