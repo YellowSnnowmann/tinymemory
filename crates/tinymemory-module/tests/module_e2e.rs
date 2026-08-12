@@ -94,15 +94,16 @@ impl HostEmbedder {
     }
 }
 
-/// Load the module, serve the host embedder, and hand back a client connection.
+/// Load the module, serve the host embedder, and hand back a client connection
+/// together with the admitted `ModuleInfo`.
 ///
 /// The returned `ModuleHost` and broker task must be kept alive by the caller:
 /// dropping the host is what would release the module's transport.
-/// [`admit_module`], additionally handing back the admitted [`ModuleInfo`].
 ///
 /// The manifest is only observable through a real admission — it is produced by
 /// the `cdylib`'s exported `tinybus_module_manifest_v1` and parsed by the host —
 /// so a test that wants to inspect the declared surface has to go through here.
+/// Most tests do not, and use [`admit_module`] instead.
 async fn admit_module_detailed(
     workspace: &std::path::Path,
 ) -> (
