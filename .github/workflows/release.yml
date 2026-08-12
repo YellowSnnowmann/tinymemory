@@ -185,7 +185,10 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock
+          # Both lockfiles: the module's own workspace lock is what the bundle
+          # jobs build against with `--locked`, so a tag that omits it cannot be
+          # built at all.
+          git add Cargo.toml Cargo.lock crates/tinymemory-module/Cargo.lock
           git commit -m "Release ${RELEASE_TAG}"
           git tag -a "${RELEASE_TAG}" -m "Release ${RELEASE_TAG}"
 
