@@ -39,9 +39,11 @@ impl CogneeMemory {
 
 #[async_trait]
 impl Memory for CogneeMemory {
+    /// Returns the Cognee driver identifier.
     fn name(&self) -> &str {
         self.inner.name()
     }
+    /// Stores an internally sourced record through the shared contract.
     async fn store(
         &self,
         n: &str,
@@ -52,6 +54,7 @@ impl Memory for CogneeMemory {
     ) -> anyhow::Result<()> {
         self.inner.store(n, k, c, cat, s).await
     }
+    /// Stores a record while preserving its provenance taint.
     async fn store_with_taint(
         &self,
         n: &str,
@@ -63,6 +66,7 @@ impl Memory for CogneeMemory {
     ) -> anyhow::Result<()> {
         self.inner.store_with_taint(n, k, c, cat, s, t).await
     }
+    /// Runs native Cognee recall and applies TinyMemory filters.
     async fn recall(
         &self,
         q: &str,
@@ -71,6 +75,7 @@ impl Memory for CogneeMemory {
     ) -> anyhow::Result<Vec<tinymemory_api::types::MemoryEntry>> {
         self.inner.recall(q, l, o).await
     }
+    /// Fetches one exact namespace/key record.
     async fn get(
         &self,
         n: &str,
@@ -78,6 +83,7 @@ impl Memory for CogneeMemory {
     ) -> anyhow::Result<Option<tinymemory_api::types::MemoryEntry>> {
         self.inner.get(n, k).await
     }
+    /// Lists records matching the supplied TinyMemory filters.
     async fn list(
         &self,
         n: Option<&str>,
@@ -86,41 +92,50 @@ impl Memory for CogneeMemory {
     ) -> anyhow::Result<Vec<tinymemory_api::types::MemoryEntry>> {
         self.inner.list(n, c, s).await
     }
+    /// Deletes one exact namespace/key record.
     async fn forget(&self, n: &str, k: &str) -> anyhow::Result<bool> {
         self.inner.forget(n, k).await
     }
+    /// Summarizes every namespace visible through this adapter.
     async fn namespace_summaries(
         &self,
     ) -> anyhow::Result<Vec<tinymemory_api::types::NamespaceSummary>> {
         self.inner.namespace_summaries().await
     }
+    /// Counts every record visible through this adapter.
     async fn count(&self) -> anyhow::Result<usize> {
         self.inner.count().await
     }
+    /// Checks whether the configured Cognee service is reachable.
     async fn health_check(&self) -> bool {
         self.inner.health_check().await
     }
 }
 
 #[derive(Debug)]
+/// Cognee-specific REST operations and wire-format conversion.
 struct CogneeDialect {
     client: HttpClient,
 }
 
 #[derive(Debug, Clone)]
+/// Identity of a Cognee dataset used for one TinyMemory namespace.
 struct Dataset {
     id: String,
     name: String,
 }
 
 impl CogneeDialect {
+    /// Encodes a TinyMemory namespace as a collision-free Cognee dataset name.
     fn dataset_name(namespace: &str) -> String {
         format!("tinymemory__{}", encode(namespace))
     }
+    /// Encodes a TinyMemory key as the uploaded envelope's filename.
     fn filename(key: &str) -> String {
         format!("{}.tinymemory.json", encode(key))
     }
 
+    /// Discovers only datasets owned by the TinyMemory adapter.
     async fn datasets(&self) -> anyhow::Result<Vec<Dataset>> {
         let response: Value = self
             .client
@@ -140,6 +155,7 @@ impl CogneeDialect {
             .collect())
     }
 
+    /// Downloads and decodes every TinyMemory envelope in one dataset.
     async fn dataset_entries(&self, dataset: &Dataset) -> anyhow::Result<Vec<StoredEntry>> {
         let response: Value = self
             .client
@@ -187,6 +203,7 @@ impl CogneeDialect {
         Ok(entries)
     }
 
+    /// Resolves the dataset assigned to a namespace.
     async fn find_dataset(&self, namespace: &str) -> anyhow::Result<Option<Dataset>> {
         let name = Self::dataset_name(namespace);
         Ok(self
@@ -196,6 +213,7 @@ impl CogneeDialect {
             .find(|dataset| dataset.name == name))
     }
 
+    /// Deletes a stored envelope using its composite remote identifier.
     async fn delete_entry(&self, entry: &StoredEntry) -> anyhow::Result<()> {
         let (dataset_id, data_id) = entry
             .remote_id
@@ -214,10 +232,12 @@ impl CogneeDialect {
 
 #[async_trait]
 impl Dialect for CogneeDialect {
+    /// Returns the stable Cognee driver identifier.
     fn name(&self) -> &'static str {
         COGNEE_DRIVER_ID
     }
 
+    /// Replaces an existing envelope and uploads the new exact record.
     async fn upsert(&self, entry: StoredEntry) -> anyhow::Result<()> {
         if let Some(existing) = self
             .entries()
@@ -252,6 +272,7 @@ impl Dialect for CogneeDialect {
         Ok(())
     }
 
+    /// Enumerates records across all TinyMemory-owned Cognee datasets.
     async fn entries(&self) -> anyhow::Result<Vec<StoredEntry>> {
         let mut entries = Vec::new();
         for dataset in self.datasets().await? {
@@ -260,6 +281,7 @@ impl Dialect for CogneeDialect {
         Ok(entries)
     }
 
+    /// Executes Cognee's native chunk recall and decodes returned envelopes.
     async fn search(
         &self,
         query: &str,
@@ -309,6 +331,7 @@ impl Dialect for CogneeDialect {
         Ok(entries)
     }
 
+    /// Finds and deletes an exact TinyMemory logical record.
     async fn delete(&self, namespace: &str, key: &str) -> anyhow::Result<bool> {
         let Some(dataset) = self.find_dataset(namespace).await? else {
             return Ok(false);
@@ -325,6 +348,7 @@ impl Dialect for CogneeDialect {
         Ok(true)
     }
 
+    /// Checks Cognee's aggregate health endpoint.
     async fn health(&self) -> bool {
         self.client.healthy("health").await
     }

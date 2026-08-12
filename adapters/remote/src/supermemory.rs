@@ -35,9 +35,11 @@ impl SupermemoryMemory {
 
 #[async_trait]
 impl Memory for SupermemoryMemory {
+    /// Returns the Supermemory driver identifier.
     fn name(&self) -> &str {
         self.inner.name()
     }
+    /// Stores an internally sourced record through the shared contract.
     async fn store(
         &self,
         n: &str,
@@ -48,6 +50,7 @@ impl Memory for SupermemoryMemory {
     ) -> anyhow::Result<()> {
         self.inner.store(n, k, c, cat, s).await
     }
+    /// Stores a record while preserving its provenance taint.
     async fn store_with_taint(
         &self,
         n: &str,
@@ -59,6 +62,7 @@ impl Memory for SupermemoryMemory {
     ) -> anyhow::Result<()> {
         self.inner.store_with_taint(n, k, c, cat, s, t).await
     }
+    /// Runs native Supermemory search and applies TinyMemory filters.
     async fn recall(
         &self,
         q: &str,
@@ -67,6 +71,7 @@ impl Memory for SupermemoryMemory {
     ) -> anyhow::Result<Vec<tinymemory_api::types::MemoryEntry>> {
         self.inner.recall(q, l, o).await
     }
+    /// Fetches one exact namespace/key record.
     async fn get(
         &self,
         n: &str,
@@ -74,6 +79,7 @@ impl Memory for SupermemoryMemory {
     ) -> anyhow::Result<Option<tinymemory_api::types::MemoryEntry>> {
         self.inner.get(n, k).await
     }
+    /// Lists records matching the supplied TinyMemory filters.
     async fn list(
         &self,
         n: Option<&str>,
@@ -82,28 +88,34 @@ impl Memory for SupermemoryMemory {
     ) -> anyhow::Result<Vec<tinymemory_api::types::MemoryEntry>> {
         self.inner.list(n, c, s).await
     }
+    /// Deletes one exact namespace/key record.
     async fn forget(&self, n: &str, k: &str) -> anyhow::Result<bool> {
         self.inner.forget(n, k).await
     }
+    /// Summarizes every namespace visible through this adapter.
     async fn namespace_summaries(
         &self,
     ) -> anyhow::Result<Vec<tinymemory_api::types::NamespaceSummary>> {
         self.inner.namespace_summaries().await
     }
+    /// Counts every record visible through this adapter.
     async fn count(&self) -> anyhow::Result<usize> {
         self.inner.count().await
     }
+    /// Checks whether the configured Supermemory service is reachable.
     async fn health_check(&self) -> bool {
         self.inner.health_check().await
     }
 }
 
 #[derive(Debug)]
+/// Supermemory-specific REST operations and wire-format conversion.
 struct SupermemoryDialect {
     client: HttpClient,
 }
 
 impl SupermemoryDialect {
+    /// Encodes TinyMemory identity, classification, session, and provenance.
     fn metadata(entry: &StoredEntry) -> Value {
         let mut metadata = serde_json::Map::from_iter([
             ("tinymemory_namespace".into(), json!(entry.namespace)),
@@ -120,6 +132,7 @@ impl SupermemoryDialect {
         Value::Object(metadata)
     }
 
+    /// Decodes a Supermemory result containing TinyMemory-owned metadata.
     fn decode(value: &Value) -> Option<StoredEntry> {
         let metadata = value.get("metadata")?.as_object()?;
         Some(StoredEntry {
@@ -152,6 +165,7 @@ impl SupermemoryDialect {
         })
     }
 
+    /// Enumerates memories separately for each discovered container tag.
     async fn memories(&self) -> anyhow::Result<Vec<StoredEntry>> {
         let tags: Value = self
             .client
@@ -221,10 +235,12 @@ impl SupermemoryDialect {
 
 #[async_trait]
 impl Dialect for SupermemoryDialect {
+    /// Returns the stable Supermemory driver identifier.
     fn name(&self) -> &'static str {
         SUPERMEMORY_DRIVER_ID
     }
 
+    /// Replaces an existing exact record or creates a direct v4 memory.
     async fn upsert(&self, entry: StoredEntry) -> anyhow::Result<()> {
         let existing = self
             .memories()
@@ -263,10 +279,12 @@ impl Dialect for SupermemoryDialect {
         Ok(())
     }
 
+    /// Enumerates TinyMemory-owned Supermemory records.
     async fn entries(&self) -> anyhow::Result<Vec<StoredEntry>> {
         self.memories().await
     }
 
+    /// Executes Supermemory's native v4 search.
     async fn search(
         &self,
         query: &str,
@@ -299,6 +317,7 @@ impl Dialect for SupermemoryDialect {
             .collect())
     }
 
+    /// Finds and deletes an exact TinyMemory logical record.
     async fn delete(&self, namespace: &str, key: &str) -> anyhow::Result<bool> {
         let Some(entry) = self
             .memories()
@@ -322,6 +341,7 @@ impl Dialect for SupermemoryDialect {
         Ok(true)
     }
 
+    /// Checks the local server root, its stable availability endpoint.
     async fn health(&self) -> bool {
         self.client.healthy("").await
     }

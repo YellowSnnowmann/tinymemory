@@ -11,11 +11,13 @@ use tinymemory_remote::{
     SupermemoryMemory,
 };
 
+/// Builds the command-line usage error returned for invalid arguments.
 fn usage() -> anyhow::Error {
     anyhow::anyhow!("usage: conformance <supermemory|mem0|cognee> <endpoint> [credential]")
 }
 
 #[tokio::main]
+/// Exercises mandatory capabilities against a live remote backend.
 async fn main() -> anyhow::Result<()> {
     let mut args = std::env::args().skip(1);
     let engine = args.next().ok_or_else(usage)?;
