@@ -182,20 +182,28 @@ impl MemoryService {
     }
 
     /// List entries, narrowing by namespace, category and session.
+    ///
+    /// Bounded by [`MAX_RESPONSE_BYTES`]: unlike `Recall` and `ExportPage`, this
+    /// method takes no limit and no cursor, so the caller has no way to ask for
+    /// less. See [`ensure_response_fits`] for why the answer is a named refusal
+    /// rather than a truncation.
     async fn list(
         &self,
         namespace: Option<String>,
         category: Option<MemoryCategory>,
         session_id: Option<String>,
     ) -> BusResult<Vec<MemoryEntry>> {
-        self.provider
+        let entries = self
+            .provider
             .list(
                 namespace.as_deref(),
                 category.as_ref(),
                 session_id.as_deref(),
             )
             .await
-            .map_err(|error| into_bus_error(&error))
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&entries, "List")?;
+        Ok(entries)
     }
 
     /// Enumerate namespaces with their aggregate counts.
