@@ -522,13 +522,13 @@ async fn the_manifest_declares_every_method_the_module_serves() {
         .manifest
         .provides
         .iter()
-        .find(|interface| interface.version.name.as_str() == MEMORY_INTERFACE)
+        .find(|interface| interface.version.interface.as_str() == MEMORY_INTERFACE)
         .expect("the memory interface must be declared");
 
     let declared: std::collections::BTreeSet<&str> = provided
         .methods
         .iter()
-        .map(std::string::String::as_str)
+        .map(tinybus::MemberName::as_str)
         .collect();
     let expected: std::collections::BTreeSet<&str> = EXPECTED_METHODS.iter().copied().collect();
 
