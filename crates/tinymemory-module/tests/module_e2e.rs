@@ -474,16 +474,70 @@ async fn the_module_matches_the_in_process_engine_for_the_same_input() {
 
 /// Not `#[ignore]`d: it loads nothing and so is safe alongside the suite.
 #[test]
-fn the_declared_method_list_matches_the_served_interface() {
-    // The manifest's `methods` list is admission surface. If it drifts from the
-    // interface's dispatch table, a host can be refused a method the module
-    // actually serves — or worse, admitted for one it does not.
-    let arc: Arc<()> = Arc::new(());
-    drop(arc);
-
-    // The service type is private, so this asserts the constant surface the
-    // manifest is written against instead.
+fn the_routing_constants_are_the_ones_the_host_dials() {
+    // Only the constants. What the manifest actually declares is checked against
+    // a real admission in `the_manifest_declares_every_method_the_module_serves`
+    // below — these two used to be one test, and the constants alone cannot
+    // catch a method missing from the manifest.
     assert_eq!(BUS_NAME, "ai.tinyhumans.tinymemory.Memory");
     assert_eq!(OBJECT_PATH, "/ai/tinyhumans/tinymemory/Memory");
     assert_eq!(MEMORY_INTERFACE, BUS_NAME);
+}
+
+/// Every method the service dispatches, as the manifest must declare it.
+///
+/// Kept beside the assertion rather than derived: the `module_export!` macro
+/// takes string literals, so there is no constant for a test to share with it.
+/// This list is therefore the second opinion — if the two disagree, one of them
+/// is wrong and the test says which names differ.
+const EXPECTED_METHODS: &[&str] = &[
+    "DriverId",
+    "Capabilities",
+    "Health",
+    "Shutdown",
+    "Store",
+    "Get",
+    "Forget",
+    "List",
+    "Namespaces",
+    "Recall",
+    "ExportPage",
+    "ImportRecords",
+];
+
+#[tokio::test]
+#[ignore = "drives a real dlopen'ed module; must be the only such test in the process — see the module docs"]
+async fn the_manifest_declares_every_method_the_module_serves() {
+    // The manifest's `methods` list is admission surface: a host can be refused
+    // a method the module actually serves, or admitted for one it does not.
+    //
+    // This inspects the manifest the loaded artifact really exported, which is
+    // the only way to see it — the list is baked into `tinybus_module_manifest_v1`
+    // by the macro and parsed by the host during admission. Comparing routing
+    // constants, as an earlier revision did, passes with `ImportRecords` missing
+    // from the declaration entirely.
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let (_client, _host, _task, info) = admit_module_detailed(workspace.path()).await;
+
+    let provided = info
+        .manifest
+        .provides
+        .iter()
+        .find(|interface| interface.version.name.as_str() == MEMORY_INTERFACE)
+        .expect("the memory interface must be declared");
+
+    let declared: std::collections::BTreeSet<&str> = provided
+        .methods
+        .iter()
+        .map(std::string::String::as_str)
+        .collect();
+    let expected: std::collections::BTreeSet<&str> = EXPECTED_METHODS.iter().copied().collect();
+
+    assert_eq!(
+        declared,
+        expected,
+        "manifest methods drifted; missing={:?} unexpected={:?}",
+        expected.difference(&declared).collect::<Vec<_>>(),
+        declared.difference(&expected).collect::<Vec<_>>()
+    );
 }
