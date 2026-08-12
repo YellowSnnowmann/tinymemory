@@ -258,6 +258,69 @@ impl MemoryService {
     }
 }
 
+/// The response-size ceiling for a method that returns a list of entries.
+///
+/// A `TinyBus` frame is JSON capped at 16 MiB. 8 MiB of raw entry content leaves
+/// room for the JSON structure around it and for escaping, which can double a
+/// pathological string, so a response that passes this check fits with margin.
+pub const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+
+/// Per-entry allowance for the fields that are not `content`.
+///
+/// Keys, namespaces, timestamps, category and taint. Deliberately generous: this
+/// check exists to stop a response overflowing a frame, and over-estimating
+/// refuses slightly early while under-estimating fails at the transport with an
+/// error the caller cannot act on.
+const PER_ENTRY_OVERHEAD_BYTES: usize = 512;
+
+/// Refuse a response that would not fit in a frame.
+///
+/// # Why a refusal and not a truncation
+///
+/// Truncating would be worse than failing. `List` has no cursor, so a caller
+/// receiving a short list has no way to tell it apart from a complete one and no
+/// way to ask for the rest — it would conclude those entries do not exist. A
+/// named error tells the caller to narrow by namespace, category or session,
+/// which is a query it can actually issue.
+///
+/// # Why `BudgetExceeded` and not a new name
+///
+/// The name has to be one both ends already agree on, and
+/// [`tinymemory_api::wire`] is the table that makes that true. `BudgetExceeded`
+/// is what it means — the result exceeded a size budget — and it round-trips to
+/// the host as `MemoryError::BudgetExceeded` with no client change. A new name
+/// would decode to `Other` on any host older than the module, turning an
+/// actionable "narrow your query" into an opaque backend failure.
+///
+/// # Errors
+///
+/// [`wire::BUDGET_EXCEEDED`], when the estimate exceeds [`MAX_RESPONSE_BYTES`].
+/// The message names the method and the sizes, never entry content.
+fn ensure_response_fits(entries: &[MemoryEntry], method: &str) -> BusResult<()> {
+    let estimate: usize = entries
+        .iter()
+        .map(|entry| entry.content.len().saturating_add(PER_ENTRY_OVERHEAD_BYTES))
+        .sum();
+
+    if estimate > MAX_RESPONSE_BYTES {
+        log::warn!(
+            "[tinymemory:module] {method} refused: {} entries estimated at {estimate} bytes \
+             exceeds the {MAX_RESPONSE_BYTES} byte response ceiling",
+            entries.len()
+        );
+        return Err(BusError::MethodFailed {
+            name: wire::BUDGET_EXCEEDED.to_string(),
+            message: format!(
+                "{method} would return {} entries (~{estimate} bytes), over the \
+                 {MAX_RESPONSE_BYTES} byte response ceiling; narrow the query by \
+                 namespace, category or session",
+                entries.len()
+            ),
+        });
+    }
+    Ok(())
+}
+
 /// Map a [`MemoryError`] onto a named bus error.
 ///
 /// Both the name and the message come from [`tinymemory_api::wire`], which the
