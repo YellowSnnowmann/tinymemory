@@ -175,7 +175,19 @@ async fn admit_module_detailed(
     let client = Connection::connect(bus.connect().await.expect("client transport"))
         .await
         .expect("client connection");
-    (client, modules, broker_task)
+    (client, modules, broker_task, loaded)
+}
+
+/// Load the module under a fresh workspace and return a client connection to it.
+async fn admit_module(
+    workspace: &std::path::Path,
+) -> (
+    Connection,
+    ModuleHost,
+    tokio::task::JoinHandle<BusResult<()>>,
+) {
+    let (client, host, task, _info) = admit_module_detailed(workspace).await;
+    (client, host, task)
 }
 
 fn proxy(connection: &Connection) -> tinybus::Proxy {
