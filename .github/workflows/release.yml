@@ -390,11 +390,21 @@ jobs:
         run: |
           set -euo pipefail
           mapfile -t release_files < <(find release-assets -type f | sort)
-          gh release create "$RELEASE_TAG" "${release_files[@]}" \
-            --repo "$REPOSITORY" \
-            --verify-tag \
-            --title "$RELEASE_TAG" \
-            --generate-notes
+          # Re-cutting artifacts for an existing tag is what `existing_tag` is
+          # for, and a release for that tag usually already exists — so upload
+          # into it rather than failing on `already exists`. `--clobber` makes
+          # the re-cut idempotent instead of erroring on the second asset name.
+          if gh release view "$RELEASE_TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            echo "release ${RELEASE_TAG} exists; uploading assets into it"
+            gh release upload "$RELEASE_TAG" "${release_files[@]}" \
+              --repo "$REPOSITORY" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${release_files[@]}" \
+              --repo "$REPOSITORY" \
+              --verify-tag \
+              --title "$RELEASE_TAG" \
+              --generate-notes
+          fi
 
       - name: Verify the published module through TinyBus
         shell: bash
