@@ -160,6 +160,24 @@ jobs:
           perl -0pi -e 's/(\[package\][\s\S]*?\nversion = ")[^"]+(")/$1$ENV{NEXT_VERSION}$2/' Cargo.toml
           cargo update -p "$CRATE_NAME" --precise "$NEXT_VERSION"
 
+          # There are TWO Cargo worlds here, and the module's is the one the
+          # release actually builds. `crates/tinymemory-module` is its own
+          # workspace root with its own `Cargo.lock` (see the root Cargo.toml
+          # comment for why), and it depends on the root crate by path — so
+          # bumping the root version leaves that lockfile recording the old one.
+          #
+          # `native-bundles` then builds with `--locked` and every one of the
+          # eleven jobs fails with "cannot update the lock file … because
+          # --locked was passed". Updating only the root lockfile is how the
+          # second attempt at this release died, after the tag had already been
+          # pushed.
+          cargo update --manifest-path crates/tinymemory-module/Cargo.toml \
+            -p "$CRATE_NAME" --precise "$NEXT_VERSION"
+
+          # Prove it before tagging rather than discovering it eleven jobs later.
+          cargo metadata --locked --format-version 1 \
+            --manifest-path crates/tinymemory-module/Cargo.toml >/dev/null
+
       - name: Commit version bump and tag
         env:
           RELEASE_TAG: ${{ steps.version.outputs.tag }}
@@ -167,7 +185,10 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Cargo.toml Cargo.lock
+          # Both lockfiles: the module's own workspace lock is what the bundle
+          # jobs build against with `--locked`, so a tag that omits it cannot be
+          # built at all.
+          git add Cargo.toml Cargo.lock crates/tinymemory-module/Cargo.lock
           git commit -m "Release ${RELEASE_TAG}"
           git tag -a "${RELEASE_TAG}" -m "Release ${RELEASE_TAG}"
 

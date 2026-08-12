@@ -80,8 +80,13 @@ jobs:
           cargo clippy --manifest-path crates/tinymemory-module/Cargo.toml
           --all-targets -- -D warnings
 
+      # `--locked`, matching how the release builds this crate. Without it, a
+      # stale `crates/tinymemory-module/Cargo.lock` — which is a *separate*
+      # lockfile from the root's, and easy to forget when the root version moves
+      # — passes here and then fails all eleven release bundle jobs, after the
+      # tag has already been pushed. That happened once; this is the guard.
       - name: Build the cdylib
-        run: cargo build --manifest-path crates/tinymemory-module/Cargo.toml --release
+        run: cargo build --locked --manifest-path crates/tinymemory-module/Cargo.toml --release
 
       - name: Unit tests
         run: cargo test --manifest-path crates/tinymemory-module/Cargo.toml --lib
