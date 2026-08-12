@@ -107,3 +107,107 @@ fn a_message_carries_no_user_content_beyond_what_the_engine_put_there() {
     let (_, message) = mapped(&error);
     assert_eq!(message, wire::wire_message(&error));
 }
+
+/// An entry whose content is `bytes` long.
+fn entry_of(bytes: usize) -> tinymemory_api::types::MemoryEntry {
+    tinymemory_api::types::MemoryEntry {
+        id: "id".into(),
+        key: "key".into(),
+        content: "x".repeat(bytes),
+        namespace: Some("ns".into()),
+        category: tinymemory_api::types::MemoryCategory::Core,
+        timestamp: "2026-01-01T00:00:00Z".into(),
+        session_id: None,
+        score: None,
+        taint: tinymemory_api::types::MemoryTaint::Internal,
+    }
+}
+
+#[test]
+fn an_ordinary_list_response_is_not_refused() {
+    // The ceiling must not be so tight that normal use trips it. A hundred
+    // entries of a kilobyte each is an unremarkable namespace.
+    let entries: Vec<_> = (0..100).map(|_| entry_of(1024)).collect();
+    assert!(super::ensure_response_fits(&entries, "List").is_ok());
+}
+
+#[test]
+fn an_empty_list_response_is_not_refused() {
+    assert!(super::ensure_response_fits(&[], "List").is_ok());
+}
+
+#[test]
+fn a_response_over_the_ceiling_is_refused_as_a_budget_error() {
+    // `List` takes no limit and no cursor, so entries accumulate across
+    // individually valid `Store` calls until the response cannot cross a
+    // 16 MiB frame. Without this check the caller gets a transport failure it
+    // cannot act on; with it, a named error that says how to narrow the query.
+    let entries: Vec<_> = (0..2).map(|_| entry_of(super::MAX_RESPONSE_BYTES)).collect();
+
+    let error = super::ensure_response_fits(&entries, "List")
+        .expect_err("a response over the ceiling must be refused");
+    match error {
+        BusError::MethodFailed { name, message } => {
+            assert_eq!(
+                name,
+                wire::BUDGET_EXCEEDED,
+                "must use a name the host already decodes"
+            );
+            assert!(message.contains("List"), "{message}");
+            assert!(
+                message.contains("narrow"),
+                "the message must tell the caller what to do: {message}"
+            );
+        }
+        other => panic!("expected MethodFailed, got {other:?}"),
+    }
+}
+
+#[test]
+fn the_refusal_decodes_host_side_as_a_budget_error() {
+    // The whole point of reusing an existing name: a new one would decode to
+    // `Other` on any host older than the module, turning an actionable "narrow
+    // your query" into an opaque backend failure.
+    let entries: Vec<_> = (0..2).map(|_| entry_of(super::MAX_RESPONSE_BYTES)).collect();
+
+    let BusError::MethodFailed { name, message } =
+        super::ensure_response_fits(&entries, "List").expect_err("refused")
+    else {
+        panic!("expected MethodFailed");
+    };
+
+    let decoded = wire::from_wire(&name, &message);
+    assert!(
+        matches!(decoded, MemoryError::BudgetExceeded(_)),
+        "{decoded:?}"
+    );
+}
+
+#[test]
+fn the_refusal_message_carries_no_entry_content() {
+    // Entry content is user memory. The message names sizes and the method, and
+    // nothing that was stored.
+    let secret = "correct-horse-battery-staple";
+    let mut entries: Vec<_> = (0..2).map(|_| entry_of(super::MAX_RESPONSE_BYTES)).collect();
+    entries[0].content.push_str(secret);
+
+    let BusError::MethodFailed { message, .. } =
+        super::ensure_response_fits(&entries, "List").expect_err("refused")
+    else {
+        panic!("expected MethodFailed");
+    };
+    assert!(!message.contains(secret), "{message}");
+}
+
+#[test]
+fn the_per_entry_overhead_is_counted_so_many_tiny_entries_still_trip_it() {
+    // A million empty entries carry no content at all but still cannot cross a
+    // frame — the JSON structure around each one is the payload. Counting only
+    // `content.len()` would let this through.
+    let count = super::MAX_RESPONSE_BYTES / super::PER_ENTRY_OVERHEAD_BYTES + 1;
+    let entries: Vec<_> = (0..count).map(|_| entry_of(0)).collect();
+    assert!(
+        super::ensure_response_fits(&entries, "List").is_err(),
+        "entries with no content must still be counted"
+    );
+}
