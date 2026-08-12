@@ -30,7 +30,7 @@ name = "tinymemory"
 # consumed by path and is not on crates.io, so `cargo package` cannot resolve
 # the graph. Every consumer takes this repo by path or git.
 publish = false
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 rust-version = "1.96"
 license = "MIT"
