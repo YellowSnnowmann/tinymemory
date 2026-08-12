@@ -74,6 +74,7 @@ pub use embedding::{
 };
 pub use service::{BUS_NAME, OBJECT_PATH};
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use tinybus::{Connection, Error as BusError, Result as BusResult};
