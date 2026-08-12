@@ -46,10 +46,24 @@
 //! So there is no blob store, no chunking and no held output — the apparatus the
 //! `tinydocs` module needs does not appear in this one.
 //!
-//! The one method that could grow without bound is `ExportPage`, and it is
-//! already paged by contract with the caller choosing the page size. A caller
-//! that asks for a million records in one page gets a frame-size error, which is
-//! the correct answer.
+//! Inline does not mean unbounded, though, and the three list-returning methods
+//! are not all bounded the same way:
+//!
+//! - `ExportPage` is paged by contract, with the caller choosing the page size.
+//!   Asking for a million records in one page gets an error, correctly.
+//! - `Recall` takes a `limit`, so the caller bounds the count — but not the
+//!   bytes, since fifty entries each holding a large document still overflow.
+//! - `List` takes **neither**. It has no limit and no cursor, so entries can
+//!   accumulate across individually valid `Store` calls until the response
+//!   cannot cross a frame, and the caller has no way to ask for less.
+//!
+//! So `List` and `Recall` are checked against [`MAX_RESPONSE_BYTES`] and refuse
+//! with a named `BudgetExceeded` rather than truncating. Truncating would be the
+//! worse failure: with no cursor, a short list is indistinguishable from a
+//! complete one, so a caller would conclude the missing entries do not exist.
+//! `Namespaces` is left unchecked — it returns one small summary per namespace,
+//! and a host with enough namespaces to fill 16 MiB of summaries has a different
+//! problem.
 //!
 //! # Errors are named, and the names are the contract
 //!
