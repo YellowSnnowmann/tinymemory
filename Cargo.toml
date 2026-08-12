@@ -1,13 +1,35 @@
 [workspace]
 members = [".", "api", "core", "adapters/tinycortex"]
 default-members = [".", "api", "core", "adapters/tinycortex"]
-# `vendor/` holds engine submodules (tinycortex, tinybus), each of which is its
-# own workspace with its own lockfile. Same exclusion `vendor/tinycortex` uses
-# for its own nested vendor directory.
-exclude = ["vendor"]
+# `vendor/` holds engine submodules (tinycortex, tinybus, tinyagents), each of
+# which is its own workspace with its own lockfile. Same exclusion
+# `vendor/tinycortex` uses for its own nested vendor directory.
+#
+# `crates/tinymemory-module` is excluded for a harder reason than tidiness, and
+# it is worth writing down because the obvious arrangement does not work.
+#
+# That crate depends on `vendor/tinybus/crates/tinybus`, whose manifest inherits
+# `edition`/`version` from `vendor/tinybus`'s own `[workspace.package]`. If the
+# module is a member here, cargo resolves that inheritance against **this** root
+# instead of the nested one and fails with `workspace.package.edition was not
+# defined`. `exclude` does not prevent it: exclusion governs membership, not the
+# root cargo picks when resolving a dependency's inherited fields. Verified by
+# defining `[workspace.package]` here temporarily, which moved the error from
+# `edition` to `version` rather than fixing it.
+#
+# So the module is its own workspace root with its own `Cargo.lock` — which is
+# also what tinybus's module documentation prescribes ("integrations themselves
+# remain separate repositories and are never workspace members") and what a
+# separately released artifact wants anyway. Build it with
+# `--manifest-path crates/tinymemory-module/Cargo.toml`.
+exclude = ["vendor", "crates/tinymemory-module"]
 
 [package]
 name = "tinymemory"
+# Not published: `tinymemory-core` depends on `tinycortex-api`, which is
+# consumed by path and is not on crates.io, so `cargo package` cannot resolve
+# the graph. Every consumer takes this repo by path or git.
+publish = false
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.96"

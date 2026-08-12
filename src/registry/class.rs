@@ -54,6 +54,24 @@ pub enum DriverClass {
     /// An out-of-process backend reached through a transport adapter over a
     /// documented wire contract.
     External,
+    /// A loadable native module: a `cdylib` admitted through a module host's
+    /// ABI, manifest and digest gates and reached over an in-process bus.
+    ///
+    /// Distinct from both neighbours, and the distinction decides host policy:
+    ///
+    /// - not [`Self::Embedded`], because the code is **not compiled into the
+    ///   host binary**. Whether it is present is a runtime fact, so a capability
+    ///   set derived from it can be empty on a platform no artifact targets.
+    /// - not [`Self::External`], because there is **no egress and no process
+    ///   boundary**. It shares the host's address space, privileges and crash
+    ///   domain, so endpoint allowlisting and credential scoping are neither
+    ///   applicable nor sufficient — what protects the host is admission, not
+    ///   isolation.
+    ///
+    /// A host must therefore not apply egress redaction to a module driver (the
+    /// content is not leaving the device) and must not treat it as a
+    /// compile-time guarantee either.
+    Module,
     /// A stub advertising zero optional capabilities — what a compiled-out or
     /// unconfigured memory subsystem binds to.
     Null,
@@ -61,9 +79,10 @@ pub enum DriverClass {
 
 impl DriverClass {
     /// Every class, in declaration order.
-    pub const ALL: [DriverClass; 3] = [
+    pub const ALL: [DriverClass; 4] = [
         DriverClass::Embedded,
         DriverClass::External,
+        DriverClass::Module,
         DriverClass::Null,
     ];
 
@@ -73,6 +92,7 @@ impl DriverClass {
         match self {
             Self::Embedded => "embedded",
             Self::External => "external",
+            Self::Module => "module",
             Self::Null => "null",
         }
     }

@@ -143,3 +143,55 @@ pub fn recall_opts_to_tinycortex(opts: &tm::OwnedRecallOpts) -> tc::OwnedRecallO
 #[cfg(test)]
 #[path = "convert_test.rs"]
 mod test;
+
+// ── The reverse direction, for a driver whose contract is TinyMemory's ────────
+//
+// Everything above converts engine values *into* the TinyMemory contract, which
+// is what wrapping TinyCortex as a TinyMemory driver needs. A module-backed
+// driver runs the other way: it speaks TinyMemory, and a host whose binding
+// still speaks TinyCortex has to convert its answers back.
+//
+// Same discipline as above — exhaustive destructuring, total matches, no `..`
+// and no `Default` — for the same reason: two contracts allowed to drift will.
+
+/// Converts an entry to the `TinyCortex` contract's form.
+#[must_use]
+pub fn entry_to_tinycortex(entry: tm::MemoryEntry) -> tc::MemoryEntry {
+    let tm::MemoryEntry {
+        id,
+        key,
+        content,
+        namespace,
+        category,
+        timestamp,
+        session_id,
+        score,
+        taint,
+    } = entry;
+    tc::MemoryEntry {
+        id,
+        key,
+        content,
+        namespace,
+        category: category_to_tinycortex(category),
+        timestamp,
+        session_id,
+        score,
+        taint: taint_to_tinycortex(taint),
+    }
+}
+
+/// Converts a namespace summary to the `TinyCortex` contract's form.
+#[must_use]
+pub fn namespace_summary_to_tinycortex(summary: tm::NamespaceSummary) -> tc::NamespaceSummary {
+    let tm::NamespaceSummary {
+        namespace,
+        count,
+        last_updated,
+    } = summary;
+    tc::NamespaceSummary {
+        namespace,
+        count,
+        last_updated,
+    }
+}

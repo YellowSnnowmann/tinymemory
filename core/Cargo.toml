@@ -1,5 +1,9 @@
 [package]
 name = "tinymemory-core"
+# Not published: `tinymemory-core` depends on `tinycortex-api`, which is
+# consumed by path and is not on crates.io, so `cargo package` cannot resolve
+# the graph. Every consumer takes this repo by path or git.
+publish = false
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"

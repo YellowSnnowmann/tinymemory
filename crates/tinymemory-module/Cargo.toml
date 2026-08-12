@@ -1,0 +1,104 @@
+# Its own workspace root, deliberately — see the long note on `exclude` in
+# `../../Cargo.toml`. In short: this crate depends on the vendored tinybus,
+# whose manifest inherits fields from its own nested `[workspace.package]`, and
+# being a member of the tinymemory workspace makes cargo resolve that
+# inheritance against the wrong root. A separately released artifact wants its
+# own lockfile regardless.
+[workspace]
+
+[package]
+name = "tinymemory-module"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.96"
+license = "MIT"
+description = "Trusted TinyBus module adapter for TinyMemory."
+repository = "https://github.com/tinyhumansai/tinymemory"
+publish = false
+
+[lib]
+# `rlib` as well as `cdylib` so the service can be unit-tested in-process
+# without going through the loader; the `cdylib` is what a release ships.
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+# The contract. Every type crossing the bus is one of these, and all of them
+# already carry serde impls — which is why this module needs no `wire` module of
+# its own, unlike the tinywallet one.
+tinymemory-api = { path = "../../api", version = "0.1.1" }
+# `MemoryTraitProvider`, which pairs a `Memory` backend with a driver id.
+tinymemory = { path = "../..", version = "0.1.0" }
+# The engine and the seam that adapts it. Carrying these is the entire point of
+# the module: they are 14.7s of the host's critical build path, and a host that
+# loads this binary compiles neither.
+tinymemory-core = { path = "../../core", version = "0.1.0" }
+tinymemory-tinycortex = { path = "../../adapters/tinycortex", version = "0.1.0" }
+tinycortex = { version = "0.1" }
+# TinyBus provides the typed service interface and the dynamic module host ABI.
+# Reached by path now that this crate is its own workspace root: the nested
+# checkout's `[workspace.package]` resolves correctly from here.
+tinybus = { version = "0.1.0", path = "../../vendor/tinybus/crates/tinybus", default-features = false, features = [
+    "macros",
+    "modules",
+] }
+# The module-side SDK owns its runtime and exports the stable C entrypoints.
+tinybus-module = { version = "0.1.0", path = "../../vendor/tinybus/crates/tinybus-module" }
+# `EmbeddingProvider::embed` is an `async fn` on an object-safe trait.
+async-trait = "0.1"
+# `EmbeddingProvider::embed` is anyhow-typed.
+anyhow = "1"
+# Diagnostics. Never carries a namespace key or entry content — see `service`.
+log = "0.4"
+# Module configuration is JSON supplied by the host at load time.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# The interface macro requires every method to be `async fn`, so a runtime has
+# to exist.
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+# The loader E2E and the store tests need a throwaway workspace directory.
+tempfile = "3"
+
+# Its own table, because a patch table only applies from the workspace root being
+# built and this crate is now its own root — the parent workspace's identical
+# entries do not reach here. `tinycortex` and `tinyagents` are named by version
+# requirement upstream and neither is published, so without these the resolver
+# goes to crates.io and fails.
+#
+# The paths reach up out of this crate into the parent checkout's `vendor/`,
+# which is unusual but correct: these are the same submodules the parent builds
+# against, and pointing somewhere else would compile the module against a
+# different engine than the workspace it ships from.
+[patch.crates-io]
+tinycortex = { path = "../../vendor/tinycortex" }
+tinycortex-api = { path = "../../vendor/tinycortex/api" }
+tinyagents = { path = "../../vendor/tinyagents" }
+
+# Mirrors the root package's set. `unsafe_code = "forbid"` holds even though
+# `module_export!` emits `unsafe extern "C"` symbols: the macro's expansion
+# carries its own hygiene context, so the C ABI surface does not trip the lint
+# here. Verified against `tinywallet-module`, which forbids it too and builds.
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+doc_markdown = "warn"
+
+[lints.rustdoc]
+broken_intra_doc_links = "warn"
+private_intra_doc_links = "warn"
