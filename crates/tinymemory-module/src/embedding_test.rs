@@ -139,10 +139,9 @@ async fn a_wrong_vector_count_is_refused() {
 }
 
 #[tokio::test]
-async fn a_zero_dimension_provider_is_exempt_from_the_width_check() {
-    // Zero dimensions is the engine's "semantic search off" state and is
-    // expected to yield empty vectors; enforcing a width there would break
-    // keyword-only retrieval.
+async fn a_zero_dimension_provider_yields_empty_vectors() {
+    // Zero dimensions is the engine's "semantic search off" state, and the
+    // vectors it yields are expected to be empty rather than merely unchecked.
     let connection = bus_with_host(FakeHostEmbedder {
         width: 0,
         force_count: None,
@@ -157,6 +156,29 @@ async fn a_zero_dimension_provider_is_exempt_from_the_width_check() {
         .expect("zero dims is legal");
     assert_eq!(vectors.len(), 1);
     assert!(vectors[0].is_empty());
+}
+
+#[tokio::test]
+async fn a_zero_dimension_request_answered_with_real_vectors_is_refused() {
+    // The case an earlier revision let through: `dimensions == 0` skipped the
+    // width check outright, so a host could answer a "semantic search off"
+    // request with a real 768-wide space and pass validation. The engine would
+    // then believe no vectors existed while the store filled with embeddings
+    // from a space nothing tracks — the split-space failure, with the split
+    // hidden. Zero means empty, and this is the test that says so.
+    let connection = bus_with_host(FakeHostEmbedder {
+        width: 768,
+        force_count: None,
+    })
+    .await;
+    let host = BusEmbeddingHost::new(connection, &config_with_dims(0));
+    let provider = host.default_embedding_provider();
+
+    let error = provider
+        .embed(&["alpha"])
+        .await
+        .expect_err("a 768-wide answer to a zero-dimension request must be refused");
+    assert!(error.to_string().contains("768"), "{error}");
 }
 
 #[tokio::test]
