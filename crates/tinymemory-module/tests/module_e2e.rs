@@ -37,8 +37,6 @@
     reason = "test code may panic, and the fake embedder derives a vector from a length"
 )]
 
-use std::sync::Arc;
-
 use tinybus::broker::Broker;
 use tinybus::module::ModuleHost;
 use tinybus::transport::memory::MemoryBus;
