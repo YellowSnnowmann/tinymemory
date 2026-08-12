@@ -147,6 +147,36 @@ async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()
     service::serve(&connection, Arc::new(provider)).await
 }
 
+/// Claim this process's single setup slot.
+///
+/// `setup` installs a **process-global** embedding host
+/// (`tinymemory_core::embedding_host::set_embedding_host`), so it is not
+/// re-entrant the way a per-host resource would be. `ModuleHost` rejects a
+/// duplicate module name only within one host, and nothing stops a process from
+/// building a second host — a test harness is the obvious way it happens. The
+/// second `setup` would replace the global embedder while stores built by the
+/// first keep the `BusEmbeddingProvider` they captured, so embeds would be split
+/// across two connections with no error anywhere.
+///
+/// Refusing the second setup is the honest outcome: one process serves this
+/// module once. tinybus never unloads a library, so there is no release path to
+/// pair with this and no state to reset.
+///
+/// # Errors
+///
+/// [`SETUP_FAILED_ERROR`], when this process has already run setup.
+fn claim_process_setup() -> BusResult<()> {
+    static CLAIMED: AtomicBool = AtomicBool::new(false);
+
+    if CLAIMED.swap(true, Ordering::SeqCst) {
+        return Err(setup_error(
+            "this module is already set up in this process; it installs a \
+             process-global embedding host and cannot be served twice",
+        ));
+    }
+    Ok(())
+}
+
 /// A setup failure, carrying no path and no credential.
 fn setup_error(message: impl Into<String>) -> BusError {
     BusError::MethodFailed {
