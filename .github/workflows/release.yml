@@ -127,12 +127,36 @@ jobs:
             echo "tag=${tag}"
           } >> "$GITHUB_OUTPUT"
 
+      # Bumps the root `[package]` version only. That is sufficient *because* no
+      # intra-workspace path dependency carries a `version = "…"` requirement —
+      # a `minor` bump to 0.2.0 against a sibling asking for `^0.1.0` fails
+      # resolution here with "failed to select a version", which is exactly how
+      # the first attempt at this release died. Those requirements only ever
+      # existed to satisfy crates.io publishing, which this repo does not do.
+      #
+      # So: do not add `version` back to a `tinymemory*` path dependency. The
+      # guard below fails with that explanation rather than cargo's, which does
+      # not mention the cause.
       - name: Update crate version
         env:
           CRATE_NAME: ${{ steps.version.outputs.crate_name }}
           NEXT_VERSION: ${{ steps.version.outputs.next_version }}
         run: |
           set -euo pipefail
+
+          offenders="$(
+            grep -rn --include=Cargo.toml -E \
+              '^tinymemory(-api|-core|-tinycortex)? *= *\{[^}]*version *=' . || true
+          )"
+          if [[ -n "$offenders" ]]; then
+            echo "An intra-workspace path dependency carries a version requirement:" >&2
+            echo "$offenders" >&2
+            echo >&2
+            echo "Bumping the root package will fail to resolve against it. Nothing here" >&2
+            echo "is published to crates.io, so drop the 'version' key and keep 'path'." >&2
+            exit 1
+          fi
+
           perl -0pi -e 's/(\[package\][\s\S]*?\nversion = ")[^"]+(")/$1$ENV{NEXT_VERSION}$2/' Cargo.toml
           cargo update -p "$CRATE_NAME" --precise "$NEXT_VERSION"
 
