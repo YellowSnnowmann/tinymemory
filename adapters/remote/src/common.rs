@@ -13,6 +13,9 @@ use tinymemory_api::types::{
 };
 
 #[derive(Clone)]
+/// HTTP transport shared by every remote-engine dialect.
+///
+/// Authentication material is deliberately omitted from its `Debug` output.
 pub(crate) struct HttpClient {
     inner: reqwest::Client,
     endpoint: Url,
@@ -20,6 +23,7 @@ pub(crate) struct HttpClient {
 }
 
 #[derive(Clone)]
+/// Authentication scheme applied to every request for one backend.
 enum Auth {
     None,
     Bearer(String),
@@ -27,6 +31,7 @@ enum Auth {
 }
 
 impl std::fmt::Debug for HttpClient {
+    /// Renders endpoint origin and authentication presence without credentials.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HttpClient")
             .field("endpoint", &self.endpoint.origin().ascii_serialization())
@@ -36,6 +41,7 @@ impl std::fmt::Debug for HttpClient {
 }
 
 impl HttpClient {
+    /// Builds a client that optionally authenticates with a bearer token.
     pub(crate) fn bearer(endpoint: &str, credential: Option<&str>) -> anyhow::Result<Self> {
         Self::new(
             endpoint,
@@ -43,6 +49,7 @@ impl HttpClient {
         )
     }
 
+    /// Builds a client that optionally authenticates with `X-API-Key`.
     pub(crate) fn api_key(endpoint: &str, credential: Option<&str>) -> anyhow::Result<Self> {
         Self::new(
             endpoint,
@@ -50,6 +57,7 @@ impl HttpClient {
         )
     }
 
+    /// Validates and normalizes an endpoint before constructing the transport.
     fn new(endpoint: &str, auth: Auth) -> anyhow::Result<Self> {
         let mut endpoint = Url::parse(endpoint).context("memory endpoint is not a valid URL")?;
         if !matches!(endpoint.scheme(), "http" | "https") {
@@ -68,6 +76,7 @@ impl HttpClient {
         })
     }
 
+    /// Resolves a relative API path and attaches the configured authentication.
     fn request(&self, method: Method, path: &str) -> anyhow::Result<RequestBuilder> {
         let url = self
             .endpoint
@@ -81,6 +90,7 @@ impl HttpClient {
         })
     }
 
+    /// Sends a JSON request and decodes a successful JSON response.
     pub(crate) async fn json<T: DeserializeOwned>(
         &self,
         method: Method,
@@ -102,6 +112,7 @@ impl HttpClient {
             .with_context(|| format!("memory API {path} returned invalid JSON"))
     }
 
+    /// Sends a request and returns a successful response body as text.
     pub(crate) async fn text(&self, method: Method, path: &str) -> anyhow::Result<String> {
         let response = self.request(method, path)?.send().await?;
         let status = response.status();
@@ -114,6 +125,7 @@ impl HttpClient {
             .context("memory API response was unreadable")
     }
 
+    /// Sends a request whose successful response body is not needed.
     pub(crate) async fn empty(
         &self,
         method: Method,
@@ -132,10 +144,12 @@ impl HttpClient {
         Ok(status)
     }
 
+    /// Starts an authenticated multipart POST request.
     pub(crate) fn multipart(&self, path: &str) -> anyhow::Result<RequestBuilder> {
         self.request(Method::POST, path)
     }
 
+    /// Reports whether a GET endpoint responds successfully.
     pub(crate) async fn healthy(&self, path: &str) -> bool {
         let Ok(request) = self.request(Method::GET, path) else {
             return false;
@@ -148,6 +162,7 @@ impl HttpClient {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+/// Lossless TinyMemory record stored in backend-native metadata or content.
 pub(crate) struct StoredEntry {
     #[serde(default)]
     pub(crate) remote_id: String,
@@ -166,6 +181,7 @@ pub(crate) struct StoredEntry {
 }
 
 impl StoredEntry {
+    /// Creates an unstored record; the dialect fills in the remote identifier.
     pub(crate) fn new(
         namespace: &str,
         key: &str,
@@ -187,6 +203,7 @@ impl StoredEntry {
         }
     }
 
+    /// Converts the transport envelope into the public TinyMemory record type.
     pub(crate) fn into_memory_entry(self) -> MemoryEntry {
         MemoryEntry {
             id: if self.remote_id.is_empty() {
@@ -206,6 +223,7 @@ impl StoredEntry {
     }
 }
 
+/// Derives a deterministic fallback identifier from a logical record key.
 pub(crate) fn stable_id(namespace: &str, key: &str) -> String {
     let mut digest = Sha256::new();
     digest.update(namespace.as_bytes());
@@ -214,6 +232,7 @@ pub(crate) fn stable_id(namespace: &str, key: &str) -> String {
     format!("tm_{}", encode(&digest.finalize()[..20]))
 }
 
+/// Encodes arbitrary bytes as lowercase hexadecimal text safe for remote names.
 pub(crate) fn encode(value: impl AsRef<[u8]>) -> String {
     let value = value.as_ref();
     value.iter().fold(
@@ -226,32 +245,42 @@ pub(crate) fn encode(value: impl AsRef<[u8]>) -> String {
     )
 }
 
+/// Parses a stored category, preserving unknown or absent values as remote data.
 pub(crate) fn category(raw: Option<&str>) -> MemoryCategory {
     raw.and_then(|value| value.parse().ok())
         .unwrap_or_else(|| MemoryCategory::Custom("remote".into()))
 }
 
 #[async_trait]
+/// Backend-specific operations needed by the shared TinyMemory implementation.
 pub(crate) trait Dialect: Send + Sync + std::fmt::Debug {
+    /// Returns the stable driver identifier.
     fn name(&self) -> &'static str;
+    /// Creates or replaces one exact logical record.
     async fn upsert(&self, entry: StoredEntry) -> anyhow::Result<()>;
+    /// Enumerates every record owned by this adapter.
     async fn entries(&self) -> anyhow::Result<Vec<StoredEntry>>;
+    /// Runs the backend's native recall operation.
     async fn search(
         &self,
         query: &str,
         limit: usize,
         opts: RecallOpts<'_>,
     ) -> anyhow::Result<Vec<StoredEntry>>;
+    /// Deletes one exact logical record and reports whether it existed.
     async fn delete(&self, namespace: &str, key: &str) -> anyhow::Result<bool>;
+    /// Checks whether the backend is available for requests.
     async fn health(&self) -> bool;
 }
 
 #[derive(Debug)]
+/// TinyMemory's exact-record contract composed over a native backend dialect.
 pub(crate) struct RemoteMemory<D> {
     dialect: D,
 }
 
 impl<D> RemoteMemory<D> {
+    /// Wraps a backend dialect with shared filtering and conversion behavior.
     pub(crate) fn new(dialect: D) -> Self {
         Self { dialect }
     }
@@ -259,10 +288,12 @@ impl<D> RemoteMemory<D> {
 
 #[async_trait]
 impl<D: Dialect + 'static> Memory for RemoteMemory<D> {
+    /// Returns the wrapped dialect's stable driver identifier.
     fn name(&self) -> &str {
         self.dialect.name()
     }
 
+    /// Stores a record with the default internal provenance.
     async fn store(
         &self,
         namespace: &str,
@@ -282,6 +313,7 @@ impl<D: Dialect + 'static> Memory for RemoteMemory<D> {
         .await
     }
 
+    /// Validates identity fields and delegates a provenance-preserving upsert.
     async fn store_with_taint(
         &self,
         namespace: &str,
@@ -301,6 +333,7 @@ impl<D: Dialect + 'static> Memory for RemoteMemory<D> {
             .await
     }
 
+    /// Runs native search, enforces remaining filters, and caps the result set.
     async fn recall(
         &self,
         query: &str,
@@ -323,6 +356,7 @@ impl<D: Dialect + 'static> Memory for RemoteMemory<D> {
             .collect())
     }
 
+    /// Locates one record by its exact logical namespace and key.
     async fn get(&self, namespace: &str, key: &str) -> anyhow::Result<Option<MemoryEntry>> {
         Ok(self
             .dialect
@@ -333,6 +367,7 @@ impl<D: Dialect + 'static> Memory for RemoteMemory<D> {
             .map(StoredEntry::into_memory_entry))
     }
 
+    /// Enumerates records and applies exact category and session filters.
     async fn list(
         &self,
         namespace: Option<&str>,
@@ -351,10 +386,12 @@ impl<D: Dialect + 'static> Memory for RemoteMemory<D> {
             .collect())
     }
 
+    /// Delegates exact logical deletion to the backend dialect.
     async fn forget(&self, namespace: &str, key: &str) -> anyhow::Result<bool> {
         self.dialect.delete(namespace, key).await
     }
 
+    /// Aggregates record counts and latest timestamps by namespace.
     async fn namespace_summaries(&self) -> anyhow::Result<Vec<NamespaceSummary>> {
         let mut summaries: BTreeMap<String, NamespaceSummary> = BTreeMap::new();
         for entry in self.dialect.entries().await? {
@@ -379,15 +416,18 @@ impl<D: Dialect + 'static> Memory for RemoteMemory<D> {
         Ok(summaries.into_values().collect())
     }
 
+    /// Counts all records owned by the adapter.
     async fn count(&self) -> anyhow::Result<usize> {
         Ok(self.dialect.entries().await?.len())
     }
 
+    /// Delegates availability checking to the backend dialect.
     async fn health_check(&self) -> bool {
         self.dialect.health().await
     }
 }
 
+/// Applies TinyMemory recall filters that a backend may not support natively.
 fn matches_filters(entry: &StoredEntry, opts: &RecallOpts<'_>) -> bool {
     opts.namespace.is_none_or(|value| entry.namespace == value)
         && opts

@@ -39,9 +39,11 @@ impl Mem0Memory {
 
 #[async_trait]
 impl Memory for Mem0Memory {
+    /// Returns the Mem0 driver identifier.
     fn name(&self) -> &str {
         self.inner.name()
     }
+    /// Stores an internally sourced record through the shared contract.
     async fn store(
         &self,
         n: &str,
@@ -52,6 +54,7 @@ impl Memory for Mem0Memory {
     ) -> anyhow::Result<()> {
         self.inner.store(n, k, c, cat, s).await
     }
+    /// Stores a record while preserving its provenance taint.
     async fn store_with_taint(
         &self,
         n: &str,
@@ -63,6 +66,7 @@ impl Memory for Mem0Memory {
     ) -> anyhow::Result<()> {
         self.inner.store_with_taint(n, k, c, cat, s, t).await
     }
+    /// Runs native Mem0 semantic search and applies TinyMemory filters.
     async fn recall(
         &self,
         q: &str,
@@ -71,6 +75,7 @@ impl Memory for Mem0Memory {
     ) -> anyhow::Result<Vec<tinymemory_api::types::MemoryEntry>> {
         self.inner.recall(q, l, o).await
     }
+    /// Fetches one exact namespace/key record.
     async fn get(
         &self,
         n: &str,
@@ -78,6 +83,7 @@ impl Memory for Mem0Memory {
     ) -> anyhow::Result<Option<tinymemory_api::types::MemoryEntry>> {
         self.inner.get(n, k).await
     }
+    /// Lists records matching the supplied TinyMemory filters.
     async fn list(
         &self,
         n: Option<&str>,
@@ -86,28 +92,34 @@ impl Memory for Mem0Memory {
     ) -> anyhow::Result<Vec<tinymemory_api::types::MemoryEntry>> {
         self.inner.list(n, c, s).await
     }
+    /// Deletes one exact namespace/key record.
     async fn forget(&self, n: &str, k: &str) -> anyhow::Result<bool> {
         self.inner.forget(n, k).await
     }
+    /// Summarizes every namespace visible through this adapter.
     async fn namespace_summaries(
         &self,
     ) -> anyhow::Result<Vec<tinymemory_api::types::NamespaceSummary>> {
         self.inner.namespace_summaries().await
     }
+    /// Counts every record visible through this adapter.
     async fn count(&self) -> anyhow::Result<usize> {
         self.inner.count().await
     }
+    /// Checks whether the configured Mem0 service is reachable.
     async fn health_check(&self) -> bool {
         self.inner.health_check().await
     }
 }
 
 #[derive(Debug)]
+/// Mem0-specific REST operations and wire-format conversion.
 struct Mem0Dialect {
     client: HttpClient,
 }
 
 impl Mem0Dialect {
+    /// Fetches Mem0's administrative memory listing.
     async fn values(&self) -> anyhow::Result<Vec<Value>> {
         let response: Value = self
             .client
@@ -120,6 +132,7 @@ impl Mem0Dialect {
             .unwrap_or_default())
     }
 
+    /// Decodes a Mem0 result containing TinyMemory-owned metadata.
     fn decode(value: &Value) -> Option<StoredEntry> {
         let metadata = value.get("metadata")?.as_object()?;
         let namespace = metadata.get("tinymemory_namespace")?.as_str()?.to_owned();
@@ -153,6 +166,7 @@ impl Mem0Dialect {
         })
     }
 
+    /// Encodes TinyMemory identity, classification, session, and provenance.
     fn metadata(entry: &StoredEntry) -> Value {
         let mut value = json!({
             "tinymemory_namespace": entry.namespace,
@@ -169,10 +183,12 @@ impl Mem0Dialect {
 
 #[async_trait]
 impl Dialect for Mem0Dialect {
+    /// Returns the stable Mem0 driver identifier.
     fn name(&self) -> &'static str {
         MEM0_DRIVER_ID
     }
 
+    /// Replaces an existing exact record or creates it with inference disabled.
     async fn upsert(&self, entry: StoredEntry) -> anyhow::Result<()> {
         let existing = self
             .entries()
@@ -206,6 +222,7 @@ impl Dialect for Mem0Dialect {
         Ok(())
     }
 
+    /// Enumerates and decodes TinyMemory-owned Mem0 records.
     async fn entries(&self) -> anyhow::Result<Vec<StoredEntry>> {
         Ok(self
             .values()
@@ -215,6 +232,7 @@ impl Dialect for Mem0Dialect {
             .collect())
     }
 
+    /// Executes Mem0's native vector search.
     async fn search(
         &self,
         query: &str,
@@ -243,6 +261,7 @@ impl Dialect for Mem0Dialect {
         Ok(values.iter().filter_map(Self::decode).collect())
     }
 
+    /// Finds and deletes an exact TinyMemory logical record.
     async fn delete(&self, namespace: &str, key: &str) -> anyhow::Result<bool> {
         let Some(entry) = self
             .entries()
@@ -263,6 +282,7 @@ impl Dialect for Mem0Dialect {
         Ok(true)
     }
 
+    /// Accepts either Mem0's health endpoint or its redirected root page.
     async fn health(&self) -> bool {
         self.client.healthy("api/health").await || self.client.healthy("").await
     }
