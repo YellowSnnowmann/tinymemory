@@ -38,7 +38,11 @@ jobs:
   # their `checksum.toml` — that is what a host pins and verifies.
   tag:
     name: Tag release
-    if: ${{ github.ref == 'refs/heads/main' }}
+    # `existing_tag` means "re-cut artifacts for a tag that already exists", so
+    # this job must not run: it would bump the version and cut a *second*, newer
+    # tag, and `release-target` would then build the older tag the caller asked
+    # for while `main` had silently moved on.
+    if: ${{ github.ref == 'refs/heads/main' && inputs.existing_tag == '' }}
     # Consumed by `release-target`. The `version` step already writes both to
     # `$GITHUB_OUTPUT`; without this block they stop at the job boundary and the
     # module bundles resolve an empty tag.
