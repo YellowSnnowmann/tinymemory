@@ -393,22 +393,30 @@ async fn a_rejected_request_comes_back_under_its_contract_name() {
     let workspace = tempfile::tempdir().expect("tempdir");
     let (client, _host, _task) = admit_module(workspace.path()).await;
 
-    // A zero limit is the clearest driver-rejected input that needs no store
-    // state to provoke.
-    let outcome: Result<tinymemory_api::provider::types::ExportPage, _> = proxy(&client)
-        .call("ExportPage", (Option::<String>::None, 0_usize))
+    // A method the module does not serve. This is the one refusal that is
+    // guaranteed regardless of engine behaviour, which is what makes it worth
+    // asserting here: it proves the served object rejects an unknown member
+    // rather than hanging or answering something.
+    //
+    // Note what this deliberately does *not* claim. The refusal comes from the
+    // bus's dispatch layer, so its name is tinybus's, not one from the contract
+    // table — asserting a `ai.tinyhumans.tinymemory.Error.*` name here would be
+    // asserting the wrong thing. The contract table's own mapping is covered
+    // exhaustively and deterministically in `service::test`, where every
+    // `MemoryError` variant is reachable by construction. An earlier revision
+    // tried to provoke a contract error through `ExportPage` with a zero limit;
+    // since a driver that accepts a zero limit is equally legitimate, that test
+    // asserted nothing whenever it passed.
+    let outcome: Result<serde_json::Value, _> = proxy(&client)
+        .call("NoSuchMethod", ())
         .await;
 
-    if let Err(error) = outcome {
-        let name = error.wire_name();
-        assert!(
-            name.starts_with("ai.tinyhumans.tinymemory.Error."),
-            "a refusal must be named from the contract table, got {name}"
-        );
-    }
-    // A driver that accepts a zero limit is also legitimate — `limit` is a
-    // request, not a guarantee — so this test asserts the *shape* of a refusal
-    // when there is one rather than demanding one.
+    let error = outcome.expect_err("an unknown member must be refused");
+    let name = error.wire_name();
+    assert!(
+        !name.is_empty(),
+        "a refusal must carry a wire name, got {error:?}"
+    );
 }
 
 #[tokio::test]
