@@ -14,7 +14,7 @@ on:
       existing_tag:
         description: >-
           Re-cut module artifacts for a tag that already exists, skipping the
-          crate publish. Leave empty for a normal release.
+          version bump and tag. Leave empty for a normal release.
         type: string
         required: false
         default: ""
