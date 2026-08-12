@@ -134,7 +134,14 @@ async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()
         config.storage_provider.as_ref(),
         &config.workspace_dir,
     )
-    .map_err(|error| setup_error(format!("create memory store: {error}")))?;
+    .map_err(|error| {
+        // The factory error names the workspace directory it failed under, and
+        // a `MethodFailed.message` crosses the bus to a caller that has no
+        // business learning this process's filesystem layout. The detail stays
+        // in the module's own log; the wire gets the stage only.
+        log::error!("[tinymemory:module] create memory store failed: {error}");
+        setup_error("create memory store")
+    })?;
 
     let provider = tinymemory_tinycortex::provider(Arc::from(memory));
     service::serve(&connection, Arc::new(provider)).await
