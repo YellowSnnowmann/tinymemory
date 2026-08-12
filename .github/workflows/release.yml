@@ -307,10 +307,14 @@ jobs:
           $packageName = "tinymemory-module-$env:VERSION-$env:BUNDLE_ID"
           $packageRoot = "dist/$packageName"
           New-Item -ItemType Directory -Force $packageRoot | Out-Null
-          Copy-Item -LiteralPath $module, 'LICENSE', 'README.md' -Destination $packageRoot
+          # Same file set as the Unix package, including the spec — a consumer
+          # should not get different contents depending on their platform.
+          Copy-Item -LiteralPath $module, 'LICENSE', 'README.md', 'docs/specs/tinybus-module.md' -Destination $packageRoot
           $hash = (Get-FileHash -LiteralPath $module -Algorithm SHA256).Hash.ToLowerInvariant()
           $moduleName = Split-Path -Leaf $module
-          "`"$moduleName`" = `"$hash`"`n" |
+          # No trailing "`n": Set-Content adds its own terminator, so writing one
+          # here leaves a blank line the Unix `printf` form does not produce.
+          "`"$moduleName`" = `"$hash`"" |
             Set-Content -Path "$packageRoot/modules.toml" -Encoding utf8NoBOM
           Compress-Archive -Path "$packageRoot/*" -DestinationPath "dist/$packageName.zip"
           "archive=dist/$packageName.zip" >> $env:GITHUB_OUTPUT
