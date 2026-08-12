@@ -192,16 +192,22 @@ async fn the_module_advertises_exactly_the_mandatory_families() {
     // The adapter deliberately advertises only what it can reach. Advertising
     // more would make `audit_provider` fail host-side, and would register RPC
     // methods that answer errors.
+    //
+    // Asserted as an exact set rather than as "the mandatory three are present
+    // and `Tree` is absent": that weaker pair passes while any *other* optional
+    // family is advertised, which is the same overstatement with a different
+    // name on it.
+    assert_eq!(
+        capabilities,
+        Capabilities::mandatory(),
+        "the module must advertise exactly the mandatory families"
+    );
     for mandatory in Capability::MANDATORY {
         assert!(
             capabilities.contains(mandatory),
             "{mandatory:?} must be advertised"
         );
     }
-    assert!(
-        !capabilities.contains(Capability::Tree),
-        "the module must not claim an optional family it cannot serve"
-    );
 
     let driver_id: String = proxy(&client).call("DriverId", ()).await.expect("DriverId");
     assert_eq!(driver_id, "tinycortex");
