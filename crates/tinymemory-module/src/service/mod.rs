@@ -277,7 +277,7 @@ impl MemoryService {
 /// A `TinyBus` frame is JSON capped at 16 MiB. 8 MiB of raw entry content leaves
 /// room for the JSON structure around it and for escaping, which can double a
 /// pathological string, so a response that passes this check fits with margin.
-pub const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+pub(crate) const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 
 /// Per-entry allowance for the fields that are not `content`.
 ///
