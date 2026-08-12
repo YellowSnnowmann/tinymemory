@@ -74,6 +74,7 @@ pub use embedding::{
 };
 pub use service::{BUS_NAME, OBJECT_PATH};
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use tinybus::{Connection, Error as BusError, Result as BusResult};
@@ -99,6 +100,7 @@ const SETUP_FAILED_ERROR: &str = "ai.tinyhumans.tinymemory.Error.SetupFailed";
 /// the host, which holds the real credential, so there is nothing to pass and
 /// nothing here that could leak one.
 async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()> {
+    claim_process_setup()?;
     config.validate().map_err(setup_error)?;
 
     // `MemoryConfig` travels verbatim, and it contains a bearer token field for a
@@ -133,10 +135,47 @@ async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()
         config.storage_provider.as_ref(),
         &config.workspace_dir,
     )
-    .map_err(|error| setup_error(format!("create memory store: {error}")))?;
+    .map_err(|error| {
+        // The factory error names the workspace directory it failed under, and
+        // a `MethodFailed.message` crosses the bus to a caller that has no
+        // business learning this process's filesystem layout. The detail stays
+        // in the module's own log; the wire gets the stage only.
+        log::error!("[tinymemory:module] create memory store failed: {error}");
+        setup_error("create memory store")
+    })?;
 
     let provider = tinymemory_tinycortex::provider(Arc::from(memory));
     service::serve(&connection, Arc::new(provider)).await
+}
+
+/// Claim this process's single setup slot.
+///
+/// `setup` installs a **process-global** embedding host
+/// (`tinymemory_core::embedding_host::set_embedding_host`), so it is not
+/// re-entrant the way a per-host resource would be. `ModuleHost` rejects a
+/// duplicate module name only within one host, and nothing stops a process from
+/// building a second host — a test harness is the obvious way it happens. The
+/// second `setup` would replace the global embedder while stores built by the
+/// first keep the `BusEmbeddingProvider` they captured, so embeds would be split
+/// across two connections with no error anywhere.
+///
+/// Refusing the second setup is the honest outcome: one process serves this
+/// module once. tinybus never unloads a library, so there is no release path to
+/// pair with this and no state to reset.
+///
+/// # Errors
+///
+/// [`SETUP_FAILED_ERROR`], when this process has already run setup.
+fn claim_process_setup() -> BusResult<()> {
+    static CLAIMED: AtomicBool = AtomicBool::new(false);
+
+    if CLAIMED.swap(true, Ordering::SeqCst) {
+        return Err(setup_error(
+            "this module is already set up in this process; it installs a \
+             process-global embedding host and cannot be served twice",
+        ));
+    }
+    Ok(())
 }
 
 /// A setup failure, carrying no path and no credential.

@@ -28,7 +28,7 @@ Everything else the engine uses (`reqwest`, `chrono`, `regex`, `uuid`,
 --timings` on the host shows a strictly serial chain, each link starting as the
 previous one ends:
 
-```
+```text
 tinyagents        12.8 -> 25.4   (12.6s)
 tinycortex        25.4 -> 35.1   ( 9.7s)
 tinymemory-core   35.1 -> 40.1   ( 5.0s)
@@ -85,16 +85,45 @@ Serving more would advertise capabilities whose accessors return nothing, which
 `audit_provider` exists to catch, and would make the host register RPC methods
 that answer errors.
 
-### Everything travels inline
+### Everything travels inline, but not unbounded
 
 A TinyBus frame is JSON capped at 16 MiB. For a generated document that is a real
 constraint — a byte array costs ~3.5 bytes per byte — and here it is not: memory
 entries are text, ~1.1× as JSON. So there is no blob store, no chunking and no
 held output. The tinydocs module's whole staging apparatus is absent.
 
-`ExportPage` is the only unbounded method and is already paged by contract with
-the caller choosing the size. Asking for a million records in one page gets a
-frame-size error, which is the correct answer.
+Inline is not the same as unbounded, though, and the three list-returning methods
+are bounded differently:
+
+| Method | Caller can bound | Module bounds |
+| --- | --- | --- |
+| `ExportPage` | count, via `limit` + `cursor` | — paged by contract |
+| `Recall` | count, via `limit` | bytes, via `MAX_RESPONSE_BYTES` |
+| `List` | **nothing** | bytes, via `MAX_RESPONSE_BYTES` |
+
+`List` is the one that needed a decision. It takes no limit and no cursor, so
+entries accumulate across individually valid `Store` calls until the response
+cannot cross a frame — and at that point a host cannot enumerate its own valid
+stored data at all. `Recall`'s `limit` bounds the count but not the bytes: fifty
+entries each holding a large document overflow just the same.
+
+Both are therefore checked against an 8 MiB ceiling on estimated content (plus a
+512-byte per-entry allowance for the surrounding JSON, so a million empty entries
+trip it too) and **refuse** with `BudgetExceeded`.
+
+Refusing rather than truncating is the load-bearing part. With no cursor, a
+short list is indistinguishable from a complete one, so a silently truncated
+`List` would have the caller conclude the missing entries do not exist — a wrong
+answer presented as a right one. The named error instead says to narrow by
+namespace, category or session, which is a query the caller can actually issue.
+
+`BudgetExceeded` is reused rather than a new name added, because
+`tinymemory_api::wire` is what both ends agree on: a new name decodes to `Other`
+on any host older than the module, turning an actionable "narrow your query" into
+an opaque backend failure.
+
+`Namespaces` is left unchecked — one small summary per namespace, and a host with
+enough namespaces to fill 16 MiB of them has a different problem.
 
 ## Errors
 

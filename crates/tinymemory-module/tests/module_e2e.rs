@@ -16,8 +16,12 @@
 //! process. Run them one at a time:
 //!
 //! ```sh
-//! cargo build --release -p tinymemory-module
-//! TINYMEMORY_TEST_MODULE=target/release/libtinymemory_module.so \
+//! # Both paths are the module's own workspace, not the repo root: this crate is
+//! # `exclude`d from the root workspace (see the root Cargo.toml comment), so
+//! # `-p tinymemory-module` does not resolve there and the artifact is written
+//! # under `crates/tinymemory-module/target`, not `./target`.
+//! cargo build --release --manifest-path crates/tinymemory-module/Cargo.toml
+//! TINYMEMORY_TEST_MODULE=$PWD/crates/tinymemory-module/target/release/libtinymemory_module.so \
 //!   cargo test --manifest-path crates/tinymemory-module/Cargo.toml \
 //!   --test module_e2e -- --ignored --exact <one test name>
 //! ```
@@ -32,8 +36,6 @@
     clippy::cast_precision_loss,
     reason = "test code may panic, and the fake embedder derives a vector from a length"
 )]
-
-use std::sync::Arc;
 
 use tinybus::broker::Broker;
 use tinybus::module::ModuleHost;
@@ -90,16 +92,23 @@ impl HostEmbedder {
     }
 }
 
-/// Load the module, serve the host embedder, and hand back a client connection.
+/// Load the module, serve the host embedder, and hand back a client connection
+/// together with the admitted `ModuleInfo`.
 ///
 /// The returned `ModuleHost` and broker task must be kept alive by the caller:
 /// dropping the host is what would release the module's transport.
-async fn admit_module(
+///
+/// The manifest is only observable through a real admission — it is produced by
+/// the `cdylib`'s exported `tinybus_module_manifest_v1` and parsed by the host —
+/// so a test that wants to inspect the declared surface has to go through here.
+/// Most tests do not, and use [`admit_module`] instead.
+async fn admit_module_detailed(
     workspace: &std::path::Path,
 ) -> (
     Connection,
     ModuleHost,
     tokio::task::JoinHandle<BusResult<()>>,
+    tinybus::module::ModuleInfo,
 ) {
     let artifact = std::env::var_os("TINYMEMORY_TEST_MODULE")
         .expect("TINYMEMORY_TEST_MODULE must point at the built cdylib");
@@ -165,7 +174,19 @@ async fn admit_module(
     let client = Connection::connect(bus.connect().await.expect("client transport"))
         .await
         .expect("client connection");
-    (client, modules, broker_task)
+    (client, modules, broker_task, loaded)
+}
+
+/// Load the module under a fresh workspace and return a client connection to it.
+async fn admit_module(
+    workspace: &std::path::Path,
+) -> (
+    Connection,
+    ModuleHost,
+    tokio::task::JoinHandle<BusResult<()>>,
+) {
+    let (client, host, task, _info) = admit_module_detailed(workspace).await;
+    (client, host, task)
 }
 
 fn proxy(connection: &Connection) -> tinybus::Proxy {
@@ -188,16 +209,22 @@ async fn the_module_advertises_exactly_the_mandatory_families() {
     // The adapter deliberately advertises only what it can reach. Advertising
     // more would make `audit_provider` fail host-side, and would register RPC
     // methods that answer errors.
+    //
+    // Asserted as an exact set rather than as "the mandatory three are present
+    // and `Tree` is absent": that weaker pair passes while any *other* optional
+    // family is advertised, which is the same overstatement with a different
+    // name on it.
+    assert_eq!(
+        capabilities,
+        Capabilities::mandatory(),
+        "the module must advertise exactly the mandatory families"
+    );
     for mandatory in Capability::MANDATORY {
         assert!(
             capabilities.contains(mandatory),
             "{mandatory:?} must be advertised"
         );
     }
-    assert!(
-        !capabilities.contains(Capability::Tree),
-        "the module must not claim an optional family it cannot serve"
-    );
 
     let driver_id: String = proxy(&client).call("DriverId", ()).await.expect("DriverId");
     assert_eq!(driver_id, "tinycortex");
@@ -365,22 +392,28 @@ async fn a_rejected_request_comes_back_under_its_contract_name() {
     let workspace = tempfile::tempdir().expect("tempdir");
     let (client, _host, _task) = admit_module(workspace.path()).await;
 
-    // A zero limit is the clearest driver-rejected input that needs no store
-    // state to provoke.
-    let outcome: Result<tinymemory_api::provider::types::ExportPage, _> = proxy(&client)
-        .call("ExportPage", (Option::<String>::None, 0_usize))
-        .await;
+    // A method the module does not serve. This is the one refusal that is
+    // guaranteed regardless of engine behaviour, which is what makes it worth
+    // asserting here: it proves the served object rejects an unknown member
+    // rather than hanging or answering something.
+    //
+    // Note what this deliberately does *not* claim. The refusal comes from the
+    // bus's dispatch layer, so its name is tinybus's, not one from the contract
+    // table — asserting a `ai.tinyhumans.tinymemory.Error.*` name here would be
+    // asserting the wrong thing. The contract table's own mapping is covered
+    // exhaustively and deterministically in `service::test`, where every
+    // `MemoryError` variant is reachable by construction. An earlier revision
+    // tried to provoke a contract error through `ExportPage` with a zero limit;
+    // since a driver that accepts a zero limit is equally legitimate, that test
+    // asserted nothing whenever it passed.
+    let outcome: Result<serde_json::Value, _> = proxy(&client).call("NoSuchMethod", ()).await;
 
-    if let Err(error) = outcome {
-        let name = error.wire_name();
-        assert!(
-            name.starts_with("ai.tinyhumans.tinymemory.Error."),
-            "a refusal must be named from the contract table, got {name}"
-        );
-    }
-    // A driver that accepts a zero limit is also legitimate — `limit` is a
-    // request, not a guarantee — so this test asserts the *shape* of a refusal
-    // when there is one rather than demanding one.
+    let error = outcome.expect_err("an unknown member must be refused");
+    let name = error.wire_name();
+    assert!(
+        !name.is_empty(),
+        "a refusal must carry a wire name, got {error:?}"
+    );
 }
 
 #[tokio::test]
@@ -438,16 +471,70 @@ async fn the_module_matches_the_in_process_engine_for_the_same_input() {
 
 /// Not `#[ignore]`d: it loads nothing and so is safe alongside the suite.
 #[test]
-fn the_declared_method_list_matches_the_served_interface() {
-    // The manifest's `methods` list is admission surface. If it drifts from the
-    // interface's dispatch table, a host can be refused a method the module
-    // actually serves — or worse, admitted for one it does not.
-    let arc: Arc<()> = Arc::new(());
-    drop(arc);
-
-    // The service type is private, so this asserts the constant surface the
-    // manifest is written against instead.
+fn the_routing_constants_are_the_ones_the_host_dials() {
+    // Only the constants. What the manifest actually declares is checked against
+    // a real admission in `the_manifest_declares_every_method_the_module_serves`
+    // below — these two used to be one test, and the constants alone cannot
+    // catch a method missing from the manifest.
     assert_eq!(BUS_NAME, "ai.tinyhumans.tinymemory.Memory");
     assert_eq!(OBJECT_PATH, "/ai/tinyhumans/tinymemory/Memory");
     assert_eq!(MEMORY_INTERFACE, BUS_NAME);
+}
+
+/// Every method the service dispatches, as the manifest must declare it.
+///
+/// Kept beside the assertion rather than derived: the `module_export!` macro
+/// takes string literals, so there is no constant for a test to share with it.
+/// This list is therefore the second opinion — if the two disagree, one of them
+/// is wrong and the test says which names differ.
+const EXPECTED_METHODS: &[&str] = &[
+    "DriverId",
+    "Capabilities",
+    "Health",
+    "Shutdown",
+    "Store",
+    "Get",
+    "Forget",
+    "List",
+    "Namespaces",
+    "Recall",
+    "ExportPage",
+    "ImportRecords",
+];
+
+#[tokio::test]
+#[ignore = "drives a real dlopen'ed module; must be the only such test in the process — see the module docs"]
+async fn the_manifest_declares_every_method_the_module_serves() {
+    // The manifest's `methods` list is admission surface: a host can be refused
+    // a method the module actually serves, or admitted for one it does not.
+    //
+    // This inspects the manifest the loaded artifact really exported, which is
+    // the only way to see it — the list is baked into `tinybus_module_manifest_v1`
+    // by the macro and parsed by the host during admission. Comparing routing
+    // constants, as an earlier revision did, passes with `ImportRecords` missing
+    // from the declaration entirely.
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let (_client, _host, _task, info) = admit_module_detailed(workspace.path()).await;
+
+    let provided = info
+        .manifest
+        .provides
+        .iter()
+        .find(|interface| interface.version.interface.as_str() == MEMORY_INTERFACE)
+        .expect("the memory interface must be declared");
+
+    let declared: std::collections::BTreeSet<&str> = provided
+        .methods
+        .iter()
+        .map(tinybus::MemberName::as_str)
+        .collect();
+    let expected: std::collections::BTreeSet<&str> = EXPECTED_METHODS.iter().copied().collect();
+
+    assert_eq!(
+        declared,
+        expected,
+        "manifest methods drifted; missing={:?} unexpected={:?}",
+        expected.difference(&declared).collect::<Vec<_>>(),
+        declared.difference(&expected).collect::<Vec<_>>()
+    );
 }

@@ -46,10 +46,24 @@
 //! So there is no blob store, no chunking and no held output — the apparatus the
 //! `tinydocs` module needs does not appear in this one.
 //!
-//! The one method that could grow without bound is `ExportPage`, and it is
-//! already paged by contract with the caller choosing the page size. A caller
-//! that asks for a million records in one page gets a frame-size error, which is
-//! the correct answer.
+//! Inline does not mean unbounded, though, and the three list-returning methods
+//! are not all bounded the same way:
+//!
+//! - `ExportPage` is paged by contract, with the caller choosing the page size.
+//!   Asking for a million records in one page gets an error, correctly.
+//! - `Recall` takes a `limit`, so the caller bounds the count — but not the
+//!   bytes, since fifty entries each holding a large document still overflow.
+//! - `List` takes **neither**. It has no limit and no cursor, so entries can
+//!   accumulate across individually valid `Store` calls until the response
+//!   cannot cross a frame, and the caller has no way to ask for less.
+//!
+//! So `List` and `Recall` are checked against [`MAX_RESPONSE_BYTES`] and refuse
+//! with a named `BudgetExceeded` rather than truncating. Truncating would be the
+//! worse failure: with no cursor, a short list is indistinguishable from a
+//! complete one, so a caller would conclude the missing entries do not exist.
+//! `Namespaces` is left unchecked — it returns one small summary per namespace,
+//! and a host with enough namespaces to fill 16 MiB of summaries has a different
+//! problem.
 //!
 //! # Errors are named, and the names are the contract
 //!
@@ -182,20 +196,28 @@ impl MemoryService {
     }
 
     /// List entries, narrowing by namespace, category and session.
+    ///
+    /// Bounded by [`MAX_RESPONSE_BYTES`]: unlike `Recall` and `ExportPage`, this
+    /// method takes no limit and no cursor, so the caller has no way to ask for
+    /// less. See [`ensure_response_fits`] for why the answer is a named refusal
+    /// rather than a truncation.
     async fn list(
         &self,
         namespace: Option<String>,
         category: Option<MemoryCategory>,
         session_id: Option<String>,
     ) -> BusResult<Vec<MemoryEntry>> {
-        self.provider
+        let entries = self
+            .provider
             .list(
                 namespace.as_deref(),
                 category.as_ref(),
                 session_id.as_deref(),
             )
             .await
-            .map_err(|error| into_bus_error(&error))
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&entries, "List")?;
+        Ok(entries)
     }
 
     /// Enumerate namespaces with their aggregate counts.
@@ -219,10 +241,15 @@ impl MemoryService {
         opts: OwnedRecallOpts,
         scope: Option<SourceScope>,
     ) -> BusResult<Vec<MemoryEntry>> {
-        self.provider
+        let entries = self
+            .provider
             .recall(&query, limit, &opts, scope.as_ref())
             .await
-            .map_err(|error| into_bus_error(&error))
+            .map_err(|error| into_bus_error(&error))?;
+        // `limit` bounds the count but not the bytes: a caller asking for 50
+        // entries that each hold a large document still overflows a frame.
+        ensure_response_fits(&entries, "Recall")?;
+        Ok(entries)
     }
 
     /// Read one page of the export, continuing from `cursor`.
@@ -243,6 +270,69 @@ impl MemoryService {
             .await
             .map_err(|error| into_bus_error(&error))
     }
+}
+
+/// The response-size ceiling for a method that returns a list of entries.
+///
+/// A `TinyBus` frame is JSON capped at 16 MiB. 8 MiB of raw entry content leaves
+/// room for the JSON structure around it and for escaping, which can double a
+/// pathological string, so a response that passes this check fits with margin.
+pub(crate) const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
+
+/// Per-entry allowance for the fields that are not `content`.
+///
+/// Keys, namespaces, timestamps, category and taint. Deliberately generous: this
+/// check exists to stop a response overflowing a frame, and over-estimating
+/// refuses slightly early while under-estimating fails at the transport with an
+/// error the caller cannot act on.
+const PER_ENTRY_OVERHEAD_BYTES: usize = 512;
+
+/// Refuse a response that would not fit in a frame.
+///
+/// # Why a refusal and not a truncation
+///
+/// Truncating would be worse than failing. `List` has no cursor, so a caller
+/// receiving a short list has no way to tell it apart from a complete one and no
+/// way to ask for the rest — it would conclude those entries do not exist. A
+/// named error tells the caller to narrow by namespace, category or session,
+/// which is a query it can actually issue.
+///
+/// # Why `BudgetExceeded` and not a new name
+///
+/// The name has to be one both ends already agree on, and
+/// [`tinymemory_api::wire`] is the table that makes that true. `BudgetExceeded`
+/// is what it means — the result exceeded a size budget — and it round-trips to
+/// the host as `MemoryError::BudgetExceeded` with no client change. A new name
+/// would decode to `Other` on any host older than the module, turning an
+/// actionable "narrow your query" into an opaque backend failure.
+///
+/// # Errors
+///
+/// [`wire::BUDGET_EXCEEDED`], when the estimate exceeds [`MAX_RESPONSE_BYTES`].
+/// The message names the method and the sizes, never entry content.
+fn ensure_response_fits(entries: &[MemoryEntry], method: &str) -> BusResult<()> {
+    let estimate: usize = entries
+        .iter()
+        .map(|entry| entry.content.len().saturating_add(PER_ENTRY_OVERHEAD_BYTES))
+        .sum();
+
+    if estimate > MAX_RESPONSE_BYTES {
+        log::warn!(
+            "[tinymemory:module] {method} refused: {} entries estimated at {estimate} bytes \
+             exceeds the {MAX_RESPONSE_BYTES} byte response ceiling",
+            entries.len()
+        );
+        return Err(BusError::MethodFailed {
+            name: wire::BUDGET_EXCEEDED.to_string(),
+            message: format!(
+                "{method} would return {} entries (~{estimate} bytes), over the \
+                 {MAX_RESPONSE_BYTES} byte response ceiling; narrow the query by \
+                 namespace, category or session",
+                entries.len()
+            ),
+        });
+    }
+    Ok(())
 }
 
 /// Map a [`MemoryError`] onto a named bus error.

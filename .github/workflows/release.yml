@@ -38,7 +38,11 @@ jobs:
   # their `checksum.toml` — that is what a host pins and verifies.
   tag:
     name: Tag release
-    if: ${{ github.ref == 'refs/heads/main' }}
+    # `existing_tag` means "re-cut artifacts for a tag that already exists", so
+    # this job must not run: it would bump the version and cut a *second*, newer
+    # tag, and `release-target` would then build the older tag the caller asked
+    # for while `main` had silently moved on.
+    if: ${{ github.ref == 'refs/heads/main' && inputs.existing_tag == '' }}
     # Consumed by `release-target`. The `version` step already writes both to
     # `$GITHUB_OUTPUT`; without this block they stop at the job boundary and the
     # module bundles resolve an empty tag.
@@ -303,10 +307,14 @@ jobs:
           $packageName = "tinymemory-module-$env:VERSION-$env:BUNDLE_ID"
           $packageRoot = "dist/$packageName"
           New-Item -ItemType Directory -Force $packageRoot | Out-Null
-          Copy-Item -LiteralPath $module, 'LICENSE', 'README.md' -Destination $packageRoot
+          # Same file set as the Unix package, including the spec — a consumer
+          # should not get different contents depending on their platform.
+          Copy-Item -LiteralPath $module, 'LICENSE', 'README.md', 'docs/specs/tinybus-module.md' -Destination $packageRoot
           $hash = (Get-FileHash -LiteralPath $module -Algorithm SHA256).Hash.ToLowerInvariant()
           $moduleName = Split-Path -Leaf $module
-          "`"$moduleName`" = `"$hash`"`n" |
+          # No trailing "`n": Set-Content adds its own terminator, so writing one
+          # here leaves a blank line the Unix `printf` form does not produce.
+          "`"$moduleName`" = `"$hash`"" |
             Set-Content -Path "$packageRoot/modules.toml" -Encoding utf8NoBOM
           Compress-Archive -Path "$packageRoot/*" -DestinationPath "dist/$packageName.zip"
           "archive=dist/$packageName.zip" >> $env:GITHUB_OUTPUT
@@ -382,11 +390,21 @@ jobs:
         run: |
           set -euo pipefail
           mapfile -t release_files < <(find release-assets -type f | sort)
-          gh release create "$RELEASE_TAG" "${release_files[@]}" \
-            --repo "$REPOSITORY" \
-            --verify-tag \
-            --title "$RELEASE_TAG" \
-            --generate-notes
+          # Re-cutting artifacts for an existing tag is what `existing_tag` is
+          # for, and a release for that tag usually already exists — so upload
+          # into it rather than failing on `already exists`. `--clobber` makes
+          # the re-cut idempotent instead of erroring on the second asset name.
+          if gh release view "$RELEASE_TAG" --repo "$REPOSITORY" >/dev/null 2>&1; then
+            echo "release ${RELEASE_TAG} exists; uploading assets into it"
+            gh release upload "$RELEASE_TAG" "${release_files[@]}" \
+              --repo "$REPOSITORY" --clobber
+          else
+            gh release create "$RELEASE_TAG" "${release_files[@]}" \
+              --repo "$REPOSITORY" \
+              --verify-tag \
+              --title "$RELEASE_TAG" \
+              --generate-notes
+          fi
 
       - name: Verify the published module through TinyBus
         shell: bash
