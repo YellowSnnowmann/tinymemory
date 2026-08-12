@@ -16,8 +16,12 @@
 //! process. Run them one at a time:
 //!
 //! ```sh
-//! cargo build --release -p tinymemory-module
-//! TINYMEMORY_TEST_MODULE=target/release/libtinymemory_module.so \
+//! # Both paths are the module's own workspace, not the repo root: this crate is
+//! # `exclude`d from the root workspace (see the root Cargo.toml comment), so
+//! # `-p tinymemory-module` does not resolve there and the artifact is written
+//! # under `crates/tinymemory-module/target`, not `./target`.
+//! cargo build --release --manifest-path crates/tinymemory-module/Cargo.toml
+//! TINYMEMORY_TEST_MODULE=crates/tinymemory-module/target/release/libtinymemory_module.so \
 //!   cargo test --manifest-path crates/tinymemory-module/Cargo.toml \
 //!   --test module_e2e -- --ignored --exact <one test name>
 //! ```
