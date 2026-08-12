@@ -227,10 +227,15 @@ impl MemoryService {
         opts: OwnedRecallOpts,
         scope: Option<SourceScope>,
     ) -> BusResult<Vec<MemoryEntry>> {
-        self.provider
+        let entries = self
+            .provider
             .recall(&query, limit, &opts, scope.as_ref())
             .await
-            .map_err(|error| into_bus_error(&error))
+            .map_err(|error| into_bus_error(&error))?;
+        // `limit` bounds the count but not the bytes: a caller asking for 50
+        // entries that each hold a large document still overflows a frame.
+        ensure_response_fits(&entries, "Recall")?;
+        Ok(entries)
     }
 
     /// Read one page of the export, continuing from `cursor`.
