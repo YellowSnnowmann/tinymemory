@@ -196,8 +196,8 @@ jobs:
     name: Module bundle (${{ matrix.id }})
     needs: release-target
     # `always()` is required even though `release-target` succeeds: GitHub
-    # propagates a skip transitively, so a skipped `publish` upstream would
-    # skip this job regardless of its direct dependency's result. The explicit
+    # propagates a skip transitively, so a skipped `tag` upstream would skip
+    # this job regardless of its direct dependency's result. The explicit
     # success check is what actually gates it.
     if: ${{ always() && needs.release-target.result == 'success' }}
     strategy:
