@@ -172,8 +172,8 @@ jobs:
         shell: bash
         env:
           EXISTING_TAG: ${{ inputs.existing_tag }}
-          PUBLISHED_TAG: ${{ needs.publish.outputs.tag }}
-          PUBLISHED_VERSION: ${{ needs.publish.outputs.next_version }}
+          PUBLISHED_TAG: ${{ needs.tag.outputs.tag }}
+          PUBLISHED_VERSION: ${{ needs.tag.outputs.next_version }}
         run: |
           set -euo pipefail
           if [[ -n "$EXISTING_TAG" ]]; then
