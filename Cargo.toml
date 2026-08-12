@@ -55,7 +55,7 @@ exclude = [
 # The contract itself. Re-exported wholesale from `src/lib.rs` so a host takes
 # one dependency rather than two, and so `tinymemory::MemoryProvider` and
 # `tinymemory_api::provider::MemoryProvider` are the same type.
-tinymemory-api = { path = "api", version = "0.1.1" }
+tinymemory-api = { path = "api" }
 # The mandatory capability families are `async fn`s on object-safe traits.
 async-trait = "0.1"
 # `Memory` is anyhow-typed; `mandatory::engine_error` maps it onto `MemoryError`.

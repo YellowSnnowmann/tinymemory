@@ -25,14 +25,14 @@ crate-type = ["rlib", "cdylib"]
 # The contract. Every type crossing the bus is one of these, and all of them
 # already carry serde impls — which is why this module needs no `wire` module of
 # its own, unlike the tinywallet one.
-tinymemory-api = { path = "../../api", version = "0.1.1" }
+tinymemory-api = { path = "../../api" }
 # `MemoryTraitProvider`, which pairs a `Memory` backend with a driver id.
-tinymemory = { path = "../..", version = "0.1.0" }
+tinymemory = { path = "../.." }
 # The engine and the seam that adapts it. Carrying these is the entire point of
 # the module: they are 14.7s of the host's critical build path, and a host that
 # loads this binary compiles neither.
-tinymemory-core = { path = "../../core", version = "0.1.0" }
-tinymemory-tinycortex = { path = "../../adapters/tinycortex", version = "0.1.0" }
+tinymemory-core = { path = "../../core" }
+tinymemory-tinycortex = { path = "../../adapters/tinycortex" }
 tinycortex = { version = "0.1" }
 # TinyBus provides the typed service interface and the dynamic module host ABI.
 # Reached by path now that this crate is its own workspace root: the nested

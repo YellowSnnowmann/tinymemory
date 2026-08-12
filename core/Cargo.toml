@@ -15,8 +15,8 @@ readme = "../README.md"
 [dependencies]
 # The contract. `tinymemory-core` implements and consumes it; the host seam
 # traits (config, event sink, embeddings, chat) live in `tinymemory_api::host`.
-tinymemory-api = { path = "../api", version = "0.1.1" }
-tinymemory = { path = "..", version = "0.1.0" }
+tinymemory-api = { path = "../api" }
+tinymemory = { path = ".." }
 
 # The default embedded engine. `store/`, `tree/` and `sync/` drive it directly;
 # `tinycortex-api` is a direct dependency because `tinycortex::memory` aliases
@@ -67,7 +67,7 @@ block2 = { version = "0.6", optional = true }
 [dev-dependencies]
 # `TestHostConfig` — the concrete `MemoryHostConfig` the extracted test suites
 # build, since `Config` is a trait object and cannot be `Default`ed.
-tinymemory-api = { path = "../api", version = "0.1.1", features = ["test-support"] }
+tinymemory-api = { path = "../api", features = ["test-support"] }
 tempfile = "3"
 tokio = { version = "1", features = ["test-util"] }
 
