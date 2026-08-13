@@ -77,9 +77,11 @@ impl HostSyncAdapter {
     /// per-item `source_id` carries the document id so each message admits
     /// independently rather than colliding on one dedup key.
     ///
-    /// No summariser is required here: `ingest_document` writes the L0 chunks
-    /// synchronously and enqueues the (consent-gated) summary seal on the async
-    /// worker, so tree chunks land even when local AI is off.
+    /// `ingest_document` writes the L0 chunk rows synchronously and enqueues the
+    /// summary seal on the async extract worker. Retrieval (`query_source`) reads
+    /// sealed summaries, so an item becomes retrievable once its buffer seals —
+    /// on the token threshold or the time-based `flush_stale_buffers` — and the
+    /// seal degrades to a fallback summary when no LLM is available.
     async fn ingest_document_into_memory_tree(
         &self,
         config: &Config,
@@ -87,6 +89,16 @@ impl HostSyncAdapter {
     ) -> anyhow::Result<()> {
         let toolkit = document.toolkit.trim().to_ascii_lowercase();
         let connection_id = document.connection_id.trim();
+        // A blank toolkit/connection would yield a scope with no platform prefix
+        // (`":conn"`), which no retrieval kind matches; skip rather than write an
+        // unreachable tree. The skill store still holds the item.
+        if toolkit.is_empty() || connection_id.is_empty() {
+            tracing::debug!(
+                document_id = %document.document_id,
+                "[tinycortex:sync] skipping memory-tree ingest: item has no toolkit/connection scope"
+            );
+            return Ok(());
+        }
         let tree_scope = format!("{toolkit}:{connection_id}");
         let source_id = format!("{tree_scope}:{}", document.document_id);
         let owner = format!("{toolkit}-sync:{connection_id}");
@@ -638,19 +650,32 @@ impl SkillDocSink for HostSyncAdapter {
             .await
             .map_err(anyhow::Error::msg)?;
 
-        // #5473: additively reconnect the synced item to the memory tree. A
-        // failure here must propagate so the sync cursor is not advanced past an
-        // item that never reached the tree (the `item_ids_ingested` contract the
-        // deleted per-provider modules carried). The config-less adapter
-        // (`sync_context`) has no ingest pipeline and is not on the connector
-        // sync path, so it skips tree ingest.
-        match self.config.clone() {
-            Some(config) => {
-                self.ingest_document_into_memory_tree(&*config, &document)
-                    .await
+        // #5473: additively reconnect the synced item to the memory tree. This
+        // is a best-effort secondary index over the skill store, which is the
+        // source of truth and has already committed above. A failure here must
+        // NOT abort the connector sync: most providers do not tolerate scope
+        // errors, so the orchestrator turns a `store` error into a run-aborting
+        // `Err` — propagating would let one deterministically-poisonous item
+        // stall the whole connection and re-fetch the page (Composio spend) on
+        // every retry. Log and continue; the per-item source gate re-attempts
+        // the item on a later sync, and an operator rebuild can backfill.
+        // The config-less adapter (`sync_context`) has no ingest pipeline and is
+        // not on the connector sync path, so it skips tree ingest entirely.
+        if let Some(config) = self.config.as_deref() {
+            if let Err(error) = self
+                .ingest_document_into_memory_tree(config, &document)
+                .await
+            {
+                tracing::warn!(
+                    toolkit = %document.toolkit,
+                    connection_id = %document.connection_id,
+                    document_id = %document.document_id,
+                    %error,
+                    "[tinycortex:sync] memory-tree ingest failed; skill store retained"
+                );
             }
-            None => Ok(()),
         }
+        Ok(())
     }
 
     async fn delete(&self, namespace_skill_id: &str, document_id: &str) -> anyhow::Result<()> {
@@ -976,6 +1001,54 @@ mod tests {
                 .all(|chunk| chunk.metadata.path_scope.as_deref() == Some("gmail:conn-1")),
             "connector chunks must carry the `{{toolkit}}:{{connection_id}}` tree scope so \
              query_source resolves them (gmail → email)"
+        );
+
+        // Retrievability is the real goal, and L0 chunks alone do NOT imply it:
+        // `query_source` reads sealed summaries and skips unsealed trees, so
+        // before a seal the freshly-ingested item is not yet retrievable.
+        let before = crate::tree::retrieval::query_source(
+            &*config,
+            Some("gmail:conn-1"),
+            None,
+            None,
+            None,
+            10,
+        )
+        .await
+        .expect("query_source before seal");
+        assert!(
+            before.hits.is_empty(),
+            "an unsealed connector tree must not yet be retrievable"
+        );
+
+        // Drive the async extract worker to append the leaf, then force-seal the
+        // buffer (the time-based flush path) so a level-1 summary exists.
+        crate::queue::drain_until_idle(&*config)
+            .await
+            .expect("drain tree jobs");
+        crate::tree::tree::flush::flush_stale_buffers(
+            &*config,
+            chrono::Duration::zero(),
+            &crate::tree::tree::bucket_seal::LabelStrategy::Empty,
+        )
+        .await
+        .expect("force-seal stale buffers");
+
+        // Now the connector item is retrievable through the same path the
+        // product uses for tree-backed recall — the property #5473 restores.
+        let after = crate::tree::retrieval::query_source(
+            &*config,
+            Some("gmail:conn-1"),
+            None,
+            None,
+            None,
+            10,
+        )
+        .await
+        .expect("query_source after seal");
+        assert!(
+            !after.hits.is_empty(),
+            "a sealed connector tree must be retrievable via query_source (#5473)"
         );
     }
 
