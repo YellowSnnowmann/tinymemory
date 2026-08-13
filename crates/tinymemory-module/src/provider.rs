@@ -22,7 +22,8 @@ use tinymemory_api::provider::types::{
     SourceScope,
 };
 use tinymemory_api::provider::{
-    AddressBookSeedOutcome, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities, MemoryGoals,
+    AddressBookSeedOutcome, ChunkEmbedding, ChunkQuery, CoverWindowQuery, EntityMatch,
+    FastRetrieveQuery, MemoryChunks, MemoryRetrieval, RetrievalResponse, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities, MemoryGoals,
     MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProvider,
     MemoryRecall, MemorySourceSink, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction,
     PersonRecord, PersonScore, RankedPerson, ResolvedPerson,
@@ -1198,6 +1199,12 @@ impl MemoryProvider for ModuleMemoryProvider {
     fn as_people(&self) -> Option<&dyn MemoryPeople> {
         Some(self)
     }
+    fn as_chunks(&self) -> Option<&dyn MemoryChunks> {
+        Some(self)
+    }
+    fn as_retrieval(&self) -> Option<&dyn MemoryRetrieval> {
+        Some(self)
+    }
 }
 
 // ── People ───────────────────────────────────────────────────────────────────
@@ -1459,5 +1466,180 @@ impl MemoryPeople for ModuleMemoryProvider {
             .await
             .map_err(|error| Self::other("seed from address book", error))?;
         Ok(AddressBookSeedOutcome { seeded, skipped })
+    }
+}
+
+// ── Chunks and Retrieval ─────────────────────────────────────────────────────
+//
+// Both families take the source scope as an **argument** and never read the
+// ambient one. `tinymemory_core`'s in-process entry points resolve it from a
+// task-local, which the host sets on its own side of the bus — it is simply not
+// present in this process. Reading it here would yield `None`, and `None` means
+// *unrestricted*, so a per-profile source gate would fail open. That is why the
+// `*_scoped` variants exist and why these call them.
+
+/// Convert a contract scope into the engine's allowlist form.
+fn scope_to_engine(scope: Option<&SourceScope>) -> Option<HashSet<String>> {
+    scope.map(|scope| scope.allow.iter().cloned().collect())
+}
+
+#[async_trait]
+impl MemoryChunks for ModuleMemoryProvider {
+    async fn list_chunks(
+        &self,
+        query: &ChunkQuery,
+        scope: Option<&SourceScope>,
+    ) -> Result<Vec<Chunk>, MemoryError> {
+        let ChunkQuery {
+            source_kind,
+            source_id,
+            owner,
+            since_ms,
+            until_ms,
+            limit,
+            offset,
+            exclude_dropped,
+        } = query.clone();
+        let engine_query = tinymemory_core::store::chunks::ListChunksQuery {
+            source_kind: source_kind.map(|kind| Self::cross(&kind, "convert source kind")).transpose()?,
+            source_id,
+            owner,
+            since_ms,
+            until_ms,
+            limit,
+            offset,
+            source_scope: scope_to_engine(scope),
+            exclude_dropped,
+        };
+        let chunks = blocking(self.config.clone(), "list chunks", move |config| {
+            tinymemory_core::store::chunks::list_chunks(config, &engine_query)
+        })
+        .await?;
+        Self::cross(&chunks, "convert chunks")
+    }
+
+    async fn get_chunk(&self, chunk_id: &str) -> Result<Option<Chunk>, MemoryError> {
+        let id = chunk_id.to_string();
+        let chunk = blocking(self.config.clone(), "get chunk", move |config| {
+            tinymemory_core::store::chunks::get_chunk(config, &id)
+        })
+        .await?;
+        match chunk {
+            Some(chunk) => Ok(Some(Self::cross(&chunk, "convert chunk")?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn chunk_embeddings(
+        &self,
+        chunk_ids: &[String],
+        model_signature: &str,
+    ) -> Result<Vec<ChunkEmbedding>, MemoryError> {
+        let ids = chunk_ids.to_vec();
+        let signature = model_signature.to_string();
+        let vectors = blocking(self.config.clone(), "load chunk embeddings", move |config| {
+            tinymemory_core::store::chunks::embeddings::get_chunk_embeddings_for_signature_batch(
+                config, &ids, &signature,
+            )
+        })
+        .await?;
+        // Sorted so the response is deterministic: the engine returns a
+        // `HashMap`, whose iteration order varies per process and would make an
+        // otherwise-identical call return a differently-ordered list.
+        let mut embeddings: Vec<ChunkEmbedding> = vectors
+            .into_iter()
+            .map(|(chunk_id, vector)| ChunkEmbedding { chunk_id, vector })
+            .collect();
+        embeddings.sort_by(|a, b| a.chunk_id.cmp(&b.chunk_id));
+        Ok(embeddings)
+    }
+}
+
+#[async_trait]
+impl MemoryRetrieval for ModuleMemoryProvider {
+    async fn fast_retrieve(
+        &self,
+        query: &str,
+        options: FastRetrieveQuery,
+        scope: Option<&SourceScope>,
+    ) -> Result<RetrievalResponse, MemoryError> {
+        if query.trim().is_empty() {
+            return Err(MemoryError::Invalid("query must not be empty".to_string()));
+        }
+        let engine_options = tinymemory_core::tree::retrieval::FastRetrieveOptions {
+            limit: options.limit,
+            max_hops: options.max_hops,
+            time_window_days: options.time_window_days,
+        };
+        let response = tinymemory_core::tree::retrieval::fast_retrieve_scoped(
+            &self.config,
+            query,
+            engine_options,
+            scope_to_engine(scope),
+        )
+        .await
+        .map_err(|error| Self::other("fast retrieve", error))?;
+        Self::cross(&response, "convert retrieval response")
+    }
+
+    async fn cover_window(
+        &self,
+        window: &CoverWindowQuery,
+        scope: Option<&SourceScope>,
+    ) -> Result<RetrievalResponse, MemoryError> {
+        let CoverWindowQuery {
+            since_ms,
+            until_ms,
+            source_id,
+            source_kind,
+            limit,
+        } = window.clone();
+        let engine_kind = source_kind
+            .map(|kind| Self::cross(&kind, "convert source kind"))
+            .transpose()?;
+        let response = tinymemory_core::tree::retrieval::cover_window_scoped(
+            &self.config,
+            since_ms,
+            until_ms,
+            source_id.as_deref(),
+            engine_kind,
+            limit.unwrap_or(0),
+            scope_to_engine(scope),
+        )
+        .await
+        .map_err(|error| Self::other("cover window", error))?;
+        Self::cross(&response, "convert retrieval response")
+    }
+
+    async fn search_entities(
+        &self,
+        query: &str,
+        kinds: Option<&[String]>,
+        limit: usize,
+    ) -> Result<Vec<EntityMatch>, MemoryError> {
+        // Request kinds are validated, unlike response kinds which pass through
+        // as an open vocabulary. An unknown filter that silently matched nothing
+        // would be indistinguishable from a genuine empty result.
+        let engine_kinds = match kinds {
+            Some(kinds) => Some(
+                kinds
+                    .iter()
+                    .map(|kind| {
+                        tinymemory_core::tree::score::extract::EntityKind::parse(kind)
+                            .ok_or_else(|| MemoryError::Invalid(format!("unknown entity kind: {kind}")))
+                    })
+                    .collect::<Result<Vec<_>, MemoryError>>()?,
+            ),
+            None => None,
+        };
+        let matches = tinymemory_core::tree::retrieval::search_entities(
+            &self.config,
+            query,
+            engine_kinds,
+            limit,
+        )
+        .await
+        .map_err(|error| Self::other("search entities", error))?;
+        Self::cross(&matches, "convert entity matches")
     }
 }
