@@ -1538,7 +1538,7 @@ impl MemoryChunks for ModuleMemoryProvider {
         let ids = chunk_ids.to_vec();
         let signature = model_signature.to_string();
         let vectors = blocking(self.config.clone(), "load chunk embeddings", move |config| {
-            tinymemory_core::store::chunks::embeddings::get_chunk_embeddings_for_signature_batch(
+            tinymemory_core::store::chunks::get_chunk_embeddings_for_signature_batch(
                 config, &ids, &signature,
             )
         })
@@ -1626,7 +1626,7 @@ impl MemoryRetrieval for ModuleMemoryProvider {
                     .iter()
                     .map(|kind| {
                         tinymemory_core::tree::score::extract::EntityKind::parse(kind)
-                            .ok_or_else(|| MemoryError::Invalid(format!("unknown entity kind: {kind}")))
+                            .map_err(|_| MemoryError::Invalid(format!("unknown entity kind: {kind}")))
                     })
                     .collect::<Result<Vec<_>, MemoryError>>()?,
             ),
