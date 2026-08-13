@@ -17,7 +17,8 @@
 //!   ├─ as_goals()        -> Option<&dyn MemoryGoals>
 //!   ├─ as_tool_memory()  -> Option<&dyn MemoryToolMemory>
 //!   ├─ as_sources()      -> Option<&dyn MemorySourceSink>
-//!   └─ as_maintenance()  -> Option<&dyn MemoryMaintenance>
+//!   ├─ as_maintenance()  -> Option<&dyn MemoryMaintenance>
+//!   └─ as_people()       -> Option<&dyn MemoryPeople>
 //! ```
 //!
 //! The mandatory three are supertraits, so "mandatory" is enforced by the type
