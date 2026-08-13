@@ -1052,6 +1052,95 @@ mod tests {
         );
     }
 
+    /// The tree-ingest half of `store` is best-effort: when
+    /// `ingest_document_with_scope` fails, `store` must log and still return
+    /// `Ok(())`, so one deterministically-poisonous item cannot abort the whole
+    /// connector run and re-fetch the page (Composio spend) on every retry — the
+    /// #4947 stall that propagating the error re-created (sanil-23's review
+    /// blocker #2). The skill store runs first and is the source of truth, so it
+    /// must remain committed. This forces a real ingest failure by pointing the
+    /// adapter's tree-ingest `config.workspace_dir` under a regular file (so the
+    /// tree store cannot be created) while the skill-store client keeps a healthy
+    /// workspace — isolating the failure to the tree half. If `store` ever
+    /// propagates the ingest error again, the `.expect` on the store call fails.
+    #[tokio::test]
+    async fn tree_ingest_failure_is_tolerated_and_skill_store_is_retained() {
+        use crate::store::{MemoryClient, MemoryClientRef};
+        use std::sync::Arc;
+        use tinycortex::memory::sync::{SkillDocSink, SkillDocument};
+        use tinymemory_api::host::test_support::TestHostConfig;
+        use tinymemory_api::host::MemoryHostConfig;
+
+        crate::test_seams::init();
+        let workspace = tempfile::tempdir().expect("workspace");
+
+        // The skill store (source of truth) gets a healthy workspace …
+        let client: MemoryClientRef = Arc::new(
+            MemoryClient::from_workspace_dir(workspace.path().join("skill-store"))
+                .expect("memory client initialises against a fresh workspace"),
+        );
+
+        // … but the tree-ingest config points at a workspace *under* a regular
+        // file, so `ingest_document_with_scope` cannot create its store and
+        // returns `Err` (same failure shape as the `fallible_audit_read` guard).
+        let blocker = workspace.path().join("blocker");
+        std::fs::write(&blocker, b"not a directory").expect("write blocker file");
+        let mut host = TestHostConfig::default();
+        host.workspace_dir = blocker.join("workspace");
+        let config = host.to_arc();
+
+        let adapter = super::HostSyncAdapter::with_config(client.clone(), config.clone());
+        let document = SkillDocument {
+            namespace_skill_id: "gmail".into(),
+            connection_id: "conn-1".into(),
+            document_id: "gmail:msg-1".into(),
+            title: "Quarterly planning".into(),
+            content: "Let's finalise the Q3 roadmap.".into(),
+            toolkit: "gmail".into(),
+            metadata: serde_json::json!({ "source": "composio-provider-incremental" }),
+        };
+
+        // Guard against a vacuous test: the tree-ingest half must *genuinely*
+        // fail under the broken config. If the lever ever stops failing (e.g.
+        // ingest resolves its store path elsewhere), this fires rather than the
+        // test silently passing without exercising the tolerance path.
+        assert!(
+            adapter
+                .ingest_document_into_memory_tree(&*config, &document)
+                .await
+                .is_err(),
+            "the broken tree-ingest workspace must make ingest fail"
+        );
+
+        // `store` must swallow that tree-ingest failure and still succeed.
+        adapter
+            .store(document)
+            .await
+            .expect("store must tolerate a memory-tree ingest failure (best-effort tree)");
+
+        // The skill store, committed before the tree half, still holds the item —
+        // best-effort tree ingest must never cost the durable skill write.
+        let skill_docs = client
+            .list_documents(Some("skill-gmail"))
+            .await
+            .expect("list skill-gmail documents");
+        let documents = skill_docs
+            .get("documents")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(
+            documents.len(),
+            1,
+            "the skill store must retain the synced document even when tree ingest fails"
+        );
+        let persisted = serde_json::to_string(&documents).expect("serialise skill documents");
+        assert!(
+            persisted.contains("gmail:msg-1"),
+            "the retained skill document must carry the synced id"
+        );
+    }
+
     /// The config-less adapter (`sync_context`) has no ingest pipeline and is not
     /// on the connector sync path, so it stores the skill document without
     /// touching the memory tree. Guards the `None` branch of `store` from
