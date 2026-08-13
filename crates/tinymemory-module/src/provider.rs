@@ -22,9 +22,10 @@ use tinymemory_api::provider::types::{
     SourceScope,
 };
 use tinymemory_api::provider::{
-    MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities, MemoryGoals, MemoryGraph,
-    MemoryIngest, MemoryMaintenance, MemoryPortability, MemoryProvider, MemoryRecall,
-    MemorySourceSink, MemoryToolMemory, MemoryTree,
+    AddressBookSeedOutcome, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities, MemoryGoals,
+    MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProvider,
+    MemoryRecall, MemorySourceSink, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction,
+    PersonRecord, PersonScore, RankedPerson, ResolvedPerson,
 };
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
@@ -1193,5 +1194,270 @@ impl MemoryProvider for ModuleMemoryProvider {
     }
     fn as_maintenance(&self) -> Option<&dyn MemoryMaintenance> {
         Some(self)
+    }
+    fn as_people(&self) -> Option<&dyn MemoryPeople> {
+        Some(self)
+    }
+}
+
+// ── People ───────────────────────────────────────────────────────────────────
+//
+// The conversions below destructure both sides exhaustively rather than
+// round-tripping through `Self::cross`. That is deliberate. `cross` is a serde
+// value round-trip, so it agrees only while the two crates' field *names* agree
+// — and they already do not: the engine's `Interaction` names its timestamp
+// `ts` where the contract names it `at`. A round-trip would compile and then
+// fail at runtime on the first call.
+//
+// Destructuring makes the opposite trade: a field added or renamed on either
+// side is a compile error here, which is the same rule
+// `tinymemory-tinycortex::convert` follows and the same reasoning that governs
+// the two copies of the contract itself.
+
+/// The engine's people store for this module's workspace.
+///
+/// `for_workspace` caches per workspace directory, so this is a map lookup
+/// after the first call rather than a database open.
+fn people_store(
+    workspace: &std::path::Path,
+) -> Result<Arc<tinycortex::memory::people::store::PeopleStore>, MemoryError> {
+    tinycortex::memory::people::store::for_workspace(workspace)
+        .map_err(|error| MemoryError::Other(anyhow::anyhow!("open people store: {error}")))
+}
+
+fn handle_to_engine(handle: &PersonHandle) -> tinycortex::memory::people::types::Handle {
+    use tinycortex::memory::people::types::Handle as EngineHandle;
+    match handle {
+        PersonHandle::IMessage(value) => EngineHandle::IMessage(value.clone()),
+        PersonHandle::Email(value) => EngineHandle::Email(value.clone()),
+        PersonHandle::DisplayName(value) => EngineHandle::DisplayName(value.clone()),
+    }
+}
+
+fn handle_to_contract(handle: tinycortex::memory::people::types::Handle) -> PersonHandle {
+    use tinycortex::memory::people::types::Handle as EngineHandle;
+    match handle {
+        EngineHandle::IMessage(value) => PersonHandle::IMessage(value),
+        EngineHandle::Email(value) => PersonHandle::Email(value),
+        EngineHandle::DisplayName(value) => PersonHandle::DisplayName(value),
+    }
+}
+
+fn person_to_contract(person: tinycortex::memory::people::types::Person) -> PersonRecord {
+    let tinycortex::memory::people::types::Person {
+        id,
+        display_name,
+        primary_email,
+        primary_phone,
+        handles,
+        created_at,
+        updated_at,
+    } = person;
+    PersonRecord {
+        id: id.to_string(),
+        display_name,
+        primary_email,
+        primary_phone,
+        handles: handles.into_iter().map(handle_to_contract).collect(),
+        created_at: created_at.to_rfc3339(),
+        updated_at: updated_at.to_rfc3339(),
+    }
+}
+
+fn score_to_contract(score: tinycortex::memory::people::types::ScoreComponents) -> PersonScore {
+    let tinycortex::memory::people::types::ScoreComponents {
+        recency,
+        frequency,
+        reciprocity,
+        depth,
+        score,
+    } = score;
+    PersonScore {
+        recency,
+        frequency,
+        reciprocity,
+        depth,
+        score,
+    }
+}
+
+/// Parse a caller-supplied person id.
+///
+/// `PersonRef` is opaque to the caller by contract, so an unparseable one is a
+/// caller mistake — `Invalid`, not `NotFound`. Reporting `NotFound` would tell
+/// a caller the id was well-formed but absent, which would send them looking
+/// for a deleted person rather than at the id they built.
+fn parse_person_id(
+    person_id: &str,
+) -> Result<tinycortex::memory::people::types::PersonId, MemoryError> {
+    person_id
+        .parse::<uuid::Uuid>()
+        .map(tinycortex::memory::people::types::PersonId)
+        .map_err(|_| MemoryError::Invalid(format!("malformed person id: {person_id}")))
+}
+
+#[async_trait]
+impl MemoryPeople for ModuleMemoryProvider {
+    async fn list_people(&self, limit: Option<usize>) -> Result<Vec<RankedPerson>, MemoryError> {
+        let store = people_store(&self.config.workspace_dir)?;
+        let people = store
+            .list()
+            .await
+            .map_err(|error| Self::other("list people", error))?;
+
+        let ids: Vec<_> = people.iter().map(|person| person.id).collect();
+        let interactions = store
+            .batch_interactions_for(&ids)
+            .await
+            .map_err(|error| Self::other("load interactions", error))?;
+
+        let now = Utc::now();
+        let mut ranked: Vec<RankedPerson> = people
+            .into_iter()
+            .map(|person| {
+                let observed = interactions.get(&person.id).map(Vec::as_slice).unwrap_or(&[]);
+                let score = tinycortex::memory::people::scorer::score(observed, now);
+                RankedPerson {
+                    person: person_to_contract(person),
+                    score: score_to_contract(score),
+                }
+            })
+            .collect();
+
+        // Descending by composite score. `total_cmp` rather than `partial_cmp`:
+        // a NaN from a degenerate score would make `partial_cmp` return `None`,
+        // and an ordering that is not total is undefined behaviour's
+        // well-behaved cousin — `sort_by` may panic or produce garbage order.
+        ranked.sort_by(|a, b| b.score.score.total_cmp(&a.score.score));
+        if let Some(limit) = limit {
+            ranked.truncate(limit);
+        }
+        Ok(ranked)
+    }
+
+    async fn get_person(&self, person_id: &str) -> Result<Option<PersonRecord>, MemoryError> {
+        let store = people_store(&self.config.workspace_dir)?;
+        let id = parse_person_id(person_id)?;
+        Ok(store
+            .get(id)
+            .await
+            .map_err(|error| Self::other("get person", error))?
+            .map(person_to_contract))
+    }
+
+    async fn resolve_handle(
+        &self,
+        handle: &PersonHandle,
+        create_if_missing: bool,
+    ) -> Result<Option<ResolvedPerson>, MemoryError> {
+        let store = people_store(&self.config.workspace_dir)?;
+        let resolver = tinycortex::memory::people::resolver::HandleResolver::new(&store);
+        let engine_handle = handle_to_engine(handle);
+
+        if create_if_missing {
+            let (id, created) = resolver
+                .resolve_or_create_with_status(&engine_handle)
+                .await
+                .map_err(|error| Self::other("resolve or create handle", error))?;
+            return Ok(Some(ResolvedPerson {
+                id: id.to_string(),
+                created,
+            }));
+        }
+
+        Ok(resolver
+            .resolve(&engine_handle)
+            .await
+            .map_err(|error| Self::other("resolve handle", error))?
+            .map(|id| ResolvedPerson {
+                id: id.to_string(),
+                created: false,
+            }))
+    }
+
+    async fn add_handle_alias(
+        &self,
+        person_id: &str,
+        handle: &PersonHandle,
+    ) -> Result<(), MemoryError> {
+        let store = people_store(&self.config.workspace_dir)?;
+        let id = parse_person_id(person_id)?;
+        if store
+            .get(id)
+            .await
+            .map_err(|error| Self::other("look up person", error))?
+            .is_none()
+        {
+            return Err(MemoryError::NotFound(format!("person {person_id}")));
+        }
+        store
+            .add_alias(id, handle_to_engine(handle).canonicalize())
+            .await
+            .map_err(|error| Self::other("add handle alias", error))
+    }
+
+    async fn score_person(&self, person_id: &str) -> Result<Option<PersonScore>, MemoryError> {
+        let store = people_store(&self.config.workspace_dir)?;
+        let id = parse_person_id(person_id)?;
+        if store
+            .get(id)
+            .await
+            .map_err(|error| Self::other("look up person", error))?
+            .is_none()
+        {
+            return Ok(None);
+        }
+        let interactions = store
+            .interactions_for(id)
+            .await
+            .map_err(|error| Self::other("load interactions", error))?;
+        Ok(Some(score_to_contract(
+            tinycortex::memory::people::scorer::score(&interactions, Utc::now()),
+        )))
+    }
+
+    async fn record_interaction(
+        &self,
+        interaction: &PersonInteraction,
+    ) -> Result<(), MemoryError> {
+        let store = people_store(&self.config.workspace_dir)?;
+        let PersonInteraction {
+            person_id,
+            at,
+            is_outbound,
+            length,
+        } = interaction;
+        let id = parse_person_id(person_id)?;
+        let ts = chrono::DateTime::parse_from_rfc3339(at)
+            .map_err(|error| MemoryError::Invalid(format!("malformed interaction time: {error}")))?
+            .with_timezone(&Utc);
+        if store
+            .get(id)
+            .await
+            .map_err(|error| Self::other("look up person", error))?
+            .is_none()
+        {
+            return Err(MemoryError::NotFound(format!("person {person_id}")));
+        }
+        store
+            .record_interaction(tinycortex::memory::people::types::Interaction {
+                person_id: id,
+                ts,
+                is_outbound: *is_outbound,
+                length: *length,
+            })
+            .await
+            .map_err(|error| Self::other("record interaction", error))
+    }
+
+    async fn seed_from_address_book(&self) -> Result<AddressBookSeedOutcome, MemoryError> {
+        let store = people_store(&self.config.workspace_dir)?;
+        let resolver = tinycortex::memory::people::resolver::HandleResolver::new(&store);
+        let source = tinycortex::memory::people::address_book::SystemContactsSource;
+        let (seeded, skipped) = resolver
+            .seed_from_address_book(&source)
+            .await
+            .map_err(|error| Self::other("seed from address book", error))?;
+        Ok(AddressBookSeedOutcome { seeded, skipped })
     }
 }
