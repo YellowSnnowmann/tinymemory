@@ -17,6 +17,14 @@
 //! Recall(query, limit, opts, scope)                 -> [MemoryEntry]
 //! ExportPage(cursor, limit)                         -> ExportPage
 //! ImportRecords(records)                            -> ImportOutcome
+//!
+//! ListPeople(limit)                                 -> [RankedPerson]
+//! GetPerson(person_id)                              -> Option<PersonRecord>
+//! ResolveHandle(handle, create_if_missing)          -> Option<ResolvedPerson>
+//! AddHandleAlias(person_id, handle)                 -> ()
+//! ScorePerson(person_id)                            -> Option<PersonScore>
+//! RecordInteraction(interaction)                    -> ()
+//! SeedFromAddressBook()                             -> AddressBookSeedOutcome
 //! ```
 //!
 //! # Why the method list mirrors a trait exactly
@@ -83,6 +91,10 @@ use tinymemory_api::provider::types::{
 // `MemoryCore`, `MemoryRecall` and `MemoryPortability` are deliberately not
 // imported: they are supertraits of `MemoryProvider`, so their methods are
 // already callable on the trait object.
+use tinymemory_api::provider::people::{
+    AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
+    RankedPerson, ResolvedPerson,
+};
 use tinymemory_api::provider::MemoryProvider;
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
@@ -624,6 +636,73 @@ impl MemoryService {
     async fn doctor(&self) -> BusResult<MaintenanceReport> {
         require_family!(self, as_maintenance, Capability::Maintenance)
             .doctor()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    // ── People ──────────────────────────────────────────────────────────────
+
+    /// Known people, ranked by closeness.
+    ///
+    /// Size-checked like the other list-returning methods. `limit` bounds the
+    /// *count* but not the bytes — a store of people each carrying many handles
+    /// can still overflow a frame — so the ceiling is enforced on the encoded
+    /// response rather than trusted to the caller's limit.
+    async fn list_people(&self, limit: Option<usize>) -> BusResult<Vec<RankedPerson>> {
+        let people = require_family!(self, as_people, Capability::People)
+            .list_people(limit)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&people, "ListPeople")?;
+        Ok(people)
+    }
+
+    async fn get_person(&self, person_id: String) -> BusResult<Option<PersonRecord>> {
+        require_family!(self, as_people, Capability::People)
+            .get_person(&person_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn resolve_handle(
+        &self,
+        handle: PersonHandle,
+        create_if_missing: bool,
+    ) -> BusResult<Option<ResolvedPerson>> {
+        require_family!(self, as_people, Capability::People)
+            .resolve_handle(&handle, create_if_missing)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn add_handle_alias(
+        &self,
+        person_id: String,
+        handle: PersonHandle,
+    ) -> BusResult<()> {
+        require_family!(self, as_people, Capability::People)
+            .add_handle_alias(&person_id, &handle)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn score_person(&self, person_id: String) -> BusResult<Option<PersonScore>> {
+        require_family!(self, as_people, Capability::People)
+            .score_person(&person_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn record_interaction(&self, interaction: PersonInteraction) -> BusResult<()> {
+        require_family!(self, as_people, Capability::People)
+            .record_interaction(&interaction)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn seed_from_address_book(&self) -> BusResult<AddressBookSeedOutcome> {
+        require_family!(self, as_people, Capability::People)
+            .seed_from_address_book()
             .await
             .map_err(|error| into_bus_error(&error))
     }
