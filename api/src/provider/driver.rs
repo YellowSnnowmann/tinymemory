@@ -57,8 +57,8 @@ use crate::error::MemoryError;
 use crate::health::MemoryHealth;
 use crate::provider::content::{MemoryDocuments, MemoryIngest, MemoryTree};
 use crate::provider::knowledge::{MemoryDiff, MemoryEntities, MemoryGraph};
-use crate::provider::people::MemoryPeople;
 use crate::provider::mandatory::{MemoryCore, MemoryPortability, MemoryRecall};
+use crate::provider::people::MemoryPeople;
 use crate::provider::records::{
     MemoryGoals, MemoryMaintenance, MemorySourceSink, MemoryToolMemory,
 };

@@ -223,10 +223,7 @@ pub trait MemoryPeople: Send + Sync {
     ///
     /// [`MemoryError::NotFound`] when the person is unknown; backend failures
     /// otherwise.
-    async fn record_interaction(
-        &self,
-        interaction: &PersonInteraction,
-    ) -> Result<(), MemoryError>;
+    async fn record_interaction(&self, interaction: &PersonInteraction) -> Result<(), MemoryError>;
 
     /// Seed people from the host platform's address book, when it has one.
     ///
