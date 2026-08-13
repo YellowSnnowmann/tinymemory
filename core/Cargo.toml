@@ -21,7 +21,7 @@ tinymemory = { path = ".." }
 # The default embedded engine. `store/`, `tree/` and `sync/` drive it directly;
 # `tinycortex-api` is a direct dependency because `tinycortex::memory` aliases
 # back only `{error, traits, types}`.
-tinycortex = { version = "0.1", features = ["obsidian", "persona", "sync"] }
+tinycortex = { version = "0.1", features = ["obsidian", "persona", "people", "sync"] }
 tinycortex-api = { version = "0.1" }
 
 # Chat-model and embedding primitives used by the tree summarizer and the
