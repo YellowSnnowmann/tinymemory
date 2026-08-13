@@ -1124,4 +1124,49 @@ mod tests {
             "a config-less adapter must not ingest into the memory tree"
         );
     }
+
+    /// The blank-scope guard: an item whose toolkit is empty would form an
+    /// unreachable `":conn"` tree scope, so `ingest_document_into_memory_tree`
+    /// skips it — the skill store still receives it, the tree does not. Covers
+    /// the early-return branch (a valid toolkit yields chunks, as the retrieval
+    /// test proves; a blank one must not).
+    #[tokio::test]
+    async fn blank_scope_item_is_skipped_for_memory_tree_ingest() {
+        use crate::store::{MemoryClient, MemoryClientRef};
+        use std::sync::Arc;
+        use tinycortex::memory::sync::{SkillDocSink, SkillDocument};
+        use tinymemory_api::host::test_support::TestHostConfig;
+        use tinymemory_api::host::MemoryHostConfig;
+
+        crate::test_seams::init();
+        let workspace = tempfile::tempdir().expect("workspace");
+        let workspace_dir = workspace.path().join("workspace");
+        let mut host = TestHostConfig::default();
+        host.workspace_dir = workspace_dir.clone();
+        let config = host.to_arc();
+        let client: MemoryClientRef = Arc::new(
+            MemoryClient::from_workspace_dir(workspace_dir).expect("memory client initialises"),
+        );
+        let adapter = super::HostSyncAdapter::with_config(client, config.clone());
+
+        adapter
+            .store(SkillDocument {
+                namespace_skill_id: "gmail".into(),
+                connection_id: "conn-1".into(),
+                document_id: "gmail:msg-1".into(),
+                title: "Quarterly planning".into(),
+                content: "Let's finalise the Q3 roadmap.".into(),
+                // Blank after trim — no platform scope can be formed.
+                toolkit: "   ".into(),
+                metadata: serde_json::json!({}),
+            })
+            .await
+            .expect("store must still succeed for an item without a tree scope");
+
+        assert_eq!(
+            crate::store::chunks::store::count_chunks(&*config).expect("count chunks"),
+            0,
+            "an item without a toolkit/connection scope must be skipped for tree ingest"
+        );
+    }
 }
