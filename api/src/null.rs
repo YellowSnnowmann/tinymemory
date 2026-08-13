@@ -60,9 +60,10 @@ use crate::provider::types::{
     MaintenanceReport, SnapshotRef, SourceItem, SourceScope,
 };
 use crate::provider::{
-    MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities, MemoryGoals, MemoryGraph,
-    MemoryIngest, MemoryMaintenance, MemoryPortability, MemoryProvider, MemoryRecall,
-    MemorySourceSink, MemoryToolMemory, MemoryTree,
+    AddressBookSeedOutcome, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities, MemoryGoals,
+    MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProvider,
+    MemoryRecall, MemorySourceSink, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction,
+    PersonRecord, PersonScore, RankedPerson, ResolvedPerson,
 };
 use crate::recall::OwnedRecallOpts;
 use crate::tool_memory::ToolMemoryRule;
@@ -472,6 +473,48 @@ impl MemoryMaintenance for NullMemoryProvider {
 
     async fn doctor(&self) -> Result<MaintenanceReport, MemoryError> {
         unsupported(Capability::Maintenance)
+    }
+}
+
+#[async_trait]
+impl MemoryPeople for NullMemoryProvider {
+    async fn list_people(&self, _limit: Option<usize>) -> Result<Vec<RankedPerson>, MemoryError> {
+        unsupported(Capability::People)
+    }
+
+    async fn get_person(&self, _person_id: &str) -> Result<Option<PersonRecord>, MemoryError> {
+        unsupported(Capability::People)
+    }
+
+    async fn resolve_handle(
+        &self,
+        _handle: &PersonHandle,
+        _create_if_missing: bool,
+    ) -> Result<Option<ResolvedPerson>, MemoryError> {
+        unsupported(Capability::People)
+    }
+
+    async fn add_handle_alias(
+        &self,
+        _person_id: &str,
+        _handle: &PersonHandle,
+    ) -> Result<(), MemoryError> {
+        unsupported(Capability::People)
+    }
+
+    async fn score_person(&self, _person_id: &str) -> Result<Option<PersonScore>, MemoryError> {
+        unsupported(Capability::People)
+    }
+
+    async fn record_interaction(
+        &self,
+        _interaction: &PersonInteraction,
+    ) -> Result<(), MemoryError> {
+        unsupported(Capability::People)
+    }
+
+    async fn seed_from_address_book(&self) -> Result<AddressBookSeedOutcome, MemoryError> {
+        unsupported(Capability::People)
     }
 }
 
