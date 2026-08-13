@@ -2010,6 +2010,7 @@ dependencies = [
  "tinymemory-core",
  "tinymemory-tinycortex",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
