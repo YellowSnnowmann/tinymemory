@@ -122,10 +122,6 @@ impl Capability {
         Capability::Core,
         Capability::Recall,
         Capability::Portability,
-        // Appended, never inserted: declaration order is bit order in
-        // `Capabilities`, so moving an existing variant would silently change
-        // what an already-persisted or already-transmitted bitset means.
-        Capability::People,
     ];
 
     /// Every family, in declaration order. Slice form of [`Self::ALL`], for
