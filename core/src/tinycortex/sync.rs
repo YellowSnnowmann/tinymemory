@@ -1003,7 +1003,9 @@ mod tests {
             MemoryClient::from_workspace_dir(workspace_dir)
                 .expect("memory client initialises against a fresh workspace"),
         );
-        // `new` leaves `config: None` — the config-less variant.
+        // `new` leaves `config: None` — the config-less variant. Keep a handle
+        // to the shared client so we can read the skill store back afterwards.
+        let store_client = client.clone();
         let adapter = super::HostSyncAdapter::new(client);
 
         adapter
@@ -1019,6 +1021,30 @@ mod tests {
             .await
             .expect("config-less store must still persist the skill document");
 
+        // The skill store still receives the document (the always-on half of
+        // `store`), keyed by its stable document id under `skill-gmail`.
+        let skill_docs = store_client
+            .list_documents(Some("skill-gmail"))
+            .await
+            .expect("list skill-gmail documents");
+        let documents = skill_docs
+            .get("documents")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(
+            documents.len(),
+            1,
+            "config-less store must persist exactly the one synced skill document"
+        );
+        let persisted = serde_json::to_string(&documents).expect("serialise skill documents");
+        assert!(
+            persisted.contains("gmail:msg-1") && persisted.contains("Quarterly planning"),
+            "the persisted skill document must carry the synced id and title"
+        );
+
+        // …but the tree is untouched, because the config-less adapter has no
+        // ingest pipeline.
         assert_eq!(
             crate::store::chunks::store::count_chunks(&*config).expect("count chunks"),
             0,
