@@ -61,6 +61,56 @@ impl HostSyncAdapter {
             config: Some(config),
         }
     }
+
+    /// Reconnect a synced Composio document to the memory tree (#5473).
+    ///
+    /// The TinyCortex migration (#4794) dropped the per-provider tree-ingest
+    /// half of the connector sync: synced items reached the `skill-<toolkit>`
+    /// document store but never `mem_tree_chunks`, so connector memories fell
+    /// out of tree-backed recall. This routes each synced item through the
+    /// engine's document ingest — the same L0-chunk path local folder sources
+    /// use via [`LocalDocumentSink`] — additively alongside the skill store.
+    ///
+    /// Scope naming matches the tree retrieval contract: the tree scope
+    /// (`path_scope`) is `"{toolkit}:{connection_id}"` so `query_source` resolves
+    /// it by platform prefix (`gmail:` → email, `slack:` → chat, …), while the
+    /// per-item `source_id` carries the document id so each message admits
+    /// independently rather than colliding on one dedup key.
+    ///
+    /// No summariser is required here: `ingest_document` writes the L0 chunks
+    /// synchronously and enqueues the (consent-gated) summary seal on the async
+    /// worker, so tree chunks land even when local AI is off.
+    async fn ingest_document_into_memory_tree(
+        &self,
+        config: &Config,
+        document: &SkillDocument,
+    ) -> anyhow::Result<()> {
+        let toolkit = document.toolkit.trim().to_ascii_lowercase();
+        let connection_id = document.connection_id.trim();
+        let tree_scope = format!("{toolkit}:{connection_id}");
+        let source_id = format!("{tree_scope}:{}", document.document_id);
+        let owner = format!("{toolkit}-sync:{connection_id}");
+        let input = tinycortex::memory::ingest::canonicalize::document::DocumentInput {
+            provider: format!("composio:{toolkit}"),
+            title: document.title.clone(),
+            body: document.content.clone(),
+            modified_at: chrono::Utc::now(),
+            source_ref: Some(document.document_id.clone()),
+        };
+        crate::ingest_pipeline::ingest_document_with_scope(
+            config,
+            &source_id,
+            &owner,
+            vec![toolkit],
+            input,
+            Some(tree_scope),
+        )
+        .await
+        .map(|_| ())
+        .map_err(|error| {
+            anyhow::anyhow!("memory-tree ingest failed for source `{source_id}`: {error}")
+        })
+    }
 }
 
 /// Append one host sync audit record, logging failures without exposing source identifiers.
@@ -579,14 +629,28 @@ impl SkillDocSink for HostSyncAdapter {
                 &document.title,
                 &document.content,
                 Some("tinycortex-sync".into()),
-                Some(document.metadata),
+                Some(document.metadata.clone()),
                 Some("medium".into()),
                 None,
                 None,
-                Some(document.document_id),
+                Some(document.document_id.clone()),
             )
             .await
-            .map_err(anyhow::Error::msg)
+            .map_err(anyhow::Error::msg)?;
+
+        // #5473: additively reconnect the synced item to the memory tree. A
+        // failure here must propagate so the sync cursor is not advanced past an
+        // item that never reached the tree (the `item_ids_ingested` contract the
+        // deleted per-provider modules carried). The config-less adapter
+        // (`sync_context`) has no ingest pipeline and is not on the connector
+        // sync path, so it skips tree ingest.
+        match self.config.clone() {
+            Some(config) => {
+                self.ingest_document_into_memory_tree(&*config, &document)
+                    .await
+            }
+            None => Ok(()),
+        }
     }
 
     async fn delete(&self, namespace_skill_id: &str, document_id: &str) -> anyhow::Result<()> {
@@ -832,6 +896,133 @@ mod tests {
         assert!(
             error.downcast_ref::<std::io::Error>().is_some(),
             "expected the audit I/O error to remain distinguishable: {error:#}"
+        );
+    }
+
+    /// Regression for #5473: a Composio connector sync must feed the memory tree,
+    /// not just the `skill-<toolkit>` document store. The TinyCortex migration
+    /// (#4794) dropped the tree-ingest half, so synced items stopped producing
+    /// `mem_tree_chunks` rows and fell out of tree-backed recall. This fails if
+    /// the `SkillDocSink` store path ever stops writing tree chunks again.
+    #[tokio::test]
+    async fn composio_sync_document_reaches_memory_tree() {
+        use crate::store::{MemoryClient, MemoryClientRef};
+        use std::sync::Arc;
+        use tinycortex::memory::sync::{SkillDocSink, SkillDocument};
+        use tinymemory_api::host::test_support::TestHostConfig;
+        use tinymemory_api::host::MemoryHostConfig;
+
+        crate::test_seams::init();
+        let workspace = tempfile::tempdir().expect("workspace");
+        let workspace_dir = workspace.path().join("workspace");
+
+        let mut host = TestHostConfig::default();
+        host.workspace_dir = workspace_dir.clone();
+        let config = host.to_arc();
+
+        let client: MemoryClientRef = Arc::new(
+            MemoryClient::from_workspace_dir(workspace_dir)
+                .expect("memory client initialises against a fresh workspace"),
+        );
+        let adapter = super::HostSyncAdapter::with_config(client, config.clone());
+
+        // Precondition: a fresh tree is empty, so a post-store non-zero count is
+        // attributable to the sync path rather than to pre-existing state.
+        assert_eq!(
+            crate::store::chunks::store::count_chunks(&*config).expect("count chunks"),
+            0,
+            "fresh workspace must start with an empty memory tree"
+        );
+
+        adapter
+            .store(SkillDocument {
+                namespace_skill_id: "gmail".into(),
+                connection_id: "conn-1".into(),
+                document_id: "gmail:msg-1".into(),
+                title: "Quarterly planning".into(),
+                content: "Let's finalise the Q3 roadmap and align on the launch date.".into(),
+                toolkit: "gmail".into(),
+                metadata: serde_json::json!({ "source": "composio-provider-incremental" }),
+            })
+            .await
+            .expect("storing a synced document must also ingest it into the memory tree");
+
+        let chunks = crate::store::chunks::store::count_chunks(&*config).expect("count chunks");
+        assert!(
+            chunks > 0,
+            "a Composio sync must add mem_tree_chunks rows for the ingested item (#5473)"
+        );
+
+        // The chunk must carry the deterministic per-item source id
+        // `{toolkit}:{connection_id}:{document_id}`; its `path_scope`
+        // (`gmail:conn-1`) is what tree retrieval resolves by platform prefix.
+        // A drift here is the silent "ingests but is never retrievable" trap.
+        let scoped = crate::store::chunks::store::list_chunks(
+            &*config,
+            &tinycortex::memory::chunks::ListChunksQuery {
+                source_id: Some("gmail:conn-1:gmail:msg-1".into()),
+                limit: Some(8),
+                ..Default::default()
+            },
+        )
+        .expect("list chunks by source id");
+        assert!(
+            !scoped.is_empty(),
+            "ingested chunks must be keyed by the deterministic connector source id"
+        );
+        assert!(
+            scoped
+                .iter()
+                .all(|chunk| chunk.metadata.path_scope.as_deref() == Some("gmail:conn-1")),
+            "connector chunks must carry the `{{toolkit}}:{{connection_id}}` tree scope so \
+             query_source resolves them (gmail → email)"
+        );
+    }
+
+    /// The config-less adapter (`sync_context`) has no ingest pipeline and is not
+    /// on the connector sync path, so it stores the skill document without
+    /// touching the memory tree. Guards the `None` branch of `store` from
+    /// regressing into a panic or an accidental (workspace-less) ingest.
+    #[tokio::test]
+    async fn config_less_adapter_skips_memory_tree_ingest() {
+        use crate::store::{MemoryClient, MemoryClientRef};
+        use std::sync::Arc;
+        use tinycortex::memory::sync::{SkillDocSink, SkillDocument};
+        use tinymemory_api::host::test_support::TestHostConfig;
+        use tinymemory_api::host::MemoryHostConfig;
+
+        crate::test_seams::init();
+        let workspace = tempfile::tempdir().expect("workspace");
+        let workspace_dir = workspace.path().join("workspace");
+
+        let mut host = TestHostConfig::default();
+        host.workspace_dir = workspace_dir.clone();
+        let config = host.to_arc();
+
+        let client: MemoryClientRef = Arc::new(
+            MemoryClient::from_workspace_dir(workspace_dir)
+                .expect("memory client initialises against a fresh workspace"),
+        );
+        // `new` leaves `config: None` — the config-less variant.
+        let adapter = super::HostSyncAdapter::new(client);
+
+        adapter
+            .store(SkillDocument {
+                namespace_skill_id: "gmail".into(),
+                connection_id: "conn-1".into(),
+                document_id: "gmail:msg-1".into(),
+                title: "Quarterly planning".into(),
+                content: "Let's finalise the Q3 roadmap and align on the launch date.".into(),
+                toolkit: "gmail".into(),
+                metadata: serde_json::json!({ "source": "composio-provider-incremental" }),
+            })
+            .await
+            .expect("config-less store must still persist the skill document");
+
+        assert_eq!(
+            crate::store::chunks::store::count_chunks(&*config).expect("count chunks"),
+            0,
+            "a config-less adapter must not ingest into the memory tree"
         );
     }
 }
