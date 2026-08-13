@@ -57,6 +57,7 @@ use crate::error::MemoryError;
 use crate::health::MemoryHealth;
 use crate::provider::content::{MemoryDocuments, MemoryIngest, MemoryTree};
 use crate::provider::knowledge::{MemoryDiff, MemoryEntities, MemoryGraph};
+use crate::provider::people::MemoryPeople;
 use crate::provider::mandatory::{MemoryCore, MemoryPortability, MemoryRecall};
 use crate::provider::records::{
     MemoryGoals, MemoryMaintenance, MemorySourceSink, MemoryToolMemory,
@@ -69,7 +70,7 @@ use crate::provider::records::{
 /// supertraits, so a driver missing any of them cannot be constructed as a
 /// provider at all.
 ///
-/// The ten optional families are reached through the `as_*` accessors below.
+/// The eleven optional families are reached through the `as_*` accessors below.
 /// Each defaults to `None`, so a minimal driver implements only what it
 /// supports and inherits correct absence for everything else.
 #[async_trait]
@@ -167,6 +168,11 @@ pub trait MemoryProvider: MemoryCore + MemoryRecall + MemoryPortability + 'stati
         None
     }
 
+    /// Contacts, handle resolution and closeness scoring, when advertised.
+    fn as_people(&self) -> Option<&dyn MemoryPeople> {
+        None
+    }
+
     /// Whether `capability` is actually **reachable** on this driver.
     ///
     /// This is the implementation-side truth, as opposed to
@@ -192,6 +198,7 @@ pub trait MemoryProvider: MemoryCore + MemoryRecall + MemoryPortability + 'stati
             Capability::ToolMemory => self.as_tool_memory().is_some(),
             Capability::Sources => self.as_sources().is_some(),
             Capability::Maintenance => self.as_maintenance().is_some(),
+            Capability::People => self.as_people().is_some(),
         }
     }
 }

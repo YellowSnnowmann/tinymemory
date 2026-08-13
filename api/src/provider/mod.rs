@@ -1,4 +1,4 @@
-//! The memory driver contract: [`MemoryProvider`] plus the thirteen capability
+//! The memory driver contract: [`MemoryProvider`] plus the fourteen capability
 //! family traits a driver may implement.
 //!
 //! ## Shape
@@ -21,7 +21,7 @@
 //! ```
 //!
 //! The mandatory three are supertraits, so "mandatory" is enforced by the type
-//! system rather than by a runtime check. The optional ten are accessors that
+//! system rather than by a runtime check. The optional eleven are accessors that
 //! default to `None`, so absence is the default and presence is opt-in.
 //!
 //! ## Rules that bind every family
@@ -45,7 +45,7 @@
 //!
 //! ## Reference implementation
 //!
-//! [`crate::null::NullMemoryProvider`] implements all thirteen families:
+//! [`crate::null::NullMemoryProvider`] implements all fourteen families:
 //! `/dev/null` semantics for the mandatory three, and
 //! [`crate::error::MemoryError::Unsupported`] for the other ten, which it does
 //! not advertise. It is what a compiled-out or unconfigured memory subsystem
@@ -57,6 +57,7 @@ pub mod content;
 pub mod driver;
 pub mod knowledge;
 pub mod mandatory;
+pub mod people;
 pub mod records;
 pub mod types;
 
@@ -65,6 +66,10 @@ pub use content::{MemoryDocuments, MemoryIngest, MemoryTree};
 pub use driver::MemoryProvider;
 pub use knowledge::{MemoryDiff, MemoryEntities, MemoryGraph};
 pub use mandatory::{MemoryCore, MemoryPortability, MemoryRecall};
+pub use people::{
+    AddressBookSeedOutcome, MemoryPeople, PersonHandle, PersonInteraction, PersonRecord, PersonRef,
+    PersonScore, RankedPerson, ResolvedPerson,
+};
 pub use records::{MemoryGoals, MemoryMaintenance, MemorySourceSink, MemoryToolMemory};
 pub use types::{
     ChangeKind, DiffReport, EntityHit, EntityRef, ExportPage, ExportRecord, ImportOutcome,

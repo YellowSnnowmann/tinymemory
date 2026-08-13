@@ -41,10 +41,10 @@
 //! - [`recall`]: the borrowed [`recall::RecallOpts`] and owned, serde-derived
 //!   [`recall::OwnedRecallOpts`] recall filters (both re-exported from
 //!   [`types`]).
-//! - [`capabilities`]: the thirteen [`capabilities::Capability`] families and
+//! - [`capabilities`]: the fourteen [`capabilities::Capability`] families and
 //!   the [`capabilities::Capabilities`] set negotiated at bind time.
 //! - [`provider`]: the driver contract — [`provider::MemoryProvider`] plus the
-//!   thirteen capability family traits and the value types they need.
+//!   fourteen capability family traits and the value types they need.
 //! - [`null`]: [`null::NullMemoryProvider`], the reference driver a
 //!   compiled-out or unconfigured memory subsystem binds to.
 //! - [`health`]: [`health::MemoryHealth`], the liveness state a driver reports.

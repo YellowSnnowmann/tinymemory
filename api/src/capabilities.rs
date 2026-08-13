@@ -51,7 +51,7 @@ use crate::error::MemoryError;
 
 /// One capability family a memory driver may advertise.
 ///
-/// The variants are exactly the thirteen families of the memory contract. Each
+/// The variants are exactly the fourteen families of the memory contract. Each
 /// maps to a trait family in the contract, a group of RPC methods, and a group
 /// of agent tools; a driver that does not advertise a family simply has that
 /// surface absent.
@@ -85,6 +85,8 @@ pub enum Capability {
     Maintenance,
     /// Export and import of the whole store as a stream. **Mandatory.**
     Portability,
+    /// Contacts, handle resolution, and closeness scoring.
+    People,
 }
 
 impl Capability {
@@ -93,7 +95,7 @@ impl Capability {
     /// Declaration order is also bit order in [`Capabilities`] and iteration
     /// order in its serialized form, so this slice is the single ordering
     /// authority for the whole module.
-    pub const ALL: [Capability; 13] = [
+    pub const ALL: [Capability; 14] = [
         Capability::Core,
         Capability::Recall,
         Capability::Ingest,
@@ -107,6 +109,10 @@ impl Capability {
         Capability::Sources,
         Capability::Maintenance,
         Capability::Portability,
+        // Appended, never inserted: declaration order is bit order in
+        // `Capabilities`, so moving an existing variant would silently change
+        // what an already-persisted or already-transmitted bitset means.
+        Capability::People,
     ];
 
     /// The families a driver must advertise to be bindable at all.
@@ -116,6 +122,10 @@ impl Capability {
         Capability::Core,
         Capability::Recall,
         Capability::Portability,
+        // Appended, never inserted: declaration order is bit order in
+        // `Capabilities`, so moving an existing variant would silently change
+        // what an already-persisted or already-transmitted bitset means.
+        Capability::People,
     ];
 
     /// Every family, in declaration order. Slice form of [`Self::ALL`], for
@@ -145,6 +155,7 @@ impl Capability {
             Self::Sources => "sources",
             Self::Maintenance => "maintenance",
             Self::Portability => "portability",
+            Self::People => "people",
         }
     }
 
@@ -187,6 +198,7 @@ impl Capability {
             Self::Sources => 10,
             Self::Maintenance => 11,
             Self::Portability => 12,
+            Self::People => 13,
         }
     }
 
