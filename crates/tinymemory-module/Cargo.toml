@@ -33,7 +33,10 @@ tinymemory = { path = "../.." }
 # loads this binary compiles neither.
 tinymemory-core = { path = "../../core", features = ["memory-git"] }
 tinymemory-tinycortex = { path = "../../adapters/tinycortex" }
-tinycortex = { version = "0.1" }
+# `people` is enabled here rather than inherited: the module serves the
+# `MemoryPeople` family directly off the engine's people store, so it needs the
+# gate on even though `tinymemory-core` only re-exports the domain.
+tinycortex = { version = "0.1", features = ["people"] }
 tinyagents = { version = "2.1" }
 # TinyBus provides the typed service interface and the dynamic module host ABI.
 # Reached by path now that this crate is its own workspace root: the nested
@@ -49,6 +52,9 @@ async-trait = "0.1"
 # `EmbeddingProvider::embed` is anyhow-typed.
 anyhow = "1"
 chrono = "0.4"
+# `PersonRef` crosses the contract as an opaque string; the engine keys people
+# by `Uuid`, so the People family parses one at the boundary.
+uuid = "1"
 # Diagnostics. Never carries a namespace key or entry content — see `service`.
 log = "0.4"
 # Module configuration is JSON supplied by the host at load time.
