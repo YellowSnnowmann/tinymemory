@@ -51,7 +51,7 @@ use crate::error::MemoryError;
 
 /// One capability family a memory driver may advertise.
 ///
-/// The variants are exactly the fourteen families of the memory contract. Each
+/// The variants are exactly the sixteen families of the memory contract. Each
 /// maps to a trait family in the contract, a group of RPC methods, and a group
 /// of agent tools; a driver that does not advertise a family simply has that
 /// surface absent.
@@ -87,6 +87,11 @@ pub enum Capability {
     Portability,
     /// Contacts, handle resolution, and closeness scoring.
     People,
+    /// Direct read access to the stored chunk tier.
+    Chunks,
+    /// Deterministic retrieval primitives: graph walk, time-window cover,
+    /// entity-index search.
+    Retrieval,
 }
 
 impl Capability {
@@ -95,7 +100,7 @@ impl Capability {
     /// Declaration order is also bit order in [`Capabilities`] and iteration
     /// order in its serialized form, so this slice is the single ordering
     /// authority for the whole module.
-    pub const ALL: [Capability; 14] = [
+    pub const ALL: [Capability; 16] = [
         Capability::Core,
         Capability::Recall,
         Capability::Ingest,
@@ -113,6 +118,8 @@ impl Capability {
         // `Capabilities`, so moving an existing variant would silently change
         // what an already-persisted or already-transmitted bitset means.
         Capability::People,
+        Capability::Chunks,
+        Capability::Retrieval,
     ];
 
     /// The families a driver must advertise to be bindable at all.
@@ -152,6 +159,8 @@ impl Capability {
             Self::Maintenance => "maintenance",
             Self::Portability => "portability",
             Self::People => "people",
+            Self::Chunks => "chunks",
+            Self::Retrieval => "retrieval",
         }
     }
 
@@ -195,6 +204,8 @@ impl Capability {
             Self::Maintenance => 11,
             Self::Portability => 12,
             Self::People => 13,
+            Self::Chunks => 14,
+            Self::Retrieval => 15,
         }
     }
 

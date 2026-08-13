@@ -675,11 +675,7 @@ impl MemoryService {
             .map_err(|error| into_bus_error(&error))
     }
 
-    async fn add_handle_alias(
-        &self,
-        person_id: String,
-        handle: PersonHandle,
-    ) -> BusResult<()> {
+    async fn add_handle_alias(&self, person_id: String, handle: PersonHandle) -> BusResult<()> {
         require_family!(self, as_people, Capability::People)
             .add_handle_alias(&person_id, &handle)
             .await

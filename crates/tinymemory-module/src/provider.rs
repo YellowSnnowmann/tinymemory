@@ -1315,7 +1315,10 @@ impl MemoryPeople for ModuleMemoryProvider {
         let mut ranked: Vec<RankedPerson> = people
             .into_iter()
             .map(|person| {
-                let observed = interactions.get(&person.id).map(Vec::as_slice).unwrap_or(&[]);
+                let observed = interactions
+                    .get(&person.id)
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
                 let score = tinycortex::memory::people::scorer::score(observed, now);
                 RankedPerson {
                     person: person_to_contract(person),
@@ -1416,10 +1419,7 @@ impl MemoryPeople for ModuleMemoryProvider {
         )))
     }
 
-    async fn record_interaction(
-        &self,
-        interaction: &PersonInteraction,
-    ) -> Result<(), MemoryError> {
+    async fn record_interaction(&self, interaction: &PersonInteraction) -> Result<(), MemoryError> {
         let store = people_store(&self.config.workspace_dir)?;
         let PersonInteraction {
             person_id,

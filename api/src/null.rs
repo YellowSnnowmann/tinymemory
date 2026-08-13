@@ -10,7 +10,7 @@
 //! `stub.rs` files with one generic answer.
 //!
 //! It is also the fixture the capability-degradation tests bind: with it in the
-//! slot, the eleven optional families are unadvertised, so their RPC methods are
+//! slot, the thirteen optional families are unadvertised, so their RPC methods are
 //! unregistered and their agent tools are absent — and the core still boots.
 //!
 //! And it is the existence proof for the mandatory set: if
@@ -32,9 +32,9 @@
 //! driver that failed to bind — **that** case falls back to the embedded
 //! default, never to this. Do not wire it as a general-purpose failure mode.
 //!
-//! ## Why it implements all fourteen families but advertises three
+//! ## Why it implements all sixteen families but advertises three
 //!
-//! The eleven optional families are implemented and every method returns
+//! The thirteen optional families are implemented and every method returns
 //! [`crate::error::MemoryError::Unsupported`] naming its family, but the
 //! `as_*` accessors return `None` and
 //! [`crate::provider::MemoryProvider::capabilities`] lists only the mandatory
@@ -60,7 +60,8 @@ use crate::provider::types::{
     MaintenanceReport, SnapshotRef, SourceItem, SourceScope,
 };
 use crate::provider::{
-    AddressBookSeedOutcome, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities, MemoryGoals,
+    AddressBookSeedOutcome, ChunkEmbedding, ChunkQuery, CoverWindowQuery, EntityMatch,
+    FastRetrieveQuery, MemoryChunks, MemoryRetrieval, RetrievalResponse, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities, MemoryGoals,
     MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProvider,
     MemoryRecall, MemorySourceSink, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction,
     PersonRecord, PersonScore, RankedPerson, ResolvedPerson,
@@ -102,7 +103,7 @@ impl MemoryProvider for NullMemoryProvider {
         NULL_DRIVER_ID
     }
 
-    /// Exactly the mandatory three. The eleven optional families are implemented
+    /// Exactly the mandatory three. The thirteen optional families are implemented
     /// below but deliberately not advertised, so they stay unreachable through
     /// the trait object.
     fn capabilities(&self) -> Capabilities {
@@ -515,6 +516,61 @@ impl MemoryPeople for NullMemoryProvider {
 
     async fn seed_from_address_book(&self) -> Result<AddressBookSeedOutcome, MemoryError> {
         unsupported(Capability::People)
+    }
+}
+
+#[async_trait]
+impl MemoryChunks for NullMemoryProvider {
+    async fn list_chunks(
+        &self,
+        _query: &ChunkQuery,
+        _scope: Option<&SourceScope>,
+    ) -> Result<Vec<crate::chunks::Chunk>, MemoryError> {
+        unsupported(Capability::Chunks)
+    }
+
+    async fn get_chunk(
+        &self,
+        _chunk_id: &str,
+    ) -> Result<Option<crate::chunks::Chunk>, MemoryError> {
+        unsupported(Capability::Chunks)
+    }
+
+    async fn chunk_embeddings(
+        &self,
+        _chunk_ids: &[String],
+        _model_signature: &str,
+    ) -> Result<Vec<ChunkEmbedding>, MemoryError> {
+        unsupported(Capability::Chunks)
+    }
+}
+
+#[async_trait]
+impl MemoryRetrieval for NullMemoryProvider {
+    async fn fast_retrieve(
+        &self,
+        _query: &str,
+        _options: FastRetrieveQuery,
+        _scope: Option<&SourceScope>,
+    ) -> Result<RetrievalResponse, MemoryError> {
+        unsupported(Capability::Retrieval)
+    }
+
+    async fn cover_window(
+        &self,
+        _window: &CoverWindowQuery,
+        _scope: Option<&SourceScope>,
+    ) -> Result<RetrievalResponse, MemoryError> {
+        unsupported(Capability::Retrieval)
+    }
+
+    async fn search_entities(
+        &self,
+        _query: &str,
+        _kinds: Option<&[String]>,
+        _limit: usize,
+    ) -> Result<Vec<EntityMatch>, MemoryError> {
+        unsupported(Capability::Retrieval)
     }
 }
 

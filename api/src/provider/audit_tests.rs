@@ -135,13 +135,13 @@ fn honest_driver_passes_the_audit() {
 #[test]
 fn over_claiming_driver_is_reported_as_advertised_but_absent() {
     // Advertises everything, exposes no optional accessor. Every one of the
-    // eleven optional families would fail on first call — the exact
+    // thirteen optional families would fail on first call — the exact
     // registered-but-failing outcome the capability filter exists to prevent.
     let liar = Fixture::new(Capabilities::all(), false);
 
     let audit = audit_provider(&liar).expect_err("over-claiming driver must fail the audit");
     assert_eq!(audit.present_but_unadvertised, Vec::new());
-    assert_eq!(audit.advertised_but_absent.len(), 11);
+    assert_eq!(audit.advertised_but_absent.len(), 13);
     assert!(audit.advertised_but_absent.contains(&Capability::Tree));
     // The mandatory three are supertraits, so they can never be missing.
     assert!(!audit.advertised_but_absent.contains(&Capability::Core));

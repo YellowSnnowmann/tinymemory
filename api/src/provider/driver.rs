@@ -58,7 +58,9 @@ use crate::health::MemoryHealth;
 use crate::provider::content::{MemoryDocuments, MemoryIngest, MemoryTree};
 use crate::provider::knowledge::{MemoryDiff, MemoryEntities, MemoryGraph};
 use crate::provider::mandatory::{MemoryCore, MemoryPortability, MemoryRecall};
+use crate::provider::chunks::MemoryChunks;
 use crate::provider::people::MemoryPeople;
+use crate::provider::retrieval::MemoryRetrieval;
 use crate::provider::records::{
     MemoryGoals, MemoryMaintenance, MemorySourceSink, MemoryToolMemory,
 };
@@ -70,7 +72,7 @@ use crate::provider::records::{
 /// supertraits, so a driver missing any of them cannot be constructed as a
 /// provider at all.
 ///
-/// The eleven optional families are reached through the `as_*` accessors below.
+/// The thirteen optional families are reached through the `as_*` accessors below.
 /// Each defaults to `None`, so a minimal driver implements only what it
 /// supports and inherits correct absence for everything else.
 #[async_trait]
@@ -173,6 +175,16 @@ pub trait MemoryProvider: MemoryCore + MemoryRecall + MemoryPortability + 'stati
         None
     }
 
+    /// Direct chunk-tier reads, when advertised.
+    fn as_chunks(&self) -> Option<&dyn MemoryChunks> {
+        None
+    }
+
+    /// Deterministic retrieval primitives, when advertised.
+    fn as_retrieval(&self) -> Option<&dyn MemoryRetrieval> {
+        None
+    }
+
     /// Whether `capability` is actually **reachable** on this driver.
     ///
     /// This is the implementation-side truth, as opposed to
@@ -199,6 +211,8 @@ pub trait MemoryProvider: MemoryCore + MemoryRecall + MemoryPortability + 'stati
             Capability::Sources => self.as_sources().is_some(),
             Capability::Maintenance => self.as_maintenance().is_some(),
             Capability::People => self.as_people().is_some(),
+            Capability::Chunks => self.as_chunks().is_some(),
+            Capability::Retrieval => self.as_retrieval().is_some(),
         }
     }
 }
