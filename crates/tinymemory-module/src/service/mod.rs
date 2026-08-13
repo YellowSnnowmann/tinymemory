@@ -25,7 +25,21 @@
 //! ScorePerson(person_id)                            -> Option<PersonScore>
 //! RecordInteraction(interaction)                    -> ()
 //! SeedFromAddressBook()                             -> AddressBookSeedOutcome
+//!
+//! ListChunks(query, scope)                          -> [Chunk]
+//! GetChunk(chunk_id)                                -> Option<Chunk>
+//! ChunkEmbeddings(chunk_ids, model_signature)       -> [ChunkEmbedding]
+//! FastRetrieve(query, options, scope)               -> RetrievalResponse
+//! CoverWindow(window, scope)                        -> RetrievalResponse
+//! SearchEntities(query, kinds, limit)               -> [EntityMatch]
 //! ```
+//!
+//! # Source scope crosses as an argument, never as ambient state
+//!
+//! Every scoped method above takes `scope` explicitly. In-process the engine
+//! resolves it from a task-local; that task-local belongs to the *host's* task
+//! and does not exist on this side of a bus call. Inferring it here would read
+//! as absent, and absent means unrestricted — a source gate failing open.
 //!
 //! # Why the method list mirrors a trait exactly
 //!
@@ -91,6 +105,10 @@ use tinymemory_api::provider::types::{
 // `MemoryCore`, `MemoryRecall` and `MemoryPortability` are deliberately not
 // imported: they are supertraits of `MemoryProvider`, so their methods are
 // already callable on the trait object.
+use tinymemory_api::provider::chunks::{ChunkEmbedding, ChunkQuery};
+use tinymemory_api::provider::retrieval::{
+    CoverWindowQuery, EntityMatch, FastRetrieveQuery, RetrievalResponse,
+};
 use tinymemory_api::provider::people::{
     AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
     RankedPerson, ResolvedPerson,
@@ -701,6 +719,94 @@ impl MemoryService {
             .seed_from_address_book()
             .await
             .map_err(|error| into_bus_error(&error))
+    }
+
+    // ── Chunks ──────────────────────────────────────────────────────────────
+
+    /// Chunks matching the query, size-checked.
+    ///
+    /// `ChunkQuery::limit` bounds rows, not bytes, and a chunk carries full
+    /// content — so this is one of the methods where the ceiling matters most.
+    async fn list_chunks(
+        &self,
+        query: ChunkQuery,
+        scope: Option<SourceScope>,
+    ) -> BusResult<Vec<Chunk>> {
+        let chunks = require_family!(self, as_chunks, Capability::Chunks)
+            .list_chunks(&query, scope.as_ref())
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&chunks, "ListChunks")?;
+        Ok(chunks)
+    }
+
+    async fn get_chunk(&self, chunk_id: String) -> BusResult<Option<Chunk>> {
+        require_family!(self, as_chunks, Capability::Chunks)
+            .get_chunk(&chunk_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Embedding vectors are the largest thing this interface returns.
+    ///
+    /// A 1536-dimension vector encodes to roughly 10 KiB of JSON, so a few
+    /// hundred chunks reach the frame ceiling on their own. Checked for the same
+    /// reason `List` is, and refused by name rather than truncated — a short
+    /// batch is indistinguishable from "those chunks have no vector".
+    async fn chunk_embeddings(
+        &self,
+        chunk_ids: Vec<String>,
+        model_signature: String,
+    ) -> BusResult<Vec<ChunkEmbedding>> {
+        let embeddings = require_family!(self, as_chunks, Capability::Chunks)
+            .chunk_embeddings(&chunk_ids, &model_signature)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&embeddings, "ChunkEmbeddings")?;
+        Ok(embeddings)
+    }
+
+    // ── Retrieval ───────────────────────────────────────────────────────────
+
+    async fn fast_retrieve(
+        &self,
+        query: String,
+        options: FastRetrieveQuery,
+        scope: Option<SourceScope>,
+    ) -> BusResult<RetrievalResponse> {
+        let response = require_family!(self, as_retrieval, Capability::Retrieval)
+            .fast_retrieve(&query, options, scope.as_ref())
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&response, "FastRetrieve")?;
+        Ok(response)
+    }
+
+    async fn cover_window(
+        &self,
+        window: CoverWindowQuery,
+        scope: Option<SourceScope>,
+    ) -> BusResult<RetrievalResponse> {
+        let response = require_family!(self, as_retrieval, Capability::Retrieval)
+            .cover_window(&window, scope.as_ref())
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&response, "CoverWindow")?;
+        Ok(response)
+    }
+
+    async fn search_entities(
+        &self,
+        query: String,
+        kinds: Option<Vec<String>>,
+        limit: usize,
+    ) -> BusResult<Vec<EntityMatch>> {
+        let matches = require_family!(self, as_retrieval, Capability::Retrieval)
+            .search_entities(&query, kinds.as_deref(), limit)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&matches, "SearchEntities")?;
+        Ok(matches)
     }
 }
 
