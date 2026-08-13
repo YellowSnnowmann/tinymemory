@@ -56,14 +56,6 @@ url = "2"
 uuid = { version = "1", features = ["v4"] }
 walkdir = "2"
 
-# macOS address-book reader behind `people/address_book.rs`. Gated by the
-# host's `contacts` feature, forwarded here.
-[target.'cfg(target_os = "macos")'.dependencies]
-objc2 = { version = "0.6", optional = true }
-objc2-foundation = { version = "0.3", features = ["NSArray", "NSError", "NSObject", "NSString", "NSPredicate"], optional = true }
-objc2-contacts = { version = "0.3.2", features = ["CNContact", "CNContactFetchRequest", "CNContactStore", "CNLabeledValue", "CNPhoneNumber"], optional = true }
-block2 = { version = "0.6", optional = true }
-
 [dev-dependencies]
 # `TestHostConfig` — the concrete `MemoryHostConfig` the extracted test suites
 # build, since `Config` is a trait object and cannot be `Default`ed.
