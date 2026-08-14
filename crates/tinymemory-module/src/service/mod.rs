@@ -33,8 +33,8 @@
 //! CoverWindow(window, scope)                        -> RetrievalResponse
 //! SearchEntities(query, kinds, limit)               -> [EntityMatch]
 //! RetrieveSource(query, scope)                      -> RetrievalResponse
-//! DrillDown(node_id, max_depth, query, limit)       -> [RetrievalHit]
-//! FetchLeaves(chunk_ids)                            -> [RetrievalHit]
+//! RetrieveChildren(node_id, max_depth, query, limit) -> [RetrievalHit]
+//! RetrieveLeaves(chunk_ids)                          -> [RetrievalHit]
 //! ```
 //!
 //! # Source scope crosses as an argument, never as ambient state
@@ -812,7 +812,7 @@ impl MemoryService {
         Ok(response)
     }
 
-    async fn drill_down(
+    async fn retrieve_children(
         &self,
         node_id: String,
         max_depth: u32,
@@ -820,19 +820,19 @@ impl MemoryService {
         limit: Option<usize>,
     ) -> BusResult<Vec<RetrievalHit>> {
         let hits = require_family!(self, as_retrieval, Capability::Retrieval)
-            .drill_down(&node_id, max_depth, query.as_deref(), limit)
+            .retrieve_children(&node_id, max_depth, query.as_deref(), limit)
             .await
             .map_err(|error| into_bus_error(&error))?;
-        ensure_response_fits(&hits, "DrillDown")?;
+        ensure_response_fits(&hits, "RetrieveChildren")?;
         Ok(hits)
     }
 
-    async fn fetch_leaves(&self, chunk_ids: Vec<String>) -> BusResult<Vec<RetrievalHit>> {
+    async fn retrieve_leaves(&self, chunk_ids: Vec<String>) -> BusResult<Vec<RetrievalHit>> {
         let hits = require_family!(self, as_retrieval, Capability::Retrieval)
-            .fetch_leaves(&chunk_ids)
+            .retrieve_leaves(&chunk_ids)
             .await
             .map_err(|error| into_bus_error(&error))?;
-        ensure_response_fits(&hits, "FetchLeaves")?;
+        ensure_response_fits(&hits, "RetrieveLeaves")?;
         Ok(hits)
     }
 
