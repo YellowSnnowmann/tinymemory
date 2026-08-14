@@ -61,11 +61,12 @@ use crate::provider::types::{
 };
 use crate::provider::{
     AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, CoverWindowQuery, EntityMatch,
-    FastRetrieveQuery, MemoryChunks, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities,
-    MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople, MemoryPortability,
-    MemoryProvider, MemoryRecall, MemoryRetrieval, MemorySourceSink, MemoryToolMemory, MemoryTree,
-    PersonHandle, PersonInteraction, PersonRecord, PersonScore, RankedPerson, ResolvedPerson,
-    RetrievalHit, RetrievalResponse, SourceRetrievalQuery,
+    FacetType, FastRetrieveQuery, MemoryChunks, MemoryCore, MemoryDiff, MemoryDocuments,
+    MemoryEntities, MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople,
+    MemoryPortability, MemoryProfile, MemoryProvider, MemoryRecall, MemoryRetrieval,
+    MemorySourceSink, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction, PersonRecord,
+    PersonScore, ProfileFacet, RankedPerson, ResolvedPerson, RetrievalHit, RetrievalResponse,
+    SourceRetrievalQuery, UserState,
 };
 use crate::recall::OwnedRecallOpts;
 use crate::tool_memory::ToolMemoryRule;
@@ -616,6 +617,60 @@ impl MemoryRetrieval for NullMemoryProvider {
         _limit: usize,
     ) -> Result<Vec<EntityMatch>, MemoryError> {
         unsupported(Capability::Retrieval)
+    }
+}
+
+#[async_trait]
+impl MemoryProfile for NullMemoryProvider {
+    async fn list_active_facets(&self) -> Result<Vec<ProfileFacet>, MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn list_all_facets(&self) -> Result<Vec<ProfileFacet>, MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn get_facet(&self, _key: &str) -> Result<Option<ProfileFacet>, MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn facets_by_type(
+        &self,
+        _facet_type: FacetType,
+    ) -> Result<Vec<ProfileFacet>, MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn upsert_facet(&self, _facet: &ProfileFacet) -> Result<(), MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn upsert_provider_facet(
+        &self,
+        _facet_id: &str,
+        _facet_type: FacetType,
+        _key: &str,
+        _value: &str,
+        _confidence: f64,
+        _segment_id: Option<&str>,
+        _observed_at: f64,
+    ) -> Result<(), MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn set_facet_user_state(
+        &self,
+        _key: &str,
+        _user_state: UserState,
+    ) -> Result<bool, MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn delete_facet(&self, _key: &str) -> Result<bool, MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn delete_facet_by_id(&self, _facet_id: &str) -> Result<bool, MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn drop_facets_below(&self, _threshold: f64) -> Result<usize, MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    /// `false`, matching the trait's documented "an error reads as no".
+    async fn workflow_identity_matches(&self, _pattern: &str, _value: &str) -> bool {
+        false
     }
 }
 

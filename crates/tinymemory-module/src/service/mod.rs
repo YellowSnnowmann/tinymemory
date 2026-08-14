@@ -30,6 +30,13 @@
 //! GetChunk(chunk_id)                                -> Option<Chunk>
 //! ChunkDetail(chunk_id)                             -> Option<ChunkDetail>
 //! StorageKinds()                                    -> [String]
+//!
+//! ListActiveFacets() / ListAllFacets()               -> [ProfileFacet]
+//! GetFacet(key) / FacetsByType(type)                 -> facet(s)
+//! UpsertFacet(facet) / UpsertProviderFacet(…)        -> ()
+//! SetFacetUserState(key, state) / DeleteFacet(key)   -> bool
+//! DeleteFacetById(id) / DropFacetsBelow(threshold)   -> bool / usize
+//! WorkflowIdentityMatches(pattern, value)            -> bool
 //! ChunkEmbeddings(chunk_ids, model_signature)       -> [ChunkEmbedding]
 //! FastRetrieve(query, options, scope)               -> RetrievalResponse
 //! CoverWindow(window, scope)                        -> RetrievalResponse
@@ -112,6 +119,7 @@ use tinymemory_api::provider::types::{
 // imported: they are supertraits of `MemoryProvider`, so their methods are
 // already callable on the trait object.
 use tinymemory_api::provider::chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery};
+use tinymemory_api::provider::profile::{FacetType, ProfileFacet, UserState};
 use tinymemory_api::provider::people::{
     AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
     RankedPerson, ResolvedPerson,
@@ -815,6 +823,118 @@ impl MemoryService {
             .map_err(|error| into_bus_error(&error))?;
         ensure_response_fits(&response, "CoverWindow")?;
         Ok(response)
+    }
+
+
+    // ── Profile ─────────────────────────────────────────────────────────────
+
+    async fn list_active_facets(&self) -> BusResult<Vec<ProfileFacet>> {
+        let facets = require_family!(self, as_profile, Capability::Profile)
+            .list_active_facets()
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&facets, "ListActiveFacets")?;
+        Ok(facets)
+    }
+
+    async fn list_all_facets(&self) -> BusResult<Vec<ProfileFacet>> {
+        let facets = require_family!(self, as_profile, Capability::Profile)
+            .list_all_facets()
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&facets, "ListAllFacets")?;
+        Ok(facets)
+    }
+
+    async fn get_facet(&self, key: String) -> BusResult<Option<ProfileFacet>> {
+        require_family!(self, as_profile, Capability::Profile)
+            .get_facet(&key)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn facets_by_type(&self, facet_type: FacetType) -> BusResult<Vec<ProfileFacet>> {
+        let facets = require_family!(self, as_profile, Capability::Profile)
+            .facets_by_type(facet_type)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&facets, "FacetsByType")?;
+        Ok(facets)
+    }
+
+    async fn upsert_facet(&self, facet: ProfileFacet) -> BusResult<()> {
+        require_family!(self, as_profile, Capability::Profile)
+            .upsert_facet(&facet)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn upsert_provider_facet(
+        &self,
+        facet_id: String,
+        facet_type: FacetType,
+        key: String,
+        value: String,
+        confidence: f64,
+        segment_id: Option<String>,
+        observed_at: f64,
+    ) -> BusResult<()> {
+        require_family!(self, as_profile, Capability::Profile)
+            .upsert_provider_facet(
+                &facet_id,
+                facet_type,
+                &key,
+                &value,
+                confidence,
+                segment_id.as_deref(),
+                observed_at,
+            )
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn set_facet_user_state(&self, key: String, user_state: UserState) -> BusResult<bool> {
+        require_family!(self, as_profile, Capability::Profile)
+            .set_facet_user_state(&key, user_state)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn delete_facet(&self, key: String) -> BusResult<bool> {
+        require_family!(self, as_profile, Capability::Profile)
+            .delete_facet(&key)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn delete_facet_by_id(&self, facet_id: String) -> BusResult<bool> {
+        require_family!(self, as_profile, Capability::Profile)
+            .delete_facet_by_id(&facet_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn drop_facets_below(&self, threshold: f64) -> BusResult<usize> {
+        require_family!(self, as_profile, Capability::Profile)
+            .drop_facets_below(threshold)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Returns `bool`, not `BusResult<bool>` on the trait — but the wire needs a
+    /// result, so an absent family answers `false` rather than erroring, which
+    /// is the trait's documented reading of "cannot tell" for this predicate.
+    async fn workflow_identity_matches(
+        &self,
+        key_pattern: String,
+        canonical_value: String,
+    ) -> BusResult<bool> {
+        let Some(profile) = self.provider.as_profile() else {
+            return Ok(false);
+        };
+        Ok(profile
+            .workflow_identity_matches(&key_pattern, &canonical_value)
+            .await)
     }
 
     async fn retrieve_source(

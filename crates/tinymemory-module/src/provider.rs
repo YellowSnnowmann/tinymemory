@@ -22,7 +22,8 @@ use tinymemory_api::provider::types::{
     SourceScope,
 };
 use tinymemory_api::provider::{
-    AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, CoverWindowQuery, EntityMatch,
+    AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, FacetType, MemoryProfile,
+    ProfileFacet, UserState, CoverWindowQuery, EntityMatch,
     FastRetrieveQuery, MemoryChunks, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities,
     MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople, MemoryPortability,
     MemoryProvider, MemoryRecall, MemoryRetrieval, MemorySourceSink, MemoryToolMemory, MemoryTree,
@@ -1207,6 +1208,9 @@ impl MemoryProvider for ModuleMemoryProvider {
     fn as_retrieval(&self) -> Option<&dyn MemoryRetrieval> {
         Some(self)
     }
+    fn as_profile(&self) -> Option<&dyn MemoryProfile> {
+        Some(self)
+    }
 }
 
 // ── People ───────────────────────────────────────────────────────────────────
@@ -1778,5 +1782,173 @@ impl MemoryRetrieval for ModuleMemoryProvider {
         .await
         .map_err(|error| Self::other("search entities", error))?;
         Self::cross(&matches, "convert entity matches")
+    }
+}
+
+// ── Profile ──────────────────────────────────────────────────────────────────
+//
+// `ProfileStore`'s methods are synchronous and hold a `parking_lot::Mutex`
+// across a SQLite call, so each one goes through `spawn_blocking` rather than
+// being awaited on the runtime thread. The store is cheap to obtain — it is a
+// handle over the client's connection, not an open — so it is fetched inside
+// the blocking closure rather than held across an await.
+
+fn facet_type_to_engine(
+    facet_type: FacetType,
+) -> tinymemory_core::store::namespace_store::profile::FacetType {
+    use tinymemory_core::store::namespace_store::profile::FacetType as Engine;
+    match facet_type {
+        FacetType::Preference => Engine::Preference,
+        FacetType::Workflow => Engine::Workflow,
+        FacetType::Role => Engine::Role,
+        FacetType::Personality => Engine::Personality,
+        FacetType::Context => Engine::Context,
+    }
+}
+
+#[async_trait]
+impl MemoryProfile for ModuleMemoryProvider {
+    async fn list_active_facets(&self) -> Result<Vec<ProfileFacet>, MemoryError> {
+        let client = Arc::clone(&self.client);
+        let facets = tokio::task::spawn_blocking(move || client.profile_store().list_active())
+            .await
+            .map_err(|e| Self::other("join list_active_facets", e))?
+            .map_err(|e| Self::other("list_active_facets", e))?;
+        Self::cross(&facets, "convert facets")
+    }
+
+    async fn list_all_facets(&self) -> Result<Vec<ProfileFacet>, MemoryError> {
+        let client = Arc::clone(&self.client);
+        let facets = tokio::task::spawn_blocking(move || client.profile_store().list_all())
+            .await
+            .map_err(|e| Self::other("join list_all_facets", e))?
+            .map_err(|e| Self::other("list_all_facets", e))?;
+        Self::cross(&facets, "convert facets")
+    }
+
+    async fn get_facet(&self, key: &str) -> Result<Option<ProfileFacet>, MemoryError> {
+        let client = Arc::clone(&self.client);
+        let key = key.to_string();
+        let facet = tokio::task::spawn_blocking(move || client.profile_store().get(&key))
+            .await
+            .map_err(|e| Self::other("join get_facet", e))?
+            .map_err(|e| Self::other("get_facet", e))?;
+        match facet {
+            Some(facet) => Ok(Some(Self::cross(&facet, "convert facet")?)),
+            None => Ok(None),
+        }
+    }
+
+    async fn facets_by_type(
+        &self,
+        facet_type: FacetType,
+    ) -> Result<Vec<ProfileFacet>, MemoryError> {
+        let client = Arc::clone(&self.client);
+        let engine = facet_type_to_engine(facet_type);
+        let facets =
+            tokio::task::spawn_blocking(move || client.profile_store().facets_by_type(&engine))
+                .await
+                .map_err(|e| Self::other("join facets_by_type", e))?
+                .map_err(|e| Self::other("facets_by_type", e))?;
+        Self::cross(&facets, "convert facets")
+    }
+
+    async fn upsert_facet(&self, facet: &ProfileFacet) -> Result<(), MemoryError> {
+        let client = Arc::clone(&self.client);
+        let engine: tinymemory_core::store::namespace_store::profile::ProfileFacet =
+            Self::cross(facet, "convert facet")?;
+        tokio::task::spawn_blocking(move || client.profile_store().upsert_full(&engine))
+            .await
+            .map_err(|e| Self::other("join upsert_facet", e))?
+            .map_err(|e| Self::other("upsert_facet", e))
+    }
+
+    async fn upsert_provider_facet(
+        &self,
+        facet_id: &str,
+        facet_type: FacetType,
+        key: &str,
+        value: &str,
+        confidence: f64,
+        segment_id: Option<&str>,
+        observed_at: f64,
+    ) -> Result<(), MemoryError> {
+        let client = Arc::clone(&self.client);
+        let engine = facet_type_to_engine(facet_type);
+        let (facet_id, key, value) = (facet_id.to_string(), key.to_string(), value.to_string());
+        let segment_id = segment_id.map(str::to_string);
+        tokio::task::spawn_blocking(move || {
+            client.profile_store().upsert_provider_facet(
+                &facet_id,
+                &engine,
+                &key,
+                &value,
+                confidence,
+                segment_id.as_deref(),
+                observed_at,
+            )
+        })
+        .await
+        .map_err(|e| Self::other("join upsert_provider_facet", e))?
+        .map_err(|e| Self::other("upsert_provider_facet", e))
+    }
+
+    async fn set_facet_user_state(
+        &self,
+        key: &str,
+        user_state: UserState,
+    ) -> Result<bool, MemoryError> {
+        use tinymemory_core::store::namespace_store::profile::UserState as Engine;
+        let client = Arc::clone(&self.client);
+        let key = key.to_string();
+        let engine = match user_state {
+            UserState::Auto => Engine::Auto,
+            UserState::Pinned => Engine::Pinned,
+            UserState::Forgotten => Engine::Forgotten,
+        };
+        tokio::task::spawn_blocking(move || client.profile_store().set_user_state(&key, engine))
+            .await
+            .map_err(|e| Self::other("join set_facet_user_state", e))?
+            .map_err(|e| Self::other("set_facet_user_state", e))
+    }
+
+    async fn delete_facet(&self, key: &str) -> Result<bool, MemoryError> {
+        let client = Arc::clone(&self.client);
+        let key = key.to_string();
+        tokio::task::spawn_blocking(move || client.profile_store().delete(&key))
+            .await
+            .map_err(|e| Self::other("join delete_facet", e))?
+            .map_err(|e| Self::other("delete_facet", e))
+    }
+
+    async fn delete_facet_by_id(&self, facet_id: &str) -> Result<bool, MemoryError> {
+        let client = Arc::clone(&self.client);
+        let facet_id = facet_id.to_string();
+        tokio::task::spawn_blocking(move || client.profile_store().delete_by_facet_id(&facet_id))
+            .await
+            .map_err(|e| Self::other("join delete_facet_by_id", e))?
+            .map_err(|e| Self::other("delete_facet_by_id", e))
+    }
+
+    async fn drop_facets_below(&self, threshold: f64) -> Result<usize, MemoryError> {
+        let client = Arc::clone(&self.client);
+        tokio::task::spawn_blocking(move || {
+            client.profile_store().drop_below_threshold(threshold)
+        })
+        .await
+        .map_err(|e| Self::other("join drop_facets_below", e))?
+        .map_err(|e| Self::other("drop_facets_below", e))
+    }
+
+    async fn workflow_identity_matches(&self, key_pattern: &str, canonical_value: &str) -> bool {
+        let client = Arc::clone(&self.client);
+        let (pattern, value) = (key_pattern.to_string(), canonical_value.to_string());
+        tokio::task::spawn_blocking(move || {
+            client.profile_store().skill_identity_matches(&pattern, &value)
+        })
+        .await
+        // A join failure reads as "no", like every other error on this
+        // predicate — see the trait docs.
+        .unwrap_or(false)
     }
 }

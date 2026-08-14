@@ -92,6 +92,8 @@ pub enum Capability {
     /// Deterministic retrieval primitives: graph walk, time-window cover,
     /// entity-index search.
     Retrieval,
+    /// Learned facets about the user.
+    Profile,
 }
 
 impl Capability {
@@ -100,7 +102,7 @@ impl Capability {
     /// Declaration order is also bit order in [`Capabilities`] and iteration
     /// order in its serialized form, so this slice is the single ordering
     /// authority for the whole module.
-    pub const ALL: [Capability; 16] = [
+    pub const ALL: [Capability; 17] = [
         Capability::Core,
         Capability::Recall,
         Capability::Ingest,
@@ -120,6 +122,7 @@ impl Capability {
         Capability::People,
         Capability::Chunks,
         Capability::Retrieval,
+        Capability::Profile,
     ];
 
     /// The families a driver must advertise to be bindable at all.
@@ -161,6 +164,7 @@ impl Capability {
             Self::People => "people",
             Self::Chunks => "chunks",
             Self::Retrieval => "retrieval",
+            Self::Profile => "profile",
         }
     }
 
@@ -206,6 +210,7 @@ impl Capability {
             Self::People => 13,
             Self::Chunks => 14,
             Self::Retrieval => 15,
+            Self::Profile => 16,
         }
     }
 
