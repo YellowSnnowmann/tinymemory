@@ -1648,7 +1648,7 @@ impl MemoryRetrieval for ModuleMemoryProvider {
         Self::cross(&response, "convert retrieval response")
     }
 
-    async fn drill_down(
+    async fn retrieve_children(
         &self,
         node_id: &str,
         max_depth: u32,
@@ -1667,11 +1667,13 @@ impl MemoryRetrieval for ModuleMemoryProvider {
         Self::cross(&hits, "convert retrieval hits")
     }
 
-    async fn fetch_leaves(&self, chunk_ids: &[String]) -> Result<Vec<RetrievalHit>, MemoryError> {
-        let hits =
-            tinymemory_core::tree::retrieval::fetch::fetch_leaves(&self.config, chunk_ids)
-                .await
-                .map_err(|error| Self::other("fetch leaves", error))?;
+    async fn retrieve_leaves(
+        &self,
+        chunk_ids: &[String],
+    ) -> Result<Vec<RetrievalHit>, MemoryError> {
+        let hits = tinymemory_core::tree::retrieval::fetch::fetch_leaves(&self.config, chunk_ids)
+            .await
+            .map_err(|error| Self::other("fetch leaves", error))?;
         Self::cross(&hits, "convert retrieval hits")
     }
 

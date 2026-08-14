@@ -61,11 +61,11 @@ use crate::provider::types::{
 };
 use crate::provider::{
     AddressBookSeedOutcome, ChunkEmbedding, ChunkQuery, CoverWindowQuery, EntityMatch,
-    FastRetrieveQuery, MemoryChunks, RetrievalHit, SourceRetrievalQuery, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities,
+    FastRetrieveQuery, MemoryChunks, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities,
     MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople, MemoryPortability,
     MemoryProvider, MemoryRecall, MemoryRetrieval, MemorySourceSink, MemoryToolMemory, MemoryTree,
     PersonHandle, PersonInteraction, PersonRecord, PersonScore, RankedPerson, ResolvedPerson,
-    RetrievalResponse,
+    RetrievalHit, RetrievalResponse, SourceRetrievalQuery,
 };
 use crate::recall::OwnedRecallOpts;
 use crate::tool_memory::ToolMemoryRule;
@@ -573,7 +573,7 @@ impl MemoryRetrieval for NullMemoryProvider {
         unsupported(Capability::Retrieval)
     }
 
-    async fn drill_down(
+    async fn retrieve_children(
         &self,
         _node_id: &str,
         _max_depth: u32,
@@ -583,7 +583,10 @@ impl MemoryRetrieval for NullMemoryProvider {
         unsupported(Capability::Retrieval)
     }
 
-    async fn fetch_leaves(&self, _chunk_ids: &[String]) -> Result<Vec<RetrievalHit>, MemoryError> {
+    async fn retrieve_leaves(
+        &self,
+        _chunk_ids: &[String],
+    ) -> Result<Vec<RetrievalHit>, MemoryError> {
         unsupported(Capability::Retrieval)
     }
 

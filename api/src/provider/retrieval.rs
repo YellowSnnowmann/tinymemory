@@ -228,7 +228,14 @@ pub trait MemoryRetrieval: Send + Sync {
         scope: Option<&SourceScope>,
     ) -> Result<RetrievalResponse, MemoryError>;
 
-    /// Walk one summary node's children.
+    /// Walk one summary node's children, ranked.
+    ///
+    /// Named `retrieve_children` rather than `drill_down` because
+    /// [`MemoryTree::drill_down`](super::MemoryTree::drill_down) already exists
+    /// with different semantics — it returns a node and its direct children,
+    /// where this returns ranked hits several levels deep. They are also two
+    /// methods on one bus object, so the names could not collide even if the
+    /// ambiguity were acceptable.
     ///
     /// `max_depth` bounds how far down the walk goes; `query` ranks the result
     /// when supplied and orders by the tree's own order when not.
@@ -238,7 +245,7 @@ pub trait MemoryRetrieval: Send + Sync {
     /// Backend failures only; an unknown `node_id` yields an empty vector
     /// rather than [`MemoryError::NotFound`] — "no children" and "no such node"
     /// are the same answer to this question.
-    async fn drill_down(
+    async fn retrieve_children(
         &self,
         node_id: &str,
         max_depth: u32,
@@ -246,7 +253,7 @@ pub trait MemoryRetrieval: Send + Sync {
         limit: Option<usize>,
     ) -> Result<Vec<RetrievalHit>, MemoryError>;
 
-    /// Hydrate specific leaf chunks into hit form, by chunk id.
+    /// Hydrate specific leaf chunks into ranked-hit form, by chunk id.
     ///
     /// Ids that do not resolve are **omitted**, so the result may be shorter
     /// than the input and callers must not index by position.
@@ -254,7 +261,8 @@ pub trait MemoryRetrieval: Send + Sync {
     /// # Errors
     ///
     /// Backend failures only.
-    async fn fetch_leaves(&self, chunk_ids: &[String]) -> Result<Vec<RetrievalHit>, MemoryError>;
+    async fn retrieve_leaves(&self, chunk_ids: &[String])
+        -> Result<Vec<RetrievalHit>, MemoryError>;
 
     /// Free-text search over the entity index.
     ///
