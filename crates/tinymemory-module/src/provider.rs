@@ -23,10 +23,11 @@ use tinymemory_api::provider::types::{
 };
 use tinymemory_api::provider::{
     AddressBookSeedOutcome, ChunkEmbedding, ChunkQuery, CoverWindowQuery, EntityMatch,
-    FastRetrieveQuery, MemoryChunks, MemoryRetrieval, RetrievalResponse, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities, MemoryGoals,
-    MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProvider,
-    MemoryRecall, MemorySourceSink, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction,
-    PersonRecord, PersonScore, RankedPerson, ResolvedPerson,
+    FastRetrieveQuery, MemoryChunks, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities,
+    MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople, MemoryPortability,
+    MemoryProvider, MemoryRecall, MemoryRetrieval, MemorySourceSink, MemoryToolMemory, MemoryTree,
+    PersonHandle, PersonInteraction, PersonRecord, PersonScore, RankedPerson, ResolvedPerson,
+    RetrievalResponse,
 };
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
@@ -1501,7 +1502,9 @@ impl MemoryChunks for ModuleMemoryProvider {
             exclude_dropped,
         } = query.clone();
         let engine_query = tinymemory_core::store::chunks::ListChunksQuery {
-            source_kind: source_kind.map(|kind| Self::cross(&kind, "convert source kind")).transpose()?,
+            source_kind: source_kind
+                .map(|kind| Self::cross(&kind, "convert source kind"))
+                .transpose()?,
             source_id,
             owner,
             since_ms,
@@ -1537,11 +1540,15 @@ impl MemoryChunks for ModuleMemoryProvider {
     ) -> Result<Vec<ChunkEmbedding>, MemoryError> {
         let ids = chunk_ids.to_vec();
         let signature = model_signature.to_string();
-        let vectors = blocking(self.config.clone(), "load chunk embeddings", move |config| {
-            tinymemory_core::store::chunks::get_chunk_embeddings_for_signature_batch(
-                config, &ids, &signature,
-            )
-        })
+        let vectors = blocking(
+            self.config.clone(),
+            "load chunk embeddings",
+            move |config| {
+                tinymemory_core::store::chunks::get_chunk_embeddings_for_signature_batch(
+                    config, &ids, &signature,
+                )
+            },
+        )
         .await?;
         // Sorted so the response is deterministic: the engine returns a
         // `HashMap`, whose iteration order varies per process and would make an
@@ -1625,8 +1632,9 @@ impl MemoryRetrieval for ModuleMemoryProvider {
                 kinds
                     .iter()
                     .map(|kind| {
-                        tinymemory_core::tree::score::extract::EntityKind::parse(kind)
-                            .map_err(|_| MemoryError::Invalid(format!("unknown entity kind: {kind}")))
+                        tinymemory_core::tree::score::extract::EntityKind::parse(kind).map_err(
+                            |_| MemoryError::Invalid(format!("unknown entity kind: {kind}")),
+                        )
                     })
                     .collect::<Result<Vec<_>, MemoryError>>()?,
             ),

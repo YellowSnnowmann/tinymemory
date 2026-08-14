@@ -106,12 +106,12 @@ use tinymemory_api::provider::types::{
 // imported: they are supertraits of `MemoryProvider`, so their methods are
 // already callable on the trait object.
 use tinymemory_api::provider::chunks::{ChunkEmbedding, ChunkQuery};
-use tinymemory_api::provider::retrieval::{
-    CoverWindowQuery, EntityMatch, FastRetrieveQuery, RetrievalResponse,
-};
 use tinymemory_api::provider::people::{
     AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
     RankedPerson, ResolvedPerson,
+};
+use tinymemory_api::provider::retrieval::{
+    CoverWindowQuery, EntityMatch, FastRetrieveQuery, RetrievalResponse,
 };
 use tinymemory_api::provider::MemoryProvider;
 use tinymemory_api::recall::OwnedRecallOpts;

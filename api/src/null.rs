@@ -61,10 +61,11 @@ use crate::provider::types::{
 };
 use crate::provider::{
     AddressBookSeedOutcome, ChunkEmbedding, ChunkQuery, CoverWindowQuery, EntityMatch,
-    FastRetrieveQuery, MemoryChunks, MemoryRetrieval, RetrievalResponse, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities, MemoryGoals,
-    MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProvider,
-    MemoryRecall, MemorySourceSink, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction,
-    PersonRecord, PersonScore, RankedPerson, ResolvedPerson,
+    FastRetrieveQuery, MemoryChunks, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities,
+    MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople, MemoryPortability,
+    MemoryProvider, MemoryRecall, MemoryRetrieval, MemorySourceSink, MemoryToolMemory, MemoryTree,
+    PersonHandle, PersonInteraction, PersonRecord, PersonScore, RankedPerson, ResolvedPerson,
+    RetrievalResponse,
 };
 use crate::recall::OwnedRecallOpts;
 use crate::tool_memory::ToolMemoryRule;

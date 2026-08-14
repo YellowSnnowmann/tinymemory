@@ -55,15 +55,15 @@ use async_trait::async_trait;
 use crate::capabilities::{Capabilities, Capability};
 use crate::error::MemoryError;
 use crate::health::MemoryHealth;
+use crate::provider::chunks::MemoryChunks;
 use crate::provider::content::{MemoryDocuments, MemoryIngest, MemoryTree};
 use crate::provider::knowledge::{MemoryDiff, MemoryEntities, MemoryGraph};
 use crate::provider::mandatory::{MemoryCore, MemoryPortability, MemoryRecall};
-use crate::provider::chunks::MemoryChunks;
 use crate::provider::people::MemoryPeople;
-use crate::provider::retrieval::MemoryRetrieval;
 use crate::provider::records::{
     MemoryGoals, MemoryMaintenance, MemorySourceSink, MemoryToolMemory,
 };
+use crate::provider::retrieval::MemoryRetrieval;
 
 /// A bound memory driver.
 ///
