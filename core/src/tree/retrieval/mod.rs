@@ -38,5 +38,5 @@ pub use drill_down::drill_down;
 pub use fast::{fast_retrieve, fast_retrieve_scoped, FastRetrieveOptions};
 pub use fetch::fetch_leaves;
 pub use search::search_entities;
-pub use source::query_source;
+pub use source::{query_source, query_source_scoped};
 pub use types::{EntityMatch, NodeKind, QueryResponse, RetrievalHit};

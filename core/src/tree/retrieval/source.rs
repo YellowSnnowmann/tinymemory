@@ -10,6 +10,10 @@ use crate::Config;
 
 const DEFAULT_LIMIT: usize = 10;
 
+/// Ranked retrieval over a source's summary tree, using the **ambient** scope.
+///
+/// Correct in-process; see [`query_source_scoped`] for the transport-facing
+/// path and why it cannot use this one.
 pub async fn query_source(
     config: &Config,
     source_id: Option<&str>,
@@ -18,8 +22,36 @@ pub async fn query_source(
     query: Option<&str>,
     limit: usize,
 ) -> Result<QueryResponse> {
+    query_source_scoped(
+        config,
+        source_id,
+        source_kind,
+        time_window_days,
+        query,
+        limit,
+        current_source_scope(),
+    )
+    .await
+}
+
+/// Ranked retrieval over a source's summary tree, using an **explicitly
+/// supplied** scope.
+///
+/// Exists for the same reason as
+/// [`fast_retrieve_scoped`](super::fast::fast_retrieve_scoped): a task-local
+/// source scope does not cross a transport, and reading it as absent means
+/// unrestricted — a source gate failing open.
+#[allow(clippy::too_many_arguments)]
+pub async fn query_source_scoped(
+    config: &Config,
+    source_id: Option<&str>,
+    source_kind: Option<SourceKind>,
+    time_window_days: Option<u32>,
+    query: Option<&str>,
+    limit: usize,
+    scope: Option<std::collections::HashSet<String>>,
+) -> Result<QueryResponse> {
     let limit = if limit == 0 { DEFAULT_LIMIT } else { limit };
-    let scope = current_source_scope();
     if source_id.is_some_and(|id| scope.as_ref().is_some_and(|set| !set.contains(id))) {
         log::debug!("[retrieval::source] explicit source excluded by active scope");
         return Ok(QueryResponse::empty());
