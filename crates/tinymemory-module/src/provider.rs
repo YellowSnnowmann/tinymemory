@@ -1618,6 +1618,62 @@ impl MemoryRetrieval for ModuleMemoryProvider {
         Self::cross(&response, "convert retrieval response")
     }
 
+    async fn retrieve_source(
+        &self,
+        query: &SourceRetrievalQuery,
+        scope: Option<&SourceScope>,
+    ) -> Result<RetrievalResponse, MemoryError> {
+        let SourceRetrievalQuery {
+            source_id,
+            source_kind,
+            time_window_days,
+            query: text,
+            limit,
+        } = query.clone();
+        let engine_kind = source_kind
+            .map(|kind| Self::cross(&kind, "convert source kind"))
+            .transpose()?;
+        let response = tinymemory_core::tree::retrieval::source::query_source_scoped(
+            &self.config,
+            source_id.as_deref(),
+            engine_kind,
+            time_window_days,
+            text.as_deref(),
+            limit,
+            scope_to_engine(scope),
+        )
+        .await
+        .map_err(|error| Self::other("retrieve source", error))?;
+        Self::cross(&response, "convert retrieval response")
+    }
+
+    async fn drill_down(
+        &self,
+        node_id: &str,
+        max_depth: u32,
+        query: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<RetrievalHit>, MemoryError> {
+        let hits = tinymemory_core::tree::retrieval::drill_down::drill_down(
+            &self.config,
+            node_id,
+            max_depth,
+            query,
+            limit,
+        )
+        .await
+        .map_err(|error| Self::other("drill down", error))?;
+        Self::cross(&hits, "convert retrieval hits")
+    }
+
+    async fn fetch_leaves(&self, chunk_ids: &[String]) -> Result<Vec<RetrievalHit>, MemoryError> {
+        let hits =
+            tinymemory_core::tree::retrieval::fetch::fetch_leaves(&self.config, chunk_ids)
+                .await
+                .map_err(|error| Self::other("fetch leaves", error))?;
+        Self::cross(&hits, "convert retrieval hits")
+    }
+
     async fn search_entities(
         &self,
         query: &str,

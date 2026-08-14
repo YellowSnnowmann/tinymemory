@@ -110,6 +110,14 @@ pub struct RankedPerson {
     pub person: PersonRecord,
     /// Their closeness score.
     pub score: PersonScore,
+    /// How many interactions the score was computed from.
+    ///
+    /// Carried because a score alone cannot be read honestly: 0.9 from three
+    /// exchanges and 0.9 from three hundred are the same number and very
+    /// different facts, and a caller ranking people has no way to tell them
+    /// apart without this.
+    #[serde(default)]
+    pub interaction_count: usize,
 }
 
 /// The outcome of resolving a handle.

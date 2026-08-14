@@ -138,6 +138,26 @@ pub struct CoverWindowQuery {
     pub limit: Option<usize>,
 }
 
+/// Filters for [`MemoryRetrieval::retrieve_source`].
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceRetrievalQuery {
+    /// Restrict to one logical source (the engine's "scope", e.g. `slack:#eng`).
+    #[serde(default)]
+    pub source_id: Option<String>,
+    /// Restrict to one source kind.
+    #[serde(default)]
+    pub source_kind: Option<SourceKind>,
+    /// Restrict to the last N days of source time.
+    #[serde(default)]
+    pub time_window_days: Option<u32>,
+    /// Free-text query to rank against. `None` returns the newest nodes rather
+    /// than ranking — the primitive is a browse as well as a search.
+    #[serde(default)]
+    pub query: Option<String>,
+    /// Maximum hits.
+    pub limit: usize,
+}
+
 /// One entity-index match.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EntityMatch {
@@ -187,6 +207,54 @@ pub trait MemoryRetrieval: Send + Sync {
         window: &CoverWindowQuery,
         scope: Option<&SourceScope>,
     ) -> Result<RetrievalResponse, MemoryError>;
+
+    /// Ranked retrieval over one source's summary tree.
+    ///
+    /// # Not to be confused with [`MemoryTree::query_source`]
+    ///
+    /// They answer different questions and return different shapes. The tree
+    /// family's returns the raw [`Chunk`](crate::chunks::Chunk)s
+    /// filed under a source id, for a caller that wants the content. This one
+    /// returns ranked [`RetrievalHit`]s across the source's *summary* tree —
+    /// leaves and sealed summaries together, scored. The name differs precisely
+    /// so a caller cannot reach for one meaning and get the other.
+    ///
+    /// # Errors
+    ///
+    /// Backend failures only; no match yields an empty response.
+    async fn retrieve_source(
+        &self,
+        query: &SourceRetrievalQuery,
+        scope: Option<&SourceScope>,
+    ) -> Result<RetrievalResponse, MemoryError>;
+
+    /// Walk one summary node's children.
+    ///
+    /// `max_depth` bounds how far down the walk goes; `query` ranks the result
+    /// when supplied and orders by the tree's own order when not.
+    ///
+    /// # Errors
+    ///
+    /// Backend failures only; an unknown `node_id` yields an empty vector
+    /// rather than [`MemoryError::NotFound`] — "no children" and "no such node"
+    /// are the same answer to this question.
+    async fn drill_down(
+        &self,
+        node_id: &str,
+        max_depth: u32,
+        query: Option<&str>,
+        limit: Option<usize>,
+    ) -> Result<Vec<RetrievalHit>, MemoryError>;
+
+    /// Hydrate specific leaf chunks into hit form, by chunk id.
+    ///
+    /// Ids that do not resolve are **omitted**, so the result may be shorter
+    /// than the input and callers must not index by position.
+    ///
+    /// # Errors
+    ///
+    /// Backend failures only.
+    async fn fetch_leaves(&self, chunk_ids: &[String]) -> Result<Vec<RetrievalHit>, MemoryError>;
 
     /// Free-text search over the entity index.
     ///

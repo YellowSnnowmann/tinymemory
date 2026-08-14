@@ -79,7 +79,7 @@ pub use people::{
 pub use records::{MemoryGoals, MemoryMaintenance, MemorySourceSink, MemoryToolMemory};
 pub use retrieval::{
     CoverWindowQuery, EntityMatch, FastRetrieveQuery, MemoryRetrieval, RetrievalHit,
-    RetrievalNodeKind, RetrievalResponse,
+    RetrievalNodeKind, RetrievalResponse, SourceRetrievalQuery,
 };
 pub use types::{
     ChangeKind, DiffReport, EntityHit, EntityRef, ExportPage, ExportRecord, ImportOutcome,
