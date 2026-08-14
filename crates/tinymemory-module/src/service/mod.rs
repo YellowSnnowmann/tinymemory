@@ -28,6 +28,7 @@
 //!
 //! ListChunks(query, scope)                          -> [Chunk]
 //! GetChunk(chunk_id)                                -> Option<Chunk>
+//! StorageKinds()                                    -> [String]
 //! ChunkEmbeddings(chunk_ids, model_signature)       -> [ChunkEmbedding]
 //! FastRetrieve(query, options, scope)               -> RetrievalResponse
 //! CoverWindow(window, scope)                        -> RetrievalResponse
@@ -757,6 +758,13 @@ impl MemoryService {
     /// hundred chunks reach the frame ceiling on their own. Checked for the same
     /// reason `List` is, and refused by name rather than truncated — a short
     /// batch is indistinguishable from "those chunks have no vector".
+    async fn storage_kinds(&self) -> BusResult<Vec<String>> {
+        require_family!(self, as_chunks, Capability::Chunks)
+            .storage_kinds()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
     async fn chunk_embeddings(
         &self,
         chunk_ids: Vec<String>,

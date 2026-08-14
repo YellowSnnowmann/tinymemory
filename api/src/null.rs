@@ -537,6 +537,10 @@ impl MemoryChunks for NullMemoryProvider {
         unsupported(Capability::Chunks)
     }
 
+    async fn storage_kinds(&self) -> Result<Vec<String>, MemoryError> {
+        unsupported(Capability::Chunks)
+    }
+
     async fn chunk_embeddings(
         &self,
         _chunk_ids: &[String],

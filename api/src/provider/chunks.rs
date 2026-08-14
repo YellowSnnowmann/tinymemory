@@ -115,6 +115,32 @@ pub trait MemoryChunks: Send + Sync {
     /// Backend failures only; an unknown id yields `Ok(None)`.
     async fn get_chunk(&self, chunk_id: &str) -> Result<Option<Chunk>, MemoryError>;
 
+    /// The storage-shape catalog this driver persists.
+    ///
+    /// Stable snake_case identifiers naming the *shapes* the engine stores
+    /// (`chunk`, `vector`, `tree`, …), for a caller planning a multi-kind
+    /// retrieval fan-out.
+    ///
+    /// # Why this is asked rather than compiled in
+    ///
+    /// It is the engine's own vocabulary — a second engine stores different
+    /// shapes — so a host-side copy would drift the moment the engine changed
+    /// and could never be right for a driver the host was not built against.
+    /// It was a host-side copy, and it had already drifted: the tool's
+    /// description advertised `content`, `document` and `graph`, none of which
+    /// the engine has, and omitted `raw` and `entity`, which it does.
+    ///
+    /// Open vocabulary, for the same reason [`EntityMatch::kind`] is — a driver
+    /// that grows a shape must not break a caller that has not heard of it.
+    ///
+    /// [`EntityMatch::kind`]: super::retrieval::EntityMatch::kind
+    ///
+    /// # Errors
+    ///
+    /// Backend failures only. A driver with a fixed catalog cannot fail here
+    /// and should return it unconditionally.
+    async fn storage_kinds(&self) -> Result<Vec<String>, MemoryError>;
+
     /// Stored embeddings for `chunk_ids`, in the space named by
     /// `model_signature`.
     ///

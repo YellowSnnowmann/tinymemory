@@ -1538,6 +1538,13 @@ impl MemoryChunks for ModuleMemoryProvider {
         }
     }
 
+    async fn storage_kinds(&self) -> Result<Vec<String>, MemoryError> {
+        Ok(tinymemory_core::store::MemoryKind::ALL
+            .iter()
+            .map(|kind| kind.as_str().to_string())
+            .collect())
+    }
+
     async fn chunk_embeddings(
         &self,
         chunk_ids: &[String],
