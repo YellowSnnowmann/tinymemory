@@ -28,6 +28,7 @@
 //!
 //! ListChunks(query, scope)                          -> [Chunk]
 //! GetChunk(chunk_id)                                -> Option<Chunk>
+//! ChunkDetail(chunk_id)                             -> Option<ChunkDetail>
 //! StorageKinds()                                    -> [String]
 //! ChunkEmbeddings(chunk_ids, model_signature)       -> [ChunkEmbedding]
 //! FastRetrieve(query, options, scope)               -> RetrievalResponse
@@ -109,7 +110,7 @@ use tinymemory_api::provider::types::{
 // `MemoryCore`, `MemoryRecall` and `MemoryPortability` are deliberately not
 // imported: they are supertraits of `MemoryProvider`, so their methods are
 // already callable on the trait object.
-use tinymemory_api::provider::chunks::{ChunkEmbedding, ChunkQuery};
+use tinymemory_api::provider::chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery};
 use tinymemory_api::provider::people::{
     AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
     RankedPerson, ResolvedPerson,
@@ -758,6 +759,13 @@ impl MemoryService {
     /// hundred chunks reach the frame ceiling on their own. Checked for the same
     /// reason `List` is, and refused by name rather than truncated — a short
     /// batch is indistinguishable from "those chunks have no vector".
+    async fn chunk_detail(&self, chunk_id: String) -> BusResult<Option<ChunkDetail>> {
+        require_family!(self, as_chunks, Capability::Chunks)
+            .chunk_detail(&chunk_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
     async fn storage_kinds(&self) -> BusResult<Vec<String>> {
         require_family!(self, as_chunks, Capability::Chunks)
             .storage_kinds()

@@ -83,6 +83,39 @@ pub struct ChunkEmbedding {
     pub vector: Vec<f32>,
 }
 
+/// One chunk plus the per-chunk facts stored beside it.
+///
+/// # Why a detail view rather than four accessors
+///
+/// An inspection caller wants the row, its body, where the body lives, its
+/// lifecycle state and whether it has been embedded. Exposing those as four
+/// methods would read naturally in-process and cost **four bus round trips per
+/// row** out of it — and this is used to render lists. One method, one trip.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ChunkDetail {
+    /// The chunk row.
+    pub chunk: Chunk,
+    /// The chunk's body as stored in the content vault, when it could be read.
+    ///
+    /// `None` means the vault read failed — distinct from an empty body, which
+    /// is a legitimately empty chunk. A caller rendering a preview should fall
+    /// back to [`Chunk::content`] rather than showing nothing.
+    #[serde(default)]
+    pub body: Option<String>,
+    /// Path of the body in the content vault, when it has one.
+    #[serde(default)]
+    pub content_path: Option<String>,
+    /// Lifecycle state (`active`, `dropped`, …); `None` when unrecorded.
+    #[serde(default)]
+    pub lifecycle_status: Option<String>,
+    /// Whether an embedding vector exists for this chunk in **any** space.
+    ///
+    /// Not scoped to a signature on purpose: this answers "has this been
+    /// embedded at all", which is what an inspection view wants. Asking whether
+    /// a *particular* space has it is [`MemoryChunks::chunk_embeddings`].
+    pub has_embedding: bool,
+}
+
 /// Direct read access to the chunk tier.
 ///
 /// Reached through [`MemoryProvider::as_chunks`](super::MemoryProvider::as_chunks).
@@ -114,6 +147,13 @@ pub trait MemoryChunks: Send + Sync {
     ///
     /// Backend failures only; an unknown id yields `Ok(None)`.
     async fn get_chunk(&self, chunk_id: &str) -> Result<Option<Chunk>, MemoryError>;
+
+    /// One chunk with its stored detail, in a single call.
+    ///
+    /// # Errors
+    ///
+    /// Backend failures only; an unknown id yields `Ok(None)`.
+    async fn chunk_detail(&self, chunk_id: &str) -> Result<Option<ChunkDetail>, MemoryError>;
 
     /// The storage-shape catalog this driver persists.
     ///

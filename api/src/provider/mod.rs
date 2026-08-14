@@ -67,7 +67,7 @@ pub mod retrieval;
 pub mod types;
 
 pub use audit::{audit_provider, CapabilityAudit};
-pub use chunks::{ChunkEmbedding, ChunkQuery, MemoryChunks};
+pub use chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery, MemoryChunks};
 pub use content::{MemoryDocuments, MemoryIngest, MemoryTree};
 pub use driver::MemoryProvider;
 pub use knowledge::{MemoryDiff, MemoryEntities, MemoryGraph};

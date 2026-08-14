@@ -22,7 +22,7 @@ use tinymemory_api::provider::types::{
     SourceScope,
 };
 use tinymemory_api::provider::{
-    AddressBookSeedOutcome, ChunkEmbedding, ChunkQuery, CoverWindowQuery, EntityMatch,
+    AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, CoverWindowQuery, EntityMatch,
     FastRetrieveQuery, MemoryChunks, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities,
     MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople, MemoryPortability,
     MemoryProvider, MemoryRecall, MemoryRetrieval, MemorySourceSink, MemoryToolMemory, MemoryTree,
@@ -1536,6 +1536,38 @@ impl MemoryChunks for ModuleMemoryProvider {
             Some(chunk) => Ok(Some(Self::cross(&chunk, "convert chunk")?)),
             None => Ok(None),
         }
+    }
+
+    async fn chunk_detail(&self, chunk_id: &str) -> Result<Option<ChunkDetail>, MemoryError> {
+        let id = chunk_id.to_string();
+        let detail = blocking(self.config.clone(), "chunk detail", move |config| {
+            let Some(chunk) = tinymemory_core::store::chunks::get_chunk(config, &id)? else {
+                return Ok(None);
+            };
+            // The vault read is best-effort: a missing body is reported as
+            // `None` so the caller can fall back to the row's own content,
+            // rather than failing the whole detail view over a preview.
+            let body = tinymemory_core::store::content::read::read_chunk_body(config, &id).ok();
+            let has_embedding =
+                tinymemory_core::store::chunks::get_chunk_embedding(config, &id)?.is_some();
+            let lifecycle_status =
+                tinymemory_core::store::chunks::get_chunk_lifecycle_status(config, &id)?;
+            let content_path =
+                tinymemory_core::store::chunks::get_chunk_content_path(config, &id)?;
+            Ok(Some((chunk, body, has_embedding, lifecycle_status, content_path)))
+        })
+        .await?;
+
+        let Some((chunk, body, has_embedding, lifecycle_status, content_path)) = detail else {
+            return Ok(None);
+        };
+        Ok(Some(ChunkDetail {
+            chunk: Self::cross(&chunk, "convert chunk")?,
+            body,
+            content_path,
+            lifecycle_status,
+            has_embedding,
+        }))
     }
 
     async fn storage_kinds(&self) -> Result<Vec<String>, MemoryError> {
