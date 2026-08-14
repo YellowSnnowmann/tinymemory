@@ -27,7 +27,7 @@ use tinymemory_api::provider::{
     MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople, MemoryPortability,
     MemoryProvider, MemoryRecall, MemoryRetrieval, MemorySourceSink, MemoryToolMemory, MemoryTree,
     PersonHandle, PersonInteraction, PersonRecord, PersonScore, RankedPerson, ResolvedPerson,
-    RetrievalResponse,
+    RetrievalHit, RetrievalResponse, SourceRetrievalQuery,
 };
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
@@ -1331,6 +1331,7 @@ impl MemoryPeople for ModuleMemoryProvider {
                 RankedPerson {
                     person: person_to_contract(person),
                     score: score_to_contract(score),
+                    interaction_count: observed.len(),
                 }
             })
             .collect();
