@@ -32,6 +32,9 @@
 //! FastRetrieve(query, options, scope)               -> RetrievalResponse
 //! CoverWindow(window, scope)                        -> RetrievalResponse
 //! SearchEntities(query, kinds, limit)               -> [EntityMatch]
+//! RetrieveSource(query, scope)                      -> RetrievalResponse
+//! DrillDown(node_id, max_depth, query, limit)       -> [RetrievalHit]
+//! FetchLeaves(chunk_ids)                            -> [RetrievalHit]
 //! ```
 //!
 //! # Source scope crosses as an argument, never as ambient state
@@ -111,7 +114,8 @@ use tinymemory_api::provider::people::{
     RankedPerson, ResolvedPerson,
 };
 use tinymemory_api::provider::retrieval::{
-    CoverWindowQuery, EntityMatch, FastRetrieveQuery, RetrievalResponse,
+    CoverWindowQuery, EntityMatch, FastRetrieveQuery, RetrievalHit, RetrievalResponse,
+    SourceRetrievalQuery,
 };
 use tinymemory_api::provider::MemoryProvider;
 use tinymemory_api::recall::OwnedRecallOpts;
@@ -793,6 +797,43 @@ impl MemoryService {
             .map_err(|error| into_bus_error(&error))?;
         ensure_response_fits(&response, "CoverWindow")?;
         Ok(response)
+    }
+
+    async fn retrieve_source(
+        &self,
+        query: SourceRetrievalQuery,
+        scope: Option<SourceScope>,
+    ) -> BusResult<RetrievalResponse> {
+        let response = require_family!(self, as_retrieval, Capability::Retrieval)
+            .retrieve_source(&query, scope.as_ref())
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&response, "RetrieveSource")?;
+        Ok(response)
+    }
+
+    async fn drill_down(
+        &self,
+        node_id: String,
+        max_depth: u32,
+        query: Option<String>,
+        limit: Option<usize>,
+    ) -> BusResult<Vec<RetrievalHit>> {
+        let hits = require_family!(self, as_retrieval, Capability::Retrieval)
+            .drill_down(&node_id, max_depth, query.as_deref(), limit)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&hits, "DrillDown")?;
+        Ok(hits)
+    }
+
+    async fn fetch_leaves(&self, chunk_ids: Vec<String>) -> BusResult<Vec<RetrievalHit>> {
+        let hits = require_family!(self, as_retrieval, Capability::Retrieval)
+            .fetch_leaves(&chunk_ids)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&hits, "FetchLeaves")?;
+        Ok(hits)
     }
 
     async fn search_entities(
