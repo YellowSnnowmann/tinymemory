@@ -1272,7 +1272,10 @@ fn person_to_contract(person: tinycortex::memory::people::types::Person) -> Pers
     }
 }
 
-fn score_to_contract(score: tinycortex::memory::people::types::ScoreComponents) -> PersonScore {
+fn score_to_contract(
+    score: tinycortex::memory::people::types::ScoreComponents,
+    interaction_count: usize,
+) -> PersonScore {
     let tinycortex::memory::people::types::ScoreComponents {
         recency,
         frequency,
@@ -1286,6 +1289,7 @@ fn score_to_contract(score: tinycortex::memory::people::types::ScoreComponents) 
         reciprocity,
         depth,
         score,
+        interaction_count,
     }
 }
 
@@ -1330,8 +1334,7 @@ impl MemoryPeople for ModuleMemoryProvider {
                 let score = tinycortex::memory::people::scorer::score(observed, now);
                 RankedPerson {
                     person: person_to_contract(person),
-                    score: score_to_contract(score),
-                    interaction_count: observed.len(),
+                    score: score_to_contract(score, observed.len()),
                 }
             })
             .collect();
@@ -1425,6 +1428,7 @@ impl MemoryPeople for ModuleMemoryProvider {
             .map_err(|error| Self::other("load interactions", error))?;
         Ok(Some(score_to_contract(
             tinycortex::memory::people::scorer::score(&interactions, Utc::now()),
+            interactions.len(),
         )))
     }
 

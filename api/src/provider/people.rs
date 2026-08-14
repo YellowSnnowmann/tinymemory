@@ -101,6 +101,14 @@ pub struct PersonScore {
     pub depth: f32,
     /// The composite, clamped to `[0, 1]`.
     pub score: f32,
+    /// How many interactions the score was computed from.
+    ///
+    /// Travels with the score rather than beside it, because a score cannot be
+    /// read honestly without it: 0.9 from three exchanges and 0.9 from three
+    /// hundred are the same number and very different facts. Every caller that
+    /// gets a score gets the sample size, and no caller has to remember to ask.
+    #[serde(default)]
+    pub interaction_count: usize,
 }
 
 /// A person together with their score, as returned by a ranked list.
@@ -108,16 +116,9 @@ pub struct PersonScore {
 pub struct RankedPerson {
     /// The person.
     pub person: PersonRecord,
-    /// Their closeness score.
+    /// Their closeness score, including the interaction count it was computed
+    /// from.
     pub score: PersonScore,
-    /// How many interactions the score was computed from.
-    ///
-    /// Carried because a score alone cannot be read honestly: 0.9 from three
-    /// exchanges and 0.9 from three hundred are the same number and very
-    /// different facts, and a caller ranking people has no way to tell them
-    /// apart without this.
-    #[serde(default)]
-    pub interaction_count: usize,
 }
 
 /// The outcome of resolving a handle.
