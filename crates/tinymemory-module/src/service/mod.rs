@@ -34,6 +34,7 @@
 //! FastRetrieve(query, options, scope)               -> RetrievalResponse
 //! CoverWindow(window, scope)                        -> RetrievalResponse
 //! SearchEntities(query, kinds, limit)               -> [EntityMatch]
+//! RecallNamespaceScored(ns, query, limit, exclude)  -> [NamespaceMemoryHit]
 //! RetrieveSource(query, scope)                      -> RetrievalResponse
 //! RetrieveChildren(node_id, max_depth, query, limit) -> [RetrievalHit]
 //! RetrieveLeaves(chunk_ids)                          -> [RetrievalHit]
@@ -125,7 +126,8 @@ use tinymemory_api::tool_memory::ToolMemoryRule;
 use tinymemory_api::tree::{IngestRequest, QueryResult, TreeStatus};
 use tinymemory_api::types::{
     GraphRelationRecord, MemoryCategory, MemoryEntry, MemoryKvRecord, MemoryTaint,
-    NamespaceDocumentInput, NamespaceRetrievalContext, NamespaceSummary, StoredMemoryDocument,
+    NamespaceDocumentInput, NamespaceMemoryHit, NamespaceRetrievalContext, NamespaceSummary,
+    StoredMemoryDocument,
 };
 use tinymemory_api::wire;
 
@@ -849,6 +851,21 @@ impl MemoryService {
             .await
             .map_err(|error| into_bus_error(&error))?;
         ensure_response_fits(&hits, "RetrieveLeaves")?;
+        Ok(hits)
+    }
+
+    async fn recall_namespace_scored(
+        &self,
+        namespace: String,
+        query: String,
+        limit: usize,
+        exclude_session_id: Option<String>,
+    ) -> BusResult<Vec<NamespaceMemoryHit>> {
+        let hits = require_family!(self, as_retrieval, Capability::Retrieval)
+            .recall_namespace_scored(&namespace, &query, limit, exclude_session_id.as_deref())
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&hits, "RecallNamespaceScored")?;
         Ok(hits)
     }
 

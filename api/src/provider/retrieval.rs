@@ -41,6 +41,7 @@ use serde::{Deserialize, Serialize};
 use crate::chunks::SourceKind;
 use crate::error::MemoryError;
 use crate::provider::types::SourceScope;
+use crate::types::NamespaceMemoryHit;
 
 /// Whether a hit is a raw leaf or a sealed summary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -263,6 +264,35 @@ pub trait MemoryRetrieval: Send + Sync {
     /// Backend failures only.
     async fn retrieve_leaves(&self, chunk_ids: &[String])
         -> Result<Vec<RetrievalHit>, MemoryError>;
+
+    /// Namespace recall returning **scored** hits with their signal breakdown.
+    ///
+    /// # Why this exists next to [`MemoryRecall::recall`]
+    ///
+    /// [`MemoryRecall`](super::MemoryRecall) returns ranked entries and keeps
+    /// its scoring private. A host that wants to re-rank — a weight profile
+    /// trading graph proximity against vector similarity, say — needs the
+    /// *components*, not the verdict. This returns
+    /// [`NamespaceMemoryHit`](crate::types::NamespaceMemoryHit),
+    /// whose `score_breakdown` carries them, so re-ranking is host policy over
+    /// engine signals rather than a second retrieval implementation.
+    ///
+    /// `exclude_session_id` drops documents auto-saved for that session. It
+    /// exists so a search issued mid-turn cannot retrieve the very request that
+    /// triggered it — a self-echo the caller cannot filter afterwards, because
+    /// by then the hit has already displaced a real result under the limit.
+    ///
+    /// # Errors
+    ///
+    /// Backend and embedding failures; an unknown namespace yields an empty
+    /// vector.
+    async fn recall_namespace_scored(
+        &self,
+        namespace: &str,
+        query: &str,
+        limit: usize,
+        exclude_session_id: Option<&str>,
+    ) -> Result<Vec<NamespaceMemoryHit>, MemoryError>;
 
     /// Free-text search over the entity index.
     ///

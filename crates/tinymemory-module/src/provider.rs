@@ -34,7 +34,8 @@ use tinymemory_api::tool_memory::ToolMemoryRule;
 use tinymemory_api::tree::{IngestRequest, QueryResult, TreeStatus};
 use tinymemory_api::types::{
     GraphRelationRecord, MemoryCategory, MemoryEntry, MemoryKvRecord, MemoryTaint,
-    NamespaceDocumentInput, NamespaceRetrievalContext, NamespaceSummary, StoredMemoryDocument,
+    NamespaceDocumentInput, NamespaceMemoryHit, NamespaceRetrievalContext, NamespaceSummary,
+    StoredMemoryDocument,
 };
 use tinymemory_core::store::{MemoryClient, MemoryClientRef};
 use tinymemory_tinycortex::TinycortexMemory;
@@ -1552,9 +1553,14 @@ impl MemoryChunks for ModuleMemoryProvider {
                 tinymemory_core::store::chunks::get_chunk_embedding(config, &id)?.is_some();
             let lifecycle_status =
                 tinymemory_core::store::chunks::get_chunk_lifecycle_status(config, &id)?;
-            let content_path =
-                tinymemory_core::store::chunks::get_chunk_content_path(config, &id)?;
-            Ok(Some((chunk, body, has_embedding, lifecycle_status, content_path)))
+            let content_path = tinymemory_core::store::chunks::get_chunk_content_path(config, &id)?;
+            Ok(Some((
+                chunk,
+                body,
+                has_embedding,
+                lifecycle_status,
+                content_path,
+            )))
         })
         .await?;
 
@@ -1718,6 +1724,27 @@ impl MemoryRetrieval for ModuleMemoryProvider {
             .await
             .map_err(|error| Self::other("fetch leaves", error))?;
         Self::cross(&hits, "convert retrieval hits")
+    }
+
+    async fn recall_namespace_scored(
+        &self,
+        namespace: &str,
+        query: &str,
+        limit: usize,
+        exclude_session_id: Option<&str>,
+    ) -> Result<Vec<NamespaceMemoryHit>, MemoryError> {
+        let hits = self
+            .client
+            .unified_handle()
+            .query_namespace_hits_excluding_session(
+                namespace,
+                query,
+                u32::try_from(limit).unwrap_or(u32::MAX),
+                exclude_session_id,
+            )
+            .await
+            .map_err(|error| Self::other("recall namespace scored", error))?;
+        Self::cross(&hits, "convert namespace hits")
     }
 
     async fn search_entities(
