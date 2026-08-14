@@ -9,6 +9,10 @@
 //! Field provenance:
 //! - `workspace` ← the memory workspace root (same root `MemoryClient` opens).
 //! - `embedding.dim` ← `config.memory().embedding_dimensions`.
+//! - `embedding.provider` ← [`effective_embedder_slug`], the slug the embedder
+//!   ladder actually resolves to — **not** `config.memory().embedding_provider`.
+//!   See the note on the mapping below; reading that field here would mis-key
+//!   every locally-embedded row.
 //! - `embedding.model` ← `config.memory().embedding_model`.
 //! - `embedding.strict` ← `config.memory_tree().embedding_strict` (when false the
 //!   engine tolerates an inert embedder and falls back to scope+recency rerank).
@@ -27,6 +31,7 @@ use tinycortex::memory::MemoryConfig;
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
+use crate::tree::score::embed::effective_embedder_slug;
 use crate::Config;
 
 /// Build a [`MemoryConfig`] from the host [`Config`] and the resolved memory
@@ -39,8 +44,20 @@ use crate::Config;
 pub fn memory_config_from(config: &Config, workspace: PathBuf) -> MemoryConfig {
     let mut mc = MemoryConfig::new(workspace);
     mc.content_root = Some(config.memory_tree_content_root());
+    // `provider` is part of the signature every per-model sidecar row is keyed
+    // by, so it has to name the backend that actually produced the vectors —
+    // two backends serving one model id must never share a vector space.
+    //
+    // That is `effective_embedder_slug`, which walks the same resolution ladder
+    // the read and write factories walk, and NOT `config.memory()
+    // .embedding_provider`: the ladder resolves local Ollama from
+    // `memory_tree.embedding_endpoint` or the unified
+    // `workload_local_model("embeddings")` setting, and neither path rewrites
+    // that field — so a user embedding entirely locally still reads as `"cloud"`
+    // there. Keying on it would file local vectors under the cloud provider.
     mc.embedding = EmbeddingConfig {
         dim: config.memory().embedding_dimensions,
+        provider: effective_embedder_slug(config).to_string(),
         model: config.memory().embedding_model.clone(),
         strict: config.memory_tree().embedding_strict,
     };
@@ -76,6 +93,29 @@ mod tests {
         assert_eq!(mc.embedding.dim, 1024);
         assert_eq!(mc.embedding.model, "embedding-v1");
         assert!(mc.embedding.strict);
+    }
+
+    #[test]
+    fn embedding_provider_is_the_resolved_slug_not_the_config_field() {
+        // The regression this pins: `memory.embedding_provider` is not
+        // authoritative. A user embedding entirely locally still reads as
+        // `"cloud"` there, because neither local rung of the ladder rewrites
+        // the field. Since `provider` keys the vector space, mapping it
+        // straight through would file local vectors under the cloud provider.
+        let mut config = TestHostConfig::default();
+        config.memory.embedding_provider = "cloud".to_string();
+        // Rung 1 of the ladder: an explicit Ollama endpoint + model.
+        config.memory_tree.embedding_endpoint = Some("http://127.0.0.1:11434".to_string());
+        config.memory_tree.embedding_model = Some("nomic-embed-text".to_string());
+
+        let mc = memory_config_from(&config, PathBuf::from("/tmp/ws"));
+
+        assert_eq!(
+            mc.embedding.provider, "ollama",
+            "locally-resolved embeddings must be keyed as ollama, not the \
+             stale 'cloud' spelling in memory.embedding_provider"
+        );
+        assert_ne!(mc.embedding.provider, config.memory.embedding_provider);
     }
 
     #[test]
