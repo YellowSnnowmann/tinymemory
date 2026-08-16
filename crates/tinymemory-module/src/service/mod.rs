@@ -8,6 +8,7 @@
 //! Capabilities()                                    -> Capabilities
 //! Health()                                          -> MemoryHealth
 //! Shutdown()                                        -> ()
+//! OpenStore(memory_subdir)                          -> object_path
 //!
 //! Store(namespace, key, content, category, session_id, taint) -> ()
 //! Get(namespace, key)                               -> Option<MemoryEntry>
