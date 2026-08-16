@@ -141,7 +141,7 @@ fn over_claiming_driver_is_reported_as_advertised_but_absent() {
 
     let audit = audit_provider(&liar).expect_err("over-claiming driver must fail the audit");
     assert_eq!(audit.present_but_unadvertised, Vec::new());
-    assert_eq!(audit.advertised_but_absent.len(), 14);
+    assert_eq!(audit.advertised_but_absent.len(), 15);
     assert!(audit.advertised_but_absent.contains(&Capability::Tree));
     // The mandatory three are supertraits, so they can never be missing.
     assert!(!audit.advertised_but_absent.contains(&Capability::Core));

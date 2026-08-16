@@ -13,9 +13,9 @@ use super::*;
 use serde_json::json;
 
 #[test]
-fn capability_has_exactly_the_sixteen_contract_families() {
-    assert_eq!(Capability::ALL.len(), 17);
-    assert_eq!(Capability::all().len(), 17);
+fn capability_has_exactly_the_eighteen_contract_families() {
+    assert_eq!(Capability::ALL.len(), 18);
+    assert_eq!(Capability::all().len(), 18);
 
     let names: Vec<&str> = Capability::ALL.iter().map(|c| c.as_str()).collect();
     assert_eq!(
@@ -38,6 +38,7 @@ fn capability_has_exactly_the_sixteen_contract_families() {
             "chunks",
             "retrieval",
             "profile",
+            "episodic",
         ]
     );
 }
