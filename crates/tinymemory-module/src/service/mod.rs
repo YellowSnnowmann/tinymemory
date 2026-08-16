@@ -359,10 +359,9 @@ impl MemoryService {
             .await?;
 
         // Recorded only after `serve_at` succeeds, so a failed open is retried
-        // rather than caching a path nothing answers on.
-        if let Ok(mut served) = opener.served.lock() {
-            served.insert(memory_subdir, path.clone());
-        }
+        // rather than caching a path nothing answers on. Both early returns
+        // above leave the map untouched for the same reason.
+        served.insert(memory_subdir, path.clone());
         log::info!("[tinymemory:module] open_store now serving an additional memory subtree");
         Ok(path)
     }
