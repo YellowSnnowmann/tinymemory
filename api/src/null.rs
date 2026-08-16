@@ -589,6 +589,7 @@ impl MemoryRetrieval for NullMemoryProvider {
         _max_depth: u32,
         _query: Option<&str>,
         _limit: Option<usize>,
+        _scope: Option<&SourceScope>,
     ) -> Result<Vec<RetrievalHit>, MemoryError> {
         unsupported(Capability::Retrieval)
     }
@@ -596,6 +597,7 @@ impl MemoryRetrieval for NullMemoryProvider {
     async fn retrieve_leaves(
         &self,
         _chunk_ids: &[String],
+        _scope: Option<&SourceScope>,
     ) -> Result<Vec<RetrievalHit>, MemoryError> {
         unsupported(Capability::Retrieval)
     }
