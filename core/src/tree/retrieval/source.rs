@@ -26,8 +26,8 @@ pub struct SourceQuery<'a> {
     pub time_window_days: Option<u32>,
     /// Semantic query. `None` (or blank) retrieves without ranking by meaning.
     pub query: Option<&'a str>,
-    /// Row cap; `0` means "no caller preference", which becomes
-    /// [`DEFAULT_LIMIT`].
+    /// Row cap; `0` means "no caller preference", which this module replaces
+    /// with its own default rather than returning nothing.
     pub limit: usize,
 }
 
