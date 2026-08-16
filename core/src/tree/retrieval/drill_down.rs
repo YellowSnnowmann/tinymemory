@@ -69,7 +69,7 @@ pub async fn drill_down_scoped(
         engine_limit,
     )
     .await?;
-    if let Some(set) = current_source_scope() {
+    if let Some(set) = scope {
         hits.retain(|hit| set.contains(&hit.tree_scope));
     }
     if let Some(limit) = limit {
