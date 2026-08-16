@@ -56,10 +56,10 @@ pub async fn drill_down_scoped(
         build_embedder_from_config(config)?
     };
     let bridge = EmbedderBridge(embedder.as_ref());
-    let engine_limit = current_source_scope()
-        .as_ref()
-        .map(|_| None)
-        .unwrap_or(limit);
+    // A scoped walk has to over-fetch: the engine cannot filter by scope, so
+    // limiting before the retain below would cap the result set with rows that
+    // are about to be discarded.
+    let engine_limit = scope.as_ref().map(|_| None).unwrap_or(limit);
     let mut hits = tinycortex::memory::retrieval::drill_down(
         &engine_config(config),
         node_id,
