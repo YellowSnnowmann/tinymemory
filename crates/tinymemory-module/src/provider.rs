@@ -22,13 +22,13 @@ use tinymemory_api::provider::types::{
     SourceScope,
 };
 use tinymemory_api::provider::{
-    AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, FacetType, MemoryProfile,
-    ProfileFacet, UserState, CoverWindowQuery, EntityMatch,
-    FastRetrieveQuery, MemoryChunks, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities,
-    MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople, MemoryPortability,
-    MemoryProvider, MemoryRecall, MemoryRetrieval, MemorySourceSink, MemoryToolMemory, MemoryTree,
-    PersonHandle, PersonInteraction, PersonRecord, PersonScore, RankedPerson, ResolvedPerson,
-    RetrievalHit, RetrievalResponse, SourceRetrievalQuery,
+    AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, CoverWindowQuery, EntityMatch,
+    FacetType, FastRetrieveQuery, MemoryChunks, MemoryCore, MemoryDiff, MemoryDocuments,
+    MemoryEntities, MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople,
+    MemoryPortability, MemoryProfile, MemoryProvider, MemoryRecall, MemoryRetrieval,
+    MemorySourceSink, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction, PersonRecord,
+    PersonScore, ProfileFacet, RankedPerson, ResolvedPerson, RetrievalHit, RetrievalResponse,
+    SourceRetrievalQuery, UserState,
 };
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
@@ -1932,19 +1932,19 @@ impl MemoryProfile for ModuleMemoryProvider {
 
     async fn drop_facets_below(&self, threshold: f64) -> Result<usize, MemoryError> {
         let client = Arc::clone(&self.client);
-        tokio::task::spawn_blocking(move || {
-            client.profile_store().drop_below_threshold(threshold)
-        })
-        .await
-        .map_err(|e| Self::other("join drop_facets_below", e))?
-        .map_err(|e| Self::other("drop_facets_below", e))
+        tokio::task::spawn_blocking(move || client.profile_store().drop_below_threshold(threshold))
+            .await
+            .map_err(|e| Self::other("join drop_facets_below", e))?
+            .map_err(|e| Self::other("drop_facets_below", e))
     }
 
     async fn workflow_identity_matches(&self, key_pattern: &str, canonical_value: &str) -> bool {
         let client = Arc::clone(&self.client);
         let (pattern, value) = (key_pattern.to_string(), canonical_value.to_string());
         tokio::task::spawn_blocking(move || {
-            client.profile_store().skill_identity_matches(&pattern, &value)
+            client
+                .profile_store()
+                .skill_identity_matches(&pattern, &value)
         })
         .await
         // A join failure reads as "no", like every other error on this

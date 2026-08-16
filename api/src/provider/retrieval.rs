@@ -211,7 +211,7 @@ pub trait MemoryRetrieval: Send + Sync {
 
     /// Ranked retrieval over one source's summary tree.
     ///
-    /// # Not to be confused with [`MemoryTree::query_source`]
+    /// # Not to be confused with [`MemoryTree::query_source`](super::MemoryTree::query_source)
     ///
     /// They answer different questions and return different shapes. The tree
     /// family's returns the raw [`Chunk`](crate::chunks::Chunk)s
@@ -267,13 +267,13 @@ pub trait MemoryRetrieval: Send + Sync {
 
     /// Namespace recall returning **scored** hits with their signal breakdown.
     ///
-    /// # Why this exists next to [`MemoryRecall::recall`]
+    /// # Why this exists next to [`MemoryRecall::recall`](super::MemoryRecall::recall)
     ///
     /// [`MemoryRecall`](super::MemoryRecall) returns ranked entries and keeps
     /// its scoring private. A host that wants to re-rank — a weight profile
     /// trading graph proximity against vector similarity, say — needs the
     /// *components*, not the verdict. This returns
-    /// [`NamespaceMemoryHit`](crate::types::NamespaceMemoryHit),
+    /// [`NamespaceMemoryHit`],
     /// whose `score_breakdown` carries them, so re-ranking is host policy over
     /// engine signals rather than a second retrieval implementation.
     ///

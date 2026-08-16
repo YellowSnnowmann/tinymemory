@@ -122,11 +122,11 @@ use tinymemory_api::provider::types::{
 // imported: they are supertraits of `MemoryProvider`, so their methods are
 // already callable on the trait object.
 use tinymemory_api::provider::chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery};
-use tinymemory_api::provider::profile::{FacetType, ProfileFacet, UserState};
 use tinymemory_api::provider::people::{
     AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
     RankedPerson, ResolvedPerson,
 };
+use tinymemory_api::provider::profile::{FacetType, ProfileFacet, UserState};
 use tinymemory_api::provider::retrieval::{
     CoverWindowQuery, EntityMatch, FastRetrieveQuery, RetrievalHit, RetrievalResponse,
     SourceRetrievalQuery,
@@ -309,7 +309,11 @@ impl MemoryService {
             });
         };
 
-        if let Some(existing) = opener.served.lock().ok().and_then(|m| m.get(&memory_subdir).cloned())
+        if let Some(existing) = opener
+            .served
+            .lock()
+            .ok()
+            .and_then(|m| m.get(&memory_subdir).cloned())
         {
             log::debug!("[tinymemory:module] open_store reusing already-served subtree");
             return Ok(existing.clone());
@@ -969,7 +973,6 @@ impl MemoryService {
         ensure_response_fits(&response, "CoverWindow")?;
         Ok(response)
     }
-
 
     // ── Profile ─────────────────────────────────────────────────────────────
 

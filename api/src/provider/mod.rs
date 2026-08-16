@@ -61,10 +61,10 @@ pub mod audit;
 pub mod chunks;
 pub mod content;
 pub mod driver;
+pub mod episodic;
 pub mod knowledge;
 pub mod mandatory;
 pub mod people;
-pub mod episodic;
 pub mod profile;
 pub mod records;
 pub mod retrieval;
@@ -74,13 +74,13 @@ pub use audit::{audit_provider, CapabilityAudit};
 pub use chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery, MemoryChunks};
 pub use content::{MemoryDocuments, MemoryIngest, MemoryTree};
 pub use driver::MemoryProvider;
+pub use episodic::{ConversationSegment, EpisodicTurn, MemoryEpisodic};
 pub use knowledge::{MemoryDiff, MemoryEntities, MemoryGraph};
 pub use mandatory::{MemoryCore, MemoryPortability, MemoryRecall};
 pub use people::{
     AddressBookSeedOutcome, MemoryPeople, PersonHandle, PersonInteraction, PersonRecord, PersonRef,
     PersonScore, RankedPerson, ResolvedPerson,
 };
-pub use episodic::{ConversationSegment, EpisodicTurn, MemoryEpisodic};
 pub use profile::{FacetState, FacetType, MemoryProfile, ProfileFacet, UserState};
 pub use records::{MemoryGoals, MemoryMaintenance, MemorySourceSink, MemoryToolMemory};
 pub use retrieval::{
