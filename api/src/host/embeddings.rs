@@ -20,9 +20,42 @@ use async_trait::async_trait;
 /// provider. Drift between the two silently splits one embedding space into
 /// two, and every vector written on the wrong side of the split becomes
 /// unsearchable without a re-embed.
+/// # Delimiters in a component
+///
+/// A component containing `;`, `=` or `%` is percent-encoded, because without
+/// that the format is ambiguous: `("a;model=b", "c")` and `("a", "b;model=c")`
+/// are different embedding spaces that would otherwise produce one identical
+/// key, and vectors from both would then be compared as though they came from
+/// the same model.
+///
+/// Encoding only those three characters is what keeps this from being a
+/// migration. Every provider and model identifier actually in use is
+/// alphanumeric plus `-`, `_`, `.`, `/` or `:`, and each of those passes
+/// through untouched — so every signature already on disk still formats to the
+/// same bytes. Only a name that could have collided changes, and such a name
+/// has never been written.
 #[must_use]
 pub fn format_embedding_signature(name: &str, model_id: &str, dims: usize) -> String {
+    let name = escape_component(name);
+    let model_id = escape_component(model_id);
     format!("provider={name};model={model_id};dims={dims}")
+}
+
+/// Percent-encode the three characters that carry structure in a signature.
+///
+/// `%` goes first and must: encoding it afterwards would re-encode the `%` this
+/// function just introduced, and `a;b` would arrive as `a%3Bb` from one path
+/// and `a%253Bb` from another.
+fn escape_component(value: &str) -> String {
+    if !value.contains(['%', ';', '=']) {
+        // The overwhelmingly common path, and the one that guarantees existing
+        // keys are untouched: no allocation beyond the copy, no rewriting.
+        return value.to_string();
+    }
+    value
+        .replace('%', "%25")
+        .replace(';', "%3B")
+        .replace('=', "%3D")
 }
 
 #[cfg(test)]
