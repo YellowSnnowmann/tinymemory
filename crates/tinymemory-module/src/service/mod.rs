@@ -45,8 +45,8 @@
 //! SearchEntities(query, kinds, limit)               -> [EntityMatch]
 //! RecallNamespaceScored(ns, query, limit, exclude)  -> [NamespaceMemoryHit]
 //! RetrieveSource(query, scope)                      -> RetrievalResponse
-//! RetrieveChildren(node_id, max_depth, query, limit) -> [RetrievalHit]
-//! RetrieveLeaves(chunk_ids)                          -> [RetrievalHit]
+//! RetrieveChildren(node_id, max_depth, query, limit, scope) -> [RetrievalHit]
+//! RetrieveLeaves(chunk_ids, scope)                   -> [RetrievalHit]
 //! ```
 //!
 //! # Source scope crosses as an argument, never as ambient state
@@ -1271,18 +1271,23 @@ impl MemoryService {
         max_depth: u32,
         query: Option<String>,
         limit: Option<usize>,
+        scope: Option<SourceScope>,
     ) -> BusResult<Vec<RetrievalHit>> {
         let hits = require_family!(self, as_retrieval, Capability::Retrieval)
-            .retrieve_children(&node_id, max_depth, query.as_deref(), limit)
+            .retrieve_children(&node_id, max_depth, query.as_deref(), limit, scope.as_ref())
             .await
             .map_err(|error| into_bus_error(&error))?;
         ensure_response_fits(&hits, "RetrieveChildren")?;
         Ok(hits)
     }
 
-    async fn retrieve_leaves(&self, chunk_ids: Vec<String>) -> BusResult<Vec<RetrievalHit>> {
+    async fn retrieve_leaves(
+        &self,
+        chunk_ids: Vec<String>,
+        scope: Option<SourceScope>,
+    ) -> BusResult<Vec<RetrievalHit>> {
         let hits = require_family!(self, as_retrieval, Capability::Retrieval)
-            .retrieve_leaves(&chunk_ids)
+            .retrieve_leaves(&chunk_ids, scope.as_ref())
             .await
             .map_err(|error| into_bus_error(&error))?;
         ensure_response_fits(&hits, "RetrieveLeaves")?;
