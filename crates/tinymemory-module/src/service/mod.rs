@@ -920,24 +920,30 @@ impl MemoryService {
         Ok(chunks)
     }
 
+    /// One chunk, size-checked.
+    ///
+    /// A single object is checked for the same reason a list is: the ceiling is
+    /// a property of the frame, not of the row count, and one chunk carries
+    /// full content with no bound of its own. A list of one that is refused
+    /// while the singular read of the same chunk succeeds would be an odd
+    /// contract to explain.
     async fn get_chunk(&self, chunk_id: String) -> BusResult<Option<Chunk>> {
-        require_family!(self, as_chunks, Capability::Chunks)
+        let chunk = require_family!(self, as_chunks, Capability::Chunks)
             .get_chunk(&chunk_id)
             .await
-            .map_err(|error| into_bus_error(&error))
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&chunk, "GetChunk")?;
+        Ok(chunk)
     }
 
-    /// Embedding vectors are the largest thing this interface returns.
-    ///
-    /// A 1536-dimension vector encodes to roughly 10 KiB of JSON, so a few
-    /// hundred chunks reach the frame ceiling on their own. Checked for the same
-    /// reason `List` is, and refused by name rather than truncated — a short
-    /// batch is indistinguishable from "those chunks have no vector".
+    /// One chunk plus its metadata, size-checked.
     async fn chunk_detail(&self, chunk_id: String) -> BusResult<Option<ChunkDetail>> {
-        require_family!(self, as_chunks, Capability::Chunks)
+        let detail = require_family!(self, as_chunks, Capability::Chunks)
             .chunk_detail(&chunk_id)
             .await
-            .map_err(|error| into_bus_error(&error))
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&detail, "ChunkDetail")?;
+        Ok(detail)
     }
 
     async fn storage_kinds(&self) -> BusResult<Vec<String>> {
