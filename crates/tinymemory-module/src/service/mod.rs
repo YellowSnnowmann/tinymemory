@@ -313,12 +313,19 @@ impl MemoryService {
             });
         };
 
-        if let Some(existing) = opener
-            .served
-            .lock()
-            .ok()
-            .and_then(|m| m.get(&memory_subdir).cloned())
-        {
+        // The guard is taken here and held to the end of the method, so the
+        // check and the insert cannot be split by the open in between. An
+        // earlier version dropped it before opening the store, which read as
+        // idempotent but was not: two concurrent calls for the same subtree
+        // both missed the map, both opened the database, and both ran
+        // migrations against one file — the corruption this map exists to
+        // prevent, arrived at through the map.
+        //
+        // It serializes opens of *different* subtrees too. That is accepted
+        // rather than worked around: an open happens once per profile, and a
+        // per-key lock map costs more complexity than the contention it saves.
+        let mut served = opener.served.lock().await;
+        if let Some(existing) = served.get(&memory_subdir) {
             log::debug!("[tinymemory:module] open_store reusing already-served subtree");
             return Ok(existing.clone());
         }
