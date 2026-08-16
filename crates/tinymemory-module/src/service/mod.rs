@@ -177,6 +177,11 @@ pub(crate) struct StoreOpener {
     /// engine runs migrations on open, and concurrent migration attempts on the
     /// same file are exactly the kind of corruption that is invisible until it
     /// is not.
+    ///
+    /// The guard is therefore held across the whole open, not just the lookup —
+    /// a lock released between the check and the insert would let two callers
+    /// through and produce exactly the double-open it is here to prevent. That
+    /// is why this is a `tokio::sync::Mutex`.
     served: Mutex<HashMap<String, String>>,
 }
 
