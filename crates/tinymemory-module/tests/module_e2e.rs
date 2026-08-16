@@ -544,6 +544,7 @@ const EXPECTED_METHODS: &[&str] = &[
     "DeleteDocument",
     "ClearNamespace",
     "QueryDocuments",
+    "RecallDocuments",
     "Append",
     "QuerySource",
     "DrillDown",
