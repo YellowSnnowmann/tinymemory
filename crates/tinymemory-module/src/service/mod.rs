@@ -106,7 +106,10 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use std::sync::Mutex;
+// Deliberately the async mutex, not `std::sync::Mutex`: the open path holds
+// this guard across an `.await` (see `open_store`), which a std guard cannot
+// be held across.
+use tokio::sync::Mutex;
 
 use tinybus::{Connection, Error as BusError, Result as BusResult};
 use tinymemory_api::capabilities::{Capabilities, Capability};
