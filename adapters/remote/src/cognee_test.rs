@@ -6,15 +6,16 @@ use std::sync::{Arc, Mutex};
 
 use axum::{
     extract::{Multipart, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
     Json, Router,
 };
 use serde_json::{json, Value};
 use tinymemory_api::{
     provider::{MemoryCore, MemoryProvider, MemoryRecall},
     recall::OwnedRecallOpts,
+    traits::Memory,
     types::{MemoryCategory, MemoryTaint},
 };
 
@@ -23,7 +24,10 @@ struct AppState(Arc<Mutex<Option<Vec<u8>>>>);
 
 async fn datasets(State(state): State<AppState>) -> Json<Value> {
     let values = if state.0.lock().expect("state lock").is_some() {
-        vec![json!({"id": "dataset-1", "name": "tinymemory__70726f6a656374"})]
+        vec![json!({
+            "id": "dataset-1",
+            "name": super::CogneeDialect::dataset_name("project")
+        })]
     } else {
         vec![]
     };
@@ -70,6 +74,67 @@ async fn recall(State(state): State<AppState>) -> Json<Value> {
     Json(Value::Array(records))
 }
 
+async fn capture_auth(State(state): State<Arc<Mutex<Value>>>, headers: HeaderMap) -> StatusCode {
+    *state.lock().expect("state lock") = json!({
+        "authorization": headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok()),
+        "api_key": headers
+            .get("x-api-key")
+            .and_then(|value| value.to_str().ok()),
+    });
+    StatusCode::OK
+}
+
+#[tokio::test]
+async fn cognee_supports_cloud_api_keys_and_self_hosted_bearer_tokens() {
+    let captured = Arc::new(Mutex::new(Value::Null));
+    let app = Router::new()
+        .route("/health", get(capture_auth))
+        .with_state(captured.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let endpoint = format!("http://{}", listener.local_addr().expect("address"));
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("serve");
+    });
+
+    let api = super::CogneeMemory::api(&endpoint, "cloud-secret").expect("api client");
+    assert!(api.health_check().await);
+    let api_headers = captured.lock().expect("state lock").clone();
+    assert_eq!(api_headers["api_key"], "cloud-secret");
+    assert!(api_headers["authorization"].is_null());
+
+    let hosted = super::CogneeMemory::self_hosted(&endpoint, Some("local-secret"))
+        .expect("self-hosted client");
+    assert!(hosted.health_check().await);
+    let hosted_headers = captured.lock().expect("state lock").clone();
+    assert_eq!(hosted_headers["authorization"], "Bearer local-secret");
+    assert!(hosted_headers["api_key"].is_null());
+
+    let debug = format!("{api:?}");
+    assert!(!debug.contains("cloud-secret"));
+    assert!(super::CogneeMemory::api(&endpoint, "  ").is_err());
+}
+
+#[test]
+fn cognee_remote_names_are_bounded_and_safe_for_arbitrary_contract_keys() {
+    let unusual = format!("tenant / 🧠 / {}", "x".repeat(500));
+    let dataset = super::CogneeDialect::dataset_name(&unusual);
+    let filename = super::CogneeDialect::filename(&unusual);
+
+    assert!(dataset.starts_with("tinymemory__tm_"));
+    assert!(dataset.len() < 100);
+    assert!(dataset
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_'));
+    assert!(filename.starts_with("tm_"));
+    assert!(filename.ends_with(".tinymemory.json"));
+    assert!(filename.len() < 100);
+    assert_eq!(dataset, super::CogneeDialect::dataset_name(&unusual));
+}
+
 #[tokio::test]
 async fn native_cognee_round_trips_the_tinymemory_contract() {
     let state = AppState::default();
@@ -79,6 +144,7 @@ async fn native_cognee_round_trips_the_tinymemory_contract() {
         .route("/api/v1/datasets/{dataset}/data/{data}/raw", get(raw))
         .route("/api/v1/datasets/{dataset}/data/{data}", delete(remove))
         .route("/api/v1/remember", post(remember))
+        .route("/api/v1/update", patch(remember))
         .route("/api/v1/recall", post(recall))
         .route("/health", get(|| async { StatusCode::OK }))
         .with_state(state);
@@ -90,7 +156,8 @@ async fn native_cognee_round_trips_the_tinymemory_contract() {
         axum::serve(listener, app).await.expect("serve");
     });
 
-    let driver = crate::cognee_provider(super::CogneeMemory::new(&endpoint, None).expect("client"));
+    let driver =
+        crate::cognee_provider(super::CogneeMemory::self_hosted(&endpoint, None).expect("client"));
     tinymemory_api::provider::audit_provider(&driver).expect("honest capabilities");
     driver
         .store(
@@ -103,12 +170,23 @@ async fn native_cognee_round_trips_the_tinymemory_contract() {
         )
         .await
         .expect("store");
+    driver
+        .store(
+            "project",
+            "key",
+            "updated knowledge graph",
+            MemoryCategory::Conversation,
+            Some("session"),
+            MemoryTaint::ExternalSync,
+        )
+        .await
+        .expect("upsert");
     let entry = driver
         .get("project", "key")
         .await
         .expect("get")
         .expect("entry");
-    assert_eq!(entry.content, "knowledge graph");
+    assert_eq!(entry.content, "updated knowledge graph");
     assert_eq!(entry.taint, MemoryTaint::ExternalSync);
     assert_eq!(
         driver
