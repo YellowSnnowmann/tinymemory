@@ -246,12 +246,16 @@ pub trait MemoryRetrieval: Send + Sync {
     /// Backend failures only; an unknown `node_id` yields an empty vector
     /// rather than [`MemoryError::NotFound`] — "no children" and "no such node"
     /// are the same answer to this question.
+    /// `scope` restricts which sources may answer, and is explicit for the
+    /// reason given on [`Self::fast_retrieve`]: the walk filters by scope, and
+    /// a driver reached over a transport has no ambient scope to read.
     async fn retrieve_children(
         &self,
         node_id: &str,
         max_depth: u32,
         query: Option<&str>,
         limit: Option<usize>,
+        scope: Option<&SourceScope>,
     ) -> Result<Vec<RetrievalHit>, MemoryError>;
 
     /// Hydrate specific leaf chunks into ranked-hit form, by chunk id.
@@ -259,11 +263,17 @@ pub trait MemoryRetrieval: Send + Sync {
     /// Ids that do not resolve are **omitted**, so the result may be shorter
     /// than the input and callers must not index by position.
     ///
+    /// A chunk whose source falls outside `scope` is omitted the same way, so
+    /// naming a chunk id directly cannot read around a source restriction.
+    ///
     /// # Errors
     ///
     /// Backend failures only.
-    async fn retrieve_leaves(&self, chunk_ids: &[String])
-        -> Result<Vec<RetrievalHit>, MemoryError>;
+    async fn retrieve_leaves(
+        &self,
+        chunk_ids: &[String],
+        scope: Option<&SourceScope>,
+    ) -> Result<Vec<RetrievalHit>, MemoryError>;
 
     /// Namespace recall returning **scored** hits with their signal breakdown.
     ///
