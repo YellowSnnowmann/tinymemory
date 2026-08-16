@@ -1017,6 +1017,11 @@ impl MemoryService {
             .map_err(|error| into_bus_error(&error))
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "mirrors `MemoryProfile::upsert_provider_facet`; the service layer \
+                  must not reshape a contract signature"
+    )]
     async fn upsert_provider_facet(
         &self,
         facet_id: String,

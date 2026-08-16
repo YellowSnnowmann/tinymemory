@@ -235,6 +235,12 @@ pub trait MemoryProfile: Send + Sync {
     /// # Errors
     ///
     /// Backend failures only.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "each argument is a distinct column of the facet row a provider \
+                  supplies; grouping them into a struct would move the same seven \
+                  fields one level out without reducing what the caller must know"
+    )]
     async fn upsert_provider_facet(
         &self,
         facet_id: &str,
