@@ -276,6 +276,9 @@ mod exports {
             "DeleteDocument",
             "ClearNamespace",
             "QueryDocuments",
+            // Predates the five families this port added; it was implemented
+            // but never declared, so it was unreachable over the bus too.
+            "RecallDocuments",
             "Append",
             "QuerySource",
             "DrillDown",
