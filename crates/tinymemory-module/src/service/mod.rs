@@ -29,6 +29,7 @@
 //! ListChunks(query, scope)                          -> [Chunk]
 //! GetChunk(chunk_id)                                -> Option<Chunk>
 //! ChunkDetail(chunk_id)                             -> Option<ChunkDetail>
+//! ChunkEmbeddings(chunk_ids, model_signature)       -> [ChunkEmbedding]
 //! StorageKinds()                                    -> [String]
 //!
 //! ListActiveFacets() / ListAllFacets()               -> [ProfileFacet]
