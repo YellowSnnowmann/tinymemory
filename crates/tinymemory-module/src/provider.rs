@@ -1664,6 +1664,10 @@ impl MemoryRetrieval for ModuleMemoryProvider {
             until_ms,
             source_id.as_deref(),
             engine_kind,
+            // 0 is the engine's "no caller preference" sentinel, not a request
+            // for zero rows: `cover_window_scoped` substitutes its own
+            // DEFAULT_LIMIT for it. Mapping `None` to 0 therefore asks for the
+            // default, which is what an absent limit means.
             limit.unwrap_or(0),
             scope_to_engine(scope),
         )
