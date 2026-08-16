@@ -1211,6 +1211,9 @@ impl MemoryProvider for ModuleMemoryProvider {
     fn as_profile(&self) -> Option<&dyn MemoryProfile> {
         Some(self)
     }
+    fn as_episodic(&self) -> Option<&dyn MemoryEpisodic> {
+        Some(self)
+    }
 }
 
 // ── People ───────────────────────────────────────────────────────────────────
@@ -1947,5 +1950,217 @@ impl MemoryProfile for ModuleMemoryProvider {
         // A join failure reads as "no", like every other error on this
         // predicate — see the trait docs.
         .unwrap_or(false)
+    }
+}
+
+
+/// Episodic capture: the turn-by-turn record and its segment lifecycle.
+///
+/// Every method hops to `spawn_blocking` for the same reason the profile family
+/// does — these are synchronous `rusqlite` calls behind a `parking_lot::Mutex`,
+/// and blocking a tinybus executor thread on a database lock would stall every
+/// other call the module is serving.
+///
+/// The boundary-detection and summary-composition halves of the archivist are
+/// **not** here: they touch no database and are host policy. See the family's
+/// contract docs.
+#[async_trait]
+impl MemoryEpisodic for ModuleMemoryProvider {
+    async fn insert_turn(&self, turn: &EpisodicTurn) -> Result<i64, MemoryError> {
+        let conn = self.client.profile_conn();
+        let entry = tinymemory_core::store::fts5::EpisodicEntry {
+            id: None,
+            session_id: turn.session_id.clone(),
+            timestamp: turn.timestamp,
+            role: turn.role.clone(),
+            content: turn.content.clone(),
+            lesson: turn.lesson.clone(),
+            tool_calls_json: turn.tool_calls_json.clone(),
+            // The contract carries this signed because a cost is a plain number
+            // on the wire; the engine column is unsigned. A negative value is
+            // not meaningful, so it clamps rather than wrapping.
+            cost_microdollars: u64::try_from(turn.cost_microdollars).unwrap_or(0),
+        };
+        tokio::task::spawn_blocking(move || {
+            tinymemory_core::store::fts5::episodic_insert(&conn, &entry)
+        })
+        .await
+        .map_err(|e| Self::other("join insert_turn", e))?
+        .map_err(|e| Self::other("insert_turn", e))
+    }
+
+    async fn session_turns(&self, session_id: &str) -> Result<Vec<EpisodicTurn>, MemoryError> {
+        let conn = self.client.profile_conn();
+        let session_id = session_id.to_string();
+        let entries = tokio::task::spawn_blocking(move || {
+            tinymemory_core::store::fts5::episodic_session_entries(&conn, &session_id)
+        })
+        .await
+        .map_err(|e| Self::other("join session_turns", e))?
+        .map_err(|e| Self::other("session_turns", e))?;
+        Ok(entries.into_iter().map(episodic_to_contract).collect())
+    }
+
+    async fn open_segment(
+        &self,
+        session_id: &str,
+    ) -> Result<Option<ConversationSegment>, MemoryError> {
+        let conn = self.client.profile_conn();
+        let session_id = session_id.to_string();
+        let segment = tokio::task::spawn_blocking(move || {
+            tinymemory_core::store::segments::open_segment_for_session(&conn, &session_id)
+        })
+        .await
+        .map_err(|e| Self::other("join open_segment", e))?
+        .map_err(|e| Self::other("open_segment", e))?;
+        Ok(segment.map(segment_to_contract))
+    }
+
+    async fn create_segment(
+        &self,
+        segment_id: &str,
+        session_id: &str,
+        namespace: &str,
+        start_episodic_id: i64,
+        start_timestamp: f64,
+        now: f64,
+    ) -> Result<(), MemoryError> {
+        let conn = self.client.profile_conn();
+        let (segment_id, session_id, namespace) = (
+            segment_id.to_string(),
+            session_id.to_string(),
+            namespace.to_string(),
+        );
+        tokio::task::spawn_blocking(move || {
+            tinymemory_core::store::segments::segment_create(
+                &conn,
+                &segment_id,
+                &session_id,
+                &namespace,
+                start_episodic_id,
+                // Per-session seq numbering is the archivist store's, and it is
+                // not part of this contract; legacy rows carry `None` too.
+                None,
+                start_timestamp,
+                now,
+            )
+        })
+        .await
+        .map_err(|e| Self::other("join create_segment", e))?
+        .map_err(|e| Self::other("create_segment", e))
+    }
+
+    async fn append_turn(
+        &self,
+        segment_id: &str,
+        episodic_id: i64,
+        timestamp: f64,
+        now: f64,
+    ) -> Result<(), MemoryError> {
+        let conn = self.client.profile_conn();
+        let segment_id = segment_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            tinymemory_core::store::segments::segment_append_turn(
+                &conn,
+                &segment_id,
+                episodic_id,
+                None,
+                timestamp,
+                now,
+            )
+        })
+        .await
+        .map_err(|e| Self::other("join append_turn", e))?
+        .map_err(|e| Self::other("append_turn", e))
+    }
+
+    async fn close_segment(&self, segment_id: &str, now: f64) -> Result<(), MemoryError> {
+        let conn = self.client.profile_conn();
+        let segment_id = segment_id.to_string();
+        tokio::task::spawn_blocking(move || {
+            tinymemory_core::store::segments::segment_close(&conn, &segment_id, now)
+        })
+        .await
+        .map_err(|e| Self::other("join close_segment", e))?
+        .map_err(|e| Self::other("close_segment", e))
+    }
+
+    async fn set_segment_summary(
+        &self,
+        segment_id: &str,
+        summary: &str,
+        now: f64,
+    ) -> Result<(), MemoryError> {
+        let conn = self.client.profile_conn();
+        let (segment_id, summary) = (segment_id.to_string(), summary.to_string());
+        tokio::task::spawn_blocking(move || {
+            tinymemory_core::store::segments::segment_set_summary(&conn, &segment_id, &summary, now)
+        })
+        .await
+        .map_err(|e| Self::other("join set_segment_summary", e))?
+        .map_err(|e| Self::other("set_segment_summary", e))
+    }
+
+    async fn upsert_segment_embedding(
+        &self,
+        segment_id: &str,
+        model_signature: &str,
+        embedding: &[f32],
+        created_at: f64,
+    ) -> Result<(), MemoryError> {
+        let conn = self.client.profile_conn();
+        let (segment_id, model_signature) = (segment_id.to_string(), model_signature.to_string());
+        let embedding = embedding.to_vec();
+        tokio::task::spawn_blocking(move || {
+            tinymemory_core::store::segments::segment_embedding_upsert(
+                &conn,
+                &segment_id,
+                &model_signature,
+                &embedding,
+                created_at,
+            )
+        })
+        .await
+        .map_err(|e| Self::other("join upsert_segment_embedding", e))?
+        .map_err(|e| Self::other("upsert_segment_embedding", e))
+    }
+}
+
+/// Engine episodic row -> contract turn.
+fn episodic_to_contract(entry: tinymemory_core::store::fts5::EpisodicEntry) -> EpisodicTurn {
+    EpisodicTurn {
+        id: entry.id,
+        session_id: entry.session_id,
+        timestamp: entry.timestamp,
+        role: entry.role,
+        content: entry.content,
+        lesson: entry.lesson,
+        tool_calls_json: entry.tool_calls_json,
+        cost_microdollars: i64::try_from(entry.cost_microdollars).unwrap_or(i64::MAX),
+    }
+}
+
+/// Engine segment row -> contract segment.
+///
+/// Written out rather than derived: the engine row carries several fields the
+/// contract deliberately does not expose (`topic_keywords`, the seq numbers,
+/// `created_at`), and a blanket conversion would quietly start shipping them if
+/// the contract ever grew a matching name.
+fn segment_to_contract(
+    segment: tinymemory_core::store::segments::ConversationSegment,
+) -> ConversationSegment {
+    use tinymemory_core::store::segments::SegmentStatus;
+    ConversationSegment {
+        segment_id: segment.segment_id,
+        session_id: segment.session_id,
+        namespace: segment.namespace,
+        start_episodic_id: segment.start_episodic_id,
+        end_episodic_id: segment.end_episodic_id,
+        start_timestamp: segment.start_timestamp,
+        end_timestamp: segment.end_timestamp,
+        turn_count: segment.turn_count,
+        summary: segment.summary,
+        embedding: segment.embedding,
+        open: matches!(segment.status, SegmentStatus::Open),
     }
 }
