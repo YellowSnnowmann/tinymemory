@@ -10,6 +10,27 @@ use crate::Config;
 
 const DEFAULT_LIMIT: usize = 10;
 
+/// What to retrieve, separated from *whose sources* may answer it.
+///
+/// The five fields below all describe the query; `scope` describes the caller's
+/// authority. Keeping them apart is what lets `query_source_scoped` take three
+/// arguments instead of seven — and it puts the security-relevant argument on
+/// its own, where a call site cannot bury it among five optional filters.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SourceQuery<'a> {
+    /// Restrict to one source, by id.
+    pub source_id: Option<&'a str>,
+    /// Restrict to one kind of source.
+    pub source_kind: Option<SourceKind>,
+    /// Only consider material from the last N days.
+    pub time_window_days: Option<u32>,
+    /// Semantic query. `None` (or blank) retrieves without ranking by meaning.
+    pub query: Option<&'a str>,
+    /// Row cap; `0` means "no caller preference", which becomes
+    /// [`DEFAULT_LIMIT`].
+    pub limit: usize,
+}
+
 /// Ranked retrieval over a source's summary tree, using the **ambient** scope.
 ///
 /// Correct in-process; see [`query_source_scoped`] for the transport-facing
