@@ -45,11 +45,13 @@ pub async fn query_source(
 ) -> Result<QueryResponse> {
     query_source_scoped(
         config,
-        source_id,
-        source_kind,
-        time_window_days,
-        query,
-        limit,
+        SourceQuery {
+            source_id,
+            source_kind,
+            time_window_days,
+            query,
+            limit,
+        },
         current_source_scope(),
     )
     .await
