@@ -1332,9 +1332,7 @@ impl MemoryPeople for ModuleMemoryProvider {
         let mut ranked: Vec<RankedPerson> = people
             .into_iter()
             .map(|person| {
-                let observed = interactions
-                    .get(&person.id)
-                    .map_or(&[][..], Vec::as_slice);
+                let observed = interactions.get(&person.id).map_or(&[][..], Vec::as_slice);
                 let closeness = tinycortex::memory::people::scorer::score(observed, now);
                 RankedPerson {
                     person: person_to_contract(person),
