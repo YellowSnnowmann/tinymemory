@@ -1693,11 +1693,13 @@ impl MemoryRetrieval for ModuleMemoryProvider {
             .transpose()?;
         let response = tinymemory_core::tree::retrieval::source::query_source_scoped(
             &self.config,
-            source_id.as_deref(),
-            engine_kind,
-            time_window_days,
-            text.as_deref(),
-            limit,
+            tinymemory_core::tree::retrieval::source::SourceQuery {
+                source_id: source_id.as_deref(),
+                source_kind: engine_kind,
+                time_window_days,
+                query: text.as_deref(),
+                limit,
+            },
             scope_to_engine(scope),
         )
         .await
