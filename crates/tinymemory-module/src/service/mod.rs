@@ -122,6 +122,7 @@ use tinymemory_api::provider::types::{
 // imported: they are supertraits of `MemoryProvider`, so their methods are
 // already callable on the trait object.
 use tinymemory_api::provider::chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery};
+use tinymemory_api::provider::episodic::{ConversationSegment, EpisodicTurn};
 use tinymemory_api::provider::people::{
     AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
     RankedPerson, ResolvedPerson,
@@ -1008,6 +1009,111 @@ impl MemoryService {
             .map_err(|error| into_bus_error(&error))?;
         ensure_response_fits(&facets, "FacetsByType")?;
         Ok(facets)
+    }
+
+    // ── Episodic ────────────────────────────────────────────────────────────
+
+    /// Record one turn, answering with the row id the engine assigned it.
+    async fn insert_turn(&self, turn: EpisodicTurn) -> BusResult<i64> {
+        require_family!(self, as_episodic, Capability::Episodic)
+            .insert_turn(&turn)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Every recorded turn for one session, oldest first.
+    async fn session_turns(&self, session_id: String) -> BusResult<Vec<EpisodicTurn>> {
+        let turns = require_family!(self, as_episodic, Capability::Episodic)
+            .session_turns(&session_id)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&turns, "SessionTurns")?;
+        Ok(turns)
+    }
+
+    /// The open segment for a session, if there is one.
+    async fn open_segment(&self, session_id: String) -> BusResult<Option<ConversationSegment>> {
+        require_family!(self, as_episodic, Capability::Episodic)
+            .open_segment(&session_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Start a new segment.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "mirrors `MemoryEpisodic::create_segment`; the service layer must \
+                  not reshape a contract signature"
+    )]
+    async fn create_segment(
+        &self,
+        segment_id: String,
+        session_id: String,
+        namespace: String,
+        start_episodic_id: i64,
+        start_timestamp: f64,
+        now: f64,
+    ) -> BusResult<()> {
+        require_family!(self, as_episodic, Capability::Episodic)
+            .create_segment(
+                &segment_id,
+                &session_id,
+                &namespace,
+                start_episodic_id,
+                start_timestamp,
+                now,
+            )
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Extend a segment to include one more turn.
+    async fn append_turn(
+        &self,
+        segment_id: String,
+        episodic_id: i64,
+        timestamp: f64,
+        now: f64,
+    ) -> BusResult<()> {
+        require_family!(self, as_episodic, Capability::Episodic)
+            .append_turn(&segment_id, episodic_id, timestamp, now)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Mark a segment closed.
+    async fn close_segment(&self, segment_id: String, now: f64) -> BusResult<()> {
+        require_family!(self, as_episodic, Capability::Episodic)
+            .close_segment(&segment_id, now)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Attach a summary to a closed segment.
+    async fn set_segment_summary(
+        &self,
+        segment_id: String,
+        summary: String,
+        now: f64,
+    ) -> BusResult<()> {
+        require_family!(self, as_episodic, Capability::Episodic)
+            .set_segment_summary(&segment_id, &summary, now)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Store a segment's embedding under `model_signature`.
+    async fn upsert_segment_embedding(
+        &self,
+        segment_id: String,
+        model_signature: String,
+        embedding: Vec<f32>,
+        created_at: f64,
+    ) -> BusResult<()> {
+        require_family!(self, as_episodic, Capability::Episodic)
+            .upsert_segment_embedding(&segment_id, &model_signature, &embedding, created_at)
+            .await
+            .map_err(|error| into_bus_error(&error))
     }
 
     async fn upsert_facet(&self, facet: ProfileFacet) -> BusResult<()> {

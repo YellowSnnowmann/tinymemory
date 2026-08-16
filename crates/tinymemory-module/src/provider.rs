@@ -25,11 +25,10 @@ use tinymemory_api::provider::{
     AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, ConversationSegment,
     CoverWindowQuery, EntityMatch, EpisodicTurn, FacetType, FastRetrieveQuery, MemoryChunks,
     MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities, MemoryEpisodic, MemoryGoals,
-    MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople,
-    MemoryPortability, MemoryProfile, MemoryProvider, MemoryRecall, MemoryRetrieval,
-    MemorySourceSink, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction, PersonRecord,
-    PersonScore, ProfileFacet, RankedPerson, ResolvedPerson, RetrievalHit, RetrievalResponse,
-    SourceRetrievalQuery, UserState,
+    MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProfile,
+    MemoryProvider, MemoryRecall, MemoryRetrieval, MemorySourceSink, MemoryToolMemory, MemoryTree,
+    PersonHandle, PersonInteraction, PersonRecord, PersonScore, ProfileFacet, RankedPerson,
+    ResolvedPerson, RetrievalHit, RetrievalResponse, SourceRetrievalQuery, UserState,
 };
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
@@ -1953,7 +1952,6 @@ impl MemoryProfile for ModuleMemoryProvider {
         .unwrap_or(false)
     }
 }
-
 
 /// Episodic capture: the turn-by-turn record and its segment lifecycle.
 ///
