@@ -64,16 +64,18 @@ pub async fn query_source(
 /// [`fast_retrieve_scoped`](super::fast::fast_retrieve_scoped): a task-local
 /// source scope does not cross a transport, and reading it as absent means
 /// unrestricted — a source gate failing open.
-#[allow(clippy::too_many_arguments)]
 pub async fn query_source_scoped(
     config: &Config,
-    source_id: Option<&str>,
-    source_kind: Option<SourceKind>,
-    time_window_days: Option<u32>,
-    query: Option<&str>,
-    limit: usize,
+    request: SourceQuery<'_>,
     scope: Option<std::collections::HashSet<String>>,
 ) -> Result<QueryResponse> {
+    let SourceQuery {
+        source_id,
+        source_kind,
+        time_window_days,
+        query,
+        limit,
+    } = request;
     let limit = if limit == 0 { DEFAULT_LIMIT } else { limit };
     if source_id.is_some_and(|id| scope.as_ref().is_some_and(|set| !set.contains(id))) {
         log::debug!("[retrieval::source] explicit source excluded by active scope");
