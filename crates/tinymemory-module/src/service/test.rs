@@ -258,7 +258,9 @@ fn every_served_method_is_declared_in_the_manifest() {
         .filter_map(|line| {
             let line = line.trim();
             // Skip the group comments; only quoted names count.
-            line.strip_prefix('"')?.split_once('"').map(|(name, _)| name)
+            line.strip_prefix('"')?
+                .split_once('"')
+                .map(|(name, _)| name)
         })
         .collect();
 
@@ -269,8 +271,7 @@ fn every_served_method_is_declared_in_the_manifest() {
         .iter()
         .map(|member| member.as_str().to_string())
         .collect();
-    let served: std::collections::BTreeSet<&str> =
-        served.iter().map(String::as_str).collect();
+    let served: std::collections::BTreeSet<&str> = served.iter().map(String::as_str).collect();
 
     let undeclared: Vec<_> = served.difference(&declared).collect();
     assert!(
