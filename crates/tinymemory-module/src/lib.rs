@@ -154,7 +154,7 @@ async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()
     })?;
 
     let provider = provider::ModuleMemoryProvider::new(&config, Arc::new(client));
-    service::serve(&connection, Arc::new(provider)).await
+    service::serve(&connection, Arc::new(provider), config).await
 }
 
 /// Claim this process's single setup slot.
@@ -216,6 +216,7 @@ mod exports {
             "Capabilities",
             "Health",
             "Shutdown",
+            "OpenStore",
             "Store",
             "Get",
             "Forget",

@@ -103,7 +103,10 @@
 //! query.** All three are user memory content, and a module error must not carry
 //! payload values.
 
+use std::collections::HashMap;
 use std::sync::Arc;
+
+use parking_lot::Mutex;
 
 use tinybus::{Connection, Error as BusError, Result as BusResult};
 use tinymemory_api::capabilities::{Capabilities, Capability};
@@ -145,16 +148,78 @@ pub const BUS_NAME: &str = "ai.tinyhumans.tinymemory.Memory";
 /// Object path exported by the `TinyMemory` module.
 pub const OBJECT_PATH: &str = "/ai/tinyhumans/tinymemory/Memory";
 
-/// The served object: a bound driver and nothing else.
+/// The served object: a bound driver, plus what it needs to open a sibling
+/// store on request.
 pub(crate) struct MemoryService {
     provider: Arc<dyn MemoryProvider>,
+    /// Everything needed to build a second store under a different subtree.
+    ///
+    /// `None` on the objects that `OpenStore` itself creates: a store opened
+    /// this way cannot open further stores. That is not a limitation worth
+    /// lifting — the host asks the root object, which knows the workspace — and
+    /// it keeps the recursion finite by construction.
+    opener: Option<Arc<StoreOpener>>,
+}
+
+/// The root object's ability to bring up additional stores under the same
+/// workspace.
+pub(crate) struct StoreOpener {
+    connection: Connection,
+    config: crate::config::ModuleConfig,
+    /// Subtrees already served, so a second `OpenStore` for the same one
+    /// returns the existing object instead of opening the database twice.
+    ///
+    /// Two live handles to one SQLite file is not a hypothetical problem: the
+    /// engine runs migrations on open, and concurrent migration attempts on the
+    /// same file are exactly the kind of corruption that is invisible until it
+    /// is not.
+    served: Mutex<HashMap<String, String>>,
 }
 
 impl MemoryService {
-    /// Serve `provider`.
+    /// Serve `provider` as a leaf object — one store, no opener.
     pub(crate) fn new(provider: Arc<dyn MemoryProvider>) -> Self {
-        Self { provider }
+        Self {
+            provider,
+            opener: None,
+        }
     }
+
+    /// Serve `provider` as the root object, able to open sibling stores.
+    pub(crate) fn root(provider: Arc<dyn MemoryProvider>, opener: Arc<StoreOpener>) -> Self {
+        Self {
+            provider,
+            opener: Some(opener),
+        }
+    }
+}
+
+impl StoreOpener {
+    pub(crate) fn new(connection: Connection, config: crate::config::ModuleConfig) -> Self {
+        Self {
+            connection,
+            config,
+            served: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+/// Object path for a store rooted at `memory_subdir`.
+///
+/// Derived rather than free-form so a caller cannot name an arbitrary bus path,
+/// and sanitised to the characters an object path allows — a subdir reaches
+/// this from a profile id, and an id that fails validation must produce a
+/// refusal, not a malformed path.
+fn object_path_for_subdir(memory_subdir: &str) -> Option<String> {
+    if memory_subdir.is_empty()
+        || memory_subdir.len() > 128
+        || !memory_subdir
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return None;
+    }
+    Some(format!("{OBJECT_PATH}/stores/{memory_subdir}"))
 }
 
 macro_rules! require_family {
@@ -205,6 +270,85 @@ impl MemoryService {
             .shutdown()
             .await
             .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Bring up a store rooted at `<workspace>/<memory_subdir>` and return the
+    /// object path serving it.
+    ///
+    /// # Why the module opens stores rather than the host selecting one per call
+    ///
+    /// A host with per-profile memory needs more than one store in a process.
+    /// The alternative was a store selector threaded through every method on
+    /// every capability family — a change to the shape of the whole contract,
+    /// to express something that is not a property of a memory operation at
+    /// all. Which store you are talking to is settled when you are handed a
+    /// driver, exactly like which workspace you are bound to.
+    ///
+    /// So the root object opens stores and hands back object paths. Each is an
+    /// ordinary [`MemoryService`] exporting the identical interface, and the
+    /// contract does not change at all: `MemoryProvider` still describes one
+    /// store, and a proxy still talks to one store.
+    ///
+    /// Idempotent per subtree — see [`StoreOpener::served`] for why opening the
+    /// same database twice is worth going out of the way to avoid.
+    async fn open_store(&self, memory_subdir: String) -> BusResult<String> {
+        let Some(opener) = self.opener.as_ref() else {
+            return Err(BusError::failed(
+                "ai.tinyhumans.tinymemory.Error.Invalid",
+                "only the root memory object can open stores",
+            ));
+        };
+        let Some(path) = object_path_for_subdir(&memory_subdir) else {
+            // The subdir is rejected by shape, and the message says so without
+            // echoing it: it derives from a profile id, which is user data.
+            return Err(BusError::failed(
+                "ai.tinyhumans.tinymemory.Error.Invalid",
+                "memory subdirectory is empty, over-long, or contains characters \
+                 outside [A-Za-z0-9_-]",
+            ));
+        };
+
+        if let Some(existing) = opener.served.lock().get(&memory_subdir) {
+            log::debug!("[tinymemory:module] open_store reusing already-served subtree");
+            return Ok(existing.clone());
+        }
+
+        let client = tinymemory_core::store::factories::create_session_memory_client_with_local_ai(
+            &opener.config.memory,
+            None,
+            "",
+            &opener.config.embedding_routes,
+            opener.config.storage_provider.as_ref(),
+            &opener.config.workspace_dir,
+            &memory_subdir,
+        )
+        .map_err(|error| {
+            // Same reasoning as `setup`: the factory error names this process's
+            // filesystem layout, which the caller has no business learning.
+            log::error!("[tinymemory:module] open_store create store failed: {error}");
+            BusError::failed(
+                "ai.tinyhumans.tinymemory.Error.Other",
+                "could not open the requested memory store",
+            )
+        })?;
+
+        let provider = crate::provider::ModuleMemoryProvider::new(&opener.config, Arc::new(client));
+        opener
+            .connection
+            .serve_at(
+                path.as_str().try_into()?,
+                MemoryService::new(Arc::new(provider)),
+            )
+            .await?;
+
+        // Recorded only after `serve_at` succeeds, so a failed open is retried
+        // rather than caching a path nothing answers on.
+        opener
+            .served
+            .lock()
+            .insert(memory_subdir, path.clone());
+        log::info!("[tinymemory:module] open_store now serving an additional memory subtree");
+        Ok(path)
     }
 
     /// Upsert an entry keyed by `(namespace, key)`.
@@ -1074,9 +1218,14 @@ fn into_bus_error(error: &MemoryError) -> BusError {
 pub(crate) async fn serve(
     connection: &Connection,
     provider: Arc<dyn MemoryProvider>,
+    config: crate::config::ModuleConfig,
 ) -> BusResult<()> {
+    let opener = Arc::new(StoreOpener::new(connection.clone(), config));
     connection
-        .serve_at(OBJECT_PATH.try_into()?, MemoryService::new(provider))
+        .serve_at(
+            OBJECT_PATH.try_into()?,
+            MemoryService::root(provider, opener),
+        )
         .await?;
     connection.request_name(BUS_NAME).await?;
     Ok(())

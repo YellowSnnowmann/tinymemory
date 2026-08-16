@@ -19,10 +19,14 @@
 //!
 //! [`UserState::Pinned`] and [`UserState::Forgotten`] are explicit user
 //! decisions. A pinned facet stays active however low its stability falls, and
-//! a forgotten one stays dropped however much new evidence arrives — which is
-//! the point: a user who says "forget that" must not have it re-learned. Any
-//! driver implementing [`MemoryProfile::drop_below_threshold`] must honour that,
-//! and the threshold sweep must not resurrect or evict against an override.
+//! a forgotten one stays dropped however much new evidence arrives — a user who
+//! says "forget that" must not have it re-learned.
+//!
+//! The two are **not** symmetric under
+//! [`MemoryProfile::drop_facets_below`], and the asymmetry is deliberate: only
+//! `Pinned` is protected from the sweep. A `Forgotten` facet is already in
+//! [`FacetState::Dropped`] and is *meant* to be collected — protecting it would
+//! keep the thing the user asked to forget on disk indefinitely.
 
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
@@ -47,6 +51,40 @@ pub enum FacetType {
     Context,
 }
 
+impl FacetType {
+    /// The identifier persisted in the facet table and published on the RPC
+    /// surface.
+    ///
+    /// **This is not the serde representation**, and the difference is
+    /// deliberate: [`Self::Workflow`] serialises as `workflow` but persists as
+    /// `skill`, a historical column value. Both forms are load-bearing — the
+    /// serde one crosses the bus, this one reaches storage and the published
+    /// JSON — so they are kept separate rather than reconciled.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Preference => "preference",
+            Self::Workflow => "skill",
+            Self::Role => "role",
+            Self::Personality => "personality",
+            Self::Context => "context",
+        }
+    }
+
+    /// Parse a persisted identifier; unknown values fall back to
+    /// [`Self::Preference`], matching the engine's own lenient reader.
+    #[must_use]
+    pub fn parse_or_default(raw: &str) -> Self {
+        match raw {
+            "skill" => Self::Workflow,
+            "role" => Self::Role,
+            "personality" => Self::Personality,
+            "context" => Self::Context,
+            _ => Self::Preference,
+        }
+    }
+}
+
 /// Where a facet sits in its lifecycle, as the host's stability detector last
 /// left it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -64,6 +102,19 @@ pub enum FacetState {
     Dropped,
 }
 
+impl FacetState {
+    /// Stable identifier, matching the serde representation.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Active => "active",
+            Self::Provisional => "provisional",
+            Self::Candidate => "candidate",
+            Self::Dropped => "dropped",
+        }
+    }
+}
+
 /// The user's explicit override, which outranks [`FacetState`].
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -76,6 +127,18 @@ pub enum UserState {
     /// Forgotten by the user: stays dropped, and new evidence must not
     /// re-promote it.
     Forgotten,
+}
+
+impl UserState {
+    /// Stable identifier, matching the serde representation.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::Pinned => "pinned",
+            Self::Forgotten => "forgotten",
+        }
+    }
 }
 
 /// One learned claim about the user.
@@ -210,8 +273,11 @@ pub trait MemoryProfile: Send + Sync {
 
     /// Drop facets whose stability is below `threshold`, returning the count.
     ///
-    /// Must not touch a facet whose [`UserState`] is `Pinned` or `Forgotten` —
-    /// see the module docs.
+    /// Sweeps only facets already in [`FacetState::Dropped`]: an `Active` facet
+    /// below the threshold stays, because promotion and eviction are the host's
+    /// decision and this call only collects what the host already evicted.
+    /// [`UserState::Pinned`] is exempt; [`UserState::Forgotten`] is not — see
+    /// the module docs for why those differ.
     ///
     /// # Errors
     ///

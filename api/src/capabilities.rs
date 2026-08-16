@@ -94,6 +94,8 @@ pub enum Capability {
     Retrieval,
     /// Learned facets about the user.
     Profile,
+    /// The turn-by-turn conversation record and its segment lifecycle.
+    Episodic,
 }
 
 impl Capability {
@@ -102,7 +104,7 @@ impl Capability {
     /// Declaration order is also bit order in [`Capabilities`] and iteration
     /// order in its serialized form, so this slice is the single ordering
     /// authority for the whole module.
-    pub const ALL: [Capability; 17] = [
+    pub const ALL: [Capability; 18] = [
         Capability::Core,
         Capability::Recall,
         Capability::Ingest,
@@ -123,6 +125,7 @@ impl Capability {
         Capability::Chunks,
         Capability::Retrieval,
         Capability::Profile,
+        Capability::Episodic,
     ];
 
     /// The families a driver must advertise to be bindable at all.
@@ -165,6 +168,7 @@ impl Capability {
             Self::Chunks => "chunks",
             Self::Retrieval => "retrieval",
             Self::Profile => "profile",
+            Self::Episodic => "episodic",
         }
     }
 
@@ -211,6 +215,7 @@ impl Capability {
             Self::Chunks => 14,
             Self::Retrieval => 15,
             Self::Profile => 16,
+            Self::Episodic => 17,
         }
     }
 

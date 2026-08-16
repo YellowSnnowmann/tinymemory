@@ -21,7 +21,8 @@
 //!   ├─ as_people()       -> Option<&dyn MemoryPeople>
 //!   ├─ as_chunks()       -> Option<&dyn MemoryChunks>
 //!   ├─ as_retrieval()    -> Option<&dyn MemoryRetrieval>
-//!   └─ as_profile()      -> Option<&dyn MemoryProfile>
+//!   ├─ as_profile()      -> Option<&dyn MemoryProfile>
+//!   └─ as_episodic()     -> Option<&dyn MemoryEpisodic>
 //! ```
 //!
 //! The mandatory three are supertraits, so "mandatory" is enforced by the type
@@ -63,6 +64,7 @@ pub mod driver;
 pub mod knowledge;
 pub mod mandatory;
 pub mod people;
+pub mod episodic;
 pub mod profile;
 pub mod records;
 pub mod retrieval;
@@ -78,6 +80,7 @@ pub use people::{
     AddressBookSeedOutcome, MemoryPeople, PersonHandle, PersonInteraction, PersonRecord, PersonRef,
     PersonScore, RankedPerson, ResolvedPerson,
 };
+pub use episodic::{ConversationSegment, EpisodicTurn, MemoryEpisodic};
 pub use profile::{FacetState, FacetType, MemoryProfile, ProfileFacet, UserState};
 pub use records::{MemoryGoals, MemoryMaintenance, MemorySourceSink, MemoryToolMemory};
 pub use retrieval::{
