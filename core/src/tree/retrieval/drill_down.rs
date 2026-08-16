@@ -7,12 +7,41 @@ use crate::tree::retrieval::types::RetrievalHit;
 use crate::tree::score::embed::{build_embedder_from_config, InertEmbedder};
 use crate::Config;
 
+/// Walk a summary tree from `node_id`, using the **ambient** scope.
+///
+/// Correct in-process; see [`drill_down_scoped`] for the transport-facing path
+/// and why it cannot use this one.
 pub async fn drill_down(
     config: &Config,
     node_id: &str,
     max_depth: u32,
     query: Option<&str>,
     limit: Option<usize>,
+) -> Result<Vec<RetrievalHit>> {
+    drill_down_scoped(
+        config,
+        node_id,
+        max_depth,
+        query,
+        limit,
+        current_source_scope(),
+    )
+    .await
+}
+
+/// Walk a summary tree from `node_id`, using an **explicitly supplied** scope.
+///
+/// Exists for the same reason as
+/// [`fast_retrieve_scoped`](super::fast::fast_retrieve_scoped): a task-local
+/// scope does not cross a transport, and reading it as absent means
+/// unrestricted — a source gate failing open.
+pub async fn drill_down_scoped(
+    config: &Config,
+    node_id: &str,
+    max_depth: u32,
+    query: Option<&str>,
+    limit: Option<usize>,
+    scope: Option<std::collections::HashSet<String>>,
 ) -> Result<Vec<RetrievalHit>> {
     log::debug!(
         "[retrieval::drill_down] tinycortex max_depth={} has_query={} limit={:?}",
