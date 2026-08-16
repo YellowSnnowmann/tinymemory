@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use axum::{
     extract::State,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     routing::{get, post},
     Json, Router,
 };
@@ -14,24 +14,47 @@ use serde_json::{json, Value};
 use tinymemory_api::{
     provider::{MemoryCore, MemoryProvider, MemoryRecall},
     recall::OwnedRecallOpts,
+    traits::Memory,
     types::{MemoryCategory, MemoryTaint},
 };
 
-#[derive(Clone, Default)]
-struct AppState(Arc<Mutex<Vec<Value>>>);
+#[derive(Default)]
+struct Fixture {
+    records: Vec<Value>,
+    container_tags: Vec<String>,
+    last_search_tag: Option<String>,
+}
 
-async fn tags() -> Json<Value> {
-    Json(json!([{"containerTag": "project"}]))
+#[derive(Clone, Default)]
+struct AppState(Arc<Mutex<Fixture>>);
+
+async fn tags(State(state): State<AppState>) -> Json<Value> {
+    let fixture = state.0.lock().expect("state lock");
+    Json(Value::Array(
+        fixture
+            .container_tags
+            .iter()
+            .map(|tag| json!({"containerTag": tag}))
+            .collect(),
+    ))
 }
 
 async fn list(State(state): State<AppState>) -> Json<Value> {
-    let records = state.0.lock().expect("state lock");
-    Json(json!({"memoryEntries": records.clone(), "pagination": {"totalPages": 1}}))
+    let fixture = state.0.lock().expect("state lock");
+    Json(json!({"memoryEntries": fixture.records, "pagination": {"totalPages": 1}}))
 }
 async fn add(State(state): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
-    let mut records = state.0.lock().expect("state lock");
-    let id = format!("doc-{}", records.len() + 1);
-    records.push(json!({
+    let mut fixture = state.0.lock().expect("state lock");
+    let id = format!("doc-{}", fixture.records.len() + 1);
+    let container_tag = body["containerTag"].as_str().expect("container tag");
+    if !fixture
+        .container_tags
+        .iter()
+        .any(|tag| tag == container_tag)
+    {
+        fixture.container_tags.push(container_tag.to_owned());
+    }
+    fixture.records.push(json!({
         "id": id,
         "memory": body["memories"][0]["content"],
         "metadata": body["memories"][0]["metadata"],
@@ -47,6 +70,7 @@ async fn update(State(state): State<AppState>, Json(body): Json<Value>) -> Statu
         .0
         .lock()
         .expect("state lock")
+        .records
         .iter_mut()
         .find(|r| r["id"] == id)
     {
@@ -61,12 +85,64 @@ async fn remove(State(state): State<AppState>, Json(body): Json<Value>) -> Statu
         .0
         .lock()
         .expect("state lock")
+        .records
         .retain(|r| r["id"] != id);
     StatusCode::OK
 }
-async fn search(State(state): State<AppState>) -> Json<Value> {
-    let results = state.0.lock().expect("state lock").iter().map(|r| json!({"id": r["id"], "memory": r["memory"], "metadata": r["metadata"], "similarity": 0.95})).collect::<Vec<_>>();
+async fn search(State(state): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
+    let mut fixture = state.0.lock().expect("state lock");
+    fixture.last_search_tag = body["containerTag"].as_str().map(str::to_owned);
+    let results = fixture.records.iter().map(|r| json!({"id": r["id"], "memory": r["memory"], "metadata": r["metadata"], "similarity": 0.95})).collect::<Vec<_>>();
     Json(json!({"results": results}))
+}
+
+async fn capture_auth(State(state): State<Arc<Mutex<Value>>>, headers: HeaderMap) -> StatusCode {
+    *state.lock().expect("state lock") = json!({
+        "authorization": headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok()),
+    });
+    StatusCode::OK
+}
+
+#[tokio::test]
+async fn supermemory_supports_provided_and_self_hosted_apis() {
+    let captured = Arc::new(Mutex::new(Value::Null));
+    let app = Router::new()
+        .route("/", get(capture_auth))
+        .with_state(captured.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let endpoint = format!("http://{}", listener.local_addr().expect("address"));
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("serve");
+    });
+
+    for client in [
+        super::SupermemoryMemory::api(&endpoint, "provided-secret").expect("api client"),
+        super::SupermemoryMemory::self_hosted(&endpoint, "provided-secret")
+            .expect("self-hosted client"),
+    ] {
+        assert!(client.health_check().await);
+        let headers = captured.lock().expect("state lock").clone();
+        assert_eq!(headers["authorization"], "Bearer provided-secret");
+        assert!(!format!("{client:?}").contains("provided-secret"));
+    }
+    assert!(super::SupermemoryMemory::api(&endpoint, "").is_err());
+}
+
+#[test]
+fn supermemory_container_tags_cover_arbitrary_contract_namespaces() {
+    let unusual = format!("tenant / 🧠 / {}", "x".repeat(500));
+    let tag = super::SupermemoryDialect::container_tag(&unusual);
+
+    assert!(tag.starts_with("tinymemory:tm_"));
+    assert!(tag.len() <= 100);
+    assert!(tag
+        .bytes()
+        .all(|byte| { byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b':' | b'-') }));
+    assert_eq!(tag, super::SupermemoryDialect::container_tag(&unusual));
 }
 
 #[tokio::test]
@@ -78,7 +154,7 @@ async fn native_supermemory_round_trips_the_tinymemory_contract() {
         .route("/v4/memories", post(add).patch(update).delete(remove))
         .route("/v4/search", post(search))
         .route("/", get(|| async { StatusCode::OK }))
-        .with_state(state);
+        .with_state(state.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
@@ -88,7 +164,7 @@ async fn native_supermemory_round_trips_the_tinymemory_contract() {
     });
 
     let driver = crate::supermemory_provider(
-        super::SupermemoryMemory::new(&endpoint, Some("secret")).expect("client"),
+        super::SupermemoryMemory::self_hosted(&endpoint, "secret").expect("client"),
     );
     tinymemory_api::provider::audit_provider(&driver).expect("honest capabilities");
     driver
@@ -120,13 +196,30 @@ async fn native_supermemory_round_trips_the_tinymemory_contract() {
         .expect("entry");
     assert_eq!(entry.content, "use Rust 2024");
     assert_eq!(entry.taint, MemoryTaint::ExternalSync);
+    let expected_tag = super::SupermemoryDialect::container_tag("project");
+    assert_eq!(
+        state.0.lock().expect("state lock").container_tags,
+        vec![expected_tag.clone()]
+    );
     assert_eq!(
         driver
-            .recall("Rust", 1, &OwnedRecallOpts::default(), None)
+            .recall(
+                "Rust",
+                1,
+                &OwnedRecallOpts {
+                    namespace: Some("project".into()),
+                    ..OwnedRecallOpts::default()
+                },
+                None,
+            )
             .await
             .expect("recall")
             .len(),
         1
+    );
+    assert_eq!(
+        state.0.lock().expect("state lock").last_search_tag,
+        Some(expected_tag)
     );
     assert!(driver.forget("project", "decision").await.expect("forget"));
     assert!(driver.health().await.is_usable());

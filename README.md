@@ -72,18 +72,39 @@ that skips enforcement is the entire reason the policy layer exists.
 
 ## Remote engines
 
-The `tinymemory-remote` crate supports the self-hosted native APIs of
-Supermemory, Mem0, and Cognee. Each adapter stores TinyMemory's key, category,
-session, and provenance in backend metadata (or a Cognee raw-data envelope), so
-exact CRUD and portability survive the seam while recall remains engine-native.
+The `tinymemory-remote` crate supports the managed and self-hosted native APIs
+of Supermemory and Cognee, plus self-hosted Mem0. Each adapter stores
+TinyMemory's key, category, session, and provenance in backend metadata (or a
+Cognee raw-data envelope), so exact CRUD and portability survive the seam while
+recall remains engine-native. Provider-facing dataset names, container tags,
+and filenames are bounded stable hashes, so every namespace and key accepted by
+the TinyMemory contract remains valid on the remote API.
 
 ```rust
 use tinymemory_remote::{SupermemoryMemory, supermemory_provider};
 
-let memory = SupermemoryMemory::new("http://localhost:6767", Some("sm_..."))?;
+let memory = SupermemoryMemory::self_hosted("http://localhost:6767", "sm_...")?;
 let provider = supermemory_provider(memory);
 # Ok::<_, anyhow::Error>(provider)
 ```
+
+Managed APIs have explicit constructors so their authentication cannot be
+confused with a self-hosted token:
+
+```rust
+use tinymemory_remote::{CogneeMemory, SupermemoryMemory};
+
+let cognee = CogneeMemory::cloud("cognee-api-key")?;
+let supermemory = SupermemoryMemory::cloud("sm_...")?;
+
+// Cognee also issues tenant-specific API origins.
+let tenant = CogneeMemory::api("https://tenant.example.cognee.ai", "api-key")?;
+# Ok::<_, anyhow::Error>((cognee, supermemory, tenant))
+```
+
+Cognee Cloud uses `X-Api-Key`; authenticated self-hosted Cognee uses a bearer
+access token. Supermemory uses bearer API keys for both deployment modes. All
+constructors redact credentials from `Debug` output and transport errors.
 
 All three advertise the mandatory Core, Recall, and Portability families. The
 live Docker harness and conformance command are documented in

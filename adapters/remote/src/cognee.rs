@@ -8,19 +8,22 @@ use tinymemory_api::recall::RecallOpts;
 use tinymemory_api::traits::Memory;
 use tinymemory_api::types::MemoryTaint;
 
-use crate::common::{encode, Dialect, HttpClient, RemoteMemory, StoredEntry};
+use crate::common::{stable_id, Dialect, HttpClient, RemoteMemory, StoredEntry};
 
 /// Stable driver id used by configuration and status output.
 pub use tinymemory::registry::COGNEE_DRIVER_ID;
 
-/// A self-hosted Cognee server exposed through TinyMemory's storage contract.
+/// Default base URL for Cognee's managed API.
+pub const COGNEE_API_ENDPOINT: &str = "https://api.cognee.ai";
+
+/// A Cognee managed or self-hosted service exposed through TinyMemory's contract.
 #[derive(Debug)]
 pub struct CogneeMemory {
     inner: RemoteMemory<CogneeDialect>,
 }
 
 impl CogneeMemory {
-    /// Connect to a Cognee server.
+    /// Connect to a self-hosted Cognee server.
     ///
     /// `access_token` is sent as a bearer token. Local deployments with
     /// backend access control disabled may pass `None`.
@@ -29,11 +32,52 @@ impl CogneeMemory {
     ///
     /// Returns an error when `endpoint` is not an HTTP(S) URL.
     pub fn new(endpoint: &str, access_token: Option<&str>) -> anyhow::Result<Self> {
+        Self::self_hosted(endpoint, access_token)
+    }
+
+    /// Connect to a self-hosted Cognee server.
+    ///
+    /// `access_token` is sent as a bearer token. Local deployments with
+    /// authentication disabled may pass `None`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `endpoint` is not an HTTP(S) URL.
+    pub fn self_hosted(endpoint: &str, access_token: Option<&str>) -> anyhow::Result<Self> {
         Ok(Self {
             inner: RemoteMemory::new(CogneeDialect {
                 client: HttpClient::bearer(endpoint, access_token)?,
             }),
         })
+    }
+
+    /// Connect to a Cognee managed API using `X-Api-Key` authentication.
+    ///
+    /// This accepts a custom endpoint because Cognee Cloud may issue a
+    /// tenant-specific base URL. Use [`Self::cloud`] for the shared default.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `endpoint` is invalid or `api_key` is blank.
+    pub fn api(endpoint: &str, api_key: &str) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            !api_key.trim().is_empty(),
+            "cognee API key must not be empty"
+        );
+        Ok(Self {
+            inner: RemoteMemory::new(CogneeDialect {
+                client: HttpClient::api_key(endpoint, Some(api_key))?,
+            }),
+        })
+    }
+
+    /// Connect to Cognee's shared managed API endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `api_key` is blank.
+    pub fn cloud(api_key: &str) -> anyhow::Result<Self> {
+        Self::api(COGNEE_API_ENDPOINT, api_key)
     }
 }
 
@@ -128,11 +172,11 @@ struct Dataset {
 impl CogneeDialect {
     /// Encodes a TinyMemory namespace as a collision-free Cognee dataset name.
     fn dataset_name(namespace: &str) -> String {
-        format!("tinymemory__{}", encode(namespace))
+        format!("tinymemory__{}", stable_id("dataset", namespace))
     }
     /// Encodes a TinyMemory key as the uploaded envelope's filename.
     fn filename(key: &str) -> String {
-        format!("{}.tinymemory.json", encode(key))
+        format!("{}.tinymemory.json", stable_id("key", key))
     }
 
     /// Discovers only datasets owned by the TinyMemory adapter.
@@ -239,33 +283,45 @@ impl Dialect for CogneeDialect {
 
     /// Replaces an existing envelope and uploads the new exact record.
     async fn upsert(&self, entry: StoredEntry) -> anyhow::Result<()> {
-        if let Some(existing) = self
+        let existing = self
             .entries()
             .await?
             .into_iter()
-            .find(|item| item.namespace == entry.namespace && item.key == entry.key)
-        {
-            self.delete_entry(&existing).await?;
-        }
+            .find(|item| item.namespace == entry.namespace && item.key == entry.key);
         let body = serde_json::to_vec(&entry)?;
-        let form = multipart::Form::new()
-            .text("datasetName", Self::dataset_name(&entry.namespace))
-            .text("run_in_background", "false")
-            .part(
-                "data",
-                multipart::Part::bytes(body)
-                    .file_name(Self::filename(&entry.key))
-                    .mime_str("application/json")?,
-            );
+        let form = multipart::Form::new().part(
+            "data",
+            multipart::Part::bytes(body)
+                .file_name(Self::filename(&entry.key))
+                .mime_str("application/json")?,
+        );
+        let (method, path, form) = if let Some(existing) = existing {
+            let (dataset_id, data_id) = existing
+                .remote_id
+                .split_once(':')
+                .ok_or_else(|| anyhow!("Cognee record has no dataset id"))?;
+            (
+                Method::PATCH,
+                format!("api/v1/update?data_id={data_id}&dataset_id={dataset_id}"),
+                form,
+            )
+        } else {
+            (
+                Method::POST,
+                "api/v1/remember".to_owned(),
+                form.text("datasetName", Self::dataset_name(&entry.namespace))
+                    .text("run_in_background", "false"),
+            )
+        };
         let response = self
             .client
-            .multipart("api/v1/remember")?
+            .multipart(method, &path)?
             .multipart(form)
             .send()
             .await?;
         if !response.status().is_success() {
             return Err(anyhow!(
-                "memory API api/v1/remember returned HTTP {}",
+                "memory API {path} returned HTTP {}",
                 response.status()
             ));
         }

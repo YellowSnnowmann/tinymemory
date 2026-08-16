@@ -24,6 +24,23 @@ docker compose -f integration/remote-engines/docker-compose.yml \
 cargo run -p tinymemory-remote --example conformance -- cognee http://localhost:8001
 ```
 
+The same conformance command can target managed services. Supermemory uses the
+same bearer authentication in both modes, while Cognee Cloud uses its distinct
+API-key header:
+
+```sh
+cargo run -p tinymemory-remote --example conformance -- \
+  supermemory https://api.supermemory.ai "$SUPERMEMORY_API_KEY"
+
+cargo run -p tinymemory-remote --example conformance -- \
+  cognee-api https://api.cognee.ai "$COGNEE_API_KEY"
+```
+
+For tenant-specific Cognee deployments, replace the shared endpoint with the
+tenant URL issued by Cognee. The command writes a unique conformance namespace,
+verifies Core, Recall, and Portability, and deletes its test record before
+exiting.
+
 Mem0 and Cognee require an inference provider for their native semantic
 pipelines. By default the harness starts a deterministic OpenAI-compatible test
 service, which proves HTTP, persistence, embeddings, and adapter translation

@@ -13,7 +13,9 @@ use tinymemory_remote::{
 
 /// Builds the command-line usage error returned for invalid arguments.
 fn usage() -> anyhow::Error {
-    anyhow::anyhow!("usage: conformance <supermemory|mem0|cognee> <endpoint> [credential]")
+    anyhow::anyhow!(
+        "usage: conformance <supermemory|mem0|cognee|cognee-api> <endpoint> [credential]"
+    )
 }
 
 #[tokio::main]
@@ -35,6 +37,12 @@ async fn main() -> anyhow::Result<()> {
         "cognee" => Arc::new(cognee_provider(CogneeMemory::new(
             &endpoint,
             credential.as_deref(),
+        )?)),
+        "cognee-api" => Arc::new(cognee_provider(CogneeMemory::api(
+            &endpoint,
+            credential
+                .as_deref()
+                .ok_or_else(|| anyhow::anyhow!("cognee-api requires a credential"))?,
         )?)),
         _ => return Err(usage()),
     };
