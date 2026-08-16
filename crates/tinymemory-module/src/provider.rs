@@ -1713,13 +1713,15 @@ impl MemoryRetrieval for ModuleMemoryProvider {
         max_depth: u32,
         query: Option<&str>,
         limit: Option<usize>,
+        scope: Option<&SourceScope>,
     ) -> Result<Vec<RetrievalHit>, MemoryError> {
-        let hits = tinymemory_core::tree::retrieval::drill_down::drill_down(
+        let hits = tinymemory_core::tree::retrieval::drill_down::drill_down_scoped(
             &self.config,
             node_id,
             max_depth,
             query,
             limit,
+            scope_to_engine(scope),
         )
         .await
         .map_err(|error| Self::other("drill down", error))?;
@@ -1729,10 +1731,15 @@ impl MemoryRetrieval for ModuleMemoryProvider {
     async fn retrieve_leaves(
         &self,
         chunk_ids: &[String],
+        scope: Option<&SourceScope>,
     ) -> Result<Vec<RetrievalHit>, MemoryError> {
-        let hits = tinymemory_core::tree::retrieval::fetch::fetch_leaves(&self.config, chunk_ids)
-            .await
-            .map_err(|error| Self::other("fetch leaves", error))?;
+        let hits = tinymemory_core::tree::retrieval::fetch::fetch_leaves_scoped(
+            &self.config,
+            chunk_ids,
+            scope_to_engine(scope),
+        )
+        .await
+        .map_err(|error| Self::other("fetch leaves", error))?;
         Self::cross(&hits, "convert retrieval hits")
     }
 
