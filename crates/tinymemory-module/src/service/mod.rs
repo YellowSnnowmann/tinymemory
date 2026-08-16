@@ -106,7 +106,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use parking_lot::Mutex;
+use std::sync::Mutex;
 
 use tinybus::{Connection, Error as BusError, Result as BusResult};
 use tinymemory_api::capabilities::{Capabilities, Capability};
@@ -293,27 +293,29 @@ impl MemoryService {
     /// same database twice is worth going out of the way to avoid.
     async fn open_store(&self, memory_subdir: String) -> BusResult<String> {
         let Some(opener) = self.opener.as_ref() else {
-            return Err(BusError::failed(
-                "ai.tinyhumans.tinymemory.Error.Invalid",
-                "only the root memory object can open stores",
-            ));
+            return Err(BusError::MethodFailed {
+                name: "ai.tinyhumans.tinymemory.Error.Invalid".to_string(),
+                message: "only the root memory object can open stores".to_string(),
+            });
         };
         let Some(path) = object_path_for_subdir(&memory_subdir) else {
             // The subdir is rejected by shape, and the message says so without
             // echoing it: it derives from a profile id, which is user data.
-            return Err(BusError::failed(
-                "ai.tinyhumans.tinymemory.Error.Invalid",
-                "memory subdirectory is empty, over-long, or contains characters \
-                 outside [A-Za-z0-9_-]",
-            ));
+            return Err(BusError::MethodFailed {
+                name: "ai.tinyhumans.tinymemory.Error.Invalid".to_string(),
+                message: "memory subdirectory is empty, over-long, or contains \
+                          characters outside [A-Za-z0-9_-]"
+                    .to_string(),
+            });
         };
 
-        if let Some(existing) = opener.served.lock().get(&memory_subdir) {
+        if let Some(existing) = opener.served.lock().ok().and_then(|m| m.get(&memory_subdir).cloned())
+        {
             log::debug!("[tinymemory:module] open_store reusing already-served subtree");
             return Ok(existing.clone());
         }
 
-        let client = tinymemory_core::store::factories::create_session_memory_client_with_local_ai(
+        let client = tinymemory_core::store::factories::create_memory_client_in_subdir(
             &opener.config.memory,
             None,
             "",
@@ -326,10 +328,10 @@ impl MemoryService {
             // Same reasoning as `setup`: the factory error names this process's
             // filesystem layout, which the caller has no business learning.
             log::error!("[tinymemory:module] open_store create store failed: {error}");
-            BusError::failed(
-                "ai.tinyhumans.tinymemory.Error.Other",
-                "could not open the requested memory store",
-            )
+            BusError::MethodFailed {
+                name: "ai.tinyhumans.tinymemory.Error.Other".to_string(),
+                message: "could not open the requested memory store".to_string(),
+            }
         })?;
 
         let provider = crate::provider::ModuleMemoryProvider::new(&opener.config, Arc::new(client));
@@ -343,10 +345,9 @@ impl MemoryService {
 
         // Recorded only after `serve_at` succeeds, so a failed open is retried
         // rather than caching a path nothing answers on.
-        opener
-            .served
-            .lock()
-            .insert(memory_subdir, path.clone());
+        if let Ok(mut served) = opener.served.lock() {
+            served.insert(memory_subdir, path.clone());
+        }
         log::info!("[tinymemory:module] open_store now serving an additional memory subtree");
         Ok(path)
     }
