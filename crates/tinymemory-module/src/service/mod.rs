@@ -38,7 +38,7 @@
 //! SetFacetUserState(key, state) / DeleteFacet(key)   -> bool
 //! DeleteFacetById(id) / DropFacetsBelow(threshold)   -> bool / usize
 //! WorkflowIdentityMatches(pattern, value)            -> bool
-//! ChunkEmbeddings(chunk_ids, model_signature)       -> [ChunkEmbedding]
+//!
 //! FastRetrieve(query, options, scope)               -> RetrievalResponse
 //! CoverWindow(window, scope)                        -> RetrievalResponse
 //! SearchEntities(query, kinds, limit)               -> [EntityMatch]
