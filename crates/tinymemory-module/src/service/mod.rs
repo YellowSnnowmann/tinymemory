@@ -335,6 +335,25 @@ impl MemoryService {
             return Ok(existing.clone());
         }
 
+        // Each store is a SQLite file, an object path and a set of file
+        // descriptors that live until the process exits — nothing here ever
+        // closes one, because tinybus does not unserve. A caller that opens a
+        // fresh subdir in a loop would therefore exhaust descriptors with no
+        // way back short of a restart. The cap is far above any real host (one
+        // store per profile) and exists so that a bug is refused by name
+        // instead of degrading the whole process.
+        if served.len() >= MAX_OPEN_STORES {
+            log::error!(
+                "[tinymemory:module] open_store refused: already serving {MAX_OPEN_STORES} stores"
+            );
+            return Err(BusError::MethodFailed {
+                name: "ai.tinyhumans.tinymemory.Error.Invalid".to_string(),
+                message: format!(
+                    "this module already serves the maximum of {MAX_OPEN_STORES} memory stores"
+                ),
+            });
+        }
+
         let client = tinymemory_core::store::factories::create_memory_client_in_subdir(
             &opener.config.memory,
             None,
