@@ -71,7 +71,20 @@ END;
 "#;
 
 /// Insert an episodic entry.
-pub fn episodic_insert(conn: &Arc<Mutex<Connection>>, entry: &EpisodicEntry) -> anyhow::Result<()> {
+/// Insert one episodic turn, returning the row id it was assigned.
+///
+/// # Why the id comes back from here
+///
+/// Callers used to insert and then issue `SELECT last_insert_rowid()`. That is
+/// **connection-local** state: this store hands the same `Arc<Mutex<Connection>>`
+/// to several writers, so an interleaved insert between the two statements
+/// returns the wrong id — and the caller files the turn under the wrong
+/// conversation segment. Reading it here, still under the lock taken for the
+/// insert, is the only place it can be read correctly.
+pub fn episodic_insert(
+    conn: &Arc<Mutex<Connection>>,
+    entry: &EpisodicEntry,
+) -> anyhow::Result<i64> {
     if safety::has_likely_secret(&entry.session_id) || safety::has_likely_secret(&entry.role) {
         tracing::warn!(
             "[memory:safety] episodic insert rejected secret-like session/role session_chars={} role_chars={}",
@@ -139,12 +152,14 @@ pub fn episodic_insert(conn: &Arc<Mutex<Connection>>, entry: &EpisodicEntry) -> 
             entry.cost_microdollars as i64,
         ],
     )?;
+    // Still holding the lock taken above — see the doc comment.
+    let id = conn.last_insert_rowid();
     tracing::debug!(
-        "[fts5] inserted episodic entry: session={}, role={}",
+        "[fts5] inserted episodic entry: session={}, role={}, id={id}",
         entry.session_id,
         entry.role
     );
-    Ok(())
+    Ok(id)
 }
 
 /// Full-text search over episodic entries.
