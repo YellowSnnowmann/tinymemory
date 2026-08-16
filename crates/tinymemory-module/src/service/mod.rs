@@ -152,6 +152,15 @@ pub const BUS_NAME: &str = "ai.tinyhumans.tinymemory.Memory";
 /// Object path exported by the `TinyMemory` module.
 pub const OBJECT_PATH: &str = "/ai/tinyhumans/tinymemory/Memory";
 
+/// How many stores one module process will open, across every subtree.
+///
+/// Sized for "a host with per-profile memory", which is the case `OpenStore`
+/// exists for — one store per profile, and a host with sixty-four live profiles
+/// in one process is already outside what this was built for. It is a backstop
+/// against a caller that opens stores in a loop, not a quota anyone should
+/// meet.
+pub(crate) const MAX_OPEN_STORES: usize = 64;
+
 /// The served object: a bound driver, plus what it needs to open a sibling
 /// store on request.
 pub(crate) struct MemoryService {
