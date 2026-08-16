@@ -7,12 +7,15 @@ use tinymemory_api::recall::RecallOpts;
 use tinymemory_api::traits::Memory;
 use tinymemory_api::types::MemoryTaint;
 
-use crate::common::{category, Dialect, HttpClient, RemoteMemory, StoredEntry};
+use crate::common::{category, stable_id, Dialect, HttpClient, RemoteMemory, StoredEntry};
 
 /// Stable driver id used by configuration and status output.
 pub use tinymemory::registry::SUPERMEMORY_DRIVER_ID;
 
-/// A self-hosted Supermemory server exposed through TinyMemory's storage contract.
+/// Default base URL for Supermemory's managed API.
+pub const SUPERMEMORY_API_ENDPOINT: &str = "https://api.supermemory.ai";
+
+/// A Supermemory managed or self-hosted service exposed through TinyMemory's contract.
 #[derive(Debug)]
 pub struct SupermemoryMemory {
     inner: RemoteMemory<SupermemoryDialect>,
@@ -30,6 +33,40 @@ impl SupermemoryMemory {
                 client: HttpClient::bearer(endpoint, api_key)?,
             }),
         })
+    }
+
+    /// Connect to a provided Supermemory API using bearer authentication.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `endpoint` is invalid or `api_key` is blank.
+    pub fn api(endpoint: &str, api_key: &str) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            !api_key.trim().is_empty(),
+            "supermemory API key must not be empty"
+        );
+        Self::new(endpoint, Some(api_key))
+    }
+
+    /// Connect to a self-hosted Supermemory server.
+    ///
+    /// Self-hosted Supermemory generates a bearer API key on first boot and
+    /// exposes the same API as the managed service.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `endpoint` is invalid or `api_key` is blank.
+    pub fn self_hosted(endpoint: &str, api_key: &str) -> anyhow::Result<Self> {
+        Self::api(endpoint, api_key)
+    }
+
+    /// Connect to Supermemory's managed API endpoint.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `api_key` is blank.
+    pub fn cloud(api_key: &str) -> anyhow::Result<Self> {
+        Self::api(SUPERMEMORY_API_ENDPOINT, api_key)
     }
 }
 
@@ -115,6 +152,11 @@ struct SupermemoryDialect {
 }
 
 impl SupermemoryDialect {
+    /// Maps an arbitrary TinyMemory namespace into Supermemory's bounded tag grammar.
+    fn container_tag(namespace: &str) -> String {
+        format!("tinymemory:{}", stable_id("container", namespace))
+    }
+
     /// Encodes TinyMemory identity, classification, session, and provenance.
     fn metadata(entry: &StoredEntry) -> Value {
         let mut metadata = serde_json::Map::from_iter([
@@ -271,7 +313,7 @@ impl Dialect for SupermemoryDialect {
                             "isStatic": false,
                             "metadata": metadata
                         }],
-                        "containerTag": entry.namespace,
+                        "containerTag": Self::container_tag(&entry.namespace),
                     })),
                 )
                 .await?;
@@ -298,7 +340,7 @@ impl Dialect for SupermemoryDialect {
         });
         if let Some(object) = body.as_object_mut() {
             if let Some(namespace) = opts.namespace {
-                object.insert("containerTag".into(), json!(namespace));
+                object.insert("containerTag".into(), json!(Self::container_tag(namespace)));
             }
             if let Some(minimum) = opts.min_score {
                 object.insert("threshold".into(), json!(minimum));
@@ -333,7 +375,7 @@ impl Dialect for SupermemoryDialect {
                 "v4/memories",
                 Some(&json!({
                     "id": entry.remote_id,
-                    "containerTag": namespace,
+                    "containerTag": Self::container_tag(namespace),
                     "reason": "deleted through TinyMemory"
                 })),
             )

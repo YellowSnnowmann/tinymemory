@@ -144,9 +144,9 @@ impl HttpClient {
         Ok(status)
     }
 
-    /// Starts an authenticated multipart POST request.
-    pub(crate) fn multipart(&self, path: &str) -> anyhow::Result<RequestBuilder> {
-        self.request(Method::POST, path)
+    /// Starts an authenticated multipart request.
+    pub(crate) fn multipart(&self, method: Method, path: &str) -> anyhow::Result<RequestBuilder> {
+        self.request(method, path)
     }
 
     /// Reports whether a GET endpoint responds successfully.
