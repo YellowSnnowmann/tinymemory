@@ -953,6 +953,12 @@ impl MemoryService {
             .map_err(|error| into_bus_error(&error))
     }
 
+    /// Embedding vectors are the largest thing this interface returns.
+    ///
+    /// A 1536-dimension vector encodes to roughly 10 KiB of JSON, so a few
+    /// hundred chunks reach the frame ceiling on their own. Checked for the same
+    /// reason `List` is, and refused by name rather than truncated — a short
+    /// batch is indistinguishable from "those chunks have no vector".
     async fn chunk_embeddings(
         &self,
         chunk_ids: Vec<String>,
