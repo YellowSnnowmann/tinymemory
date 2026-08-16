@@ -25,6 +25,49 @@ pub fn format_embedding_signature(name: &str, model_id: &str, dims: usize) -> St
     format!("provider={name};model={model_id};dims={dims}")
 }
 
+#[cfg(test)]
+mod embedding_signature_tests {
+    use super::format_embedding_signature;
+
+    /// The signature format is a **persisted key**, pinned to literal values.
+    ///
+    /// Written against golden strings rather than against another copy of the
+    /// function on purpose: the host used to hold a byte-identical duplicate of
+    /// this file and the two silently diverged once already. A guard that
+    /// compares two implementations stops protecting anything the moment one of
+    /// them goes away — which is exactly what happened when the duplicate was
+    /// removed. Literals outlive that.
+    ///
+    /// Every vector on disk is keyed by one of these strings, so a change here
+    /// is a migration, never an edit.
+    #[test]
+    fn signature_format_is_pinned_to_its_persisted_form() {
+        assert_eq!(
+            format_embedding_signature("ollama", "nomic-embed-text", 768),
+            "provider=ollama;model=nomic-embed-text;dims=768"
+        );
+        assert_eq!(
+            format_embedding_signature("none", "none", 0),
+            "provider=none;model=none;dims=0"
+        );
+    }
+
+    /// A known defect, recorded rather than hidden: the delimiters are not
+    /// escaped, so a provider or model name containing `;model=` can produce
+    /// the same signature as a different (name, model) pair — two distinct
+    /// embedding spaces sharing one key.
+    ///
+    /// Left `#[ignore]`d because fixing it changes the persisted format, which
+    /// is a migration. No provider name in use today contains the delimiters.
+    #[test]
+    #[ignore = "known defect: fixing the escaping changes a persisted key, so it needs a migration"]
+    fn delimiter_characters_cannot_make_distinct_spaces_collide() {
+        let first = format_embedding_signature("a;model=b", "c", 3);
+        let second = format_embedding_signature("a", "b;model=c", 3);
+        assert_ne!(first, second);
+    }
+}
+
 /// Converts text into numerical vectors.
 #[async_trait]
 pub trait EmbeddingProvider: Send + Sync {
