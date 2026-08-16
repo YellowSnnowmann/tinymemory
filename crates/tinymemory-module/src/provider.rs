@@ -1952,7 +1952,18 @@ impl MemoryProfile for ModuleMemoryProvider {
         })
         .await
         // A join failure reads as "no", like every other error on this
-        // predicate — see the trait docs.
+        // predicate — see the trait docs. But it is logged first: the two
+        // cases behind it are a cancelled task and a panic inside
+        // `skill_identity_matches`, and a panic is a defect. Answering a bare
+        // `false` would make that defect look exactly like a legitimate
+        // non-match, which is the one reading that guarantees nobody
+        // investigates it.
+        .inspect_err(|error| {
+            log::error!(
+                "[tinymemory:module] workflow_identity_matches join failed, answering false: \
+                 {error}"
+            );
+        })
         .unwrap_or(false)
     }
 }
