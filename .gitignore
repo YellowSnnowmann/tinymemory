@@ -6,6 +6,12 @@ target/
 **/*.rs.bk
 *.pdb
 
+# Stray build artifacts. Two 3.6 MB Linux ELF executables with debug info were
+# committed at the repository root before this entry existed; both were produced
+# by an ad-hoc build, referenced by nothing, and carried in every clone.
+/rust_out
+/tmp
+
 # Coverage output
 /coverage/
 *.profraw
