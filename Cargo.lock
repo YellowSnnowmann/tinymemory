@@ -1829,6 +1829,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "tinymemory-conformance"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "serde_json",
+ "tinymemory-api",
+ "tokio",
+]
+
+[[package]]
 name = "tinymemory-core"
 version = "0.1.0"
 dependencies = [
