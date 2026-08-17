@@ -120,6 +120,19 @@ private_intra_doc_links = "warn"
 # so a host that already pins its own engine checkout unifies onto one copy
 # through its own patch table. These entries are what make a *standalone* build
 # of this workspace resolve them to the nested `vendor/` submodules.
+# `tinycortex-api` takes this workspace's own contract crate by git, because
+# neither crate is published (tinymemory#18 §A1). Without this entry cargo
+# resolves the git copy *and* the path copy as two distinct crates, and
+# `tinymemory_api::MemoryCategory` from one is not the same type as from the
+# other — which is the exact duplication §A1 exists to delete, reintroduced by
+# the fix for it. The error is loud rather than silent, but only at the seam.
+#
+# Patch tables apply from the workspace root being built, so this covers builds
+# and tests here. A host that embeds this workspace needs the same entry, the
+# same way it already patches tinycortex.
+[patch."https://github.com/tinyhumansai/tinymemory"]
+tinymemory-api = { path = "api" }
+
 [patch.crates-io]
 tinycortex = { path = "vendor/tinycortex" }
 tinycortex-api = { path = "vendor/tinycortex/api" }
