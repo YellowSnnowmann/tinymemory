@@ -1808,6 +1808,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tinymemory-api",
+ "tinymemory-conformance",
  "tokio",
 ]
 
