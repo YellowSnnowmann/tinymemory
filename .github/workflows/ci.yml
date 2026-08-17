@@ -74,6 +74,15 @@ jobs:
       # still panic on its first line — which is the state the repository was in
       # before issue #18 §E7, when the command was documented and there was no
       # `examples/` directory at all.
+      # §D5. Prints the dependency count of every build configuration and fails
+      # when the minimal one grows past its ceiling. The property this protects
+      # — that asking for no features gets you the contract and nothing that
+      # links a storage engine or an HTTP stack — is invisible in a diff,
+      # because the dependency arrives transitively through a feature enabled
+      # two crates away.
+      - name: Dependency budget
+        run: ./scripts/ci/dependency-budget.sh
+
       - name: Run the bundled example
         run: cargo run --example basic
 
@@ -112,6 +121,47 @@ jobs:
             echo "the memory-git feature exists to keep them out" >&2
             exit 1
           fi
+
+  # Feature-unification and coverage. Their own job: both are slower than the
+  # main lane and independent of it, so a failure in one should not mask the
+  # other, and neither should delay the fast feedback the main job gives.
+  feature-matrix:
+    name: Feature powerset and coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-hack,cargo-llvm-cov
+
+      # §E2's second half. Cargo features are additive: enabling one for crate A
+      # enables it for every consumer in the graph, so a pair that nobody builds
+      # deliberately can still be built by someone else's dependency. `--depth 2`
+      # covers every pair without the combinatorial blow-up of the full set.
+      #
+      # Check-only: this is about whether the combinations *compile*, and the
+      # behaviour of each is the main job's business.
+      - name: Feature powerset compiles
+        run: cargo hack --feature-powerset --depth 2 --workspace check --all-targets
+
+      # §E8. `AGENTS.md` asks for 80% of meaningful library behaviour and
+      # nothing measured it. Reported rather than enforced to begin with: a
+      # threshold picked before anyone has seen the number is a guess, and a
+      # failing gate on day one gets disabled rather than fixed.
+      - name: Coverage
+        run: |
+          cargo llvm-cov --all-features --workspace --summary-only \
+            | tee "$GITHUB_STEP_SUMMARY"
 
   # The module crate is its own workspace root (see the `exclude` note in the
   # root Cargo.toml), so NONE of the steps above touch it: `--all-targets`,
