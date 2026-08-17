@@ -69,6 +69,14 @@ jobs:
       # discards the `-p` scope, prints the whole-workspace inverse tree, and
       # exits 0 looking clean even when this crate is the one at fault. The
       # manifest says so; this runs what it says.
+      # `cargo build --all-targets` only *compiles* an example. `AGENTS.md`
+      # promises `cargo run --example basic` works, and a compiled example can
+      # still panic on its first line — which is the state the repository was in
+      # before issue #18 §E7, when the command was documented and there was no
+      # `examples/` directory at all.
+      - name: Run the bundled example
+        run: cargo run --example basic
+
       - name: Assert the contract crate stays free of heavy dependencies
         run: |
           forbidden="$(cargo tree -p tinymemory-api -e normal,build --prefix none \
