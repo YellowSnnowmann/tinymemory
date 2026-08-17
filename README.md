@@ -21,13 +21,29 @@ src/
 │                       binds as, and the fail-closed external-driver gate
 └── mandatory/          the three mandatory capability families, composed once
                         over the `Memory` storage trait
+core/                   tinymemory-core — the substance: ingestion, the summary
+                        tree, chunk storage, entities, the graph, the diff
+                        ledger, goals, tool-memory, and the Composio sync layer.
+                        The largest crate here by a wide margin, and the one a
+                        real host actually depends on. Unlike `api/` it is not
+                        dependency-light: today it links the TinyCortex engine,
+                        a bundled SQLite, and an HTTP stack unconditionally.
 adapters/
 ├── tinycortex/         the TinyCortex engine seen through the contract
 └── remote/             native HTTP dialects for Supermemory, Mem0, and Cognee
+crates/
+└── tinymemory-module/  the TinyBus loadable-module driver. Excluded from the
+                        workspace on purpose — see the note in `Cargo.toml`.
 vendor/
 ├── tinycortex/         the engine, pinned as a submodule
+├── tinyagents/         pinned TinyAgents submodule
 └── tinybus/            pinned TinyBus submodule
 ```
+
+Run `git submodule update --init --recursive` after cloning. Nothing in the
+workspace builds without it — `core` names `tinyagents` and `tinycortex` by
+path through `vendor/`, so an uninitialized checkout fails at manifest
+resolution rather than at compile time, which reads as a confusing error.
 
 ## The contract
 
