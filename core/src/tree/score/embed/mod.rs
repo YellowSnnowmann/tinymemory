@@ -307,7 +307,7 @@ pub fn pack_embedding(v: &[f32]) -> Vec<u8> {
 /// [`EMBEDDING_DIM`] (after decoding). The latter guards against rows
 /// written with a mismatched-provider blob silently passing as valid.
 pub fn unpack_embedding(b: &[u8]) -> Result<Vec<f32>> {
-    if b.len() % 4 != 0 {
+    if !b.len().is_multiple_of(4) {
         anyhow::bail!(
             "embedding blob length {} not a multiple of 4 — corrupt row",
             b.len()
