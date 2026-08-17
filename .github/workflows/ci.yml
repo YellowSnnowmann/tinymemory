@@ -49,6 +49,30 @@ jobs:
       - name: Test default features
         run: cargo test
 
+      # The adapter's `memory-git` feature gates the diff family, and the test
+      # that the family is *withheld* without it is `#[cfg(not(feature =
+      # "memory-git"))]`. Both the `--all-features` and default runs above
+      # compile that test out, so without this step it would be checked by
+      # nothing — a feature-gated test whose default fate is to be built by one
+      # job and executed by none.
+      #
+      # This is also the configuration that keeps the promise the feature
+      # exists for: no `git2` / `libgit2-sys` in the graph.
+      - name: Lint and test the adapter without its optional engine features
+        run: |
+          cargo clippy -p tinymemory-tinycortex --all-targets --no-default-features -- -D warnings
+          cargo test -p tinymemory-tinycortex --no-default-features
+
+      - name: Assert the default adapter build links no native git
+        run: |
+          linked="$(cargo tree -p tinymemory-tinycortex --no-default-features \
+            -e normal --prefix none | grep -cE '^(git2|libgit2-sys)' || true)"
+          if [ "$linked" -ne 0 ]; then
+            echo "the default adapter build linked $linked native-git crate(s);" >&2
+            echo "the memory-git feature exists to keep them out" >&2
+            exit 1
+          fi
+
   # The module crate is its own workspace root (see the `exclude` note in the
   # root Cargo.toml), so NONE of the steps above touch it: `--all-targets`,
   # `--all-features` and `--workspace` all stop at the workspace boundary and
