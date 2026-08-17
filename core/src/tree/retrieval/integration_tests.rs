@@ -18,10 +18,10 @@ use tinymemory_api::host::MemoryHostConfig;
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
+use crate::engine::backend::ingest::canonicalize::chat::{ChatBatch, ChatMessage};
 use crate::ingest_pipeline::ingest_chat;
 use crate::store::chunks::types::SourceKind;
 use crate::tree::retrieval::{drill_down, fetch_leaves, query_source, search_entities};
-use tinycortex::memory::ingest::canonicalize::chat::{ChatBatch, ChatMessage};
 
 fn test_config() -> (TempDir, TestHostConfig) {
     crate::test_seams::init();

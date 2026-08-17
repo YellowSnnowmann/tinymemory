@@ -1,8 +1,8 @@
 use anyhow::Result;
 
+use crate::engine::engine_config;
 use crate::source_scope::current_source_scope;
 use crate::store::chunks::types::SourceKind;
-use crate::tinycortex::engine_config;
 use crate::tree::retrieval::engine::EmbedderBridge;
 use crate::tree::retrieval::types::QueryResponse;
 use crate::tree::score::embed::build_embedder_from_config;
@@ -90,7 +90,7 @@ pub async fn query_source_scoped(
     let mut response = if let Some(query) = semantic_query {
         let embedder = build_embedder_from_config(config)?;
         let bridge = EmbedderBridge(embedder.as_ref());
-        tinycortex::memory::retrieval::query_source(
+        crate::engine::backend::retrieval::query_source(
             &engine_config(config),
             source_id,
             source_kind,
@@ -101,13 +101,13 @@ pub async fn query_source_scoped(
         )
         .await?
     } else {
-        tinycortex::memory::retrieval::query_source(
+        crate::engine::backend::retrieval::query_source(
             &engine_config(config),
             source_id,
             source_kind,
             time_window_days,
             None,
-            &tinycortex::memory::score::embed::InertEmbedder::new(),
+            &crate::engine::backend::score::embed::InertEmbedder::new(),
             usize::MAX,
         )
         .await?

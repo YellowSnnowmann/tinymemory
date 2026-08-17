@@ -1,8 +1,8 @@
 use anyhow::Result;
 
+use crate::engine::engine_config;
 use crate::source_scope::current_source_scope;
 use crate::store::chunks::types::SourceKind;
-use crate::tinycortex::engine_config;
 use crate::tree::retrieval::types::QueryResponse;
 use crate::Config;
 
@@ -62,7 +62,7 @@ pub async fn cover_window_scoped(
         source_kind.map(|k| k.as_str()),
         limit
     );
-    let mut response = tinycortex::memory::retrieval::cover_window_scoped(
+    let mut response = crate::engine::backend::retrieval::cover_window_scoped(
         &engine_config(config),
         since_ms,
         until_ms,

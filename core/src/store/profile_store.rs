@@ -8,8 +8,7 @@
 //! [`super::namespace_store::profile`], both inside `crate`;
 //! callers outside the family hold this handle and never a `Connection`.
 //!
-//! **This is not a guard win.** The profile/facet tables have no capability
-//! family in the `tinycortex_api` contract, so reads and writes through this
+//! **This is not a guard win.** Reads and writes through this
 //! type still run beneath `crate::guard::MemoryGuard`'s
 //! seven policy steps: no tier check, no source-scope predicate, no taint
 //! stamping, no redaction, no budget, no audit event. What changed is the shape

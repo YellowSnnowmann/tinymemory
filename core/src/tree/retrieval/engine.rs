@@ -6,7 +6,7 @@ use crate::tree::score::embed::Embedder as HostEmbedder;
 pub(super) struct EmbedderBridge<'a>(pub &'a dyn HostEmbedder);
 
 #[async_trait]
-impl tinycortex::memory::score::embed::Embedder for EmbedderBridge<'_> {
+impl crate::engine::backend::score::embed::Embedder for EmbedderBridge<'_> {
     fn name(&self) -> &'static str {
         self.0.name()
     }

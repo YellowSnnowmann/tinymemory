@@ -1,11 +1,11 @@
 //! Shared helpers for Composio provider implementations.
 //!
 //! `pick_str` used to live here. It is a provider payload normaliser, so it
-//! moved to `tinycortex::memory::sync::composio::providers::normalize::helpers`
+//! moved to `crate::engine::backend::sync::composio::providers::normalize::helpers`
 //! and is re-exported from this module's parent. The helpers that remain are
 //! request-building rather than normalisation, and stay host-side.
 
-use tinycortex::memory::sync::composio::providers::normalize::helpers::pick_str;
+use crate::engine::backend::sync::composio::providers::normalize::helpers::pick_str;
 
 /// Shallow-merge an `extra` JSON object into a (mutable) action-args
 /// object. Only object-typed extras are merged; non-object `extra`

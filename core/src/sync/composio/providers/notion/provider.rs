@@ -279,7 +279,7 @@ impl ComposioProvider for NotionProvider {
             return Err("[composio:notion] trigger missing connection_id".to_string());
         };
         if let Err(e) =
-            crate::tinycortex::run_composio_connection("notion", connection_id, ctx.config.as_ref())
+            crate::engine::run_composio_connection("notion", connection_id, ctx.config.as_ref())
                 .await
         {
             tracing::warn!(

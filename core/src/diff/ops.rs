@@ -1,5 +1,5 @@
 //! Business logic for memory diff — thin host async wrappers over
-//! `tinycortex::memory::diff::DiffEngine` (W7).
+//! `crate::engine::backend::diff::DiffEngine` (W7).
 //!
 //! The snapshot/diff/checkpoint/ledger engine is the crate's; the git ledger it
 //! writes lives at the same `<workspace>/memory_diff/repo` path with the same
@@ -16,10 +16,10 @@ use tinymemory_api::host::test_support::TestHostConfig;
 use crate::sources::types::MemorySourceEntry;
 use crate::Config;
 
-use tinycortex::memory::diff::{DiffEngine, SourceDescriptor};
+use crate::engine::backend::diff::{DiffEngine, SourceDescriptor};
 
 use super::source::ChunkStoreItemSource;
-use tinycortex::memory::diff::types::*;
+use crate::engine::backend::diff::types::*;
 
 /// A crate [`SourceDescriptor`] from a host source entry.
 fn descriptor(source: &MemorySourceEntry) -> SourceDescriptor {
@@ -101,7 +101,7 @@ pub async fn list_snapshots(
     let source_id = source_id.map(str::to_string);
 
     tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<Snapshot>> {
-        let ledger = tinycortex::memory::diff::Ledger::open(&workspace_dir)?;
+        let ledger = crate::engine::backend::diff::Ledger::open(&workspace_dir)?;
         ledger.list_snapshots(source_id.as_deref(), limit)
     })
     .await
@@ -310,7 +310,7 @@ pub async fn cleanup(config: &Config, older_than_days: u32) -> Result<u64, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tinycortex::memory::diff::{Ledger, SnapshotMeta};
+    use crate::engine::backend::diff::{Ledger, SnapshotMeta};
 
     fn test_config() -> TestHostConfig {
         crate::test_seams::init();

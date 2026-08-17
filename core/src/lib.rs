@@ -39,6 +39,7 @@ pub mod conversations;
 pub mod diff;
 pub mod embedding_adapter;
 pub mod embedding_host;
+pub mod engine;
 pub mod events;
 pub mod global;
 pub mod ingest_pipeline;
@@ -63,7 +64,6 @@ pub mod test_env_lock;
 #[cfg(test)]
 pub(crate) mod test_seams;
 pub mod thread_context;
-pub mod tinycortex;
 pub mod tool_memory;
 pub mod traits;
 pub mod tree;

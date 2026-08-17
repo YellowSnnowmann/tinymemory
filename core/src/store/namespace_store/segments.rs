@@ -27,7 +27,7 @@ CREATE TABLE IF NOT EXISTS conversation_segments (
     status TEXT NOT NULL DEFAULT 'open',
     created_at REAL NOT NULL,
     updated_at REAL NOT NULL,
-    -- Per-session sequence numbers from tinycortex::memory::archivist::store, populated
+    -- Per-session sequence numbers from crate::engine::backend::archivist::store, populated
     -- alongside start_episodic_id / end_episodic_id during the FTS5 -> md
     -- migration. Once STM recall switches its segment-span dedup to use
     -- (session_id, seq) the legacy episodic_id columns can be dropped.

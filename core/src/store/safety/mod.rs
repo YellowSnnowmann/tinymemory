@@ -1,5 +1,5 @@
 //! Secret-detection and redaction for memory writes — thin host shim over
-//! `tinycortex::memory::store::safety` (W3).
+//! `crate::engine::backend::store::safety` (W3).
 //!
 //! The conservative secret + PII scrubbers (`has_likely_secret`,
 //! `has_likely_pii`, `sanitize_text`, `sanitize_json`) + the
@@ -15,7 +15,7 @@ pub mod pii;
 
 use crate::store::types::NamespaceDocumentInput;
 
-pub use tinycortex::memory::store::safety::{
+pub use crate::engine::backend::store::safety::{
     has_likely_pii, has_likely_secret, sanitize_json, sanitize_text, SanitizationReport, Sanitized,
 };
 

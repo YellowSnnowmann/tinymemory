@@ -17,13 +17,13 @@
 pub mod read;
 pub mod tags;
 
-pub use tinycortex::memory::chunks::StagedChunk;
+pub use crate::engine::backend::chunks::StagedChunk;
 /// The git-backed wiki content format. Re-exported only when `memory-git` is
 /// on: it lives behind tinycortex's `wiki-git` feature, which the gate carries
 /// along with `git-diff` and the libgit2 cohort.
 #[cfg(feature = "memory-git")]
-pub use tinycortex::memory::store::content::wiki_git;
-pub use tinycortex::memory::store::content::{
+pub use crate::engine::backend::store::content::wiki_git;
+pub use crate::engine::backend::store::content::{
     atomic, compose, obsidian, obsidian_registry, paths, raw, stage_chunks, StagedSummary,
     SummaryComposeInput, SummaryTreeKind,
 };

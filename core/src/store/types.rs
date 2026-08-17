@@ -1,9 +1,9 @@
 //! Stable host path for tinycortex-owned namespace memory contracts.
 
-pub use tinycortex::memory::{
+pub use crate::engine::backend::{
     GraphRelationRecord, MemoryItemKind, MemoryKvRecord, NamespaceDocumentInput,
     NamespaceMemoryHit, NamespaceQueryResult, NamespaceRetrievalContext, RetrievalScoreBreakdown,
     StoredMemoryDocument,
 };
 
-pub(crate) use tinycortex::memory::types::GLOBAL_NAMESPACE;
+pub(crate) use crate::engine::backend::types::GLOBAL_NAMESPACE;

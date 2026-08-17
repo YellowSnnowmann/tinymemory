@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use crate::chat::{build_chat_provider, ChatPrompt};
 use crate::Config;
 
-pub use tinycortex::memory::tree::{SummaryContext, SummaryInput};
+pub use crate::engine::backend::tree::{SummaryContext, SummaryInput};
 
 /// Compatibility result carrying provider usage alongside the crate-owned
 /// summary output fields.
@@ -25,9 +25,11 @@ pub async fn summarise(
     inputs: &[SummaryInput],
     context: &SummaryContext<'_>,
 ) -> Result<SummaryOutput> {
-    let Some(prepared) =
-        tinycortex::memory::tree::prepare_summary_prompt(inputs, context, config.output_language())
-    else {
+    let Some(prepared) = crate::engine::backend::tree::prepare_summary_prompt(
+        inputs,
+        context,
+        config.output_language(),
+    ) else {
         return Ok(SummaryOutput::default());
     };
     let provider =
@@ -50,7 +52,7 @@ pub async fn summarise(
         .await
         .with_context(|| format!("memory_tree::summarise: provider={}", provider.name()))?;
     let output =
-        tinycortex::memory::tree::finish_provider_summary(&text, prepared.effective_budget);
+        crate::engine::backend::tree::finish_provider_summary(&text, prepared.effective_budget);
     let input_tokens = usage.as_ref().map_or(0, |usage| usage.input_tokens);
     let output_tokens = usage.as_ref().map_or(0, |usage| usage.output_tokens);
     let charged_amount_usd = usage
@@ -75,7 +77,7 @@ pub async fn summarise(
 }
 
 pub fn fallback_summary(inputs: &[SummaryInput], budget: u32) -> SummaryOutput {
-    let output = tinycortex::memory::tree::fallback_summary(inputs, budget);
+    let output = crate::engine::backend::tree::fallback_summary(inputs, budget);
     SummaryOutput {
         content: output.content,
         token_count: output.token_count,

@@ -7,14 +7,14 @@
 
 /// Mark whether a re-embed backfill currently has pending work.
 pub fn set_backfill_in_progress(v: bool) {
-    tinycortex::memory::queue::set_backfill_in_progress(v);
+    crate::engine::backend::queue::set_backfill_in_progress(v);
 }
 
 /// True while a re-embed backfill chain still has rows to process. The
 /// #1365 absence-reasoning consumer checks this before treating an empty
 /// semantic-recall result as "no memory exists".
 pub fn backfill_in_progress() -> bool {
-    tinycortex::memory::queue::backfill_in_progress()
+    crate::engine::backend::queue::backfill_in_progress()
 }
 
 /// #1574 §4: ensure a re-embed backfill chain exists for the **current**
@@ -30,9 +30,10 @@ pub fn backfill_in_progress() -> bool {
 /// covered space enqueues nothing. Errors are logged, never propagated —
 /// a failed enqueue must not fail the user's settings save.
 pub fn ensure_reembed_backfill(config: &crate::Config) {
-    let memory = crate::tinycortex::memory_config_from(config, config.workspace_dir().clone());
-    let delegates = crate::tinycortex::HostQueueDelegates::new(config.to_arc());
-    if let Err(error) = tinycortex::memory::queue::ensure_reembed_backfill(&memory, &delegates) {
+    let memory = crate::engine::memory_config_from(config, config.workspace_dir().clone());
+    let delegates = crate::engine::HostQueueDelegates::new(config.to_arc());
+    if let Err(error) = crate::engine::backend::queue::ensure_reembed_backfill(&memory, &delegates)
+    {
         log::warn!("[memory::jobs] ensure_reembed_backfill failed: {error:#}");
     }
 }

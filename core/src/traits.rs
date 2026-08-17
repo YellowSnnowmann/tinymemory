@@ -23,7 +23,7 @@
 
 // ── The contract's trait and value types ─────────────────────────────────────
 //
-// Named directly rather than reached through `tinycortex::memory`. Since §A1 the
+// Named directly rather than reached through the engine's re-export. Since §A1 the
 // engine re-exports this same contract, so the two spellings resolve to one type
 // either way — but going through the engine to reach an engine-neutral contract
 // is what §1.1 of issue #18 calls out, and it is what would have to be undone

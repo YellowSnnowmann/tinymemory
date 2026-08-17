@@ -18,9 +18,9 @@
 //!
 //! ## Components
 //!
-//! - [`tinycortex::memory::tool_memory::types`] owns [`ToolMemoryRule`],
+//! - [`crate::engine::backend::tool_memory::types`] owns [`ToolMemoryRule`],
 //!   [`ToolMemoryPriority`], and [`ToolMemorySource`].
-//! - [`tinycortex::memory::tool_memory::store`] owns [`ToolMemoryStore`], the
+//! - [`crate::engine::backend::tool_memory::store`] owns [`ToolMemoryStore`], the
 //!   put/list/delete/prompt API built on top of an `Arc<dyn Memory>`.
 //! - `capture` — `ToolMemoryCaptureHook`, the post-turn
 //!   `PostTurnHook` that records user edicts and repeated tool
@@ -37,8 +37,8 @@ mod store;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_helpers;
 
-pub use store::tool_memory_store;
-pub use tinycortex::memory::tool_memory::{
+pub use crate::engine::backend::tool_memory::{
     store::{ToolMemoryStore, TOOL_MEMORY_PROMPT_CAP},
     types::{tool_memory_namespace, ToolMemoryPriority, ToolMemoryRule, ToolMemorySource},
 };
+pub use store::tool_memory_store;

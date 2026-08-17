@@ -56,7 +56,7 @@ use tokio::sync::mpsc;
 use crate::Config;
 use crate::config_loader as config_rpc;
 use crate::ingest_pipeline::ingest_document_with_scope;
-use tinycortex::memory::ingest::canonicalize::document::DocumentInput;
+use crate::engine::backend::ingest::canonicalize::document::DocumentInput;
 use crate::sync::workspace::watcher::state::WatcherStateStore;
 use crate::scheduler_gate::current_policy;
 use crate::scheduler_gate::PauseReason;

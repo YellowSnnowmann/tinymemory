@@ -77,8 +77,7 @@ impl MemoryClient {
 
     /// Typed access to the profile/facet tables.
     ///
-    /// **Not guarded.** The profile tables have no capability family in the
-    /// thirteen-family `tinycortex_api` contract, so these reads and writes
+    /// **Not guarded.** These reads and writes
     /// still run beneath `crate::guard::MemoryGuard`'s
     /// seven steps. What this buys is confinement, not policy: the SQL is in
     /// the memory family and the compiler keeps it there.

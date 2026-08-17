@@ -8,7 +8,7 @@
 //! again. Canonicalizing here is a no-op for the write path (the transform is
 //! idempotent and identical) and makes the read path symmetric.
 
-use tinycortex::memory::store::kv::KvStore;
+use crate::engine::backend::store::kv::KvStore;
 
 use crate::store::namespace_store::UnifiedMemory;
 use crate::store::safety::canonical_identifier;
@@ -92,7 +92,9 @@ impl UnifiedMemory {
     }
 }
 
-fn convert_records(records: Vec<tinycortex::memory::types::MemoryKvRecord>) -> Vec<MemoryKvRecord> {
+fn convert_records(
+    records: Vec<crate::engine::backend::types::MemoryKvRecord>,
+) -> Vec<MemoryKvRecord> {
     records
         .into_iter()
         .map(|record| MemoryKvRecord {

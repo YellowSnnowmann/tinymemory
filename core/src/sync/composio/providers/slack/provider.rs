@@ -233,12 +233,9 @@ impl ComposioProvider for SlackProvider {
             let Some(connection_id) = ctx.connection_id.as_deref() else {
                 return Err("[composio:slack] trigger missing connection_id".to_string());
             };
-            if let Err(e) = crate::tinycortex::run_composio_connection(
-                "slack",
-                connection_id,
-                ctx.config.as_ref(),
-            )
-            .await
+            if let Err(e) =
+                crate::engine::run_composio_connection("slack", connection_id, ctx.config.as_ref())
+                    .await
             {
                 tracing::warn!(
                     error = %e,
@@ -262,13 +259,10 @@ pub async fn run_backfill_via_search(
         .as_deref()
         .ok_or_else(|| "[composio:slack] search backfill missing connection_id".to_string())?;
     let started_at_ms = now_ms();
-    let outcome = crate::tinycortex::run_slack_search_backfill(
-        connection_id,
-        backfill_days,
-        ctx.config.as_ref(),
-    )
-    .await
-    .map_err(|error| error.to_string())?;
+    let outcome =
+        crate::engine::run_slack_search_backfill(connection_id, backfill_days, ctx.config.as_ref())
+            .await
+            .map_err(|error| error.to_string())?;
     Ok(SyncOutcome {
         toolkit: "slack".into(),
         connection_id: Some(connection_id.into()),

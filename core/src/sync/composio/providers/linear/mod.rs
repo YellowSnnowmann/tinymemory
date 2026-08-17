@@ -6,7 +6,7 @@
 // The payload normalisers moved to tinycortex (they are pure Value
 // transforms, i.e. driver-side). Aliased under the old module name so
 // every `normalization::extract_*` call site below stays unchanged.
-use tinycortex::memory::sync::composio::providers::normalize::linear as normalization;
+use crate::engine::backend::sync::composio::providers::normalize::linear as normalization;
 mod provider;
 #[cfg(test)]
 mod tests;

@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use crate::Memory;
 
-use tinycortex::memory::tool_memory::store::ToolMemoryStore;
+use crate::engine::backend::tool_memory::store::ToolMemoryStore;
 
 /// Build the crate-owned store over OpenHuman's shared memory object.
 pub fn tool_memory_store(memory: Arc<dyn Memory>) -> ToolMemoryStore {

@@ -21,36 +21,36 @@ use crate::tree::tree::flush::force_flush_tree;
 use crate::tree::tree::registry::get_or_create_tree;
 use crate::Config;
 
-pub use tinycortex::memory::tree::{TreeProfile, GLOBAL_SCOPE};
+pub use crate::engine::backend::tree::{TreeProfile, GLOBAL_SCOPE};
 
 /// Factory/config object for one tree instance.
 #[derive(Debug, Clone)]
 pub struct TreeFactory<'a> {
-    inner: tinycortex::memory::tree::TreeFactory<'a>,
+    inner: crate::engine::backend::tree::TreeFactory<'a>,
 }
 
 impl<'a> TreeFactory<'a> {
     pub fn source(scope: impl Into<Cow<'a, str>>) -> Self {
         Self {
-            inner: tinycortex::memory::tree::TreeFactory::source(scope),
+            inner: crate::engine::backend::tree::TreeFactory::source(scope),
         }
     }
 
     pub fn topic(scope: impl Into<Cow<'a, str>>) -> Self {
         Self {
-            inner: tinycortex::memory::tree::TreeFactory::topic(scope),
+            inner: crate::engine::backend::tree::TreeFactory::topic(scope),
         }
     }
 
     pub fn global() -> Self {
         Self {
-            inner: tinycortex::memory::tree::TreeFactory::global(),
+            inner: crate::engine::backend::tree::TreeFactory::global(),
         }
     }
 
     pub fn from_tree(tree: &'a Tree) -> Self {
         Self {
-            inner: tinycortex::memory::tree::TreeFactory::from_tree(tree),
+            inner: crate::engine::backend::tree::TreeFactory::from_tree(tree),
         }
     }
 

@@ -33,13 +33,13 @@ use chrono::{DateTime, Utc};
 use tokio::time::interval;
 
 use crate::config_loader as config_rpc;
+use crate::engine::{try_read_audit_log, SyncAuditEntry};
 use crate::scheduler_gate::resume_notify;
 use crate::sources::sync::sync_source;
 use crate::sources::types::{MemorySourceEntry, SourceKind};
 use crate::sync::composio::periodic::{
     connection_is_due, effective_interval_secs, periodic_pause_reason,
 };
-use crate::tinycortex::{try_read_audit_log, SyncAuditEntry};
 use tinymemory_api::host::DEFAULT_MEMORY_SYNC_INTERVAL_SECS;
 
 /// How often the scheduler wakes up to look for due syncs. Matches the

@@ -5,23 +5,21 @@ use std::sync::Arc;
 use crate::Config;
 use async_trait::async_trait;
 
-pub use tinycortex::memory::score::extract::{
+pub use crate::engine::backend::score::extract::{
     ChatPrompt, ChatProvider, CompositeExtractor, EntityExtractor, EntityKind, ExtractedEntities,
     ExtractedEntity, ExtractedTopic, LlmExtractorConfig, RegexEntityExtractor,
 };
 
 pub mod regex {
-    pub use tinycortex::memory::score::extract::regex::extract;
+    pub use crate::engine::backend::score::extract::regex::extract;
 }
 
-pub struct LlmEntityExtractor(tinycortex::memory::score::extract::LlmEntityExtractor);
+pub struct LlmEntityExtractor(crate::engine::backend::score::extract::LlmEntityExtractor);
 
 impl LlmEntityExtractor {
     pub fn new(config: LlmExtractorConfig, provider: Arc<dyn crate::chat::ChatProvider>) -> Self {
-        let provider = Arc::new(crate::tinycortex::SeamChatProvider::new(provider));
-        Self(tinycortex::memory::score::extract::LlmEntityExtractor::new(
-            config, provider,
-        ))
+        let provider = Arc::new(crate::engine::SeamChatProvider::new(provider));
+        Self(crate::engine::backend::score::extract::LlmEntityExtractor::new(config, provider))
     }
 }
 

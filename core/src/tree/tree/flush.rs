@@ -12,7 +12,7 @@ pub async fn flush_stale_buffers(
     max_age: Duration,
     strategy: &LabelStrategy,
 ) -> Result<usize> {
-    crate::tinycortex::flush_stale_tree_buffers(config, max_age, strategy).await
+    crate::engine::flush_stale_tree_buffers(config, max_age, strategy).await
 }
 
 pub async fn flush_stale_buffers_default(

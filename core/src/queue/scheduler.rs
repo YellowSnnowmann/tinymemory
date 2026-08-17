@@ -43,8 +43,8 @@ pub fn start(config: Arc<Config>) {
 /// Unrecoverable failures stay parked — see
 /// [`store::requeue_transient_failed`].
 fn retry_transient_failures(config: &Config) {
-    let memory = crate::tinycortex::memory_config_from(config, config.workspace_dir().clone());
-    match tinycortex::memory::queue::scheduler::self_heal(&memory) {
+    let memory = crate::engine::memory_config_from(config, config.workspace_dir().clone());
+    match crate::engine::backend::queue::scheduler::self_heal(&memory) {
         Ok(0) => {}
         Ok(n) => {
             log::info!("[memory::jobs] periodic retry requeued {n} transient-failed job(s)");
@@ -72,8 +72,8 @@ fn retry_transient_failures(config: &Config) {
 /// `LabelStrategy` for every tree, which no production caller uses and which
 /// would apply one tree kind's labelling to all of them.
 pub fn enqueue_flush_stale_job(config: &Config) -> Result<bool, String> {
-    let memory = crate::tinycortex::memory_config_from(config, config.workspace_dir().clone());
-    match tinycortex::memory::queue::scheduler::enqueue_flush_stale(&memory) {
+    let memory = crate::engine::memory_config_from(config, config.workspace_dir().clone());
+    match crate::engine::backend::queue::scheduler::enqueue_flush_stale(&memory) {
         Ok(Some(_)) => {
             super::worker::wake_workers();
             Ok(true)

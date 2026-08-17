@@ -79,6 +79,14 @@ tempfile = "3"
 # which is unusual but correct: these are the same submodules the parent builds
 # against, and pointing somewhere else would compile the module against a
 # different engine than the workspace it ships from.
+# `tinycortex-api` takes the contract by git (tinymemory#18 §A1). This crate is
+# its own workspace root, and patch tables only apply from the root being built,
+# so the entry has to be repeated here — without it cargo resolves the git copy
+# alongside the path copy and `MemoryTaint` from one is not the same type as
+# from the other.
+[patch."https://github.com/tinyhumansai/tinymemory"]
+tinymemory-api = { path = "../../api" }
+
 [patch.crates-io]
 tinycortex = { path = "../../vendor/tinycortex" }
 tinycortex-api = { path = "../../vendor/tinycortex/api" }

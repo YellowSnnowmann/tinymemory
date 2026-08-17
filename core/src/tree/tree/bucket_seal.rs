@@ -3,11 +3,11 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 
+use crate::engine::engine_config;
 use crate::store::trees::types::{Buffer, Tree};
-use crate::tinycortex::engine_config;
 use crate::Config;
 
-pub use tinycortex::memory::tree::{LabelStrategy, LeafRef, MERGE_LEVEL_BASE};
+pub use crate::engine::backend::tree::{LabelStrategy, LeafRef, MERGE_LEVEL_BASE};
 
 pub async fn append_leaf(
     config: &Config,
@@ -23,11 +23,11 @@ pub async fn append_leaf(
         leaf.token_count as i64,
         leaf.timestamp,
     )?;
-    crate::tinycortex::cascade_tree(config, tree, 0, false, strategy).await
+    crate::engine::cascade_tree(config, tree, 0, false, strategy).await
 }
 
 pub fn append_leaf_deferred(config: &Config, tree: &Tree, leaf: &LeafRef) -> Result<bool> {
-    tinycortex::memory::tree::append_leaf_deferred(&engine_config(config), tree, leaf)
+    crate::engine::backend::tree::append_leaf_deferred(&engine_config(config), tree, leaf)
 }
 
 pub fn append_to_buffer(
@@ -38,7 +38,7 @@ pub fn append_to_buffer(
     token_delta: i64,
     item_ts: DateTime<Utc>,
 ) -> Result<()> {
-    tinycortex::memory::tree::append_to_buffer(
+    crate::engine::backend::tree::append_to_buffer(
         &engine_config(config),
         tree_id,
         level,
@@ -55,7 +55,7 @@ pub async fn cascade_all_from(
     force_now: Option<DateTime<Utc>>,
     strategy: &LabelStrategy,
 ) -> Result<Vec<String>> {
-    crate::tinycortex::cascade_tree(config, tree, start_level, force_now.is_some(), strategy).await
+    crate::engine::cascade_tree(config, tree, start_level, force_now.is_some(), strategy).await
 }
 
 pub async fn seal_document_subtree(
@@ -66,7 +66,7 @@ pub async fn seal_document_subtree(
     chunk_ids: &[String],
     strategy: &LabelStrategy,
 ) -> Result<String> {
-    crate::tinycortex::seal_document_subtree(config, tree, doc_id, version_ms, chunk_ids, strategy)
+    crate::engine::seal_document_subtree(config, tree, doc_id, version_ms, chunk_ids, strategy)
         .await
 }
 
@@ -77,5 +77,5 @@ pub async fn seal_one_level(
     strategy: &LabelStrategy,
     enqueue_follow_ups: bool,
 ) -> Result<String> {
-    crate::tinycortex::seal_tree_level(config, tree, buffer, strategy, enqueue_follow_ups).await
+    crate::engine::seal_tree_level(config, tree, buffer, strategy, enqueue_follow_ups).await
 }

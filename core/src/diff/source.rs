@@ -1,6 +1,6 @@
 //! The host implementation of the crate diff engine's chunk-source seam.
 //!
-//! `tinycortex::memory::diff::DiffEngine` is generic over a
+//! `crate::engine::backend::diff::DiffEngine` is generic over a
 //! [`SnapshotItemSource`]: during
 //! `take_snapshot` (directly, and transitively from `create_checkpoint` for any
 //! source lacking a baseline) it asks the source for a source's already-ingested
@@ -22,7 +22,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use tinycortex::memory::diff::{extract_item_id, SnapshotItem, SnapshotItemSource};
+use crate::engine::backend::diff::{extract_item_id, SnapshotItem, SnapshotItemSource};
 
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;

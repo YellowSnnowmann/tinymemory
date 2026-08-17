@@ -19,10 +19,10 @@ impl SourceReader for WebPageReader {
         source: &MemorySourceEntry,
         config: &Config,
     ) -> Result<Vec<SourceItem>, String> {
-        tinycortex::memory::sources::SourceReader::list_items(
-            &tinycortex::memory::sources::readers::web_page::WebPageReader,
+        crate::engine::backend::sources::SourceReader::list_items(
+            &crate::engine::backend::sources::readers::web_page::WebPageReader,
             source,
-            &crate::tinycortex::memory_config_from(config, config.workspace_dir().clone()),
+            &crate::engine::memory_config_from(config, config.workspace_dir().clone()),
         )
         .await
         .map_err(|error| error.to_string())
@@ -34,11 +34,11 @@ impl SourceReader for WebPageReader {
         item_id: &str,
         config: &Config,
     ) -> Result<SourceContent, String> {
-        tinycortex::memory::sources::SourceReader::read_item(
-            &tinycortex::memory::sources::readers::web_page::WebPageReader,
+        crate::engine::backend::sources::SourceReader::read_item(
+            &crate::engine::backend::sources::readers::web_page::WebPageReader,
             source,
             item_id,
-            &crate::tinycortex::memory_config_from(config, config.workspace_dir().clone()),
+            &crate::engine::memory_config_from(config, config.workspace_dir().clone()),
         )
         .await
         .map_err(|error| error.to_string())

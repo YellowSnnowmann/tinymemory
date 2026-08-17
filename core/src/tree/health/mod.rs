@@ -3,7 +3,7 @@
 //! The **taxonomy itself** — [`FailureCode`], [`FailureClass`],
 //! [`PipelineFailure`], [`DegradedState`], and the `classify_embed_error`
 //! classifier — now lives in the engine crate at
-//! `tinycortex::memory::health`, and is re-exported below so every existing
+//! `crate::engine::backend::health`, and is re-exported below so every existing
 //! `memory::tree::health::…` path keeps resolving. It moved because a build
 //! whose only driver was a third-party external backend would have no use for
 //! the engine's private failure vocabulary.
@@ -27,7 +27,7 @@ pub(crate) use user_error::publish_local_model_unavailable_user_error;
 /// The failure taxonomy proper. Re-exported (rather than re-declared) so the
 /// ~30 `crate::tree::health::{…}` call sites across the host
 /// are unaffected by the move, and so there is exactly one definition.
-pub use tinycortex::memory::health::{
+pub use crate::engine::backend::health::{
     classify_embed_error, classify_embed_error_str, DegradedState, FailureClass, FailureCode,
     PipelineFailure,
 };
