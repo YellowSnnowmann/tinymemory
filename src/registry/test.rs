@@ -259,3 +259,77 @@ fn driver_class_serde_matches_the_config_spelling() {
         assert_eq!(json, format!("\"{}\"", class.as_str()));
     }
 }
+
+// ── Selection from configuration (issue #18 §A5) ─────────────────────────────
+//
+// Before this, the registry could answer "is this driver id real and allowed"
+// and nothing asked it: `admit` had no production caller, and the memory client
+// factory constructed TinyCortex unconditionally. These pin the wiring.
+
+use tinymemory_api::host::test_support::TestHostConfig;
+
+fn config_naming(driver: Option<&str>) -> TestHostConfig {
+    // `TestHostConfig` is `#[non_exhaustive]`, so it is built and then mutated
+    // rather than named field-by-field — which is what its own docs ask for.
+    let mut config = TestHostConfig::default();
+    config.memory_driver = driver.map(str::to_owned);
+    config
+}
+
+#[test]
+fn a_configuration_naming_no_driver_gets_the_embedded_default() {
+    // The property that keeps an unconfigured host booting: a reserved embedded
+    // id is admitted without any `drivers` entry.
+    let admission = DriverRegistry::builtin()
+        .select(&config_naming(None), None, labels())
+        .expect("an unconfigured host still binds");
+    assert_eq!(admission.id, TINYCORTEX_DRIVER_ID);
+    assert_eq!(admission.class, DriverClass::Embedded);
+}
+
+#[test]
+fn a_configuration_naming_an_engine_selects_that_engine() {
+    let admission = DriverRegistry::builtin()
+        .select(&config_naming(Some(NULL_DRIVER_ID)), None, labels())
+        .expect("the null driver is admitted without an entry");
+    assert_eq!(admission.id, NULL_DRIVER_ID);
+    assert_eq!(admission.class, DriverClass::Null);
+}
+
+#[test]
+fn selecting_a_hosted_engine_still_requires_its_entry() {
+    // Selection does not loosen admission: an external driver named in config
+    // but left unconfigured is refused fail-closed, exactly as `admit` refuses
+    // it directly.
+    let reason = DriverRegistry::builtin()
+        .select(&config_naming(Some("supermemory")), None, labels())
+        .expect_err("an external driver with no entry must be refused");
+    assert_eq!(reason.configured_driver, "supermemory");
+}
+
+#[test]
+fn selecting_a_hosted_engine_succeeds_once_it_is_configured_and_trusted() {
+    let entry = DriverEntry {
+        class: None,
+        trust_state: TRUSTED,
+    };
+    let admission = DriverRegistry::builtin()
+        .select(&config_naming(Some("supermemory")), Some(entry), labels())
+        .expect("a configured, trusted external driver is admitted");
+    assert_eq!(admission.class, DriverClass::External);
+}
+
+#[test]
+fn selection_reads_the_engine_field_and_not_the_model_routing_one() {
+    // `memory_provider` is a `provider:model` routing string choosing which
+    // language model does summarisation. Reading it here would let a model
+    // change repoint a company's storage, which is why selection has its own
+    // field.
+    let mut config = TestHostConfig::default();
+    config.memory_provider = Some("ollama:llama3".to_owned());
+    config.memory_driver = None;
+    let admission = DriverRegistry::builtin()
+        .select(&config, None, labels())
+        .expect("model routing must not affect engine selection");
+    assert_eq!(admission.id, TINYCORTEX_DRIVER_ID);
+}

@@ -125,6 +125,25 @@ pub trait MemoryHostConfig: Send + Sync + std::fmt::Debug {
     /// `provider:model` routing string for the memory workload, if pinned.
     fn memory_provider(&self) -> Option<&str>;
 
+    /// The memory **engine** this host selects, when its configuration names
+    /// one — `tinycortex`, `supermemory`, `mem0`, `cognee`, `null`.
+    ///
+    /// Deliberately distinct from [`Self::memory_provider`], which despite the
+    /// name is a `provider:model` routing string for the memory *workload* —
+    /// which language model does summarisation and entity extraction. That is a
+    /// different axis from which store the memory lives in, and conflating them
+    /// would let a model change repoint a company's storage.
+    ///
+    /// `None` means "the host's default", which the host resolves rather than
+    /// this trait: the driver registry admits a reserved embedded id with no
+    /// configuration entry precisely so an unconfigured host still binds
+    /// something instead of failing to start.
+    ///
+    /// Defaulted so adding it breaks no existing implementation.
+    fn memory_driver(&self) -> Option<&str> {
+        None
+    }
+
     /// The local model id for a workload, when that workload is routed to
     /// Ollama (`"ollama:<model>"`). `None` for cloud or unset workloads.
     ///

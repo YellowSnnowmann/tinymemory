@@ -40,6 +40,8 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use tinymemory_api::host::MemoryHostConfig;
+
 mod class;
 
 pub use class::{DriverClass, DriverClassParseError};
@@ -282,6 +284,43 @@ impl DriverRegistry {
         }
 
         Ok(admission)
+    }
+
+    /// Selects and admits the memory driver this host's configuration names.
+    ///
+    /// The half of driver binding that was specified but never wired: the
+    /// registry could answer "is this driver id real and allowed", and nothing
+    /// asked it. This reads the id from the host's own configuration and puts
+    /// it through [`Self::admit`], so configuration decides the engine instead
+    /// of a factory hardcoding one (issue #18 §A5).
+    ///
+    /// It reads [`MemoryHostConfig::memory_driver`], **not**
+    /// `memory_provider` — despite the name, the latter is a `provider:model`
+    /// routing string choosing which language model does summarisation, which
+    /// is a different axis from which store the memory lives in.
+    ///
+    /// A configuration that names no driver gets [`TINYCORTEX_DRIVER_ID`], the
+    /// reserved embedded default. That is what keeps an unconfigured host
+    /// booting: an embedded id is admitted without a `drivers` entry, while an
+    /// external one is refused without endpoint, credential and trust
+    /// configuration.
+    ///
+    /// This resolves the *decision*, not the instance. Constructing the
+    /// provider, caching it per workspace, and wrapping it in a policy guard
+    /// stay with the host — see the module docs for why.
+    ///
+    /// # Errors
+    ///
+    /// Returns the [`FallbackReason`] to record and publish when the configured
+    /// driver is refused, exactly as [`Self::admit`] does.
+    pub fn select(
+        &self,
+        config: &dyn MemoryHostConfig,
+        entry: Option<DriverEntry<'_>>,
+        labels: ConfigLabels<'_>,
+    ) -> Result<Admission, FallbackReason> {
+        let driver = config.memory_driver().unwrap_or(TINYCORTEX_DRIVER_ID);
+        self.admit(driver, entry, labels)
     }
 
     /// The class an id implies when nothing says otherwise.

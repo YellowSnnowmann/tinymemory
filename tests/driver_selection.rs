@@ -3,22 +3,29 @@
 //!
 //! Exercises only the public surface of the `tinymemory` facade.
 //!
-//! # Scope note
+//! # Selection
 //!
-//! Issue #18 §E3 describes this file as also asserting that "the bound
-//! provider's `driver_id()` matches" the configured id. That step needs
-//! `MemoryHostConfig::memory_provider()` to actually select an engine, which is
-//! §A5 and does not exist yet — `create_memory_client_with_local_ai` still
-//! constructs TinyCortex unconditionally. The issue's own sequencing says to
-//! write these tests "against the *current* behaviour first", so this file
-//! pins what admission does today. The binding half joins it when §A5 lands,
-//! and this file is where it goes.
+//! Configuration now chooses the engine (§A5). One correction to the issue is
+//! worth recording here, because it would otherwise have wired the wrong thing:
+//! §A5 names `MemoryHostConfig::memory_provider()` as the selector, but that
+//! method is a `provider:model` routing string for the memory *workload* —
+//! which language model summarises — not the engine the memory lives in.
+//! Selection reads `memory_driver()` instead, added for the purpose.
+//!
+//! What still does not exist is the last clause of §A5, that `create_memory_*`
+//! return a bound `Arc<dyn MemoryProvider>`. It cannot, and the reason is
+//! structural rather than unfinished: `adapters/tinycortex` depends on
+//! `tinymemory-core` since §C3, so a core factory returning a constructed
+//! adapter provider would be a dependency cycle. Selection resolves the
+//! *decision*; the host constructs — which is what `src/registry`'s own module
+//! docs have always said.
 
 // A failing assertion in a test *is* a panic; the crate-wide `expect_used` /
 // `unwrap_used` / `panic` lints exist to keep the library from panicking, not
 // the tests. Same allowance, and same reasoning, as `src/registry/test.rs`.
 #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
+use tinymemory::api::host::test_support::TestHostConfig;
 use tinymemory::registry::{
     ConfigLabels, DriverClass, DriverEntry, DriverRegistry, COGNEE_DRIVER_ID, MEM0_DRIVER_ID,
     SUPERMEMORY_DRIVER_ID, TINYCORTEX_DRIVER_ID, TRUSTED,
@@ -158,4 +165,66 @@ fn a_config_class_typo_is_echoed_back_to_the_operator() {
         "the refusal should quote the typo: {}",
         reason.reason
     );
+}
+
+// ── The selection half, through the public facade ────────────────────────────
+
+fn config_naming(driver: Option<&str>) -> TestHostConfig {
+    let mut config = TestHostConfig::default();
+    config.memory_driver = driver.map(str::to_owned);
+    config
+}
+
+#[test]
+fn configuration_chooses_the_engine_and_admission_gates_it() {
+    let admission = DriverRegistry::builtin()
+        .select(
+            &config_naming(Some(COGNEE_DRIVER_ID)),
+            Some(trusted_external()),
+            labels(),
+        )
+        .expect("a configured, trusted external engine binds");
+    assert_eq!(admission.id, COGNEE_DRIVER_ID);
+    assert_eq!(admission.class, DriverClass::External);
+}
+
+#[test]
+fn an_unconfigured_host_still_binds_the_embedded_default() {
+    // The property that matters most operationally: adding engine selection
+    // must not turn "I configured nothing" into a host that fails to start.
+    let admission = DriverRegistry::builtin()
+        .select(&config_naming(None), None, labels())
+        .expect("an unconfigured host binds the embedded default");
+    assert_eq!(admission.id, TINYCORTEX_DRIVER_ID);
+    assert_eq!(admission.class, DriverClass::Embedded);
+}
+
+#[test]
+fn selection_does_not_loosen_the_fail_closed_external_gate() {
+    // Going through `select` rather than `admit` must not become a way around
+    // the trust requirement.
+    let untrusted = DriverEntry {
+        class: None,
+        trust_state: "untrusted",
+    };
+    let reason = DriverRegistry::builtin()
+        .select(
+            &config_naming(Some(MEM0_DRIVER_ID)),
+            Some(untrusted),
+            labels(),
+        )
+        .expect_err("an untrusted external engine is refused however it was chosen");
+    assert!(reason.reason.contains(TRUSTED), "{}", reason.reason);
+}
+
+#[test]
+fn the_model_routing_field_cannot_repoint_the_store() {
+    // `memory_provider` chooses a language model; `memory_driver` chooses the
+    // store. Conflating them would let a model change move a company's memory.
+    let mut config = TestHostConfig::default();
+    config.memory_provider = Some("ollama:llama3".to_owned());
+    let admission = DriverRegistry::builtin()
+        .select(&config, None, labels())
+        .expect("model routing leaves engine selection alone");
+    assert_eq!(admission.id, TINYCORTEX_DRIVER_ID);
 }

@@ -72,6 +72,9 @@ serde = { version = "1", features = ["derive"] }
 [dev-dependencies]
 # The mandatory-family tests are async.
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# `TestHostConfig`, for the driver-selection tests. A dev-dependency: the
+# facade must not carry a test double into a consumer's graph.
+tinymemory-api = { path = "api", features = ["test-support"] }
 # The reference driver and the behavioural suite, for the workspace-level
 # integration tests. A dev-dependency only: the facade must not carry a test
 # harness into a consumer's dependency graph.

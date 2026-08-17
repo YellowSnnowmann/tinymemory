@@ -45,6 +45,8 @@ pub struct TestHostConfig {
     pub embeddings_provider: Option<String>,
     /// See [`MemoryHostConfig::memory_provider`].
     pub memory_provider: Option<String>,
+    /// See [`MemoryHostConfig::memory_driver`]. `None` selects the host default.
+    pub memory_driver: Option<String>,
     /// See [`MemoryHostConfig::api_url`].
     pub api_url: Option<String>,
     /// See [`MemoryHostConfig::default_model`].
@@ -111,6 +113,10 @@ impl MemoryHostConfig for TestHostConfig {
 
     fn memory_provider(&self) -> Option<&str> {
         self.memory_provider.as_deref()
+    }
+
+    fn memory_driver(&self) -> Option<&str> {
+        self.memory_driver.as_deref()
     }
 
     fn workload_local_model(&self, workload: &str) -> Option<String> {
