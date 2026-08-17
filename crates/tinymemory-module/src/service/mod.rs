@@ -8,6 +8,7 @@
 //! Capabilities()                                    -> Capabilities
 //! Health()                                          -> MemoryHealth
 //! Shutdown()                                        -> ()
+//! OpenStore(memory_subdir)                          -> object_path
 //!
 //! Store(namespace, key, content, category, session_id, taint) -> ()
 //! Get(namespace, key)                               -> Option<MemoryEntry>
@@ -17,7 +18,43 @@
 //! Recall(query, limit, opts, scope)                 -> [MemoryEntry]
 //! ExportPage(cursor, limit)                         -> ExportPage
 //! ImportRecords(records)                            -> ImportOutcome
+//!
+//! ListPeople(limit)                                 -> [RankedPerson]
+//! GetPerson(person_id)                              -> Option<PersonRecord>
+//! ResolveHandle(handle, create_if_missing)          -> Option<ResolvedPerson>
+//! AddHandleAlias(person_id, handle)                 -> ()
+//! ScorePerson(person_id)                            -> Option<PersonScore>
+//! RecordInteraction(interaction)                    -> ()
+//! SeedFromAddressBook()                             -> AddressBookSeedOutcome
+//!
+//! ListChunks(query, scope)                          -> [Chunk]
+//! GetChunk(chunk_id)                                -> Option<Chunk>
+//! ChunkDetail(chunk_id)                             -> Option<ChunkDetail>
+//! ChunkEmbeddings(chunk_ids, model_signature)       -> [ChunkEmbedding]
+//! StorageKinds()                                    -> [String]
+//!
+//! ListActiveFacets() / ListAllFacets()               -> [ProfileFacet]
+//! GetFacet(key) / FacetsByType(type)                 -> facet(s)
+//! UpsertFacet(facet) / UpsertProviderFacet(…)        -> ()
+//! SetFacetUserState(key, state) / DeleteFacet(key)   -> bool
+//! DeleteFacetById(id) / DropFacetsBelow(threshold)   -> bool / usize
+//! WorkflowIdentityMatches(pattern, value)            -> bool
+//!
+//! FastRetrieve(query, options, scope)               -> RetrievalResponse
+//! CoverWindow(window, scope)                        -> RetrievalResponse
+//! SearchEntities(query, kinds, limit)               -> [EntityMatch]
+//! RecallNamespaceScored(ns, query, limit, exclude)  -> [NamespaceMemoryHit]
+//! RetrieveSource(query, scope)                      -> RetrievalResponse
+//! RetrieveChildren(node_id, max_depth, query, limit, scope) -> [RetrievalHit]
+//! RetrieveLeaves(chunk_ids, scope)                   -> [RetrievalHit]
 //! ```
+//!
+//! # Source scope crosses as an argument, never as ambient state
+//!
+//! Every scoped method above takes `scope` explicitly. In-process the engine
+//! resolves it from a task-local; that task-local belongs to the *host's* task
+//! and does not exist on this side of a bus call. Inferring it here would read
+//! as absent, and absent means unrestricted — a source gate failing open.
 //!
 //! # Why the method list mirrors a trait exactly
 //!
@@ -68,7 +105,13 @@
 //! query.** All three are user memory content, and a module error must not carry
 //! payload values.
 
+use std::collections::HashMap;
 use std::sync::Arc;
+
+// Deliberately the async mutex, not `std::sync::Mutex`: the open path holds
+// this guard across an `.await` (see `open_store`), which a std guard cannot
+// be held across.
+use tokio::sync::Mutex;
 
 use tinybus::{Connection, Error as BusError, Result as BusResult};
 use tinymemory_api::capabilities::{Capabilities, Capability};
@@ -83,13 +126,25 @@ use tinymemory_api::provider::types::{
 // `MemoryCore`, `MemoryRecall` and `MemoryPortability` are deliberately not
 // imported: they are supertraits of `MemoryProvider`, so their methods are
 // already callable on the trait object.
+use tinymemory_api::provider::chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery};
+use tinymemory_api::provider::episodic::{ConversationSegment, EpisodicTurn};
+use tinymemory_api::provider::people::{
+    AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
+    RankedPerson, ResolvedPerson,
+};
+use tinymemory_api::provider::profile::{FacetType, ProfileFacet, UserState};
+use tinymemory_api::provider::retrieval::{
+    CoverWindowQuery, EntityMatch, FastRetrieveQuery, RetrievalHit, RetrievalResponse,
+    SourceRetrievalQuery,
+};
 use tinymemory_api::provider::MemoryProvider;
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
 use tinymemory_api::tree::{IngestRequest, QueryResult, TreeStatus};
 use tinymemory_api::types::{
     GraphRelationRecord, MemoryCategory, MemoryEntry, MemoryKvRecord, MemoryTaint,
-    NamespaceDocumentInput, NamespaceRetrievalContext, NamespaceSummary, StoredMemoryDocument,
+    NamespaceDocumentInput, NamespaceMemoryHit, NamespaceRetrievalContext, NamespaceSummary,
+    StoredMemoryDocument,
 };
 use tinymemory_api::wire;
 
@@ -99,16 +154,92 @@ pub const BUS_NAME: &str = "ai.tinyhumans.tinymemory.Memory";
 /// Object path exported by the `TinyMemory` module.
 pub const OBJECT_PATH: &str = "/ai/tinyhumans/tinymemory/Memory";
 
-/// The served object: a bound driver and nothing else.
+/// How many stores one module process will open, across every subtree.
+///
+/// Sized for "a host with per-profile memory", which is the case `OpenStore`
+/// exists for — one store per profile, and a host with sixty-four live profiles
+/// in one process is already outside what this was built for. It is a backstop
+/// against a caller that opens stores in a loop, not a quota anyone should
+/// meet.
+pub(crate) const MAX_OPEN_STORES: usize = 64;
+
+/// The served object: a bound driver, plus what it needs to open a sibling
+/// store on request.
 pub(crate) struct MemoryService {
     provider: Arc<dyn MemoryProvider>,
+    /// Everything needed to build a second store under a different subtree.
+    ///
+    /// `None` on the objects that `OpenStore` itself creates: a store opened
+    /// this way cannot open further stores. That is not a limitation worth
+    /// lifting — the host asks the root object, which knows the workspace — and
+    /// it keeps the recursion finite by construction.
+    opener: Option<Arc<StoreOpener>>,
+}
+
+/// The root object's ability to bring up additional stores under the same
+/// workspace.
+pub(crate) struct StoreOpener {
+    connection: Connection,
+    config: crate::config::ModuleConfig,
+    /// Subtrees already served, so a second `OpenStore` for the same one
+    /// returns the existing object instead of opening the database twice.
+    ///
+    /// Two live handles to one SQLite file is not a hypothetical problem: the
+    /// engine runs migrations on open, and concurrent migration attempts on the
+    /// same file are exactly the kind of corruption that is invisible until it
+    /// is not.
+    ///
+    /// The guard is therefore held across the whole open, not just the lookup —
+    /// a lock released between the check and the insert would let two callers
+    /// through and produce exactly the double-open it is here to prevent. That
+    /// is why this is a `tokio::sync::Mutex`.
+    served: Mutex<HashMap<String, String>>,
 }
 
 impl MemoryService {
-    /// Serve `provider`.
+    /// Serve `provider` as a leaf object — one store, no opener.
     pub(crate) fn new(provider: Arc<dyn MemoryProvider>) -> Self {
-        Self { provider }
+        Self {
+            provider,
+            opener: None,
+        }
     }
+
+    /// Serve `provider` as the root object, able to open sibling stores.
+    pub(crate) fn root(provider: Arc<dyn MemoryProvider>, opener: Arc<StoreOpener>) -> Self {
+        Self {
+            provider,
+            opener: Some(opener),
+        }
+    }
+}
+
+impl StoreOpener {
+    pub(crate) fn new(connection: Connection, config: crate::config::ModuleConfig) -> Self {
+        Self {
+            connection,
+            config,
+            served: Mutex::new(HashMap::new()),
+        }
+    }
+}
+
+/// Object path for a store rooted at `memory_subdir`.
+///
+/// Derived rather than free-form so a caller cannot name an arbitrary bus path,
+/// and sanitised to the characters an object path allows — a subdir reaches
+/// this from a profile id, and an id that fails validation must produce a
+/// refusal, not a malformed path.
+fn object_path_for_subdir(memory_subdir: &str) -> Option<String> {
+    if memory_subdir.is_empty()
+        || memory_subdir.len() > 128
+        || !memory_subdir
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return None;
+    }
+    Some(format!("{OBJECT_PATH}/stores/{memory_subdir}"))
 }
 
 macro_rules! require_family {
@@ -159,6 +290,115 @@ impl MemoryService {
             .shutdown()
             .await
             .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Bring up a store rooted at `<workspace>/<memory_subdir>` and return the
+    /// object path serving it.
+    ///
+    /// # Why the module opens stores rather than the host selecting one per call
+    ///
+    /// A host with per-profile memory needs more than one store in a process.
+    /// The alternative was a store selector threaded through every method on
+    /// every capability family — a change to the shape of the whole contract,
+    /// to express something that is not a property of a memory operation at
+    /// all. Which store you are talking to is settled when you are handed a
+    /// driver, exactly like which workspace you are bound to.
+    ///
+    /// So the root object opens stores and hands back object paths. Each is an
+    /// ordinary [`MemoryService`] exporting the identical interface, and the
+    /// contract does not change at all: `MemoryProvider` still describes one
+    /// store, and a proxy still talks to one store.
+    ///
+    /// Idempotent per subtree — see [`StoreOpener::served`] for why opening the
+    /// same database twice is worth going out of the way to avoid.
+    async fn open_store(&self, memory_subdir: String) -> BusResult<String> {
+        let Some(opener) = self.opener.as_ref() else {
+            return Err(BusError::MethodFailed {
+                name: "ai.tinyhumans.tinymemory.Error.Invalid".to_string(),
+                message: "only the root memory object can open stores".to_string(),
+            });
+        };
+        let Some(path) = object_path_for_subdir(&memory_subdir) else {
+            // The subdir is rejected by shape, and the message says so without
+            // echoing it: it derives from a profile id, which is user data.
+            return Err(BusError::MethodFailed {
+                name: "ai.tinyhumans.tinymemory.Error.Invalid".to_string(),
+                message: "memory subdirectory is empty, over-long, or contains \
+                          characters outside [A-Za-z0-9_-]"
+                    .to_string(),
+            });
+        };
+
+        // The guard is taken here and held to the end of the method, so the
+        // check and the insert cannot be split by the open in between. An
+        // earlier version dropped it before opening the store, which read as
+        // idempotent but was not: two concurrent calls for the same subtree
+        // both missed the map, both opened the database, and both ran
+        // migrations against one file — the corruption this map exists to
+        // prevent, arrived at through the map.
+        //
+        // It serializes opens of *different* subtrees too. That is accepted
+        // rather than worked around: an open happens once per profile, and a
+        // per-key lock map costs more complexity than the contention it saves.
+        let mut served = opener.served.lock().await;
+        if let Some(existing) = served.get(&memory_subdir) {
+            log::debug!("[tinymemory:module] open_store reusing already-served subtree");
+            return Ok(existing.clone());
+        }
+
+        // Each store is a SQLite file, an object path and a set of file
+        // descriptors that live until the process exits — nothing here ever
+        // closes one, because tinybus does not unserve. A caller that opens a
+        // fresh subdir in a loop would therefore exhaust descriptors with no
+        // way back short of a restart. The cap is far above any real host (one
+        // store per profile) and exists so that a bug is refused by name
+        // instead of degrading the whole process.
+        if served.len() >= MAX_OPEN_STORES {
+            log::error!(
+                "[tinymemory:module] open_store refused: already serving {MAX_OPEN_STORES} stores"
+            );
+            return Err(BusError::MethodFailed {
+                name: "ai.tinyhumans.tinymemory.Error.Invalid".to_string(),
+                message: format!(
+                    "this module already serves the maximum of {MAX_OPEN_STORES} memory stores"
+                ),
+            });
+        }
+
+        let client = tinymemory_core::store::factories::create_memory_client_in_subdir(
+            &opener.config.memory,
+            None,
+            "",
+            &opener.config.embedding_routes,
+            opener.config.storage_provider.as_ref(),
+            &opener.config.workspace_dir,
+            &memory_subdir,
+        )
+        .map_err(|error| {
+            // Same reasoning as `setup`: the factory error names this process's
+            // filesystem layout, which the caller has no business learning.
+            log::error!("[tinymemory:module] open_store create store failed: {error}");
+            BusError::MethodFailed {
+                name: "ai.tinyhumans.tinymemory.Error.Other".to_string(),
+                message: "could not open the requested memory store".to_string(),
+            }
+        })?;
+
+        let provider = crate::provider::ModuleMemoryProvider::new(&opener.config, Arc::new(client));
+        opener
+            .connection
+            .serve_at(
+                path.as_str().try_into()?,
+                MemoryService::new(Arc::new(provider)),
+            )
+            .await?;
+
+        // Recorded only after `serve_at` succeeds, so a failed open is retried
+        // rather than caching a path nothing answers on. Both early returns
+        // above leave the map untouched for the same reason.
+        served.insert(memory_subdir, path.clone());
+        log::info!("[tinymemory:module] open_store now serving an additional memory subtree");
+        Ok(path)
     }
 
     /// Upsert an entry keyed by `(namespace, key)`.
@@ -627,6 +867,461 @@ impl MemoryService {
             .await
             .map_err(|error| into_bus_error(&error))
     }
+
+    // ── People ──────────────────────────────────────────────────────────────
+
+    /// Known people, ranked by closeness.
+    ///
+    /// Size-checked like the other list-returning methods. `limit` bounds the
+    /// *count* but not the bytes — a store of people each carrying many handles
+    /// can still overflow a frame — so the ceiling is enforced on the encoded
+    /// response rather than trusted to the caller's limit.
+    async fn list_people(&self, limit: Option<usize>) -> BusResult<Vec<RankedPerson>> {
+        let people = require_family!(self, as_people, Capability::People)
+            .list_people(limit)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&people, "ListPeople")?;
+        Ok(people)
+    }
+
+    async fn get_person(&self, person_id: String) -> BusResult<Option<PersonRecord>> {
+        require_family!(self, as_people, Capability::People)
+            .get_person(&person_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn resolve_handle(
+        &self,
+        handle: PersonHandle,
+        create_if_missing: bool,
+    ) -> BusResult<Option<ResolvedPerson>> {
+        require_family!(self, as_people, Capability::People)
+            .resolve_handle(&handle, create_if_missing)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn add_handle_alias(&self, person_id: String, handle: PersonHandle) -> BusResult<()> {
+        require_family!(self, as_people, Capability::People)
+            .add_handle_alias(&person_id, &handle)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn score_person(&self, person_id: String) -> BusResult<Option<PersonScore>> {
+        require_family!(self, as_people, Capability::People)
+            .score_person(&person_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn record_interaction(&self, interaction: PersonInteraction) -> BusResult<()> {
+        require_family!(self, as_people, Capability::People)
+            .record_interaction(&interaction)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn seed_from_address_book(&self) -> BusResult<AddressBookSeedOutcome> {
+        require_family!(self, as_people, Capability::People)
+            .seed_from_address_book()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    // ── Chunks ──────────────────────────────────────────────────────────────
+
+    /// Chunks matching the query, size-checked.
+    ///
+    /// `ChunkQuery::limit` bounds rows, not bytes, and a chunk carries full
+    /// content — so this is one of the methods where the ceiling matters most.
+    async fn list_chunks(
+        &self,
+        query: ChunkQuery,
+        scope: Option<SourceScope>,
+    ) -> BusResult<Vec<Chunk>> {
+        let chunks = require_family!(self, as_chunks, Capability::Chunks)
+            .list_chunks(&query, scope.as_ref())
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&chunks, "ListChunks")?;
+        Ok(chunks)
+    }
+
+    /// One chunk, size-checked.
+    ///
+    /// A single object is checked for the same reason a list is: the ceiling is
+    /// a property of the frame, not of the row count, and one chunk carries
+    /// full content with no bound of its own. A list of one that is refused
+    /// while the singular read of the same chunk succeeds would be an odd
+    /// contract to explain.
+    async fn get_chunk(&self, chunk_id: String) -> BusResult<Option<Chunk>> {
+        let chunk = require_family!(self, as_chunks, Capability::Chunks)
+            .get_chunk(&chunk_id)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&chunk, "GetChunk")?;
+        Ok(chunk)
+    }
+
+    /// One chunk plus its metadata, size-checked.
+    async fn chunk_detail(&self, chunk_id: String) -> BusResult<Option<ChunkDetail>> {
+        let detail = require_family!(self, as_chunks, Capability::Chunks)
+            .chunk_detail(&chunk_id)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&detail, "ChunkDetail")?;
+        Ok(detail)
+    }
+
+    async fn storage_kinds(&self) -> BusResult<Vec<String>> {
+        require_family!(self, as_chunks, Capability::Chunks)
+            .storage_kinds()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Embedding vectors are the largest thing this interface returns.
+    ///
+    /// A 1536-dimension vector encodes to roughly 10 KiB of JSON, so a few
+    /// hundred chunks reach the frame ceiling on their own. Checked for the same
+    /// reason `List` is, and refused by name rather than truncated — a short
+    /// batch is indistinguishable from "those chunks have no vector".
+    async fn chunk_embeddings(
+        &self,
+        chunk_ids: Vec<String>,
+        model_signature: String,
+    ) -> BusResult<Vec<ChunkEmbedding>> {
+        let embeddings = require_family!(self, as_chunks, Capability::Chunks)
+            .chunk_embeddings(&chunk_ids, &model_signature)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&embeddings, "ChunkEmbeddings")?;
+        Ok(embeddings)
+    }
+
+    // ── Retrieval ───────────────────────────────────────────────────────────
+
+    async fn fast_retrieve(
+        &self,
+        query: String,
+        options: FastRetrieveQuery,
+        scope: Option<SourceScope>,
+    ) -> BusResult<RetrievalResponse> {
+        let response = require_family!(self, as_retrieval, Capability::Retrieval)
+            .fast_retrieve(&query, options, scope.as_ref())
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&response, "FastRetrieve")?;
+        Ok(response)
+    }
+
+    async fn cover_window(
+        &self,
+        window: CoverWindowQuery,
+        scope: Option<SourceScope>,
+    ) -> BusResult<RetrievalResponse> {
+        let response = require_family!(self, as_retrieval, Capability::Retrieval)
+            .cover_window(&window, scope.as_ref())
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&response, "CoverWindow")?;
+        Ok(response)
+    }
+
+    // ── Profile ─────────────────────────────────────────────────────────────
+
+    async fn list_active_facets(&self) -> BusResult<Vec<ProfileFacet>> {
+        let facets = require_family!(self, as_profile, Capability::Profile)
+            .list_active_facets()
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&facets, "ListActiveFacets")?;
+        Ok(facets)
+    }
+
+    async fn list_all_facets(&self) -> BusResult<Vec<ProfileFacet>> {
+        let facets = require_family!(self, as_profile, Capability::Profile)
+            .list_all_facets()
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&facets, "ListAllFacets")?;
+        Ok(facets)
+    }
+
+    async fn get_facet(&self, key: String) -> BusResult<Option<ProfileFacet>> {
+        require_family!(self, as_profile, Capability::Profile)
+            .get_facet(&key)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn facets_by_type(&self, facet_type: FacetType) -> BusResult<Vec<ProfileFacet>> {
+        let facets = require_family!(self, as_profile, Capability::Profile)
+            .facets_by_type(facet_type)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&facets, "FacetsByType")?;
+        Ok(facets)
+    }
+
+    // ── Episodic ────────────────────────────────────────────────────────────
+
+    /// Record one turn, answering with the row id the engine assigned it.
+    async fn insert_turn(&self, turn: EpisodicTurn) -> BusResult<i64> {
+        require_family!(self, as_episodic, Capability::Episodic)
+            .insert_turn(&turn)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Every recorded turn for one session, oldest first.
+    async fn session_turns(&self, session_id: String) -> BusResult<Vec<EpisodicTurn>> {
+        let turns = require_family!(self, as_episodic, Capability::Episodic)
+            .session_turns(&session_id)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&turns, "SessionTurns")?;
+        Ok(turns)
+    }
+
+    /// The open segment for a session, if there is one.
+    async fn open_segment(&self, session_id: String) -> BusResult<Option<ConversationSegment>> {
+        require_family!(self, as_episodic, Capability::Episodic)
+            .open_segment(&session_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Start a new segment.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "mirrors `MemoryEpisodic::create_segment`; the service layer must \
+                  not reshape a contract signature"
+    )]
+    async fn create_segment(
+        &self,
+        segment_id: String,
+        session_id: String,
+        namespace: String,
+        start_episodic_id: i64,
+        start_timestamp: f64,
+        now: f64,
+    ) -> BusResult<()> {
+        require_family!(self, as_episodic, Capability::Episodic)
+            .create_segment(
+                &segment_id,
+                &session_id,
+                &namespace,
+                start_episodic_id,
+                start_timestamp,
+                now,
+            )
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Extend a segment to include one more turn.
+    async fn append_turn(
+        &self,
+        segment_id: String,
+        episodic_id: i64,
+        timestamp: f64,
+        now: f64,
+    ) -> BusResult<()> {
+        require_family!(self, as_episodic, Capability::Episodic)
+            .append_turn(&segment_id, episodic_id, timestamp, now)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Mark a segment closed.
+    async fn close_segment(&self, segment_id: String, now: f64) -> BusResult<()> {
+        require_family!(self, as_episodic, Capability::Episodic)
+            .close_segment(&segment_id, now)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Attach a summary to a closed segment.
+    async fn set_segment_summary(
+        &self,
+        segment_id: String,
+        summary: String,
+        now: f64,
+    ) -> BusResult<()> {
+        require_family!(self, as_episodic, Capability::Episodic)
+            .set_segment_summary(&segment_id, &summary, now)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Store a segment's embedding under `model_signature`.
+    async fn upsert_segment_embedding(
+        &self,
+        segment_id: String,
+        model_signature: String,
+        embedding: Vec<f32>,
+        created_at: f64,
+    ) -> BusResult<()> {
+        require_family!(self, as_episodic, Capability::Episodic)
+            .upsert_segment_embedding(&segment_id, &model_signature, &embedding, created_at)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn upsert_facet(&self, facet: ProfileFacet) -> BusResult<()> {
+        require_family!(self, as_profile, Capability::Profile)
+            .upsert_facet(&facet)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "mirrors `MemoryProfile::upsert_provider_facet`; the service layer \
+                  must not reshape a contract signature"
+    )]
+    async fn upsert_provider_facet(
+        &self,
+        facet_id: String,
+        facet_type: FacetType,
+        key: String,
+        value: String,
+        confidence: f64,
+        segment_id: Option<String>,
+        observed_at: f64,
+    ) -> BusResult<()> {
+        require_family!(self, as_profile, Capability::Profile)
+            .upsert_provider_facet(
+                &facet_id,
+                facet_type,
+                &key,
+                &value,
+                confidence,
+                segment_id.as_deref(),
+                observed_at,
+            )
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn set_facet_user_state(&self, key: String, user_state: UserState) -> BusResult<bool> {
+        require_family!(self, as_profile, Capability::Profile)
+            .set_facet_user_state(&key, user_state)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn delete_facet(&self, key: String) -> BusResult<bool> {
+        require_family!(self, as_profile, Capability::Profile)
+            .delete_facet(&key)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn delete_facet_by_id(&self, facet_id: String) -> BusResult<bool> {
+        require_family!(self, as_profile, Capability::Profile)
+            .delete_facet_by_id(&facet_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn drop_facets_below(&self, threshold: f64) -> BusResult<usize> {
+        require_family!(self, as_profile, Capability::Profile)
+            .drop_facets_below(threshold)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Returns `bool`, not `BusResult<bool>` on the trait — but the wire needs a
+    /// result, so an absent family answers `false` rather than erroring, which
+    /// is the trait's documented reading of "cannot tell" for this predicate.
+    async fn workflow_identity_matches(
+        &self,
+        key_pattern: String,
+        canonical_value: String,
+    ) -> BusResult<bool> {
+        let Some(profile) = self.provider.as_profile() else {
+            return Ok(false);
+        };
+        Ok(profile
+            .workflow_identity_matches(&key_pattern, &canonical_value)
+            .await)
+    }
+
+    async fn retrieve_source(
+        &self,
+        query: SourceRetrievalQuery,
+        scope: Option<SourceScope>,
+    ) -> BusResult<RetrievalResponse> {
+        let response = require_family!(self, as_retrieval, Capability::Retrieval)
+            .retrieve_source(&query, scope.as_ref())
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&response, "RetrieveSource")?;
+        Ok(response)
+    }
+
+    async fn retrieve_children(
+        &self,
+        node_id: String,
+        max_depth: u32,
+        query: Option<String>,
+        limit: Option<usize>,
+        scope: Option<SourceScope>,
+    ) -> BusResult<Vec<RetrievalHit>> {
+        let hits = require_family!(self, as_retrieval, Capability::Retrieval)
+            .retrieve_children(&node_id, max_depth, query.as_deref(), limit, scope.as_ref())
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&hits, "RetrieveChildren")?;
+        Ok(hits)
+    }
+
+    async fn retrieve_leaves(
+        &self,
+        chunk_ids: Vec<String>,
+        scope: Option<SourceScope>,
+    ) -> BusResult<Vec<RetrievalHit>> {
+        let hits = require_family!(self, as_retrieval, Capability::Retrieval)
+            .retrieve_leaves(&chunk_ids, scope.as_ref())
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&hits, "RetrieveLeaves")?;
+        Ok(hits)
+    }
+
+    async fn recall_namespace_scored(
+        &self,
+        namespace: String,
+        query: String,
+        limit: usize,
+        exclude_session_id: Option<String>,
+    ) -> BusResult<Vec<NamespaceMemoryHit>> {
+        let hits = require_family!(self, as_retrieval, Capability::Retrieval)
+            .recall_namespace_scored(&namespace, &query, limit, exclude_session_id.as_deref())
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&hits, "RecallNamespaceScored")?;
+        Ok(hits)
+    }
+
+    async fn search_entities(
+        &self,
+        query: String,
+        kinds: Option<Vec<String>>,
+        limit: usize,
+    ) -> BusResult<Vec<EntityMatch>> {
+        let matches = require_family!(self, as_retrieval, Capability::Retrieval)
+            .search_entities(&query, kinds.as_deref(), limit)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&matches, "SearchEntities")?;
+        Ok(matches)
+    }
 }
 
 /// The response-size ceiling for a method that returns a list of entries.
@@ -699,9 +1394,14 @@ fn into_bus_error(error: &MemoryError) -> BusError {
 pub(crate) async fn serve(
     connection: &Connection,
     provider: Arc<dyn MemoryProvider>,
+    config: crate::config::ModuleConfig,
 ) -> BusResult<()> {
+    let opener = Arc::new(StoreOpener::new(connection.clone(), config));
     connection
-        .serve_at(OBJECT_PATH.try_into()?, MemoryService::new(provider))
+        .serve_at(
+            OBJECT_PATH.try_into()?,
+            MemoryService::root(provider, opener),
+        )
         .await?;
     connection.request_name(BUS_NAME).await?;
     Ok(())

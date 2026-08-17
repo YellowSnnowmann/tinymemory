@@ -96,6 +96,18 @@ impl MemoryClient {
     /// This is public for the `tinymemory-module` provider, which implements
     /// the TinyMemory contract over this exact client. Product hosts must use
     /// the guarded provider and must not retain this raw engine handle.
+    pub fn unified_handle(&self) -> Arc<UnifiedMemory> {
+        Arc::clone(&self.inner)
+    }
+
+    /// Returns an `Arc<dyn Memory>` handle backed by the same
+    /// [`UnifiedMemory`] this client wraps.
+    ///
+    /// Prefer this over [`Self::unified_handle`]: the trait is the narrower
+    /// surface, and a caller that only needs `Memory` should not be able to
+    /// reach the concrete store's inherent methods. `unified_handle` exists
+    /// for the module provider's scored-recall path, which needs a query the
+    /// trait does not carry.
     pub fn memory_handle(&self) -> Arc<dyn crate::Memory> {
         Arc::clone(&self.inner) as Arc<dyn crate::Memory>
     }

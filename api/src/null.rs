@@ -10,7 +10,7 @@
 //! `stub.rs` files with one generic answer.
 //!
 //! It is also the fixture the capability-degradation tests bind: with it in the
-//! slot, the ten optional families are unadvertised, so their RPC methods are
+//! slot, the fifteen optional families are unadvertised, so their RPC methods are
 //! unregistered and their agent tools are absent — and the core still boots.
 //!
 //! And it is the existence proof for the mandatory set: if
@@ -32,9 +32,9 @@
 //! driver that failed to bind — **that** case falls back to the embedded
 //! default, never to this. Do not wire it as a general-purpose failure mode.
 //!
-//! ## Why it implements all thirteen families but advertises three
+//! ## Why it implements all eighteen families but advertises three
 //!
-//! The ten optional families are implemented and every method returns
+//! The fifteen optional families are implemented and every method returns
 //! [`crate::error::MemoryError::Unsupported`] naming its family, but the
 //! `as_*` accessors return `None` and
 //! [`crate::provider::MemoryProvider::capabilities`] lists only the mandatory
@@ -60,16 +60,21 @@ use crate::provider::types::{
     MaintenanceReport, SnapshotRef, SourceItem, SourceScope,
 };
 use crate::provider::{
-    MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities, MemoryGoals, MemoryGraph,
-    MemoryIngest, MemoryMaintenance, MemoryPortability, MemoryProvider, MemoryRecall,
-    MemorySourceSink, MemoryToolMemory, MemoryTree,
+    AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, CoverWindowQuery, EntityMatch,
+    FacetType, FastRetrieveQuery, MemoryChunks, MemoryCore, MemoryDiff, MemoryDocuments,
+    MemoryEntities, MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople,
+    MemoryPortability, MemoryProfile, MemoryProvider, MemoryRecall, MemoryRetrieval,
+    MemorySourceSink, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction, PersonRecord,
+    PersonScore, ProfileFacet, RankedPerson, ResolvedPerson, RetrievalHit, RetrievalResponse,
+    SourceRetrievalQuery, UserState,
 };
 use crate::recall::OwnedRecallOpts;
 use crate::tool_memory::ToolMemoryRule;
 use crate::tree::{IngestRequest, QueryResult, TreeStatus};
 use crate::types::{
     GraphRelationRecord, MemoryCategory, MemoryEntry, MemoryKvRecord, MemoryTaint,
-    NamespaceDocumentInput, NamespaceRetrievalContext, NamespaceSummary, StoredMemoryDocument,
+    NamespaceDocumentInput, NamespaceMemoryHit, NamespaceRetrievalContext, NamespaceSummary,
+    StoredMemoryDocument,
 };
 
 /// The [`driver_id`](MemoryProvider::driver_id) this driver reports.
@@ -101,7 +106,7 @@ impl MemoryProvider for NullMemoryProvider {
         NULL_DRIVER_ID
     }
 
-    /// Exactly the mandatory three. The ten optional families are implemented
+    /// Exactly the mandatory three. The fifteen optional families are implemented
     /// below but deliberately not advertised, so they stay unreachable through
     /// the trait object.
     fn capabilities(&self) -> Capabilities {
@@ -472,6 +477,202 @@ impl MemoryMaintenance for NullMemoryProvider {
 
     async fn doctor(&self) -> Result<MaintenanceReport, MemoryError> {
         unsupported(Capability::Maintenance)
+    }
+}
+
+#[async_trait]
+impl MemoryPeople for NullMemoryProvider {
+    async fn list_people(&self, _limit: Option<usize>) -> Result<Vec<RankedPerson>, MemoryError> {
+        unsupported(Capability::People)
+    }
+
+    async fn get_person(&self, _person_id: &str) -> Result<Option<PersonRecord>, MemoryError> {
+        unsupported(Capability::People)
+    }
+
+    async fn resolve_handle(
+        &self,
+        _handle: &PersonHandle,
+        _create_if_missing: bool,
+    ) -> Result<Option<ResolvedPerson>, MemoryError> {
+        unsupported(Capability::People)
+    }
+
+    async fn add_handle_alias(
+        &self,
+        _person_id: &str,
+        _handle: &PersonHandle,
+    ) -> Result<(), MemoryError> {
+        unsupported(Capability::People)
+    }
+
+    async fn score_person(&self, _person_id: &str) -> Result<Option<PersonScore>, MemoryError> {
+        unsupported(Capability::People)
+    }
+
+    async fn record_interaction(
+        &self,
+        _interaction: &PersonInteraction,
+    ) -> Result<(), MemoryError> {
+        unsupported(Capability::People)
+    }
+
+    async fn seed_from_address_book(&self) -> Result<AddressBookSeedOutcome, MemoryError> {
+        unsupported(Capability::People)
+    }
+}
+
+#[async_trait]
+impl MemoryChunks for NullMemoryProvider {
+    async fn list_chunks(
+        &self,
+        _query: &ChunkQuery,
+        _scope: Option<&SourceScope>,
+    ) -> Result<Vec<crate::chunks::Chunk>, MemoryError> {
+        unsupported(Capability::Chunks)
+    }
+
+    async fn get_chunk(
+        &self,
+        _chunk_id: &str,
+    ) -> Result<Option<crate::chunks::Chunk>, MemoryError> {
+        unsupported(Capability::Chunks)
+    }
+
+    async fn chunk_detail(&self, _chunk_id: &str) -> Result<Option<ChunkDetail>, MemoryError> {
+        unsupported(Capability::Chunks)
+    }
+
+    async fn storage_kinds(&self) -> Result<Vec<String>, MemoryError> {
+        unsupported(Capability::Chunks)
+    }
+
+    async fn chunk_embeddings(
+        &self,
+        _chunk_ids: &[String],
+        _model_signature: &str,
+    ) -> Result<Vec<ChunkEmbedding>, MemoryError> {
+        unsupported(Capability::Chunks)
+    }
+}
+
+#[async_trait]
+impl MemoryRetrieval for NullMemoryProvider {
+    async fn fast_retrieve(
+        &self,
+        _query: &str,
+        _options: FastRetrieveQuery,
+        _scope: Option<&SourceScope>,
+    ) -> Result<RetrievalResponse, MemoryError> {
+        unsupported(Capability::Retrieval)
+    }
+
+    async fn cover_window(
+        &self,
+        _window: &CoverWindowQuery,
+        _scope: Option<&SourceScope>,
+    ) -> Result<RetrievalResponse, MemoryError> {
+        unsupported(Capability::Retrieval)
+    }
+
+    async fn retrieve_source(
+        &self,
+        _query: &SourceRetrievalQuery,
+        _scope: Option<&SourceScope>,
+    ) -> Result<RetrievalResponse, MemoryError> {
+        unsupported(Capability::Retrieval)
+    }
+
+    async fn retrieve_children(
+        &self,
+        _node_id: &str,
+        _max_depth: u32,
+        _query: Option<&str>,
+        _limit: Option<usize>,
+        _scope: Option<&SourceScope>,
+    ) -> Result<Vec<RetrievalHit>, MemoryError> {
+        unsupported(Capability::Retrieval)
+    }
+
+    async fn retrieve_leaves(
+        &self,
+        _chunk_ids: &[String],
+        _scope: Option<&SourceScope>,
+    ) -> Result<Vec<RetrievalHit>, MemoryError> {
+        unsupported(Capability::Retrieval)
+    }
+
+    async fn recall_namespace_scored(
+        &self,
+        _namespace: &str,
+        _query: &str,
+        _limit: usize,
+        _exclude_session_id: Option<&str>,
+    ) -> Result<Vec<NamespaceMemoryHit>, MemoryError> {
+        unsupported(Capability::Retrieval)
+    }
+
+    async fn search_entities(
+        &self,
+        _query: &str,
+        _kinds: Option<&[String]>,
+        _limit: usize,
+    ) -> Result<Vec<EntityMatch>, MemoryError> {
+        unsupported(Capability::Retrieval)
+    }
+}
+
+#[async_trait]
+impl MemoryProfile for NullMemoryProvider {
+    async fn list_active_facets(&self) -> Result<Vec<ProfileFacet>, MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn list_all_facets(&self) -> Result<Vec<ProfileFacet>, MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn get_facet(&self, _key: &str) -> Result<Option<ProfileFacet>, MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn facets_by_type(
+        &self,
+        _facet_type: FacetType,
+    ) -> Result<Vec<ProfileFacet>, MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn upsert_facet(&self, _facet: &ProfileFacet) -> Result<(), MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn upsert_provider_facet(
+        &self,
+        _facet_id: &str,
+        _facet_type: FacetType,
+        _key: &str,
+        _value: &str,
+        _confidence: f64,
+        _segment_id: Option<&str>,
+        _observed_at: f64,
+    ) -> Result<(), MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn set_facet_user_state(
+        &self,
+        _key: &str,
+        _user_state: UserState,
+    ) -> Result<bool, MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn delete_facet(&self, _key: &str) -> Result<bool, MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn delete_facet_by_id(&self, _facet_id: &str) -> Result<bool, MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    async fn drop_facets_below(&self, _threshold: f64) -> Result<usize, MemoryError> {
+        unsupported(Capability::Profile)
+    }
+    /// `false`, matching the trait's documented "an error reads as no".
+    async fn workflow_identity_matches(&self, _pattern: &str, _value: &str) -> bool {
+        false
     }
 }
 

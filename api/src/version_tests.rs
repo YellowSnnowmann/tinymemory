@@ -7,8 +7,10 @@
 use super::*;
 
 #[test]
-fn contract_version_starts_at_one_zero() {
-    assert_eq!(CONTRACT_VERSION, (2, 0));
+fn contract_version_is_two_two() {
+    // (2, 2): the `episodic` family was added, which the version rule makes a
+    // minor bump — capability negotiation is what keeps an older driver safe.
+    assert_eq!(CONTRACT_VERSION, (2, 2));
 }
 
 #[test]

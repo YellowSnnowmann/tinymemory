@@ -603,6 +603,40 @@ pub fn create_memory_client_with_local_ai(
     Ok(crate::store::MemoryClient::from_unified_memory(store))
 }
 
+/// Like [`create_memory_client_with_local_ai`], but rooted at an explicit
+/// memory subdirectory instead of the shared `"memory"` tree.
+///
+/// Exists for the module's `OpenStore`: a host with per-profile memory needs
+/// more than one store in a process, and each one is an ordinary client rooted
+/// at `<workspace>/<memory_subdir>`. Kept as a separate entry point rather than
+/// adding a parameter to the function above, because every existing caller
+/// wants the shared tree and a defaulted subdir argument is the kind of thing
+/// that silently routes a store somewhere nobody intended.
+///
+/// # Errors
+///
+/// Propagates whatever opening the store under `memory_subdir` failed with.
+pub fn create_memory_client_in_subdir(
+    memory: &MemoryConfig,
+    local_embedding_model: Option<&str>,
+    embedding_api_key: &str,
+    embedding_routes: &[EmbeddingRouteConfig],
+    storage_provider: Option<&StorageProviderConfig>,
+    workspace_dir: &Path,
+    memory_subdir: &str,
+) -> anyhow::Result<crate::store::MemoryClient> {
+    let store = create_unified_memory_full(
+        memory,
+        embedding_routes,
+        storage_provider,
+        local_embedding_model,
+        embedding_api_key,
+        workspace_dir,
+        memory_subdir,
+    )?;
+    Ok(crate::store::MemoryClient::from_unified_memory(store))
+}
+
 /// Create a memory instance specifically for migration purposes.
 ///
 /// The unified namespace memory core has a single workspace-scoped

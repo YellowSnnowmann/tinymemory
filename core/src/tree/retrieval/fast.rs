@@ -12,10 +12,29 @@ use crate::Config;
 
 pub use tinycortex::memory::retrieval::FastRetrieveOptions;
 
+/// Deterministic graph-walk retrieval using the **ambient** source scope.
+///
+/// Correct in-process; see [`fast_retrieve_scoped`] for the transport-facing
+/// path and why it cannot use this one.
 pub async fn fast_retrieve(
     config: &Config,
     query: &str,
     options: FastRetrieveOptions,
+) -> Result<QueryResponse> {
+    fast_retrieve_scoped(config, query, options, current_source_scope()).await
+}
+
+/// Deterministic graph-walk retrieval using an **explicitly supplied** scope.
+///
+/// Exists for the same reason as
+/// [`cover_window_scoped`](super::cover::cover_window_scoped): a task-local
+/// source scope does not cross a transport, and reading it as absent means
+/// unrestricted — a source gate failing open.
+pub async fn fast_retrieve_scoped(
+    config: &Config,
+    query: &str,
+    options: FastRetrieveOptions,
+    scope: Option<std::collections::HashSet<String>>,
 ) -> Result<QueryResponse> {
     let query_entities = nlp::extract_query_entities(config, query).await;
     let entity_ids: Vec<_> = query_entities
@@ -35,7 +54,7 @@ pub async fn fast_retrieve(
         query,
         &entity_ids,
         &EmbedderBridge(embedder.as_ref()),
-        current_source_scope().as_ref(),
+        scope.as_ref(),
         options,
     )
     .await

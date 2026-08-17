@@ -2,7 +2,7 @@
 //!
 //! Three properties are load-bearing and each has its own test:
 //!
-//! 1. the enum has exactly the thirteen contract families and no more;
+//! 1. the enum has exactly the sixteen contract families and no more;
 //! 2. the serialized form is stable snake_case **strings**, never discriminant
 //!    integers — a driver deployed against an older build must keep advertising
 //!    the same set after a variant is inserted mid-enum;
@@ -13,9 +13,9 @@ use super::*;
 use serde_json::json;
 
 #[test]
-fn capability_has_exactly_the_thirteen_contract_families() {
-    assert_eq!(Capability::ALL.len(), 13);
-    assert_eq!(Capability::all().len(), 13);
+fn capability_has_exactly_the_eighteen_contract_families() {
+    assert_eq!(Capability::ALL.len(), 18);
+    assert_eq!(Capability::all().len(), 18);
 
     let names: Vec<&str> = Capability::ALL.iter().map(|c| c.as_str()).collect();
     assert_eq!(
@@ -34,6 +34,11 @@ fn capability_has_exactly_the_thirteen_contract_families() {
             "sources",
             "maintenance",
             "portability",
+            "people",
+            "chunks",
+            "retrieval",
+            "profile",
+            "episodic",
         ]
     );
 }
@@ -141,7 +146,7 @@ fn capabilities_empty_contains_nothing() {
 }
 
 #[test]
-fn capabilities_bit_width_has_room_well_beyond_the_current_thirteen_families() {
+fn capabilities_bit_width_has_room_well_beyond_the_current_sixteen_families() {
     // A `u16` bitset (the original representation) has exactly 16 bit
     // positions, leaving room for only 3 more families before a family's
     // `1 << index` bit-shift overflows. Pin the wider `u64` representation so

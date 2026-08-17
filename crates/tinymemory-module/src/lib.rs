@@ -154,7 +154,7 @@ async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()
     })?;
 
     let provider = provider::ModuleMemoryProvider::new(&config, Arc::new(client));
-    service::serve(&connection, Arc::new(provider)).await
+    service::serve(&connection, Arc::new(provider), config).await
 }
 
 /// Claim this process's single setup slot.
@@ -216,6 +216,15 @@ mod exports {
             "Capabilities",
             "Health",
             "Shutdown",
+            "OpenStore",
+            "InsertTurn",
+            "SessionTurns",
+            "OpenSegment",
+            "CreateSegment",
+            "AppendTurn",
+            "CloseSegment",
+            "SetSegmentSummary",
+            "UpsertSegmentEmbedding",
             "Store",
             "Get",
             "Forget",
@@ -224,6 +233,40 @@ mod exports {
             "Recall",
             "ExportPage",
             "ImportRecords",
+            // People.
+            "ListPeople",
+            "GetPerson",
+            "ResolveHandle",
+            "AddHandleAlias",
+            "ScorePerson",
+            "RecordInteraction",
+            "SeedFromAddressBook",
+            // Chunks.
+            "ListChunks",
+            "GetChunk",
+            "ChunkDetail",
+            "StorageKinds",
+            "ChunkEmbeddings",
+            // Retrieval.
+            "FastRetrieve",
+            "CoverWindow",
+            "RetrieveSource",
+            "RetrieveChildren",
+            "RetrieveLeaves",
+            "RecallNamespaceScored",
+            "SearchEntities",
+            // Profile.
+            "ListActiveFacets",
+            "ListAllFacets",
+            "GetFacet",
+            "FacetsByType",
+            "UpsertFacet",
+            "UpsertProviderFacet",
+            "SetFacetUserState",
+            "DeleteFacet",
+            "DeleteFacetById",
+            "DropFacetsBelow",
+            "WorkflowIdentityMatches",
             "IngestDocument",
             "IngestChat",
             "PutDocument",
@@ -233,6 +276,9 @@ mod exports {
             "DeleteDocument",
             "ClearNamespace",
             "QueryDocuments",
+            // Predates the five families this port added; it was implemented
+            // but never declared, so it was unreachable over the bus too.
+            "RecallDocuments",
             "Append",
             "QuerySource",
             "DrillDown",

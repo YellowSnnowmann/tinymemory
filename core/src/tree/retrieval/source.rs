@@ -10,6 +10,31 @@ use crate::Config;
 
 const DEFAULT_LIMIT: usize = 10;
 
+/// What to retrieve, separated from *whose sources* may answer it.
+///
+/// The five fields below all describe the query; `scope` describes the caller's
+/// authority. Keeping them apart is what lets `query_source_scoped` take three
+/// arguments instead of seven — and it puts the security-relevant argument on
+/// its own, where a call site cannot bury it among five optional filters.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SourceQuery<'a> {
+    /// Restrict to one source, by id.
+    pub source_id: Option<&'a str>,
+    /// Restrict to one kind of source.
+    pub source_kind: Option<SourceKind>,
+    /// Only consider material from the last N days.
+    pub time_window_days: Option<u32>,
+    /// Semantic query. `None` (or blank) retrieves without ranking by meaning.
+    pub query: Option<&'a str>,
+    /// Row cap; `0` means "no caller preference", which this module replaces
+    /// with its own default rather than returning nothing.
+    pub limit: usize,
+}
+
+/// Ranked retrieval over a source's summary tree, using the **ambient** scope.
+///
+/// Correct in-process; see [`query_source_scoped`] for the transport-facing
+/// path and why it cannot use this one.
 pub async fn query_source(
     config: &Config,
     source_id: Option<&str>,
@@ -18,8 +43,40 @@ pub async fn query_source(
     query: Option<&str>,
     limit: usize,
 ) -> Result<QueryResponse> {
+    query_source_scoped(
+        config,
+        SourceQuery {
+            source_id,
+            source_kind,
+            time_window_days,
+            query,
+            limit,
+        },
+        current_source_scope(),
+    )
+    .await
+}
+
+/// Ranked retrieval over a source's summary tree, using an **explicitly
+/// supplied** scope.
+///
+/// Exists for the same reason as
+/// [`fast_retrieve_scoped`](super::fast::fast_retrieve_scoped): a task-local
+/// source scope does not cross a transport, and reading it as absent means
+/// unrestricted — a source gate failing open.
+pub async fn query_source_scoped(
+    config: &Config,
+    request: SourceQuery<'_>,
+    scope: Option<std::collections::HashSet<String>>,
+) -> Result<QueryResponse> {
+    let SourceQuery {
+        source_id,
+        source_kind,
+        time_window_days,
+        query,
+        limit,
+    } = request;
     let limit = if limit == 0 { DEFAULT_LIMIT } else { limit };
-    let scope = current_source_scope();
     if source_id.is_some_and(|id| scope.as_ref().is_some_and(|set| !set.contains(id))) {
         log::debug!("[retrieval::source] explicit source excluded by active scope");
         return Ok(QueryResponse::empty());

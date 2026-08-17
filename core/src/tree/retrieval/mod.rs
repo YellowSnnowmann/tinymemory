@@ -33,10 +33,10 @@ mod integration_tests;
 #[cfg(test)]
 mod source_scope_tests;
 
-pub use cover::cover_window;
+pub use cover::{cover_window, cover_window_scoped};
 pub use drill_down::drill_down;
-pub use fast::{fast_retrieve, FastRetrieveOptions};
+pub use fast::{fast_retrieve, fast_retrieve_scoped, FastRetrieveOptions};
 pub use fetch::fetch_leaves;
 pub use search::search_entities;
-pub use source::query_source;
+pub use source::{query_source, query_source_scoped, SourceQuery};
 pub use types::{EntityMatch, NodeKind, QueryResponse, RetrievalHit};

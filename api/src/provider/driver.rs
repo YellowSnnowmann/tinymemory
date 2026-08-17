@@ -55,12 +55,17 @@ use async_trait::async_trait;
 use crate::capabilities::{Capabilities, Capability};
 use crate::error::MemoryError;
 use crate::health::MemoryHealth;
+use crate::provider::chunks::MemoryChunks;
 use crate::provider::content::{MemoryDocuments, MemoryIngest, MemoryTree};
+use crate::provider::episodic::MemoryEpisodic;
 use crate::provider::knowledge::{MemoryDiff, MemoryEntities, MemoryGraph};
 use crate::provider::mandatory::{MemoryCore, MemoryPortability, MemoryRecall};
+use crate::provider::people::MemoryPeople;
+use crate::provider::profile::MemoryProfile;
 use crate::provider::records::{
     MemoryGoals, MemoryMaintenance, MemorySourceSink, MemoryToolMemory,
 };
+use crate::provider::retrieval::MemoryRetrieval;
 
 /// A bound memory driver.
 ///
@@ -69,7 +74,7 @@ use crate::provider::records::{
 /// supertraits, so a driver missing any of them cannot be constructed as a
 /// provider at all.
 ///
-/// The ten optional families are reached through the `as_*` accessors below.
+/// The thirteen optional families are reached through the `as_*` accessors below.
 /// Each defaults to `None`, so a minimal driver implements only what it
 /// supports and inherits correct absence for everything else.
 #[async_trait]
@@ -167,6 +172,31 @@ pub trait MemoryProvider: MemoryCore + MemoryRecall + MemoryPortability + 'stati
         None
     }
 
+    /// Contacts, handle resolution and closeness scoring, when advertised.
+    fn as_people(&self) -> Option<&dyn MemoryPeople> {
+        None
+    }
+
+    /// Direct chunk-tier reads, when advertised.
+    fn as_chunks(&self) -> Option<&dyn MemoryChunks> {
+        None
+    }
+
+    /// Deterministic retrieval primitives, when advertised.
+    fn as_retrieval(&self) -> Option<&dyn MemoryRetrieval> {
+        None
+    }
+
+    /// Learned user facets, when advertised.
+    fn as_profile(&self) -> Option<&dyn MemoryProfile> {
+        None
+    }
+
+    /// The turn-by-turn conversation record, when advertised.
+    fn as_episodic(&self) -> Option<&dyn MemoryEpisodic> {
+        None
+    }
+
     /// Whether `capability` is actually **reachable** on this driver.
     ///
     /// This is the implementation-side truth, as opposed to
@@ -192,6 +222,11 @@ pub trait MemoryProvider: MemoryCore + MemoryRecall + MemoryPortability + 'stati
             Capability::ToolMemory => self.as_tool_memory().is_some(),
             Capability::Sources => self.as_sources().is_some(),
             Capability::Maintenance => self.as_maintenance().is_some(),
+            Capability::People => self.as_people().is_some(),
+            Capability::Chunks => self.as_chunks().is_some(),
+            Capability::Retrieval => self.as_retrieval().is_some(),
+            Capability::Profile => self.as_profile().is_some(),
+            Capability::Episodic => self.as_episodic().is_some(),
         }
     }
 }

@@ -1,18 +1,27 @@
-//! People: contact resolution + scoring.
+//! People: contact resolution + scoring — re-exported from the engine.
 //!
-//! A5 module. Deterministic resolver maps (imessage handle | email | display
-//! name) to a stable `PersonId`. Scoring blends recency × frequency ×
-//! reciprocity × depth from interaction rows into a ranked `people.list`.
+//! # Why this is a shim
 //!
-//! Intentionally self-contained: no dependency on `life_capture`,
-//! `chronicle`, `nudges`, or UI. Integration happens in later slices.
+//! The implementation moved down into [`tinycortex::memory::people`]. People is
+//! *storage*: a SQLite database of people, handle aliases and interactions,
+//! with its own migrations and its own workspace-keyed connection. Storage
+//! belongs to the engine, which is what lets the memory contract stay
+//! engine-neutral — an engine bound in TinyCortex's place brings its own people
+//! store rather than inheriting this one.
+//!
+//! What is left here is the historical path. `crate::people::{store, types, …}`
+//! keeps resolving so the module's own call sites, and the six `store/`
+//! references to `people::types`, did not all have to move in the same change.
+//!
+//! This mirrors [`crate::store::chunks`], which has related the same way to
+//! `tinycortex::memory::chunks` since the engine seam was drawn.
+//!
+//! # The address book rides two gates
+//!
+//! `address_book`'s macOS reader is gated on `contacts` *and* on the target, in
+//! the engine exactly as it was here. This crate's `contacts` feature now
+//! forwards to `tinycortex/contacts`; with it off — or anywhere but macOS — the
+//! stub returns an empty contact list, so a refresh seeds nothing rather than
+//! failing.
 
-pub mod address_book;
-pub mod migrations;
-pub mod resolver;
-pub mod scorer;
-pub mod store;
-pub mod types;
-
-#[cfg(test)]
-mod tests;
+pub use tinycortex::memory::people::{address_book, migrations, resolver, scorer, store, types};
