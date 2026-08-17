@@ -13,26 +13,40 @@
 //! - [`TinycortexMemory`] — wraps any TinyCortex [`tinycortex::memory::Memory`]
 //!   backend as a TinyMemory
 //!   [`Memory`](tinymemory_api::traits::Memory).
-//! - [`provider`] — the one call that turns a TinyCortex backend into a bound
-//!   driver, by pairing [`TinycortexMemory`] with
-//!   [`MemoryTraitProvider`].
+//! - [`provider`] — the one call that turns a TinyCortex backend into a
+//!   mandatory-only driver, by pairing [`TinycortexMemory`] with
+//!   [`MemoryTraitProvider`]. Enough when a host wants store, recall and
+//!   export and nothing else.
+//! - [`engine`] — [`TinycortexProvider`](engine::TinycortexProvider), the whole
+//!   engine behind the contract: trees, chunks, entities, the graph, goals,
+//!   tool-memory, ingestion, sources, maintenance, people, retrieval, profile,
+//!   episodic, and — with `memory-git` — the diff ledger.
 //!
-//! ## Scope: the mandatory three, not the whole engine
+//! ## Two drivers, and why both
 //!
-//! A driver built here advertises Core, Recall and Portability. TinyCortex can
-//! do far more — trees, chunks, entities, a diff ledger — but those families
-//! are reached through engine entry points that need a host's configuration,
-//! embedding compute and job queue, none of which this crate has. A host that
-//! provides them implements the optional families itself and delegates only the
-//! mandatory three here.
+//! [`provider`] advertises Core, Recall and Portability. That used to be the
+//! only thing here, and it was the reason anything wanting a summary tree or a
+//! diff ledger reached past the contract to the engine directly: the families
+//! existed, but not through `MemoryProvider`. Issue #18 §C3 lifted those
+//! implementations here from `tinymemory-module`, which had grown them because
+//! it needed them and nowhere else had them.
 //!
-//! Advertising only what is reachable is deliberate, not a shortcut: a driver
-//! whose capability set overstates its accessors fails
+//! [`engine::TinycortexProvider`] needs what they need — a workspace, a host
+//! configuration, and a `MemoryClient` — so it is the heavier of the two, and a
+//! host that has none of that still has [`provider`].
+//!
+//! ## Capability honesty
+//!
+//! Both advertise exactly what they reach. That is deliberate, not a shortcut:
+//! a driver whose capability set overstates its accessors fails
 //! [`audit_provider`](tinymemory_api::provider::audit_provider), and a host that
 //! filtered its RPC surface from an overstated set would register methods that
-//! answer errors.
+//! answer errors. It is also why the `memory-git` feature reaches
+//! [`engine::advertised_capabilities`] and not just the accessor — a build
+//! without the git-backed snapshot store must not claim a diff ledger.
 
 pub mod convert;
+pub mod engine;
 mod memory;
 
 pub use memory::TinycortexMemory;

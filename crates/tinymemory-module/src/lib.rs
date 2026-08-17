@@ -153,7 +153,7 @@ async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()
         setup_error("create memory store")
     })?;
 
-    let provider = provider::ModuleMemoryProvider::new(&config, Arc::new(client));
+    let provider = provider::provider(&config, Arc::new(client));
     service::serve(&connection, Arc::new(provider), config).await
 }
 
