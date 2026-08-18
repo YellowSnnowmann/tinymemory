@@ -86,6 +86,16 @@ pub struct FallbackReason {
     pub reason: String,
 }
 
+/// A refusal is an error, so `?` can propagate it.
+///
+/// It carried `Display` from the start but not this, which meant a host writing
+/// the obvious `registry.admit(..)?` in a function returning `Box<dyn Error>` or
+/// `anyhow::Error` got a type error instead. Nothing about the type changes —
+/// this is the trait that makes the existing message usable where refusals
+/// actually travel. Found by writing `examples/basic.rs` (issue #18 §E7), which
+/// is the argument for having a compiled example at all.
+impl std::error::Error for FallbackReason {}
+
 impl fmt::Display for FallbackReason {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
