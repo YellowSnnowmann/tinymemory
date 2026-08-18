@@ -1,4 +1,4 @@
-//! Product `Config` adapter for the tinycortex conversation reader.
+//! Product `Config` adapter for the engine-neutral conversation reader.
 
 use async_trait::async_trait;
 
@@ -19,10 +19,10 @@ impl SourceReader for ConversationReader {
         source: &MemorySourceEntry,
         config: &Config,
     ) -> Result<Vec<SourceItem>, String> {
-        crate::engine::backend::sources::SourceReader::list_items(
-            &crate::engine::backend::sources::readers::conversation::ConversationReader,
+        tinymemory_sources::readers::SourceReader::list_items(
+            &tinymemory_sources::readers::conversation::ConversationReader,
             source,
-            &crate::engine::memory_config_from(config, config.workspace_dir().clone()),
+            config.workspace_dir(),
         )
         .await
         .map_err(|error| error.to_string())
@@ -34,11 +34,11 @@ impl SourceReader for ConversationReader {
         item_id: &str,
         config: &Config,
     ) -> Result<SourceContent, String> {
-        crate::engine::backend::sources::SourceReader::read_item(
-            &crate::engine::backend::sources::readers::conversation::ConversationReader,
+        tinymemory_sources::readers::SourceReader::read_item(
+            &tinymemory_sources::readers::conversation::ConversationReader,
             source,
             item_id,
-            &crate::engine::memory_config_from(config, config.workspace_dir().clone()),
+            config.workspace_dir(),
         )
         .await
         .map_err(|error| error.to_string())

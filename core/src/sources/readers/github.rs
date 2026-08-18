@@ -1,4 +1,4 @@
-//! Product `Config` adapter for the tinycortex GitHub repo reader.
+//! Product `Config` adapter for the engine-neutral GitHub repo reader.
 //!
 //! The reader itself — commit/issue/PR fetching over `gh`, `git`, and the
 //! public REST API — lives in the engine. This module keeps the host-side
@@ -12,7 +12,7 @@ use crate::sources::readers::SourceReader;
 use crate::sources::types::{MemorySourceEntry, SourceContent, SourceItem, SourceKind};
 use crate::Config;
 
-pub use crate::engine::backend::sources::readers::github::{
+pub use tinymemory_sources::readers::github::{
     repo_archive_source_id, repo_chunk_scope,
 };
 
@@ -29,10 +29,10 @@ impl SourceReader for GithubReader {
         source: &MemorySourceEntry,
         config: &Config,
     ) -> Result<Vec<SourceItem>, String> {
-        crate::engine::backend::sources::SourceReader::list_items(
-            &crate::engine::backend::sources::readers::github::GithubReader,
+        tinymemory_sources::readers::SourceReader::list_items(
+            &tinymemory_sources::readers::github::GithubReader,
             source,
-            &crate::engine::memory_config_from(config, config.workspace_dir().clone()),
+            config.workspace_dir(),
         )
         .await
         .map_err(|error| error.to_string())
@@ -44,11 +44,11 @@ impl SourceReader for GithubReader {
         item_id: &str,
         config: &Config,
     ) -> Result<SourceContent, String> {
-        crate::engine::backend::sources::SourceReader::read_item(
-            &crate::engine::backend::sources::readers::github::GithubReader,
+        tinymemory_sources::readers::SourceReader::read_item(
+            &tinymemory_sources::readers::github::GithubReader,
             source,
             item_id,
-            &crate::engine::memory_config_from(config, config.workspace_dir().clone()),
+            config.workspace_dir(),
         )
         .await
         .map_err(|error| error.to_string())

@@ -1863,6 +1863,7 @@ dependencies = [
  "tinymemory",
  "tinymemory-api",
  "tinymemory-conformance",
+ "tinymemory-sources",
  "tinymemory-sync",
  "tokio",
  "tracing",
@@ -1885,6 +1886,28 @@ dependencies = [
  "tinymemory-api",
  "tinymemory-conformance",
  "tokio",
+]
+
+[[package]]
+name = "tinymemory-sources"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "futures",
+ "regex",
+ "reqwest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tinymemory-api",
+ "tokio",
+ "toml 0.9.12+spec-1.1.0",
+ "tracing",
+ "uuid",
+ "walkdir",
 ]
 
 [[package]]
