@@ -1,7 +1,7 @@
 // The Gmail post-processor moved to tinycortex (a pure Value transform, i.e.
 // driver-side). Aliased under the old module name so the single call site in
 // `provider.rs` stays unchanged.
-use crate::engine::backend::sync::composio::providers::normalize::gmail_post_process as post_process;
+use tinymemory_sync::gmail_post_process as post_process;
 mod provider;
 #[cfg(test)]
 mod tests;

@@ -16,6 +16,11 @@ readme = "../README.md"
 # The contract. `tinymemory-core` implements and consumes it; the host seam
 # traits (config, event sink, embeddings, chat) live in `tinymemory_api::host`.
 tinymemory-api = { path = "../api" }
+# Composio payload normalisers, extracted out of the engine (issue #18 §B3).
+# They were reached through `tinycortex` until now, which meant a host binding a
+# different engine could not have Composio sync despite none of this code
+# caring which engine is bound.
+tinymemory-sync = { path = "../sync" }
 tinymemory = { path = ".." }
 
 # The default embedded engine. `store/`, `tree/` and `sync/` drive it directly;
