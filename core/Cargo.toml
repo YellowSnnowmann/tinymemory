@@ -70,6 +70,10 @@ walkdir = "2"
 # `TestHostConfig` — the concrete `MemoryHostConfig` the extracted test suites
 # build, since `Config` is a trait object and cannot be `Default`ed.
 tinymemory-api = { path = "../api", features = ["test-support"] }
+# The driver conformance suite (#18 §E1). A dev-dependency only: it exists to
+# hold this crate's own store to the same contract the adapters are held to.
+# No cycle — `tinymemory-conformance` depends on `tinymemory-api` alone.
+tinymemory-conformance = { path = "../conformance" }
 tempfile = "3"
 tokio = { version = "1", features = ["test-util"] }
 

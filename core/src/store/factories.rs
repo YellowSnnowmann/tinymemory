@@ -353,6 +353,71 @@ pub fn create_memory(
     create_memory_full(config, &[], None, None, "", workspace_dir)
 }
 
+/// Bind this crate's own store as a [`MemoryProvider`], the way every other
+/// engine in the workspace is bound.
+///
+/// Issue #18 §A3/§A5. Until this existed, `tinymemory-core`'s
+/// [`UnifiedMemory`](crate::store::UnifiedMemory) was the one storage
+/// implementation in the workspace with no route through the contract: the
+/// TinyCortex adapter binds the bundled engine, `adapters/remote` binds the
+/// three hosted services, and core's own SQLite store was reachable only by
+/// naming its concrete type. A host could therefore not treat "the store
+/// tinymemory ships with" as a driver, which is the whole premise of the
+/// registry — and `create_memory` returning `Box<dyn Memory>` is exactly the
+/// bypass §A3 names.
+///
+/// Nothing structural was missing, which is worth recording because it was
+/// mis-diagnosed at one point as needing the crate split: `UnifiedMemory`
+/// already implements [`Memory`], and
+/// [`MemoryTraitProvider`] already wraps any `Memory` into a provider. This is
+/// the one-line composition the adapters have been doing all along.
+///
+/// # Capabilities
+///
+/// The returned provider advertises the mandatory three — Core, Recall,
+/// Portability — and nothing else, because that is what [`Memory`] can express.
+/// `UnifiedMemory` implements more than that internally (trees, chunks,
+/// entities), but those reach the caller through their own concrete APIs rather
+/// than through an optional family accessor, so advertising them here would be
+/// a claim `audit_provider` correctly rejects. Widening that is §C3's shape of
+/// work, not this function's.
+///
+/// # Errors
+///
+/// Propagates whatever [`create_memory`] fails with — a store that cannot open
+/// cannot be bound.
+///
+/// [`MemoryProvider`]: tinymemory_api::provider::MemoryProvider
+/// [`Memory`]: tinymemory_api::traits::Memory
+/// [`MemoryTraitProvider`]: tinymemory::mandatory::MemoryTraitProvider
+pub fn create_memory_provider(
+    config: &MemoryConfig,
+    workspace_dir: &Path,
+) -> anyhow::Result<Arc<dyn tinymemory_api::provider::MemoryProvider>> {
+    let memory = create_memory(config, workspace_dir)?;
+    Ok(bind_as_provider(memory))
+}
+
+/// Wraps an already-built store as a driver under [`NAMESPACE_DRIVER_ID`].
+///
+/// Split out from [`create_memory_provider`] so a caller that already holds a
+/// store — the migration path, tests, a host that built one through
+/// [`create_memory_with_local_ai`] — can bind it without constructing a second
+/// one. Constructing twice against one directory is the hazard the host-side
+/// bypass allowlists exist to refuse, so the seam that avoids it belongs here
+/// rather than at each call site.
+///
+/// [`NAMESPACE_DRIVER_ID`]: tinymemory::registry::NAMESPACE_DRIVER_ID
+#[must_use]
+pub fn bind_as_provider(
+    memory: Box<dyn Memory>,
+) -> Arc<dyn tinymemory_api::provider::MemoryProvider> {
+    Arc::new(tinymemory::mandatory::MemoryTraitProvider::new(
+        Arc::from(memory),
+        tinymemory::registry::NAMESPACE_DRIVER_ID,
+    ))
+}
+
 /// Create a memory instance honouring the unified per-workload embedding
 /// provider.
 ///

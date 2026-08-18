@@ -39,6 +39,8 @@ pub mod types;
 
 mod client;
 pub mod factories;
+#[cfg(test)]
+mod factories_provider_test;
 /// Golden-workspace fixture seeding / read-back / schema-manifest capture.
 ///
 /// Public only so `tests/memory_golden_fixture_e2e.rs` can drive it; it needs
