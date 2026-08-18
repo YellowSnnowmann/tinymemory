@@ -20,11 +20,9 @@ use walkdir::WalkDir;
 use crate::FOLDER_FILE_SIZE_CAP_BYTES;
 use tinymemory_api::error::MemoryError;
 
-use crate::SourceResult;
-use crate::types::{
-    ContentType, MemorySourceEntry, SourceContent, SourceItem, SourceKind,
-};
+use crate::types::{ContentType, MemorySourceEntry, SourceContent, SourceItem, SourceKind};
 use crate::validation::ensure_within_base;
+use crate::SourceResult;
 
 use super::SourceReader;
 

@@ -132,17 +132,13 @@ async fn fetch_all_pages_stops_at_a_short_page() {
     // A short page (fewer than GH_PAGE_SIZE rows) is the last page; the walk
     // must not request page 2 after it.
     let mut requested: Vec<u32> = Vec::new();
-    let pages = crate::readers::github::api::collect_pages::<u64, _, _>(
-        "commits",
-        1000,
-        |page| {
-            requested.push(page);
-            async move {
-                // Page 1 is short (3 rows) — stop after it even though max is large.
-                Ok("[1,2,3]".to_string())
-            }
-        },
-    )
+    let pages = crate::readers::github::api::collect_pages::<u64, _, _>("commits", 1000, |page| {
+        requested.push(page);
+        async move {
+            // Page 1 is short (3 rows) — stop after it even though max is large.
+            Ok("[1,2,3]".to_string())
+        }
+    })
     .await
     .unwrap();
 

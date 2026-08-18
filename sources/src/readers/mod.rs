@@ -41,7 +41,6 @@ mod ssrf;
 
 use async_trait::async_trait;
 
-
 use crate::SourceResult;
 #[cfg(feature = "network")]
 use tinymemory_api::error::MemoryError;

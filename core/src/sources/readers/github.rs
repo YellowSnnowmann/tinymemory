@@ -12,9 +12,7 @@ use crate::sources::readers::SourceReader;
 use crate::sources::types::{MemorySourceEntry, SourceContent, SourceItem, SourceKind};
 use crate::Config;
 
-pub use tinymemory_sources::readers::github::{
-    repo_archive_source_id, repo_chunk_scope,
-};
+pub use tinymemory_sources::readers::github::{repo_archive_source_id, repo_chunk_scope};
 
 pub struct GithubReader;
 

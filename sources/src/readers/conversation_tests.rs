@@ -142,10 +142,7 @@ async fn read_item_returns_formatted_content() {
     let config = tmp.path();
     let source = conversation_source();
     let reader = ConversationReader;
-    let content = reader
-        .read_item(&source, "conv_123", config)
-        .await
-        .unwrap();
+    let content = reader.read_item(&source, "conv_123", config).await.unwrap();
 
     assert_eq!(content.id, "conv_123");
     assert_eq!(content.title, "Test Conversation");
@@ -166,11 +163,7 @@ async fn read_item_accepts_legitimate_double_dot_in_stem() {
     .unwrap();
     let reader = ConversationReader;
     let content = reader
-        .read_item(
-            &conversation_source(),
-            "standup..2026",
-            tmp.path(),
-        )
+        .read_item(&conversation_source(), "standup..2026", tmp.path())
         .await
         .unwrap();
     assert_eq!(content.id, "standup..2026");

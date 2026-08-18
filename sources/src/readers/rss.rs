@@ -16,11 +16,8 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 
-
+use crate::types::{ContentType, MemorySourceEntry, SourceContent, SourceItem, SourceKind};
 use crate::SourceResult;
-use crate::types::{
-    ContentType, MemorySourceEntry, SourceContent, SourceItem, SourceKind,
-};
 
 use super::ssrf::{build_client, is_url_allowed, read_body_capped};
 use super::{into_engine_error, SourceReader};
