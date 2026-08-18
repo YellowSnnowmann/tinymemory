@@ -79,22 +79,6 @@ pub use tinymemory_api::host::{
     DEFAULT_MEMORY_SYNC_INTERVAL_SECS,
 };
 
-/// The default OpenHuman root directory, `~/.openhuman`.
-///
-/// The host resolves this through `config::default_root_openhuman_dir`, which
-/// this crate cannot see. Reproduced here rather than added to the config seam
-/// because the two callers only need it as a last-resort fallback when no
-/// workspace was supplied.
-///
-/// # Errors
-///
-/// Returns `Err` when the home directory cannot be determined.
-pub fn default_openhuman_dir() -> Result<std::path::PathBuf, String> {
-    dirs::home_dir()
-        .ok_or_else(|| "Could not find home directory".to_string())
-        .map(|home| home.join(".openhuman"))
-}
-
 pub use ingestion::{
     ExtractedEntity, ExtractedRelation, ExtractionMode, IngestionJob, IngestionQueue,
     IngestionState, IngestionStatusSnapshot, MemoryIngestionConfig, MemoryIngestionRequest,
