@@ -51,6 +51,9 @@ async-trait = "0.1"
 anyhow = "1"
 
 [dev-dependencies]
+# The behavioural contract suite, run against this crate's drivers
+# (issue #18 §E1, acceptance criterion 5).
+tinymemory-conformance = { path = "../../conformance" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [lints.rust]

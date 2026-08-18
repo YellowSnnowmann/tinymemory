@@ -1887,6 +1887,7 @@ dependencies = [
  "sha2 0.10.9",
  "tinymemory",
  "tinymemory-api",
+ "tinymemory-conformance",
  "tokio",
 ]
 
@@ -1903,6 +1904,7 @@ dependencies = [
  "tinycortex",
  "tinymemory",
  "tinymemory-api",
+ "tinymemory-conformance",
  "tinymemory-core",
  "tokio",
  "uuid",

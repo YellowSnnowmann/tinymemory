@@ -49,3 +49,11 @@ pub use suite::{
     assert_store_get_round_trip, assert_taint_is_preserved,
     assert_upsert_replaces_rather_than_duplicates,
 };
+pub use suite::{
+    // Exported alongside the assertions because a caller standing up its own
+    // backend double needs it: `assert_provider` skips every write-path
+    // assertion when the driver does not retain, so a double that silently
+    // dropped writes would let a whole run pass vacuously. Probing for that
+    // directly is how a caller proves its harness is real.
+    retains_writes,
+};

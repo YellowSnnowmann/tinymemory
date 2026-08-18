@@ -601,8 +601,21 @@ pub async fn assert_awkward_content_round_trips(provider: &dyn MemoryProvider) {
         ("large", "x".repeat(64 * 1024)),
         ("newlines", "a\nb\r\nc\0d".to_string()),
     ];
+    let mut accepted = 0usize;
     for (key, content) in &cases {
-        provider
+        // A driver may refuse a shape outright — `MemoryCore::store` documents
+        // `Invalid` "for caller input the driver rejects", and the TinyCortex
+        // engine uses that to refuse empty content. What a driver may *not* do
+        // is accept a value and hand back something else.
+        //
+        // The refusal is not yet required to be `Invalid` specifically. The
+        // engine's own error is flattened through `anyhow` before the mandatory
+        // composition sees it, so a validation refusal currently arrives as
+        // `Other` and is indistinguishable from a backend failure. That is the
+        // gap §A4 closes; when it does, this should tighten to require
+        // `MemoryError::Invalid` so a genuine backend failure stops passing
+        // here.
+        if provider
             .store(
                 &ns,
                 key,
@@ -612,7 +625,11 @@ pub async fn assert_awkward_content_round_trips(provider: &dyn MemoryProvider) {
                 MemoryTaint::Internal,
             )
             .await
-            .unwrap_or_else(|e| panic!("{who}: store of `{key}` failed: {e}"));
+            .is_err()
+        {
+            continue;
+        }
+        accepted += 1;
         if let Some(got) = provider
             .get(&ns, key)
             .await
@@ -621,6 +638,13 @@ pub async fn assert_awkward_content_round_trips(provider: &dyn MemoryProvider) {
             assert_eq!(&got.content, content, "{who}: `{key}` content was mangled");
         }
     }
+    // Without this a driver that refused every shape would pass having stored
+    // nothing, which is the vacuous reading of "may refuse".
+    assert!(
+        accepted > 0,
+        "{who}: refused every content shape — unicode, empty, large and \
+         newlines were all rejected, so this assertion proved nothing"
+    );
     let keys: Vec<&str> = cases.iter().map(|(k, _)| *k).collect();
     cleanup(provider, &ns, &keys).await;
 }
