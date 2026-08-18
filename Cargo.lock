@@ -1788,15 +1788,7 @@ dependencies = [
 name = "tinycortex-api"
 version = "0.1.1"
 dependencies = [
- "anyhow",
- "async-trait",
- "chrono",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "thiserror 2.0.20",
  "tinymemory-api",
- "uuid",
 ]
 
 [[package]]
@@ -1867,6 +1859,7 @@ dependencies = [
  "tinycortex-api",
  "tinymemory",
  "tinymemory-api",
+ "tinymemory-conformance",
  "tinymemory-sync",
  "tokio",
  "tracing",
