@@ -1895,10 +1895,16 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "chrono",
+ "log",
+ "serde",
+ "serde_json",
  "tinycortex",
  "tinymemory",
  "tinymemory-api",
+ "tinymemory-core",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

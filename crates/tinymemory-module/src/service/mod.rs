@@ -384,7 +384,7 @@ impl MemoryService {
             }
         })?;
 
-        let provider = crate::provider::ModuleMemoryProvider::new(&opener.config, Arc::new(client));
+        let provider = crate::provider::provider(&opener.config, Arc::new(client));
         opener
             .connection
             .serve_at(

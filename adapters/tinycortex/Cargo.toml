@@ -22,6 +22,28 @@ tinymemory-api = { path = "../../api" }
 # would defeat that and give a host two TinyCortex crates with two incompatible
 # `Memory` traits.
 tinycortex = { version = "0.1", default-features = false }
+# The optional capability families lifted here in issue #18 §C3 delegate to
+# `tinymemory-core` on a blocking thread — that is where the summary tree,
+# chunk store, entities, graph and diff ledger actually live. Depending on it
+# makes this adapter heavier than the mandatory-only version it replaces; §D
+# feature-gates that weight once §A3 has removed the direct engine call sites
+# core still has.
+tinymemory-core = { path = "../../core" }
+# `spawn_blocking`: every family method runs synchronous engine work off the
+# async executor rather than blocking it.
+tokio = { version = "1", features = ["rt"] }
+# Timestamps on ingest and diff records.
+chrono = { version = "0.4", features = ["serde"] }
+# The provider crosses a few value types by round-tripping them through JSON
+# where the engine and the contract describe the same shape under two names —
+# the duplication issue #18 §A1 exists to delete.
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Person ids are UUIDs on the engine side.
+uuid = { version = "1", features = ["v4"] }
+# The engine reports a failed profile write through the `log` facade rather
+# than returning it, so the host can decide what to do about it.
+log = "0.4"
 
 # `Memory` is an object-safe async trait.
 async-trait = "0.1"
@@ -43,3 +65,16 @@ unwrap_used = "warn"
 expect_used = "warn"
 panic = "warn"
 missing_errors_doc = "warn"
+
+[features]
+default = []
+# Git-backed diff snapshots, forwarded to `tinymemory-core`'s own gate. Off by
+# default because it is what drags `git2` / `libgit2-sys` / `libz-sys` — a
+# native build — into the graph. This adapter had no such dependency before
+# issue #18 §C3 lifted the diff family here, and making it unconditional would
+# hand every consumer a libgit2 build they never asked for.
+#
+# The gate reaches `capabilities()`: with the feature off the `Diff` family is
+# neither advertised nor reachable, so `audit_provider` still passes. Advertising
+# a family the build cannot serve is exactly what that audit exists to catch.
+memory-git = ["tinymemory-core/memory-git"]

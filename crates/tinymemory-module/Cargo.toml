@@ -32,7 +32,7 @@ tinymemory = { path = "../.." }
 # the module: they are 14.7s of the host's critical build path, and a host that
 # loads this binary compiles neither.
 tinymemory-core = { path = "../../core", features = ["memory-git"] }
-tinymemory-tinycortex = { path = "../../adapters/tinycortex" }
+tinymemory-tinycortex = { path = "../../adapters/tinycortex", features = ["memory-git"] }
 # `people` is enabled here rather than inherited: the module serves the
 # `MemoryPeople` family directly off the engine's people store, so it needs the
 # gate on even though `tinymemory-core` only re-exports the domain.
