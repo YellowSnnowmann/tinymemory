@@ -14,12 +14,12 @@
 pub mod queue;
 pub mod state;
 
-pub use queue::{IngestionJob, IngestionQueue, DEFAULT_QUEUE_CAPACITY};
-pub use state::{IngestionState, IngestionStatusSnapshot};
-pub use tinycortex::memory::ingest::{
+pub use crate::engine::backend::ingest::{
     ExtractedEntity, ExtractedRelation, ExtractionMode, MemoryIngestionConfig,
     MemoryIngestionRequest, MemoryIngestionResult, DEFAULT_MEMORY_EXTRACTION_MODEL,
 };
+pub use queue::{IngestionJob, IngestionQueue, DEFAULT_QUEUE_CAPACITY};
+pub use state::{IngestionState, IngestionStatusSnapshot};
 
 use serde_json::json;
 
@@ -35,7 +35,7 @@ impl UnifiedMemory {
         request: MemoryIngestionRequest,
     ) -> Result<MemoryIngestionResult, String> {
         let (enriched_input, mut extraction) =
-            tinycortex::memory::ingest::extract_enriched_document(
+            crate::engine::backend::ingest::extract_enriched_document(
                 &request.document,
                 &request.config,
             );
@@ -62,7 +62,7 @@ impl UnifiedMemory {
         config: &MemoryIngestionConfig,
     ) -> Result<MemoryIngestionResult, String> {
         let (_enriched, mut extraction) =
-            tinycortex::memory::ingest::extract_enriched_document(document, config);
+            crate::engine::backend::ingest::extract_enriched_document(document, config);
         let namespace = Self::sanitize_namespace(&document.namespace);
 
         self.upsert_graph_relations(&namespace, document_id, &extraction, config)

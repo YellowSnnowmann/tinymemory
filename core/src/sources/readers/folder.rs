@@ -19,10 +19,10 @@ impl SourceReader for FolderReader {
         source: &MemorySourceEntry,
         config: &Config,
     ) -> Result<Vec<SourceItem>, String> {
-        tinycortex::memory::sources::SourceReader::list_items(
-            &tinycortex::memory::sources::readers::folder::FolderReader,
+        crate::engine::backend::sources::SourceReader::list_items(
+            &crate::engine::backend::sources::readers::folder::FolderReader,
             source,
-            &crate::tinycortex::memory_config_from(config, config.workspace_dir().clone()),
+            &crate::engine::memory_config_from(config, config.workspace_dir().clone()),
         )
         .await
         .map_err(|error| error.to_string())
@@ -34,11 +34,11 @@ impl SourceReader for FolderReader {
         item_id: &str,
         config: &Config,
     ) -> Result<SourceContent, String> {
-        tinycortex::memory::sources::SourceReader::read_item(
-            &tinycortex::memory::sources::readers::folder::FolderReader,
+        crate::engine::backend::sources::SourceReader::read_item(
+            &crate::engine::backend::sources::readers::folder::FolderReader,
             source,
             item_id,
-            &crate::tinycortex::memory_config_from(config, config.workspace_dir().clone()),
+            &crate::engine::memory_config_from(config, config.workspace_dir().clone()),
         )
         .await
         .map_err(|error| error.to_string())

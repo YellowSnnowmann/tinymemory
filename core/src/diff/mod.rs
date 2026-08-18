@@ -14,12 +14,12 @@
 //! the ledger is a derived view used purely for change tracking.
 //!
 //! W7: the snapshot/diff/checkpoint/ledger engine is now
-//! `tinycortex::memory::diff::DiffEngine` (a byte-identical port over the same
+//! `crate::engine::backend::diff::DiffEngine` (a byte-identical port over the same
 //! `<workspace>/memory_diff/repo` git layout). This module is a thin host shim:
 //! [`ops`] async-wraps the engine, [`source`] supplies the chunk-store item
 //! seam (`DiffEngine`'s `SnapshotItemSource`), and `rpc`/`schemas`/`tools`
 //! keep the RPC + agent surface. The wire types are the crate's, named directly
-//! (`tinycortex::memory::diff::types`) rather than through a host re-export
+//! (`crate::engine::backend::diff::types`) rather than through a host re-export
 //! module.
 //!
 //! Features:
@@ -65,7 +65,7 @@ pub mod source;
 // `memory::diff::{types, source}` are serde-only wire types and stay compiled;
 // only the git-touching `ledger`/`DiffEngine` half sits behind `git-diff`. A
 // stub copy would be a second definition of one serde shape, free to drift.
-pub use tinycortex::memory::diff::types::{
+pub use crate::engine::backend::diff::types::{
     ChangeKind, Checkpoint, CrossSourceDiff, DiffResult, DiffSummary, ItemChange, Snapshot,
     SnapshotTrigger,
 };

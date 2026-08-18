@@ -1,7 +1,7 @@
 //! Async wrappers that run the conversation store's **blocking** operations on
 //! tokio's blocking pool (#5156).
 //!
-//! Every `tinycortex::memory::conversations` entry point is synchronous, and
+//! Every `crate::engine::backend::conversations` entry point is synchronous, and
 //! each one takes the process-global `CONVERSATION_STORE_LOCK` — a
 //! `parking_lot::Mutex` — and then does fsync'd JSONL file IO while holding it.
 //! Calling one directly from an `async fn` therefore parks a tokio **worker**
@@ -35,9 +35,9 @@
 
 use std::path::PathBuf;
 
-use tinycortex::memory::conversations as store;
+use crate::engine::backend::conversations as store;
 
-use tinycortex::memory::conversations::{
+use crate::engine::backend::conversations::{
     ConversationMessage, ConversationMessagePatch, ConversationPurgeStats, ConversationStore,
     ConversationThread, CreateConversationThread, CrossThreadHit,
 };

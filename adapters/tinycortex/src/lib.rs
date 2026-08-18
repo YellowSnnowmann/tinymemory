@@ -1,15 +1,18 @@
 //! TinyCortex as a TinyMemory driver.
 //!
 //! This crate is the seam between the TinyCortex engine and the TinyMemory
-//! contract. The two describe the same values but are distinct crates, so
-//! something has to convert — and it is much better for that to be one small
-//! audited crate than a conversion scattered across every call site in a host.
+//! contract.
+//!
+//! It used to carry a conversion layer as well. The two crates described the
+//! same values under two names, so every call across the seam translated, and a
+//! field added to one contract had to be added to the other and to the
+//! conversion — three places, or the value was silently dropped. Since
+//! issue #18 §A1 `tinycortex-api` re-exports `tinymemory-api` rather than
+//! redefining it, so both sides name one type and `convert` is gone. What
+//! remains is the trait shape: the engine's storage trait and the contract's
+//! are still separate traits over the same values.
 //!
 //! ## What is here
-//!
-//! - [`convert`] — total, exhaustively-destructuring value conversions in both
-//!   directions. A field added to either contract becomes a compile error here
-//!   instead of a silently dropped value.
 //! - [`TinycortexMemory`] — wraps any TinyCortex [`tinycortex::memory::Memory`]
 //!   backend as a TinyMemory
 //!   [`Memory`](tinymemory_api::traits::Memory).
@@ -45,7 +48,6 @@
 //! [`engine::advertised_capabilities`] and not just the accessor — a build
 //! without the git-backed snapshot store must not claim a diff ledger.
 
-pub mod convert;
 pub mod engine;
 mod memory;
 

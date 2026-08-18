@@ -12,13 +12,13 @@
 //! **W3 type cutover:** these types + chunk-id/token helpers are now
 //! **re-exported from the `tinycortex` crate** (ported from this exact module —
 //! identical fields, derives, serde wire form, and `chunk_id` derivation, all
-//! pinned by `tinycortex::memory::chunks::types_tests`). Re-exporting keeps one source of truth and lets
+//! pinned by `crate::engine::backend::chunks::types_tests`). Re-exporting keeps one source of truth and lets
 //! the chunk store operations delegate to the crate without host↔crate type
 //! conversions. `DataSource` moved with the ingest cutover and is re-exported
 //! here alongside the chunk types. `StagedChunk` remains host-owned in
 //! `memory_store::content`.
 
-pub use tinycortex::memory::chunks::{
+pub use crate::engine::backend::chunks::{
     approx_token_count, chunk_id, conservative_token_estimate, truncate_to_conservative_tokens,
     Chunk, DataSource, Metadata, SourceKind, SourceRef,
 };

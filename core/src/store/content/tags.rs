@@ -13,7 +13,7 @@ use crate::store::content::compose::{
 use crate::tree::score::store::list_entity_ids_for_node;
 use crate::Config;
 
-pub use tinycortex::memory::store::content::tags::{
+pub use crate::engine::backend::store::content::tags::{
     entity_tag, slugify_tag_kind, slugify_tag_value, update_chunk_tags,
 };
 

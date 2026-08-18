@@ -1,7 +1,7 @@
 //! Host-owned Gmail provider surface tests.
 //!
 //! Pagination, cursor, envelope parsing, and ingest behavior are owned and
-//! tested by `tinycortex::memory::sync::GmailSyncPipeline`.
+//! tested by `crate::engine::backend::sync::GmailSyncPipeline`.
 
 use super::GmailProvider;
 use crate::sync::composio::providers::ComposioProvider;

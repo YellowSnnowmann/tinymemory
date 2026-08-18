@@ -20,7 +20,7 @@ pub mod semantic;
 pub mod store;
 pub mod types;
 
+pub use crate::engine::backend::chunks::{chunk_markdown, ChunkerInput, ChunkerOptions};
 pub use semantic::chunk_markdown as chunk_semantic;
 pub use store::*;
-pub use tinycortex::memory::chunks::{chunk_markdown, ChunkerInput, ChunkerOptions};
 pub use types::*;

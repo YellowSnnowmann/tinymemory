@@ -4,21 +4,21 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 
-use crate::tinycortex::engine_config;
+use crate::engine::engine_config;
 use crate::Config;
 
-pub use tinycortex::memory::score::store::{EntityHit, ScoreRow};
+pub use crate::engine::backend::score::store::{EntityHit, ScoreRow};
 
 pub fn upsert_score(config: &Config, row: &ScoreRow) -> Result<()> {
-    tinycortex::memory::score::store::upsert_score(&engine_config(config), row)
+    crate::engine::backend::score::store::upsert_score(&engine_config(config), row)
 }
 
 pub fn get_score(config: &Config, chunk_id: &str) -> Result<Option<ScoreRow>> {
-    tinycortex::memory::score::store::get_score(&engine_config(config), chunk_id)
+    crate::engine::backend::score::store::get_score(&engine_config(config), chunk_id)
 }
 
 pub fn get_scores_batch(config: &Config, chunk_ids: &[String]) -> Result<HashMap<String, f32>> {
-    tinycortex::memory::score::store::get_scores_batch(&engine_config(config), chunk_ids)
+    crate::engine::backend::score::store::get_scores_batch(&engine_config(config), chunk_ids)
 }
 
 pub use crate::store::entities::{
@@ -27,7 +27,7 @@ pub use crate::store::entities::{
 
 pub fn index_entity(
     config: &Config,
-    entity: &tinycortex::memory::score::resolver::CanonicalEntity,
+    entity: &crate::engine::backend::score::resolver::CanonicalEntity,
     node_id: &str,
     node_kind: &str,
     timestamp_ms: i64,
@@ -39,13 +39,13 @@ pub fn index_entity(
 
 pub fn index_entities(
     config: &Config,
-    entities: &[tinycortex::memory::score::resolver::CanonicalEntity],
+    entities: &[crate::engine::backend::score::resolver::CanonicalEntity],
     node_id: &str,
     node_kind: &str,
     timestamp_ms: i64,
     tree_id: Option<&str>,
 ) -> Result<usize> {
-    let entities: Vec<tinycortex::memory::store::CanonicalEntity> = entities
+    let entities: Vec<crate::engine::backend::store::CanonicalEntity> = entities
         .iter()
         .map(to_store_entity)
         .collect::<Result<_>>()?;
@@ -60,11 +60,11 @@ pub fn index_entities(
 }
 
 fn to_store_entity(
-    entity: &tinycortex::memory::score::resolver::CanonicalEntity,
-) -> Result<tinycortex::memory::store::CanonicalEntity> {
-    Ok(tinycortex::memory::store::CanonicalEntity {
+    entity: &crate::engine::backend::score::resolver::CanonicalEntity,
+) -> Result<crate::engine::backend::store::CanonicalEntity> {
+    Ok(crate::engine::backend::store::CanonicalEntity {
         canonical_id: entity.canonical_id.clone(),
-        kind: tinycortex::memory::store::EntityKind::parse(entity.kind.as_str())
+        kind: crate::engine::backend::store::EntityKind::parse(entity.kind.as_str())
             .map_err(anyhow::Error::msg)?,
         surface: entity.surface.clone(),
         span_start: entity.span_start,
@@ -74,5 +74,5 @@ fn to_store_entity(
 }
 
 pub fn count_scores(config: &Config) -> Result<u64> {
-    tinycortex::memory::score::store::count_scores(&engine_config(config))
+    crate::engine::backend::score::store::count_scores(&engine_config(config))
 }

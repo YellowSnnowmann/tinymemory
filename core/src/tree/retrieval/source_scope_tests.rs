@@ -15,7 +15,7 @@
 //!    (`tinycortex` `retrieval::{fetch,drill_down}`), so on leaves this is
 //!    strictly narrower than predicate 1. `source.rs` / `cover.rs` additionally
 //!    carry a *pre-filter* short circuit on the explicit `source_id` argument.
-//! 3. `tinycortex::memory::chunks::store_list::append_source_scope` — a SQL
+//! 3. `crate::engine::backend::chunks::store_list::append_source_scope` — a SQL
 //!    predicate applied BEFORE `LIMIT`. Reached via `cover_window_scoped` and
 //!    the raw `list_chunks` callers. It admits `mem_src:src-abc:` (empty item
 //!    id), diverging from predicate 1.

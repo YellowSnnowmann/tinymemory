@@ -6,7 +6,8 @@
 //! re-learning a new shape:
 //!
 //! - `provider.rs` — `impl ComposioProvider for GitHubProvider`
-//! - `normalization`  — payload-shape helpers, now `tinycortex::…::normalize::github`
+//! - `normalization`  — payload-shape helpers, now reached through
+//!   `crate::engine::engine` (issue #18 §C1)
 //! - `tools.rs`    — `GITHUB_CURATED` whitelist of Composio actions
 //! - `tests.rs`    — unit tests for the helpers + trait metadata
 //!
@@ -15,7 +16,7 @@
 // The payload normalisers moved to tinycortex (they are pure Value
 // transforms, i.e. driver-side). Aliased under the old module name so
 // every `normalization::extract_*` call site below stays unchanged.
-use tinycortex::memory::sync::composio::providers::normalize::github as normalization;
+use crate::engine::backend::sync::composio::providers::normalize::github as normalization;
 mod provider;
 #[cfg(test)]
 mod tests;

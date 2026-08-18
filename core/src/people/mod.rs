@@ -2,7 +2,7 @@
 //!
 //! # Why this is a shim
 //!
-//! The implementation moved down into [`tinycortex::memory::people`]. People is
+//! The implementation moved down into [`crate::engine::backend::people`]. People is
 //! *storage*: a SQLite database of people, handle aliases and interactions,
 //! with its own migrations and its own workspace-keyed connection. Storage
 //! belongs to the engine, which is what lets the memory contract stay
@@ -14,7 +14,7 @@
 //! references to `people::types`, did not all have to move in the same change.
 //!
 //! This mirrors [`crate::store::chunks`], which has related the same way to
-//! `tinycortex::memory::chunks` since the engine seam was drawn.
+//! `crate::engine::backend::chunks` since the engine seam was drawn.
 //!
 //! # The address book rides two gates
 //!
@@ -24,4 +24,6 @@
 //! stub returns an empty contact list, so a refresh seeds nothing rather than
 //! failing.
 
-pub use tinycortex::memory::people::{address_book, migrations, resolver, scorer, store, types};
+pub use crate::engine::backend::people::{
+    address_book, migrations, resolver, scorer, store, types,
+};

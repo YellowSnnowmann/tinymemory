@@ -1,6 +1,6 @@
 use anyhow::Result;
 
-use crate::tinycortex::engine_config;
+use crate::engine::engine_config;
 use crate::tree::retrieval::types::EntityMatch;
 use crate::tree::score::extract::EntityKind;
 use crate::Config;
@@ -17,7 +17,7 @@ pub async fn search_entities(
         kinds.as_ref().map_or(0, Vec::len),
         limit
     );
-    tinycortex::memory::retrieval::search_entities(
+    crate::engine::backend::retrieval::search_entities(
         &engine_config(config),
         query,
         kinds.as_deref(),

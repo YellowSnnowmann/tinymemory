@@ -46,6 +46,8 @@ mod seal;
 mod summariser;
 mod sync;
 
+pub mod backend;
+
 pub use chat::{build_chat_provider, SeamChatProvider};
 pub use config::{engine_config, memory_config_from};
 pub use embeddings::SeamEmbedder;

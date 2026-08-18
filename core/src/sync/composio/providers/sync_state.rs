@@ -1,9 +1,9 @@
 //! Compatibility exports for sync state now owned by tinycortex.
 
-pub use tinycortex::memory::sync::state::DEFAULT_DAILY_REQUEST_LIMIT;
-pub use tinycortex::memory::sync::{DailyBudget, SyncState};
+pub use crate::engine::backend::sync::state::DEFAULT_DAILY_REQUEST_LIMIT;
+pub use crate::engine::backend::sync::{DailyBudget, SyncState};
 
-pub const KV_NAMESPACE: &str = crate::tinycortex::HOST_SYNC_STATE_NAMESPACE;
+pub const KV_NAMESPACE: &str = crate::engine::HOST_SYNC_STATE_NAMESPACE;
 
 pub fn extract_item_id(item: &serde_json::Value, paths: &[&str]) -> Option<String> {
     paths.iter().find_map(|path| {

@@ -2,16 +2,16 @@
 
 use anyhow::Result;
 
-use crate::store::chunks::store::RawRef;
-use crate::Config;
-use tinycortex::memory::ingest::canonicalize::{
+use crate::engine::backend::ingest::canonicalize::{
     chat::{self, ChatBatch},
     document::{self, DocumentInput},
     email::{self, EmailThread},
     CanonicalisedSource,
 };
+use crate::store::chunks::store::RawRef;
+use crate::Config;
 
-pub use tinycortex::memory::ingest::IngestSummary as IngestResult;
+pub use crate::engine::backend::ingest::IngestSummary as IngestResult;
 
 pub async fn ingest_chat(
     config: &Config,
@@ -22,8 +22,8 @@ pub async fn ingest_chat(
 ) -> Result<IngestResult> {
     let canonical =
         chat::canonicalise(source_id, owner, &tags, batch.clone()).map_err(anyhow::Error::msg)?;
-    let (memory, sink, scoring) = crate::tinycortex::ingest_context(config);
-    let result = tinycortex::memory::ingest::ingest_chat(
+    let (memory, sink, scoring) = crate::engine::ingest_context(config);
+    let result = crate::engine::backend::ingest::ingest_chat(
         &memory, source_id, owner, tags, batch, &sink, &scoring,
     )
     .await?;
@@ -40,8 +40,8 @@ pub async fn ingest_email(
 ) -> Result<IngestResult> {
     let canonical =
         email::canonicalise(source_id, owner, &tags, thread.clone()).map_err(anyhow::Error::msg)?;
-    let (memory, sink, scoring) = crate::tinycortex::ingest_context(config);
-    let result = tinycortex::memory::ingest::ingest_email(
+    let (memory, sink, scoring) = crate::engine::ingest_context(config);
+    let result = crate::engine::backend::ingest::ingest_email(
         &memory, source_id, owner, tags, thread, &sink, &scoring,
     )
     .await?;
@@ -59,8 +59,8 @@ pub async fn ingest_email_with_raw_refs(
 ) -> Result<IngestResult> {
     let canonical =
         email::canonicalise(source_id, owner, &tags, thread.clone()).map_err(anyhow::Error::msg)?;
-    let (memory, sink, scoring) = crate::tinycortex::ingest_context(config);
-    let result = tinycortex::memory::ingest::ingest_email_with_raw_refs(
+    let (memory, sink, scoring) = crate::engine::ingest_context(config);
+    let result = crate::engine::backend::ingest::ingest_email_with_raw_refs(
         &memory, source_id, owner, tags, thread, raw_refs, &sink, &scoring,
     )
     .await?;
@@ -101,8 +101,8 @@ pub async fn ingest_document_versioned(
     let canonical =
         document::canonicalise(source_id, owner, &tags, doc.clone(), path_scope.clone())
             .map_err(anyhow::Error::msg)?;
-    let (memory, sink, scoring) = crate::tinycortex::ingest_context(config);
-    let result = tinycortex::memory::ingest::ingest_document_versioned(
+    let (memory, sink, scoring) = crate::engine::ingest_context(config);
+    let result = crate::engine::backend::ingest::ingest_document_versioned(
         &memory, source_id, owner, tags, doc, path_scope, version_ms, &sink, &scoring,
     )
     .await?;

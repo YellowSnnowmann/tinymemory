@@ -12,13 +12,13 @@ use crate::Config;
 /// `read_item`, so constructing it per trait call would turn one sync into
 /// N+1 downloads.
 pub struct RssReader {
-    inner: tinycortex::memory::sources::readers::rss::RssReader,
+    inner: crate::engine::backend::sources::readers::rss::RssReader,
 }
 
 impl RssReader {
     pub fn new() -> Self {
         Self {
-            inner: tinycortex::memory::sources::readers::rss::RssReader::new(),
+            inner: crate::engine::backend::sources::readers::rss::RssReader::new(),
         }
     }
 }
@@ -40,10 +40,10 @@ impl SourceReader for RssReader {
         source: &MemorySourceEntry,
         config: &Config,
     ) -> Result<Vec<SourceItem>, String> {
-        tinycortex::memory::sources::SourceReader::list_items(
+        crate::engine::backend::sources::SourceReader::list_items(
             &self.inner,
             source,
-            &crate::tinycortex::memory_config_from(config, config.workspace_dir().clone()),
+            &crate::engine::memory_config_from(config, config.workspace_dir().clone()),
         )
         .await
         .map_err(|error| error.to_string())
@@ -55,11 +55,11 @@ impl SourceReader for RssReader {
         item_id: &str,
         config: &Config,
     ) -> Result<SourceContent, String> {
-        tinycortex::memory::sources::SourceReader::read_item(
+        crate::engine::backend::sources::SourceReader::read_item(
             &self.inner,
             source,
             item_id,
-            &crate::tinycortex::memory_config_from(config, config.workspace_dir().clone()),
+            &crate::engine::memory_config_from(config, config.workspace_dir().clone()),
         )
         .await
         .map_err(|error| error.to_string())

@@ -161,12 +161,8 @@ pub async fn run_connection_sync(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64;
-    match crate::tinycortex::run_composio_connection(
-        &target.toolkit,
-        &target.connection_id,
-        &*config,
-    )
-    .await
+    match crate::engine::run_composio_connection(&target.toolkit, &target.connection_id, &*config)
+        .await
     {
         Ok(outcome) => {
             let usage = ComposioUsage {

@@ -25,12 +25,12 @@ use tempfile::TempDir;
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
+use crate::engine::backend::ingest::canonicalize::chat::{ChatBatch, ChatMessage};
 use crate::ingest_pipeline::ingest_chat;
 use crate::queue::testing::drain_until_idle;
 use crate::store::chunks::types::SourceKind;
 use crate::tree::retrieval::{fetch_leaves, query_source, search_entities};
 use crate::Config;
-use tinycortex::memory::ingest::canonicalize::chat::{ChatBatch, ChatMessage};
 
 /// Shared test config — disables embedding for deterministic inert behaviour.
 fn bench_config() -> (TempDir, TestHostConfig) {

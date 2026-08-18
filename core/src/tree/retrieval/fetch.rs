@@ -1,13 +1,13 @@
 use anyhow::Result;
 
+use crate::engine::engine_config;
 use crate::source_scope::chunk_source_allowed_in;
 use crate::source_scope::current_source_scope;
 use crate::store::chunks::store::get_chunks_batch;
-use crate::tinycortex::engine_config;
 use crate::tree::retrieval::types::RetrievalHit;
 use crate::Config;
 
-pub use tinycortex::memory::retrieval::MAX_BATCH;
+pub use crate::engine::backend::retrieval::MAX_BATCH;
 
 /// Fetch leaf chunks by id, using the **ambient** scope.
 ///
@@ -47,5 +47,5 @@ pub async fn fetch_leaves_scoped(
     } else {
         chunk_ids.to_vec()
     };
-    tinycortex::memory::retrieval::fetch_leaves(&engine_config(config), &permitted_ids)
+    crate::engine::backend::retrieval::fetch_leaves(&engine_config(config), &permitted_ids)
 }

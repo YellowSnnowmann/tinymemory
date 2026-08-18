@@ -1,9 +1,12 @@
 //! [`TinycortexMemory`] — a TinyCortex storage backend, seen through the
 //! TinyMemory contract's [`Memory`] trait.
 //!
-//! Every method is a delegation plus a conversion. The two that are not purely
-//! mechanical are called out below; both are cases where getting the
-//! delegation "obviously right" would be wrong.
+//! Every method is a plain delegation. It used to be a delegation *plus a
+//! conversion*, because the engine's contract crate defined its own copies of
+//! the memory value types; since tinymemory#18 §A1 `tinycortex-api` re-exports
+//! this contract instead, so the two sides name one type and there is nothing
+//! left to convert. The one method that is still not purely mechanical is
+//! called out below.
 
 use std::sync::Arc;
 
@@ -12,11 +15,6 @@ use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::traits::Memory;
 use tinymemory_api::types::{
     MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary, RecallOpts,
-};
-
-use crate::convert::{
-    category_to_tinycortex, entry_to_tinymemory, namespace_summary_to_tinymemory,
-    recall_opts_to_tinycortex, taint_to_tinycortex,
 };
 
 /// A TinyCortex backend exposed as a TinyMemory [`Memory`].
@@ -63,13 +61,7 @@ impl Memory for TinycortexMemory {
         session_id: Option<&str>,
     ) -> anyhow::Result<()> {
         self.inner
-            .store(
-                namespace,
-                key,
-                content,
-                category_to_tinycortex(category),
-                session_id,
-            )
+            .store(namespace, key, content, category, session_id)
             .await
     }
 
@@ -88,20 +80,13 @@ impl Memory for TinycortexMemory {
         taint: MemoryTaint,
     ) -> anyhow::Result<()> {
         self.inner
-            .store_with_taint(
-                namespace,
-                key,
-                content,
-                category_to_tinycortex(category),
-                session_id,
-                taint_to_tinycortex(taint),
-            )
+            .store_with_taint(namespace, key, content, category, session_id, taint)
             .await
     }
 
-    /// The engine's `RecallOpts` borrows its string fields, so the owned
-    /// conversion has to outlive the borrow taken from it — hence the local
-    /// binding rather than a temporary in the call.
+    /// The engine's `RecallOpts` borrows its string fields, so the owned form
+    /// has to outlive the borrow taken from it — hence the local binding rather
+    /// than a temporary in the call.
     async fn recall(
         &self,
         query: &str,
@@ -109,12 +94,7 @@ impl Memory for TinycortexMemory {
         opts: RecallOpts<'_>,
     ) -> anyhow::Result<Vec<MemoryEntry>> {
         let owned = OwnedRecallOpts::from(opts);
-        let engine_owned = recall_opts_to_tinycortex(&owned);
-        let hits = self
-            .inner
-            .recall(query, limit, (&engine_owned).into())
-            .await?;
-        Ok(hits.into_iter().map(entry_to_tinymemory).collect())
+        Ok(self.inner.recall(query, limit, (&owned).into()).await?)
     }
 
     async fn recall_relevant_by_vector(
@@ -130,11 +110,7 @@ impl Memory for TinycortexMemory {
     }
 
     async fn get(&self, namespace: &str, key: &str) -> anyhow::Result<Option<MemoryEntry>> {
-        Ok(self
-            .inner
-            .get(namespace, key)
-            .await?
-            .map(entry_to_tinymemory))
+        self.inner.get(namespace, key).await
     }
 
     async fn list(
@@ -143,14 +119,7 @@ impl Memory for TinycortexMemory {
         category: Option<&MemoryCategory>,
         session_id: Option<&str>,
     ) -> anyhow::Result<Vec<MemoryEntry>> {
-        // `category` is borrowed on both sides, so the converted value needs a
-        // binding to borrow from.
-        let engine_category = category.cloned().map(category_to_tinycortex);
-        let entries = self
-            .inner
-            .list(namespace, engine_category.as_ref(), session_id)
-            .await?;
-        Ok(entries.into_iter().map(entry_to_tinymemory).collect())
+        self.inner.list(namespace, category, session_id).await
     }
 
     async fn forget(&self, namespace: &str, key: &str) -> anyhow::Result<bool> {
@@ -158,13 +127,7 @@ impl Memory for TinycortexMemory {
     }
 
     async fn namespace_summaries(&self) -> anyhow::Result<Vec<NamespaceSummary>> {
-        Ok(self
-            .inner
-            .namespace_summaries()
-            .await?
-            .into_iter()
-            .map(namespace_summary_to_tinymemory)
-            .collect())
+        self.inner.namespace_summaries().await
     }
 
     async fn count(&self) -> anyhow::Result<usize> {

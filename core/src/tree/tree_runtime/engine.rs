@@ -2,16 +2,16 @@
 
 use std::sync::Arc;
 
+use crate::engine::backend::tree::runtime::{
+    NodeLevel, RuntimeObserver, Summariser, TreeNode, TreeStatus,
+};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Timelike, Utc};
 use tinyagents::harness::message::Message;
 use tinyagents::harness::model::{ChatModel, ModelRequest};
-use tinycortex::memory::tree::runtime::{
-    NodeLevel, RuntimeObserver, Summariser, TreeNode, TreeStatus,
-};
 
-use crate::tinycortex::engine_config;
+use crate::engine::engine_config;
 use crate::Config;
 
 const SUMMARIZATION_TEMP: f64 = 0.3;
@@ -83,7 +83,7 @@ pub async fn run_summarization(
     ts: DateTime<Utc>,
 ) -> Result<Option<TreeNode>> {
     log::debug!("[tree_summarizer] tinycortex run namespace={namespace}");
-    let result = tinycortex::memory::tree::runtime::run_summarization_observed(
+    let result = crate::engine::backend::tree::runtime::run_summarization_observed(
         &engine_config(config),
         &ChatSummariser(provider),
         namespace,
@@ -105,7 +105,7 @@ pub async fn rebuild_tree(
     namespace: &str,
 ) -> Result<TreeStatus> {
     log::debug!("[tree_summarizer] tinycortex rebuild namespace={namespace}");
-    tinycortex::memory::tree::runtime::rebuild_tree_observed(
+    crate::engine::backend::tree::runtime::rebuild_tree_observed(
         &engine_config(config),
         &ChatSummariser(provider),
         namespace,
@@ -134,8 +134,9 @@ pub async fn run_hourly_loop(config: Arc<Config>, provider: Arc<dyn ChatModel<()
         tokio::time::sleep(sleep_duration).await;
 
         let ts = Utc::now();
-        let namespaces =
-            tinycortex::memory::tree::runtime::discover_active_namespaces(&engine_config(&*config));
+        let namespaces = crate::engine::backend::tree::runtime::discover_active_namespaces(
+            &engine_config(&*config),
+        );
         log::debug!(
             "[tree_summarizer] hourly tick active_namespaces={}",
             namespaces.len()

@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 use crate::config_loader as config_rpc;
 use crate::sources::types::{MemorySourceEntry, SourceKind};
 
-pub use tinycortex::memory::sources::{
+pub use crate::engine::backend::sources::{
     memory_sync_defaults_for_toolkit, ComposioUpsertTarget, MemorySourcePatch,
 };
 
@@ -18,9 +18,9 @@ pub(crate) async fn memory_sources_write_guard() -> tokio::sync::MutexGuard<'sta
         .await
 }
 
-async fn registry() -> Result<tinycortex::memory::sources::SourceRegistry, String> {
+async fn registry() -> Result<crate::engine::backend::sources::SourceRegistry, String> {
     let config = config_rpc::load_config_with_timeout().await?;
-    Ok(tinycortex::memory::sources::SourceRegistry::new(
+    Ok(crate::engine::backend::sources::SourceRegistry::new(
         config.config_path(),
     ))
 }
@@ -59,7 +59,7 @@ pub fn get_source_in(
     config: &crate::Config,
     id: &str,
 ) -> Result<Option<MemorySourceEntry>, String> {
-    tinycortex::memory::sources::SourceRegistry::new(config.config_path().clone())
+    crate::engine::backend::sources::SourceRegistry::new(config.config_path().clone())
         .get(id)
         .map_err(|error| error.to_string())
 }

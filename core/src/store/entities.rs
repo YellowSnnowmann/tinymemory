@@ -2,13 +2,13 @@
 
 use std::sync::Arc;
 
-use anyhow::Result;
-use tinycortex::memory::store::entity_index::{
+use crate::engine::backend::store::entity_index::{
     CanonicalEntity, EntityIndex, EntityKind, SelfIdentity,
 };
+use anyhow::Result;
 
+use crate::engine::memory_config_from;
 use crate::sync::composio::providers::profile::{is_self_identity_any_toolkit, IdentityKind};
-use crate::tinycortex::memory_config_from;
 use crate::Config;
 
 /// Aggregate entity-index row for capability providers.
@@ -32,7 +32,7 @@ pub fn namespace_entities(
     limit: usize,
 ) -> Result<Vec<TopEntity>> {
     let memory = memory_config_from(config, config.workspace_dir().clone());
-    let connection = tinycortex::memory::chunks::shared_connection(&memory)?;
+    let connection = crate::engine::backend::chunks::shared_connection(&memory)?;
     let guard = connection.lock();
     let pattern = query.map(|value| format!("%{}%", value.to_ascii_lowercase()));
     let mut statement = guard.prepare(
@@ -69,7 +69,7 @@ pub fn namespace_entity_edges(
     limit: usize,
 ) -> Result<Vec<(String, u32)>> {
     let memory = memory_config_from(config, config.workspace_dir().clone());
-    let connection = tinycortex::memory::chunks::shared_connection(&memory)?;
+    let connection = crate::engine::backend::chunks::shared_connection(&memory)?;
     let guard = connection.lock();
     let mut statement = guard.prepare(
         "SELECT b.entity_id, COUNT(*)
@@ -97,7 +97,7 @@ pub fn namespace_entity_edges(
     Ok(rows)
 }
 
-pub use tinycortex::memory::store::entity_index::EntityHit;
+pub use crate::engine::backend::store::entity_index::EntityHit;
 
 #[derive(Debug)]
 struct HostSelfIdentity;
@@ -115,7 +115,7 @@ impl SelfIdentity for HostSelfIdentity {
 
 fn index(config: &Config) -> Result<EntityIndex> {
     let memory = memory_config_from(config, config.workspace_dir().clone());
-    let connection = tinycortex::memory::chunks::shared_connection(&memory)?;
+    let connection = crate::engine::backend::chunks::shared_connection(&memory)?;
     EntityIndex::from_shared_connection(connection, Arc::new(HostSelfIdentity))
 }
 
@@ -169,7 +169,7 @@ pub fn count_entity_index(config: &Config) -> Result<u64> {
 /// Most frequently observed entities, with recency as the tie-breaker.
 pub fn top_entities(config: &Config, limit: usize) -> Result<Vec<TopEntity>> {
     let memory = memory_config_from(config, config.workspace_dir().clone());
-    let connection = tinycortex::memory::chunks::shared_connection(&memory)?;
+    let connection = crate::engine::backend::chunks::shared_connection(&memory)?;
     let guard = connection.lock();
     let mut statement = guard.prepare(
         "SELECT entity_id, entity_kind, MAX(surface), COUNT(*)
@@ -209,7 +209,7 @@ mod tests {
 
     fn insert_entity(config: &Config, tree: &str, entity: &str, node: &str, surface: &str) {
         let memory = memory_config_from(config, config.workspace_dir().clone());
-        let connection = tinycortex::memory::chunks::shared_connection(&memory).expect("db");
+        let connection = crate::engine::backend::chunks::shared_connection(&memory).expect("db");
         connection
             .lock()
             .execute(

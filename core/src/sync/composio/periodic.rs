@@ -58,7 +58,7 @@ use tinymemory_api::host::DEFAULT_MEMORY_SYNC_INTERVAL_SECS;
 
 use super::providers::{get_provider, ComposioUsage};
 use crate::composio_host;
-use crate::tinycortex::{append_audit_entry, try_read_audit_log, SyncAuditEntry};
+use crate::engine::{append_audit_entry, try_read_audit_log, SyncAuditEntry};
 use chrono::{DateTime, Utc};
 
 /// How often the scheduler wakes up to look for due syncs. Independent
@@ -555,7 +555,7 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
             "[composio:periodic] firing sync"
         );
         let sync_started = Instant::now();
-        let result = crate::tinycortex::run_source_pipeline(&source, &*config).await;
+        let result = crate::engine::run_source_pipeline(&source, &*config).await;
         let duration_ms = sync_started.elapsed().as_millis() as u64;
 
         match result {

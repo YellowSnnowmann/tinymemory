@@ -3,15 +3,15 @@
 use anyhow::Result;
 use rusqlite::Connection;
 
-use crate::tinycortex::engine_config;
+use crate::engine::engine_config;
 use crate::Config;
 
 #[doc(hidden)]
 pub fn with_connection<T>(config: &Config, f: impl FnOnce(&Connection) -> Result<T>) -> Result<T> {
-    tinycortex::memory::chunks::with_connection(&engine_config(config), f)
+    crate::engine::backend::chunks::with_connection(&engine_config(config), f)
 }
 
 pub(crate) fn recover_corrupt_db(config: &Config) -> Result<bool> {
     log::warn!("[memory:chunks] checking corrupt database recovery");
-    tinycortex::memory::chunks::recover_corrupt_db(&engine_config(config))
+    crate::engine::backend::chunks::recover_corrupt_db(&engine_config(config))
 }

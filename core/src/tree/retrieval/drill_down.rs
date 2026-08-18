@@ -1,7 +1,7 @@
 use anyhow::Result;
 
+use crate::engine::engine_config;
 use crate::source_scope::current_source_scope;
-use crate::tinycortex::engine_config;
 use crate::tree::retrieval::engine::EmbedderBridge;
 use crate::tree::retrieval::types::RetrievalHit;
 use crate::tree::score::embed::{build_embedder_from_config, InertEmbedder};
@@ -60,7 +60,7 @@ pub async fn drill_down_scoped(
     // limiting before the retain below would cap the result set with rows that
     // are about to be discarded.
     let engine_limit = scope.as_ref().map(|_| None).unwrap_or(limit);
-    let mut hits = tinycortex::memory::retrieval::drill_down(
+    let mut hits = crate::engine::backend::retrieval::drill_down(
         &engine_config(config),
         node_id,
         max_depth,

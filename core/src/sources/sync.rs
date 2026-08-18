@@ -89,7 +89,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
             let mut composio_usage = ComposioUsage::default();
             let outcome = match source.kind {
                 SourceKind::Composio => {
-                    match crate::tinycortex::run_source_pipeline(&source, &*config).await {
+                    match crate::engine::run_source_pipeline(&source, &*config).await {
                         Ok(outcome) => {
                             composio_usage.actions_called = outcome.actions_called;
                             composio_usage.cost_usd = outcome.provider_cost_usd;
@@ -103,17 +103,17 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
                     }
                 }
                 SourceKind::Conversation | SourceKind::Folder => {
-                    crate::tinycortex::run_source_pipeline(&source, &*config)
+                    crate::engine::run_source_pipeline(&source, &*config)
                         .await
                         .map(|outcome| outcome.records_ingested as usize)
                         .map_err(|error| error.to_string())
                 }
-                SourceKind::GithubRepo => crate::tinycortex::run_source_pipeline(&source, &*config)
+                SourceKind::GithubRepo => crate::engine::run_source_pipeline(&source, &*config)
                     .await
                     .map(|outcome| outcome.records_ingested as usize)
                     .map_err(|error| error.to_string()),
                 SourceKind::RssFeed | SourceKind::WebPage => {
-                    crate::tinycortex::run_source_pipeline(&source, &*config)
+                    crate::engine::run_source_pipeline(&source, &*config)
                         .await
                         .map(|outcome| outcome.records_ingested as usize)
                         .map_err(|error| error.to_string())
@@ -142,7 +142,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
                         Some(&source.id),
                     );
 
-                    use crate::tinycortex::{append_audit_entry, SyncAuditEntry};
+                    use crate::engine::{append_audit_entry, SyncAuditEntry};
                     append_audit_entry(
                         &*config,
                         &SyncAuditEntry {
@@ -185,7 +185,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
                 }
                 Err(error) => {
                     // Audit failed syncs too.
-                    use crate::tinycortex::{append_audit_entry, SyncAuditEntry};
+                    use crate::engine::{append_audit_entry, SyncAuditEntry};
                     append_audit_entry(
                         &*config,
                         &SyncAuditEntry {
@@ -266,7 +266,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
 
 /// Reconcile raw files that are not yet covered by tree summaries.
 pub(crate) async fn check_and_rebuild_tree(source: &MemorySourceEntry, config: &Config) {
-    use crate::tinycortex::{needs_rebuild, rebuild_tree_from_raw};
+    use crate::engine::{needs_rebuild, rebuild_tree_from_raw};
 
     for scope in derive_scopes(source, config) {
         if !needs_rebuild(config, &scope.tree_scope, &scope.archive_source_id) {

@@ -1,6 +1,6 @@
 //! Worker pool: drives the crate queue engine (W4 flip). Each `run_once`
-//! delegates claim → dispatch → settle to `tinycortex::memory::queue::run_once`
-//! via [`crate::tinycortex::HostQueueDelegates`]; the legacy host
+//! delegates claim → dispatch → settle to `crate::engine::backend::queue::run_once`
+//! via [`crate::engine::HostQueueDelegates`]; the legacy host
 //! `handlers` engine that used to own dispatch was deleted at the flip.
 //!
 //! Concurrency control for LLM-bound work is delegated to
@@ -288,9 +288,9 @@ pub async fn run_once(config: &Config) -> Result<bool> {
     // single-slot LLM gate serialises llm-bound jobs; the legacy per-job
     // local/cloud permit routing and the extract-batch coalescing are
     // intentionally dropped here (perf, not correctness — W4 follow-up).
-    let mc = crate::tinycortex::memory_config_from(config, config.workspace_dir().clone());
-    let delegates = crate::tinycortex::HostQueueDelegates::new(config.to_arc());
-    tinycortex::memory::queue::run_once(&mc, &delegates).await
+    let mc = crate::engine::memory_config_from(config, config.workspace_dir().clone());
+    let delegates = crate::engine::HostQueueDelegates::new(config.to_arc());
+    crate::engine::backend::queue::run_once(&mc, &delegates).await
 }
 
 /// Classify whether an error is a transient I/O failure that should be
