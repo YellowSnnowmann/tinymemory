@@ -1,10 +1,12 @@
 //! The host side of the engine-free pipelines (#18 §B1): the sink adapter
-//! over [`MemoryClient`], the Composio settings mapping, and the runners the
+//! over [`MemoryClient`](crate::store::MemoryClient), the Composio settings
+//! mapping, and the runners the
 //! rest of `core/src/sync/` calls.
 //!
 //! This is the piece §B5's acceptance rests on: a pipeline sees three
 //! capabilities — events, documents, state — and every one resolves through
-//! [`MemoryClient`], so whatever driver the host bound serves the sync.
+//! [`MemoryClient`](crate::store::MemoryClient), so whatever driver the host
+//! bound serves the sync.
 
 use std::sync::Arc;
 
