@@ -611,3 +611,118 @@ async fn the_manifest_declares_every_method_the_module_serves() {
         declared.difference(&expected).collect::<Vec<_>>()
     );
 }
+
+#[tokio::test]
+#[ignore = "drives a real dlopen'ed module; must be the only such test in the process — see the module docs"]
+async fn what_is_written_lands_in_the_workspace_it_was_given() {
+    // Issue #18 §E5 asks for a shutdown/restart cycle. It cannot be written
+    // here, and the reason is structural rather than an omission: TinyBus never
+    // unloads a library, so a second admission in the same process is refused —
+    // `ModuleRefused { reason: "module initialization failed" }` — and every
+    // test in this file must be the only one in its process for the same
+    // reason. A genuine restart needs a second *process* against a shared
+    // workspace, which is a change to the CI loop rather than a test.
+    //
+    // What is assertable in one process is the property that restart would be
+    // checking: that a write goes to the durable workspace the host supplied,
+    // and not somewhere that disappears. A module that stored into a temporary
+    // directory of its own, or in memory, passes every other test in this file
+    // — each one stores and reads back inside a single admission, so the
+    // difference never shows. It would show on the user's next launch.
+    let workspace = tempfile::tempdir().expect("tempdir");
+
+    // Nothing has been asked of it yet.
+    let before = std::fs::read_dir(workspace.path())
+        .expect("workspace readable")
+        .count();
+
+    let (client, _host, _task) = admit_module(workspace.path()).await;
+    proxy(&client)
+        .call::<()>(
+            "Store",
+            (
+                "e2e",
+                "durable",
+                "written to the host's workspace",
+                MemoryCategory::Core,
+                Option::<String>::None,
+                MemoryTaint::default(),
+            ),
+        )
+        .await
+        .expect("Store");
+
+    let entry: Option<MemoryEntry> = proxy(&client)
+        .call("Get", ("e2e", "durable"))
+        .await
+        .expect("Get");
+    assert_eq!(
+        entry.expect("just stored").content,
+        "written to the host's workspace"
+    );
+
+    // The assertion that a same-admission round trip cannot make: the bytes are
+    // in the directory the host named.
+    let after = std::fs::read_dir(workspace.path())
+        .expect("workspace readable")
+        .count();
+    assert!(
+        after > before,
+        "the module answered correctly but wrote nothing into the workspace it \
+         was given — a store that does not land here does not survive a restart"
+    );
+}
+
+#[tokio::test]
+#[ignore = "drives a real dlopen'ed module; must be the only such test in the process — see the module docs"]
+async fn every_declared_method_is_actually_routed() {
+    // Issue #18 §E5 asks the E2E to cover every family the module advertises.
+    // It advertises `Capabilities::all()` — eighteen families — and the tests
+    // above exercise three of them.
+    //
+    // Rather than eighteen bespoke round trips, this asserts the property that
+    // makes the advertisement honest at this layer: every method the manifest
+    // declares is actually *reachable*. `the_manifest_declares_every_method_the
+    // _module_serves` compares two lists and would pass for a method that is
+    // declared, routed, and answers "unknown member" — which is the bus-level
+    // version of a capability set that overstates its accessors.
+    //
+    // Each method is called with no arguments, so most fail. That is fine and is
+    // the point: what is asserted is the *kind* of failure. A method that is
+    // wired rejects the arguments; a method that is not wired rejects the
+    // member, and those carry different wire names.
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let (client, _host, _task) = admit_module(workspace.path()).await;
+
+    // Establish the shape of a genuine not-routed refusal from this very build,
+    // rather than hard-coding tinybus's spelling of it. The two outcomes are
+    // distinct names — `ai.tinyhumans.tinybus.Error.UnknownMethod` for a member
+    // that is not there, `…Error.BadArguments` for one that is and did not like
+    // the empty argument list — which is what makes this test discriminate
+    // rather than pass vacuously.
+    let unrouted = proxy(&client)
+        .call::<serde_json::Value>("NoSuchMethodAtAll", ())
+        .await
+        .expect_err("an unknown member must be refused")
+        .wire_name()
+        .to_string();
+
+    let mut missing = Vec::new();
+    for method in EXPECTED_METHODS {
+        // `Shutdown` would stop the module and strand every later iteration.
+        if *method == "Shutdown" {
+            continue;
+        }
+        let outcome = proxy(&client).call::<serde_json::Value>(method, ()).await;
+        if let Err(error) = outcome {
+            if error.wire_name() == unrouted {
+                missing.push(*method);
+            }
+        }
+    }
+
+    assert!(
+        missing.is_empty(),
+        "declared in the manifest but not routed: {missing:?}"
+    );
+}
