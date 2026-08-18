@@ -58,6 +58,38 @@ jobs:
       #
       # This is also the configuration that keeps the promise the feature
       # exists for: no `git2` / `libgit2-sys` in the graph.
+      # `api/Cargo.toml` spells out this exact command in a comment and asks
+      # that the contract crate never link a storage engine, a native library,
+      # an HTTP client, or an async runtime. It was left as a comment, so
+      # nothing checked it — and a forbidden dependency arrives transitively,
+      # through a feature someone enabled two crates away, which is precisely
+      # the way nobody notices.
+      #
+      # The FORWARD form is required. `cargo tree -i <crate> -p tinymemory-api`
+      # discards the `-p` scope, prints the whole-workspace inverse tree, and
+      # exits 0 looking clean even when this crate is the one at fault. The
+      # manifest says so; this runs what it says.
+      - name: Assert the contract crate stays free of heavy dependencies
+        run: |
+          forbidden="$(cargo tree -p tinymemory-api -e normal,build --prefix none \
+            | grep -Ei 'rusqlite|libsqlite|git2|reqwest|regex|tokio' || true)"
+          if [ -n "$forbidden" ]; then
+            echo "tinymemory-api pulled in a dependency its manifest forbids:" >&2
+            echo "$forbidden" >&2
+            echo >&2
+            echo "The contract is what hosts compile against. It must stay free of" >&2
+            echo "storage engines, native libraries, HTTP clients and async runtimes." >&2
+            exit 1
+          fi
+
+      # The minimal build has to stay genuinely usable, not merely compile:
+      # a host that wants the ports wired and nothing retained must be able to
+      # bind the null driver without pulling an engine in behind it.
+      - name: Build and bind the minimal configuration
+        run: |
+          cargo build -p tinymemory --no-default-features
+          cargo test -p tinymemory --no-default-features --test null_provider
+
       - name: Lint and test the adapter without its optional engine features
         run: |
           cargo clippy -p tinymemory-tinycortex --all-targets --no-default-features -- -D warnings
