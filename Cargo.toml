@@ -80,6 +80,9 @@ tinymemory-api = { path = "api", features = ["test-support"] }
 # integration tests. A dev-dependency only: the facade must not carry a test
 # harness into a consumer's dependency graph.
 tinymemory-conformance = { path = "conformance" }
+# The extracted Composio normalisers, for the integration test that runs them
+# against a driver that is not TinyCortex (issue #18 §B3).
+tinymemory-sync = { path = "sync" }
 
 [features]
 default = []
