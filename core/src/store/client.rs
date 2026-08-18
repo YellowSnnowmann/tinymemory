@@ -128,19 +128,6 @@ impl MemoryClient {
         }
     }
 
-    /// Create a new local memory client using the default `.openhuman` directory.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error string if the home directory cannot be resolved or if
-    /// initialization fails.
-    pub fn new_local() -> Result<Self, String> {
-        let workspace_dir = crate::default_openhuman_dir()
-            .map_err(|e| e.to_string())?
-            .join("workspace");
-        Self::from_workspace_dir(workspace_dir)
-    }
-
     /// Create a new memory client from a specific workspace directory.
     ///
     /// # Arguments
