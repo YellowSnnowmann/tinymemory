@@ -14,7 +14,16 @@ use crate::sources::{MemorySourceEntry, SourceKind};
 use crate::store::MemoryClientRef;
 use crate::Config;
 
-pub const HOST_SYNC_STATE_NAMESPACE: &str = "composio-sync-state";
+/// The KV namespace Composio sync state is persisted under.
+///
+/// Re-exported from the engine rather than re-declared. It was a second
+/// `const` holding the same literal as
+/// `tinycortex::memory::sync::state::STATE_NAMESPACE`, so the host and the
+/// engine agreed only by coincidence of the string: change either and the two
+/// would silently read and write *different* namespaces, stranding every
+/// persisted sync cursor with no error anywhere. A duplicated literal is a
+/// drift hazard precisely when the thing it names is durable (#18 §B2).
+pub use tinycortex::memory::sync::state::STATE_NAMESPACE as HOST_SYNC_STATE_NAMESPACE;
 pub use tinycortex::memory::sync::{
     RawCoverage, RawFileRef, RealCostAccumulator, RebuildOutcome, SyncAuditEntry,
 };

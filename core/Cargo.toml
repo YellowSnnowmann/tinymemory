@@ -42,7 +42,6 @@ async-trait = "0.1"
 # tinycortex's major — which `links = "git2"` turns into a hard cargo error
 # rather than a warning.
 # `store/factories.rs` exposes a tiny health router for the embedded provider.
-axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query", "ws", "macros"] }
 chrono = { version = "0.4", features = ["serde"] }
 # `tinycortex/persona.rs` resolves the user's home directory for the obsidian
 # vault default.
@@ -55,7 +54,6 @@ parking_lot = "0.12"
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 tracing = "0.1"
-regex = "1.10"
 rusqlite = { version = "=0.40.0", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -70,6 +68,12 @@ walkdir = "2"
 # `TestHostConfig` — the concrete `MemoryHostConfig` the extracted test suites
 # build, since `Config` is a trait object and cannot be `Default`ed.
 tinymemory-api = { path = "../api", features = ["test-support"] }
+# Test-only. `store::factories`' tests stand up a throwaway HTTP server to
+# exercise the embedder's failure paths — the four `axum` references in this
+# crate are all inside `mod tests`. It was declared as a normal dependency,
+# which put a web framework in the normal graph of every build linking this
+# crate (#18 §D2).
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query", "ws", "macros"] }
 tempfile = "3"
 tokio = { version = "1", features = ["test-util"] }
 
