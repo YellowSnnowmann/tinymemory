@@ -54,21 +54,17 @@ mod test;
 /// contract so hosts and adapters agree on the spelling.
 pub use tinymemory_api::null::NULL_DRIVER_ID;
 
-/// The driver id of the bundled TinyCortex embedded engine.
+/// The reserved driver ids, re-exported from the contract crate.
 ///
-/// Lives here rather than in the adapter crate so admission can reserve the id
-/// without depending on the adapter — a host that compiles the adapter out must
-/// still refuse to bind something *else* under this name.
-pub const TINYCORTEX_DRIVER_ID: &str = "tinycortex";
-
-/// Driver id of the native Supermemory HTTP adapter.
-pub const SUPERMEMORY_DRIVER_ID: &str = "supermemory";
-
-/// Driver id of the native Mem0 HTTP adapter.
-pub const MEM0_DRIVER_ID: &str = "mem0";
-
-/// Driver id of the native Cognee HTTP adapter.
-pub const COGNEE_DRIVER_ID: &str = "cognee";
+/// They moved to [`tinymemory_api::drivers`] so an adapter can spell the id it
+/// binds under without depending on this crate — that dependency is what made
+/// this crate unable to depend on the adapters in turn, and so blocked #18
+/// §D1's per-engine features. Re-exported here because
+/// `tinymemory::registry::TINYCORTEX_DRIVER_ID` is a path both the adapters and
+/// downstream hosts already use.
+pub use tinymemory_api::drivers::{
+    COGNEE_DRIVER_ID, MEM0_DRIVER_ID, SUPERMEMORY_DRIVER_ID, TINYCORTEX_DRIVER_ID,
+};
 
 /// The trust state a driver entry must carry for an external class to bind.
 pub const TRUSTED: &str = "trusted";

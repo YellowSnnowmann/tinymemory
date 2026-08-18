@@ -1,6 +1,6 @@
 //! Tests for the shared mandatory-family logic.
 //!
-//! These run against [`VecMemory`], a deliberately dumb in-process [`Memory`]
+//! These run against [`VecMemory`], a deliberately dumb in-process [`Memory`](crate::traits::Memory)
 //! backend defined here rather than borrowed from an engine crate: the point of
 //! this module is that the logic is engine-neutral, and a test that needed a
 //! real engine would not demonstrate that.
@@ -12,7 +12,7 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
-use tinymemory_api::provider::audit_provider;
+use crate::provider::audit_provider;
 
 use super::*;
 
@@ -46,8 +46,8 @@ impl VecMemory {
 
 use std::sync::Arc;
 
+use crate::types::NamespaceSummary;
 use async_trait::async_trait;
-use tinymemory_api::types::NamespaceSummary;
 
 #[async_trait]
 impl Memory for VecMemory {
@@ -65,7 +65,7 @@ impl Memory for VecMemory {
             content,
             category,
             session_id,
-            tinymemory_api::types::MemoryTaint::Internal,
+            crate::types::MemoryTaint::Internal,
         )
         .await
     }
@@ -77,7 +77,7 @@ impl Memory for VecMemory {
         content: &str,
         category: MemoryCategory,
         session_id: Option<&str>,
-        taint: tinymemory_api::types::MemoryTaint,
+        taint: crate::types::MemoryTaint,
     ) -> anyhow::Result<()> {
         let entry = MemoryEntry {
             id: format!("{namespace}/{key}"),
@@ -561,7 +561,7 @@ fn debug_renders_the_driver_id_and_not_the_backend() {
     assert!(!rendered.contains("VecMemory"));
 }
 
-use tinymemory_api::capabilities::Capability;
-use tinymemory_api::health::MemoryHealth;
-use tinymemory_api::provider::{MemoryCore, MemoryPortability, MemoryProvider, MemoryRecall};
-use tinymemory_api::types::MemoryTaint;
+use crate::capabilities::Capability;
+use crate::health::MemoryHealth;
+use crate::provider::{MemoryCore, MemoryPortability, MemoryProvider, MemoryRecall};
+use crate::types::MemoryTaint;

@@ -55,14 +55,14 @@ pub use memory::TinycortexMemory;
 
 use std::sync::Arc;
 
-use tinymemory::mandatory::MemoryTraitProvider;
+use tinymemory_api::mandatory::MemoryTraitProvider;
 
 /// The driver id this adapter binds under.
 ///
-/// Matches [`tinymemory::registry::TINYCORTEX_DRIVER_ID`], which is where
+/// Matches [`tinymemory_api::drivers::TINYCORTEX_DRIVER_ID`], which is where
 /// admission reserves it — the constant lives there so a host that compiles
 /// this adapter out still refuses to bind something else under the name.
-pub use tinymemory::registry::TINYCORTEX_DRIVER_ID;
+pub use tinymemory_api::drivers::TINYCORTEX_DRIVER_ID;
 
 /// Wrap a TinyCortex backend as a bound memory driver.
 ///

@@ -61,6 +61,10 @@ uuid = { version = "1", features = ["v4"] }
 # The moved `host::` config sections are parsed from TOML in their own tests,
 # exactly as the host parses them from `config.toml`.
 toml = "0.9"
+# The mandatory-composition tests are async — they drive a `MemoryProvider`.
+# Dev-only, so it does not touch the forbidden-dependency rule this crate's
+# manifest enforces for its normal graph (#18 §D4).
+tokio = { version = "1", features = ["macros", "rt"] }
 
 [features]
 default = []

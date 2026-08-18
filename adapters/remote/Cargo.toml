@@ -10,7 +10,6 @@ repository = "https://github.com/tinyhumansai/tinymemory"
 
 [dependencies]
 # The engine-neutral contract and mandatory-family composition.
-tinymemory = { path = "../.." }
 tinymemory-api = { path = "../../api" }
 # Memory is an object-safe async trait and each native HTTP dialect is async.
 async-trait = "0.1"

@@ -1,12 +1,12 @@
-//! [`MemoryTraitProvider`] — a complete, mandatory-only
-//! [`MemoryProvider`](tinymemory_api::provider::MemoryProvider) over any
-//! [`Memory`] backend.
+//! [`MemoryTraitProvider`](crate::mandatory::MemoryTraitProvider) — a complete, mandatory-only
+//! [`MemoryProvider`](crate::provider::MemoryProvider) over any
+//! [`Memory`](crate::traits::Memory) backend.
 //!
 //! ## What this is for
 //!
 //! Two things, and it is worth being clear which is which.
 //!
-//! **A real driver for a simple backend.** A store that implements [`Memory`]
+//! **A real driver for a simple backend.** A store that implements [`Memory`](crate::traits::Memory)
 //! becomes a bindable memory driver by wrapping it here — no capability
 //! plumbing, no export format to invent. It advertises exactly the three
 //! mandatory families, so a host binding it gets a memory subsystem whose
@@ -21,7 +21,7 @@
 //! No optional families. Every `as_*` accessor keeps the contract's `None`
 //! default, and [`capabilities`](MemoryTraitProvider::capabilities) reports the
 //! mandatory three — so the two halves agree and
-//! [`audit_provider`](tinymemory_api::provider::audit_provider) passes. A driver
+//! [`audit_provider`](crate::provider::audit_provider) passes. A driver
 //! that wants documents, trees, or a diff ledger implements those families over
 //! its own engine and delegates only the mandatory three here.
 //!
@@ -30,19 +30,19 @@
 
 use std::sync::Arc;
 
+use crate::capabilities::{Capabilities, Capability};
+use crate::error::MemoryError;
+use crate::health::MemoryHealth;
+use crate::provider::types::{ExportPage, ExportRecord, ImportOutcome, SourceScope};
+use crate::provider::{MemoryCore, MemoryPortability, MemoryProvider, MemoryRecall};
+use crate::recall::OwnedRecallOpts;
+use crate::traits::Memory;
+use crate::types::{MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary};
 use async_trait::async_trait;
-use tinymemory_api::capabilities::{Capabilities, Capability};
-use tinymemory_api::error::MemoryError;
-use tinymemory_api::health::MemoryHealth;
-use tinymemory_api::provider::types::{ExportPage, ExportRecord, ImportOutcome, SourceScope};
-use tinymemory_api::provider::{MemoryCore, MemoryPortability, MemoryProvider, MemoryRecall};
-use tinymemory_api::recall::OwnedRecallOpts;
-use tinymemory_api::traits::Memory;
-use tinymemory_api::types::{MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary};
 
 use super::{engine_error, export_page, import_records, list_everything, recall};
 
-/// A mandatory-only memory driver over an [`Memory`] backend.
+/// A mandatory-only memory driver over an [`Memory`](crate::traits::Memory) backend.
 #[derive(Clone)]
 pub struct MemoryTraitProvider {
     memory: Arc<dyn Memory>,

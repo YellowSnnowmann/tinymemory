@@ -21,7 +21,6 @@ tinymemory-api = { path = "../api" }
 # different engine could not have Composio sync despite none of this code
 # caring which engine is bound.
 tinymemory-sync = { path = "../sync" }
-tinymemory = { path = ".." }
 
 # The default embedded engine. `store/`, `tree/` and `sync/` drive it directly;
 # `tinycortex-api` is a direct dependency because `tinycortex::memory` aliases
