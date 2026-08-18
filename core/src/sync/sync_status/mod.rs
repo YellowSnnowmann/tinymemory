@@ -1,16 +1,72 @@
-//! Memory sync status surface (#1136 — simplified rewrite).
+//! Sync-status vocabulary (#18 §B1).
 //!
-//! The earlier push-based design (phase events from each provider's
-//! sync loop, persisted KV store, subscriber that mirrored events
-//! into storage) was replaced because it drifted from reality —
-//! "downloading 0/0" was a common lie while the chunks table told
-//! the truth. The pull-based replacement is one SQL query against
-//! `mem_tree_chunks` GROUPED BY `source_kind` on each RPC call.
-//!
-//! Public surface:
-//!
-//!   * [`MemorySyncStatus`] / [`FreshnessLabel`] — what the RPC returns
-//!   * `openhuman.memory_sync_status_list` — handler in `rpc`
-//!   * Controller registration via `schemas::all_registered_controllers`
+//! Owned here rather than re-exported from the engine. These are the shapes
+//! the host's status RPC speaks; today the only *producer* is the engine's
+//! SQLite-backed `list_sync_statuses`, which OpenHuman still calls directly
+//! (its own containment debt, tracked in its `direct_engine_refs` allowlist).
+//! When §B1's orchestrator move gives core a producer, it fills these types;
+//! the serde shape matches the engine's copy field for field.
 
-pub use crate::engine::backend::sync::{FreshnessLabel, MemorySyncStatus};
+use serde::{Deserialize, Serialize};
+
+/// How fresh a provider's sync is, judged from its newest chunk.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FreshnessLabel {
+    /// Newest chunk is under 30 seconds old.
+    Active,
+    /// Newest chunk is under 5 minutes old.
+    Recent,
+    /// Anything older, or nothing synced yet.
+    Idle,
+}
+
+impl FreshnessLabel {
+    /// Label for a provider whose newest chunk landed at
+    /// `last_chunk_at_ms`, judged at `now_ms`.
+    pub fn from_age_ms(last_chunk_at_ms: Option<i64>, now_ms: i64) -> Self {
+        match last_chunk_at_ms {
+            None => Self::Idle,
+            Some(timestamp) => match now_ms.saturating_sub(timestamp) {
+                age if age <= 30_000 => Self::Active,
+                age if age <= 5 * 60_000 => Self::Recent,
+                _ => Self::Idle,
+            },
+        }
+    }
+}
+
+/// One provider's sync progress, as the status RPC reports it.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct MemorySyncStatus {
+    pub provider: String,
+    pub chunks_synced: u64,
+    pub chunks_pending: u64,
+    pub batch_total: u64,
+    pub batch_processed: u64,
+    pub last_chunk_at_ms: Option<i64>,
+    pub freshness: FreshnessLabel,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn freshness_thresholds_match_the_engine() {
+        let now = 10_000_000;
+        assert_eq!(FreshnessLabel::from_age_ms(None, now), FreshnessLabel::Idle);
+        assert_eq!(
+            FreshnessLabel::from_age_ms(Some(now - 30_000), now),
+            FreshnessLabel::Active
+        );
+        assert_eq!(
+            FreshnessLabel::from_age_ms(Some(now - 30_001), now),
+            FreshnessLabel::Recent
+        );
+        assert_eq!(
+            FreshnessLabel::from_age_ms(Some(now - 300_001), now),
+            FreshnessLabel::Idle
+        );
+    }
+}

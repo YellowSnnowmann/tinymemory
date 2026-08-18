@@ -142,9 +142,9 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
                         Some(&source.id),
                     );
 
-                    use crate::engine::{append_audit_entry, SyncAuditEntry};
-                    append_audit_entry(
-                        &*config,
+                    use crate::sync::audit::{append_audit_entry, SyncAuditEntry};
+                    if let Err(error) = append_audit_entry(
+                        config.workspace_dir(),
                         &SyncAuditEntry {
                             timestamp: chrono::Utc::now(),
                             source_id: source.id.clone(),
@@ -166,7 +166,9 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
                             success: true,
                             error: None,
                         },
-                    );
+                    ) {
+                        tracing::warn!(%error, "[memory_sync:audit] append failed");
+                    }
 
                     // Auto-rebuild: if raw files exist but the tree has
                     // no summaries, build the tree now.
@@ -185,9 +187,9 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
                 }
                 Err(error) => {
                     // Audit failed syncs too.
-                    use crate::engine::{append_audit_entry, SyncAuditEntry};
-                    append_audit_entry(
-                        &*config,
+                    use crate::sync::audit::{append_audit_entry, SyncAuditEntry};
+                    if let Err(error) = append_audit_entry(
+                        config.workspace_dir(),
                         &SyncAuditEntry {
                             timestamp: chrono::Utc::now(),
                             source_id: source.id.clone(),
@@ -209,7 +211,9 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
                             success: false,
                             error: Some(error.clone()),
                         },
-                    );
+                    ) {
+                        tracing::warn!(%error, "[memory_sync:audit] append failed");
+                    }
 
                     // Report internal failures to Sentry; known-expected
                     // conditions (auth/network/rate-limit/missing config) are

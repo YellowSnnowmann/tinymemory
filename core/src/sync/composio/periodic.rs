@@ -58,7 +58,7 @@ use tinymemory_api::host::DEFAULT_MEMORY_SYNC_INTERVAL_SECS;
 
 use super::providers::{get_provider, ComposioUsage};
 use crate::composio_host;
-use crate::engine::{append_audit_entry, try_read_audit_log, SyncAuditEntry};
+use crate::sync::audit::{append_audit_entry, read_audit_log, SyncAuditEntry};
 use chrono::{DateTime, Utc};
 
 /// How often the scheduler wakes up to look for due syncs. Independent
@@ -426,7 +426,8 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
     // "Sync every 24h" gap across app restarts. We index the persisted sync
     // audit log (wall-clock timestamps that survive restarts) and use it as the
     // due-check fallback whenever the in-memory monotonic record is absent.
-    let (audit_index, audit_available) = composio_audit_state(try_read_audit_log(&*config));
+    let (audit_index, audit_available) =
+        composio_audit_state(read_audit_log(config.workspace_dir()));
     if !audit_available {
         tracing::warn!(
             "[memory_sync:periodic] audit unavailable; sources without in-memory cadence will be skipped"
@@ -579,7 +580,9 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
                     duration_ms,
                     None,
                 );
-                append_audit_entry(&*config, &entry);
+                if let Err(error) = append_audit_entry(config.workspace_dir(), &entry) {
+                    tracing::warn!(%error, "[memory_sync:audit] append failed");
+                }
                 record_sync_success(&conn.toolkit, &conn.id);
                 fired += 1;
             }
@@ -604,7 +607,9 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
                     duration_ms,
                     Some(e.to_string()),
                 );
-                append_audit_entry(&*config, &entry);
+                if let Err(error) = append_audit_entry(config.workspace_dir(), &entry) {
+                    tracing::warn!(%error, "[memory_sync:audit] append failed");
+                }
                 // Intentionally do NOT update last_sync_at on failure
                 // so the next tick retries immediately.
             }

@@ -11,6 +11,11 @@ use crate::engine::backend::ingest::canonicalize::{
 use crate::store::chunks::store::RawRef;
 use crate::Config;
 
+// The input shapes this funnel accepts, re-exported so callers ingest through
+// this module without naming the engine themselves (#18 §B1). The funnel is
+// core's designated ingest seam; the engine reference belongs here, once.
+pub use crate::engine::backend::ingest::canonicalize::document::DocumentInput as IngestDocumentInput;
+
 pub use crate::engine::backend::ingest::IngestSummary as IngestResult;
 
 pub async fn ingest_chat(

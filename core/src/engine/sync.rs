@@ -24,9 +24,7 @@ use crate::Config;
 /// persisted sync cursor with no error anywhere. A duplicated literal is a
 /// drift hazard precisely when the thing it names is durable (#18 §B2).
 pub use tinycortex::memory::sync::state::STATE_NAMESPACE as HOST_SYNC_STATE_NAMESPACE;
-pub use tinycortex::memory::sync::{
-    RawCoverage, RawFileRef, RealCostAccumulator, RebuildOutcome, SyncAuditEntry,
-};
+pub use tinycortex::memory::sync::{RawCoverage, RawFileRef, RealCostAccumulator, RebuildOutcome};
 
 pub struct HostSyncAdapter {
     memory: MemoryClientRef,
@@ -134,45 +132,13 @@ impl HostSyncAdapter {
     }
 }
 
-/// Append one host sync audit record, logging failures without exposing source identifiers.
-pub fn append_audit_entry(config: &Config, entry: &SyncAuditEntry) {
-    tracing::debug!(
-        source_kind = %entry.source_kind,
-        success = entry.success,
-        items_fetched = entry.items_fetched,
-        "[tinycortex:sync] audit append starting"
-    );
-    let memory_config = super::memory_config_from(config, config.workspace_dir().clone());
-    match tinycortex::memory::sync::append_audit_entry(&memory_config, entry) {
-        Ok(()) => tracing::debug!(
-            source_kind = %entry.source_kind,
-            success = entry.success,
-            "[tinycortex:sync] audit append completed"
-        ),
-        Err(error) => {
-            tracing::warn!(%error, source_kind = %entry.source_kind, "[tinycortex:sync] audit append failed");
-        }
-    }
-}
-
-/// Read persisted sync audit records while preserving storage failures for fail-closed callers.
-pub fn try_read_audit_log(config: &Config) -> anyhow::Result<Vec<SyncAuditEntry>> {
-    tracing::debug!("[tinycortex:sync] audit read starting");
-    let memory_config = super::memory_config_from(config, config.workspace_dir().clone());
-    let entries = tinycortex::memory::sync::read_audit_log(&memory_config).map_err(|error| {
-        tracing::warn!(%error, "[tinycortex:sync] audit read failed");
-        error
-    })?;
-    tracing::debug!(
-        entries = entries.len(),
-        "[tinycortex:sync] audit read completed"
-    );
-    Ok(entries)
-}
-
 /// Read persisted sync audit records for best-effort RPC and reporting surfaces.
-pub fn read_audit_log(config: &Config) -> Vec<SyncAuditEntry> {
-    try_read_audit_log(config).unwrap_or_default()
+///
+/// Backed by `crate::sync::audit` — the host-owned log — not the engine;
+/// this stays in the engine module only because OpenHuman reaches it through
+/// the engine shim path.
+pub fn read_audit_log(config: &Config) -> Vec<crate::sync::audit::SyncAuditEntry> {
+    crate::sync::audit::read_audit_log(config.workspace_dir()).unwrap_or_default()
 }
 
 /// Estimate sync inference cost using TinyCortex's canonical pricing model.
@@ -798,10 +764,7 @@ fn stage_name(stage: SyncStage) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        build_pipeline, is_composio_toolkit_syncable, syncable_composio_toolkits,
-        try_read_audit_log,
-    };
+    use super::{build_pipeline, is_composio_toolkit_syncable, syncable_composio_toolkits};
     use crate::sources::MemorySourceEntry;
     use crate::sync::composio::{get_composio_sync_provider, init_default_composio_sync_providers};
 
@@ -915,22 +878,6 @@ mod tests {
         assert!(is_composio_toolkit_syncable("gmail"));
         assert!(is_composio_toolkit_syncable("Gmail"));
         assert!(is_composio_toolkit_syncable("  slack "));
-    }
-
-    #[test]
-    fn fallible_audit_read_distinguishes_io_failure_from_empty_log() {
-        let workspace = tempfile::tempdir().expect("workspace");
-        let audit_path = workspace.path().join("memory_tree/sync_audit.jsonl");
-        std::fs::create_dir_all(&audit_path).expect("create directory at audit file path");
-
-        let mut config = tinymemory_api::host::test_support::TestHostConfig::default();
-        config.workspace_dir = workspace.path().to_path_buf();
-
-        let error = try_read_audit_log(&config).expect_err("directory read must fail");
-        assert!(
-            error.downcast_ref::<std::io::Error>().is_some(),
-            "expected the audit I/O error to remain distinguishable: {error:#}"
-        );
     }
 
     /// Regression for #5473: a Composio connector sync must feed the memory tree,
