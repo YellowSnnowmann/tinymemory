@@ -69,6 +69,17 @@ walkdir = "2"
 # `TestHostConfig` — the concrete `MemoryHostConfig` the extracted test suites
 # build, since `Config` is a trait object and cannot be `Default`ed.
 tinymemory-api = { path = "../api", features = ["test-support"] }
+# The driver conformance suite (#18 §E1). A dev-dependency only: it exists to
+# hold this crate's own store to the same contract the adapters are held to.
+# No cycle — `tinymemory-conformance` depends on `tinymemory-api` alone.
+tinymemory-conformance = { path = "../conformance" }
+# The facade, for `registry::DriverRegistry` in the admission test — the registry
+# is where the trust decision lives and it stays in the facade, so a test that
+# exercises admission has to name it. A **dev**-dependency: cargo permits a cycle
+# through dev-deps, and this must not become a normal one, which is exactly what
+# #18 §D1 removed (a facade that depends on adapters cannot have adapters that
+# depend, through core, back on it).
+tinymemory = { path = ".." }
 tempfile = "3"
 tokio = { version = "1", features = ["test-util"] }
 

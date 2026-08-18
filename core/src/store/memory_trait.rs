@@ -370,9 +370,14 @@ impl Memory for UnifiedMemory {
         let ns = UnifiedMemory::sanitize_namespace(namespace);
         let key = crate::store::safety::canonical_document_key(key);
         let conn = self.conn.lock();
-        let row: Option<(String, String, String, f64, String, String)> = conn
+        // `session_id` is selected here for the same reason `list` selects it:
+        // it is a column on this row, and a `get` that dropped it made the two
+        // readers disagree about one record. The contract's round-trip
+        // assertion catches exactly that (`tinymemory_conformance`), and it was
+        // invisible until #18 §A3 let this store be bound as a driver at all.
+        let row: Option<(String, String, String, f64, String, String, Option<String>)> = conn
             .query_row(
-                "SELECT document_id, key, content, updated_at, category, taint
+                "SELECT document_id, key, content, updated_at, category, taint, session_id
                  FROM memory_docs WHERE namespace = ?1 AND key = ?2 LIMIT 1",
                 params![ns, key],
                 |row| {
@@ -383,19 +388,20 @@ impl Memory for UnifiedMemory {
                         row.get(3)?,
                         row.get(4)?,
                         row.get(5)?,
+                        row.get(6)?,
                     ))
                 },
             )
             .optional()?;
         Ok(row.map(
-            |(id, key, content, updated_at, category, taint_str)| MemoryEntry {
+            |(id, key, content, updated_at, category, taint_str, session_id)| MemoryEntry {
                 id,
                 key,
                 content,
                 namespace: Some(ns.clone()),
                 category: memory_category_from_stored(&category),
                 timestamp: timestamp_to_rfc3339(updated_at),
-                session_id: None,
+                session_id,
                 score: None,
                 taint: crate::MemoryTaint::from_db_str(&taint_str),
             },

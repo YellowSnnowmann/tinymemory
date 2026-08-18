@@ -62,8 +62,14 @@ pub use tinymemory_api::null::NULL_DRIVER_ID;
 /// §D1's per-engine features. Re-exported here because
 /// `tinymemory::registry::TINYCORTEX_DRIVER_ID` is a path both the adapters and
 /// downstream hosts already use.
+///
+/// `NAMESPACE_DRIVER_ID` moved with them rather than staying a `const` here:
+/// it is a driver id like the other four, and splitting the set across two
+/// crates would mean the next one lands in whichever place its author happened
+/// to be reading.
 pub use tinymemory_api::drivers::{
-    COGNEE_DRIVER_ID, MEM0_DRIVER_ID, SUPERMEMORY_DRIVER_ID, TINYCORTEX_DRIVER_ID,
+    COGNEE_DRIVER_ID, MEM0_DRIVER_ID, NAMESPACE_DRIVER_ID, SUPERMEMORY_DRIVER_ID,
+    TINYCORTEX_DRIVER_ID,
 };
 
 /// The trust state a driver entry must carry for an external class to bind.
@@ -165,13 +171,15 @@ impl Default for DriverRegistry {
 }
 
 impl DriverRegistry {
-    /// The registry every host starts from: the null placeholder, TinyCortex,
-    /// and the three supported native HTTP engines.
+    /// The registry every host starts from: the null placeholder, the two
+    /// embedded engines — TinyCortex and this workspace's own `namespace`
+    /// store — and the three supported native HTTP engines.
     #[must_use]
     pub fn builtin() -> Self {
         let mut reserved = BTreeMap::new();
         reserved.insert(NULL_DRIVER_ID.to_string(), DriverClass::Null);
         reserved.insert(TINYCORTEX_DRIVER_ID.to_string(), DriverClass::Embedded);
+        reserved.insert(NAMESPACE_DRIVER_ID.to_string(), DriverClass::Embedded);
         reserved.insert(SUPERMEMORY_DRIVER_ID.to_string(), DriverClass::External);
         reserved.insert(MEM0_DRIVER_ID.to_string(), DriverClass::External);
         reserved.insert(COGNEE_DRIVER_ID.to_string(), DriverClass::External);
