@@ -75,3 +75,6 @@ pub fn provider(memory: Arc<dyn tinycortex::memory::Memory>) -> MemoryTraitProvi
         TINYCORTEX_DRIVER_ID,
     )
 }
+
+#[cfg(test)]
+mod conformance_test;

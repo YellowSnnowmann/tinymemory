@@ -1904,6 +1904,7 @@ dependencies = [
  "tinycortex",
  "tinymemory",
  "tinymemory-api",
+ "tinymemory-conformance",
  "tinymemory-core",
  "tokio",
  "uuid",
