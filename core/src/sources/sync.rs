@@ -1,6 +1,6 @@
 //! Per-source sync dispatcher.
 //!
-//! Thin routing layer: dispatches supported sources through tinycortex and
+//! Thin routing layer: dispatches supported sources through the engine and
 //! retains the product-owned background lock, events, and reconcile shell.
 //! - Twitter → placeholder
 //!
@@ -382,7 +382,7 @@ pub fn derive_scopes(source: &MemorySourceEntry, config: &Config) -> Vec<SourceS
 mod tests {
     use super::*;
 
-    /// The two GitHub coordinate helpers are re-exported from tinycortex and
+    /// The two GitHub coordinate helpers are re-exported from `tinymemory-sources` and
     /// they deliberately differ: `tree_scope` slugifies to
     /// `github-tinyhumansai-openhuman` while `archive_source_id` slugifies to
     /// `github-com-tinyhumansai-openhuman`. Swapping the two still compiles and

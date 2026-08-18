@@ -1,4 +1,4 @@
-//! Product `Config` adapter for the tinycortex folder reader.
+//! Product `Config` adapter for the engine-neutral folder reader.
 
 use async_trait::async_trait;
 
@@ -19,10 +19,10 @@ impl SourceReader for FolderReader {
         source: &MemorySourceEntry,
         config: &Config,
     ) -> Result<Vec<SourceItem>, String> {
-        crate::engine::backend::sources::SourceReader::list_items(
-            &crate::engine::backend::sources::readers::folder::FolderReader,
+        tinymemory_sources::readers::SourceReader::list_items(
+            &tinymemory_sources::readers::folder::FolderReader,
             source,
-            &crate::engine::memory_config_from(config, config.workspace_dir().clone()),
+            config.workspace_dir(),
         )
         .await
         .map_err(|error| error.to_string())
@@ -34,11 +34,11 @@ impl SourceReader for FolderReader {
         item_id: &str,
         config: &Config,
     ) -> Result<SourceContent, String> {
-        crate::engine::backend::sources::SourceReader::read_item(
-            &crate::engine::backend::sources::readers::folder::FolderReader,
+        tinymemory_sources::readers::SourceReader::read_item(
+            &tinymemory_sources::readers::folder::FolderReader,
             source,
             item_id,
-            &crate::engine::memory_config_from(config, config.workspace_dir().clone()),
+            config.workspace_dir(),
         )
         .await
         .map_err(|error| error.to_string())

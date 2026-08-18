@@ -1,4 +1,4 @@
-//! Product `Config` adapter for the tinycortex RSS/Atom feed reader.
+//! Product `Config` adapter for the engine-neutral RSS/Atom feed reader.
 
 use async_trait::async_trait;
 
@@ -12,13 +12,13 @@ use crate::Config;
 /// `read_item`, so constructing it per trait call would turn one sync into
 /// N+1 downloads.
 pub struct RssReader {
-    inner: crate::engine::backend::sources::readers::rss::RssReader,
+    inner: tinymemory_sources::readers::rss::RssReader,
 }
 
 impl RssReader {
     pub fn new() -> Self {
         Self {
-            inner: crate::engine::backend::sources::readers::rss::RssReader::new(),
+            inner: tinymemory_sources::readers::rss::RssReader::new(),
         }
     }
 }
@@ -40,10 +40,10 @@ impl SourceReader for RssReader {
         source: &MemorySourceEntry,
         config: &Config,
     ) -> Result<Vec<SourceItem>, String> {
-        crate::engine::backend::sources::SourceReader::list_items(
+        tinymemory_sources::readers::SourceReader::list_items(
             &self.inner,
             source,
-            &crate::engine::memory_config_from(config, config.workspace_dir().clone()),
+            config.workspace_dir(),
         )
         .await
         .map_err(|error| error.to_string())
@@ -55,11 +55,11 @@ impl SourceReader for RssReader {
         item_id: &str,
         config: &Config,
     ) -> Result<SourceContent, String> {
-        crate::engine::backend::sources::SourceReader::read_item(
+        tinymemory_sources::readers::SourceReader::read_item(
             &self.inner,
             source,
             item_id,
-            &crate::engine::memory_config_from(config, config.workspace_dir().clone()),
+            config.workspace_dir(),
         )
         .await
         .map_err(|error| error.to_string())

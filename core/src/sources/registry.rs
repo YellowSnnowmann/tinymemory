@@ -1,11 +1,14 @@
-//! Product config discovery and locking around tinycortex source registry CRUD.
+//! Product config discovery and locking around the source registry's CRUD.
+//!
+//! The registry itself moved to `tinymemory-sources` (#18 §B4); this layer adds
+//! the host's config path and the lock that serialises writes to it.
 
 use std::sync::OnceLock;
 
 use crate::config_loader as config_rpc;
 use crate::sources::types::{MemorySourceEntry, SourceKind};
 
-pub use crate::engine::backend::sources::{
+pub use tinymemory_sources::{
     memory_sync_defaults_for_toolkit, ComposioUpsertTarget, MemorySourcePatch,
 };
 
@@ -18,9 +21,9 @@ pub(crate) async fn memory_sources_write_guard() -> tokio::sync::MutexGuard<'sta
         .await
 }
 
-async fn registry() -> Result<crate::engine::backend::sources::SourceRegistry, String> {
+async fn registry() -> Result<tinymemory_sources::registry::SourceRegistry, String> {
     let config = config_rpc::load_config_with_timeout().await?;
-    Ok(crate::engine::backend::sources::SourceRegistry::new(
+    Ok(tinymemory_sources::registry::SourceRegistry::new(
         config.config_path(),
     ))
 }
@@ -59,7 +62,7 @@ pub fn get_source_in(
     config: &crate::Config,
     id: &str,
 ) -> Result<Option<MemorySourceEntry>, String> {
-    crate::engine::backend::sources::SourceRegistry::new(config.config_path().clone())
+    tinymemory_sources::registry::SourceRegistry::new(config.config_path().clone())
         .get(id)
         .map_err(|error| error.to_string())
 }

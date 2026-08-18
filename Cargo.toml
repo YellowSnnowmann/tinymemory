@@ -1,7 +1,7 @@
 [workspace]
 # `sync` is the engine-neutral Composio normalisers (issue #18 §B3).
-members = [".", "api", "core", "sync", "adapters/tinycortex", "adapters/remote", "conformance"]
-default-members = [".", "api", "core", "sync", "adapters/tinycortex", "adapters/remote", "conformance"]
+members = [".", "api", "core", "sync", "sources", "adapters/tinycortex", "adapters/remote", "conformance"]
+default-members = [".", "api", "core", "sync", "sources", "adapters/tinycortex", "adapters/remote", "conformance"]
 # `vendor/` holds engine submodules (tinycortex, tinybus, tinyagents), each of
 # which is its own workspace with its own lockfile. Same exclusion
 # `vendor/tinycortex` uses for its own nested vendor directory.
