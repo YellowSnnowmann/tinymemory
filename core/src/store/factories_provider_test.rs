@@ -6,7 +6,12 @@
 //! no way to express it as a driver at all — which is precisely the gap §A3
 //! describes. These are the missing equivalents.
 
-#![allow(clippy::expect_used, clippy::panic)]
+// `expect` is the assertion mechanism here, and its message is the failure
+// diagnostic — `expect_used` is `warn` workspace-wide (Cargo.toml) and CI runs
+// clippy with `-D warnings`. Scoped to that one lint: unlike the sibling
+// conformance tests this file has no explicit `panic!`, so it does not need
+// `clippy::panic` too.
+#![allow(clippy::expect_used)]
 
 use std::sync::Arc;
 

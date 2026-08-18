@@ -357,7 +357,7 @@ pub fn create_memory(
 /// engine in the workspace is bound.
 ///
 /// Issue #18 §A3/§A5. Until this existed, `tinymemory-core`'s
-/// [`UnifiedMemory`](crate::store::UnifiedMemory) was the one storage
+/// [`UnifiedMemory`] was the one storage
 /// implementation in the workspace with no route through the contract: the
 /// TinyCortex adapter binds the bundled engine, `adapters/remote` binds the
 /// three hosted services, and core's own SQLite store was reachable only by

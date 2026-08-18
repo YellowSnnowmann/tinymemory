@@ -186,8 +186,9 @@ impl Default for DriverRegistry {
 }
 
 impl DriverRegistry {
-    /// The registry every host starts from: the null placeholder, TinyCortex,
-    /// and the three supported native HTTP engines.
+    /// The registry every host starts from: the null placeholder, the two
+    /// embedded engines — TinyCortex and this workspace's own `namespace`
+    /// store — and the three supported native HTTP engines.
     #[must_use]
     pub fn builtin() -> Self {
         let mut reserved = BTreeMap::new();
