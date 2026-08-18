@@ -21,7 +21,6 @@ use std::sync::Arc;
 use crate::TinycortexMemory;
 use async_trait::async_trait;
 use chrono::Utc;
-use tinymemory::mandatory::MemoryTraitProvider;
 use tinymemory_api::capabilities::Capabilities;
 use tinymemory_api::chunks::Chunk;
 use tinymemory_api::error::MemoryError;
@@ -31,6 +30,7 @@ use tinymemory_api::host::{
     CloudProviderCreds, ComposioMode, LocalAiConfig, MemoryConfig, MemoryHostConfig,
     MemoryTreeConfig, SchedulerGateConfig,
 };
+use tinymemory_api::mandatory::MemoryTraitProvider;
 use tinymemory_api::provider::types::{
     EntityHit, EntityRef, ExportPage, ExportRecord, ImportOutcome, IngestItem, IngestOutcome,
     MaintenanceReport, SourceItem, SourceScope,

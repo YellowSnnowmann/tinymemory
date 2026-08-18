@@ -3,7 +3,7 @@
 //! The adapters preserve TinyMemory's exact `(namespace, key)` upsert contract
 //! in backend metadata while delegating semantic recall to each engine's native
 //! search API. They advertise Core, Recall, and Portability through
-//! [`tinymemory::mandatory::MemoryTraitProvider`].
+//! [`tinymemory_api::mandatory::MemoryTraitProvider`].
 //!
 //! Credentials are accepted only at construction and are never exposed by
 //! `Debug` implementations or error messages.
@@ -19,7 +19,7 @@ pub use supermemory::{SupermemoryMemory, SUPERMEMORY_API_ENDPOINT, SUPERMEMORY_D
 
 use std::sync::Arc;
 
-use tinymemory::mandatory::MemoryTraitProvider;
+use tinymemory_api::mandatory::MemoryTraitProvider;
 
 /// Wrap a Supermemory HTTP backend as a bound TinyMemory provider.
 #[must_use]

@@ -1802,7 +1802,9 @@ dependencies = [
  "serde_json",
  "tinymemory-api",
  "tinymemory-conformance",
+ "tinymemory-remote",
  "tinymemory-sync",
+ "tinymemory-tinycortex",
  "tokio",
 ]
 
@@ -1819,6 +1821,7 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "thiserror 2.0.20",
+ "tokio",
  "toml 0.9.12+spec-1.1.0",
  "uuid",
 ]
@@ -1879,7 +1882,6 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.10.9",
- "tinymemory",
  "tinymemory-api",
  "tinymemory-conformance",
  "tokio",
@@ -1906,7 +1908,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tinycortex",
- "tinymemory",
  "tinymemory-api",
  "tinymemory-conformance",
  "tinymemory-core",

@@ -11,7 +11,7 @@ use tinymemory_api::types::MemoryTaint;
 use crate::common::{stable_id, Dialect, HttpClient, RemoteMemory, StoredEntry};
 
 /// Stable driver id used by configuration and status output.
-pub use tinymemory::registry::COGNEE_DRIVER_ID;
+pub use tinymemory_api::drivers::COGNEE_DRIVER_ID;
 
 /// Default base URL for Cognee's managed API.
 pub const COGNEE_API_ENDPOINT: &str = "https://api.cognee.ai";

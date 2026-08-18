@@ -58,7 +58,7 @@ async fn it_binds_under_the_reserved_namespace_id() {
     let dir = tempfile::tempdir().expect("temp dir");
     assert_eq!(
         provider(dir.path()).driver_id(),
-        tinymemory::registry::NAMESPACE_DRIVER_ID,
+        tinymemory_api::drivers::NAMESPACE_DRIVER_ID,
         "the bundled store must not bind under another engine's id"
     );
 }

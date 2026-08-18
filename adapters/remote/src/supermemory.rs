@@ -10,7 +10,7 @@ use tinymemory_api::types::MemoryTaint;
 use crate::common::{category, stable_id, Dialect, HttpClient, RemoteMemory, StoredEntry};
 
 /// Stable driver id used by configuration and status output.
-pub use tinymemory::registry::SUPERMEMORY_DRIVER_ID;
+pub use tinymemory_api::drivers::SUPERMEMORY_DRIVER_ID;
 
 /// Default base URL for Supermemory's managed API.
 pub const SUPERMEMORY_API_ENDPOINT: &str = "https://api.supermemory.ai";

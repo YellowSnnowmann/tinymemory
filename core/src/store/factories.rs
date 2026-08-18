@@ -389,7 +389,7 @@ pub fn create_memory(
 ///
 /// [`MemoryProvider`]: tinymemory_api::provider::MemoryProvider
 /// [`Memory`]: tinymemory_api::traits::Memory
-/// [`MemoryTraitProvider`]: tinymemory::mandatory::MemoryTraitProvider
+/// [`MemoryTraitProvider`]: tinymemory_api::mandatory::MemoryTraitProvider
 pub fn create_memory_provider(
     config: &MemoryConfig,
     workspace_dir: &Path,
@@ -407,14 +407,14 @@ pub fn create_memory_provider(
 /// bypass allowlists exist to refuse, so the seam that avoids it belongs here
 /// rather than at each call site.
 ///
-/// [`NAMESPACE_DRIVER_ID`]: tinymemory::registry::NAMESPACE_DRIVER_ID
+/// [`NAMESPACE_DRIVER_ID`]: tinymemory_api::drivers::NAMESPACE_DRIVER_ID
 #[must_use]
 pub fn bind_as_provider(
     memory: Box<dyn Memory>,
 ) -> Arc<dyn tinymemory_api::provider::MemoryProvider> {
-    Arc::new(tinymemory::mandatory::MemoryTraitProvider::new(
+    Arc::new(tinymemory_api::mandatory::MemoryTraitProvider::new(
         Arc::from(memory),
-        tinymemory::registry::NAMESPACE_DRIVER_ID,
+        tinymemory_api::drivers::NAMESPACE_DRIVER_ID,
     ))
 }
 

@@ -13,7 +13,6 @@ repository = "https://github.com/tinyhumansai/tinymemory"
 
 [dependencies]
 # The contract this adapter targets.
-tinymemory = { path = "../.." }
 tinymemory-api = { path = "../../api" }
 # The engine being adapted. A version requirement rather than a path, so a host
 # that already pins its own TinyCortex checkout unifies both onto one copy

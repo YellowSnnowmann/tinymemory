@@ -66,10 +66,22 @@
 
 pub mod capabilities;
 pub mod chunks;
+pub mod drivers;
 pub mod error;
 pub mod goals;
 pub mod health;
 pub mod host;
+/// The mandatory-family composition: wrap any [`traits::Memory`] backend as a
+/// complete [`provider::MemoryProvider`].
+///
+/// Lives here rather than in the `tinymemory` facade because every adapter
+/// needs it, and an adapter that reached for it in the facade made the facade
+/// unable to depend on adapters in turn — a package cycle cargo forbids, and
+/// the reason #18 §D1's engine features could not be declared. It costs this
+/// crate nothing: the module names only `async_trait`, `std`, and this crate's
+/// own contract types. The facade re-exports it, so `tinymemory::mandatory`
+/// keeps resolving.
+pub mod mandatory;
 pub mod null;
 pub mod provider;
 pub mod recall;

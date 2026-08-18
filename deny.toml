@@ -18,6 +18,20 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    # `webpki-roots` — Mozilla's CA root bundle, reached through
+    # `reqwest`'s rustls-tls, which the hosted-engine adapter needs for HTTPS.
+    #
+    # A *data* licence rather than a code one, which is why it is not on the
+    # usual list: the crate is Mozilla's trust store rendered as a Rust array,
+    # not software. CDLA-Permissive-2.0 places no conditions on use or
+    # redistribution of that data and adds no obligations to the binaries that
+    # embed it.
+    #
+    # It reached this graph when #18 §D1 gave the facade per-engine features:
+    # `[graph] all-features = true` above now enables `supermemory`/`mem0`/
+    # `cognee`, so the remote adapter's TLS stack is evaluated where before
+    # nothing on the facade pulled it.
+    "CDLA-Permissive-2.0",
     "GPL-3.0-only",
     "ISC",
     "MIT",

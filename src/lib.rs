@@ -63,7 +63,31 @@
 //! let capabilities = provider.capabilities();
 //! ```
 
-pub mod mandatory;
+/// The mandatory-family composition, re-exported from the contract crate.
+///
+/// The module itself moved to `tinymemory-api` so the adapters can reach it
+/// without depending on this crate — which is what lets this crate depend on
+/// *them* and declare the per-engine features (#18 §D1). Re-exported rather
+/// than relocated silently: `tinymemory::mandatory::MemoryTraitProvider` is a
+/// path downstream code already uses.
+pub use tinymemory_api::mandatory;
+
+/// The bundled TinyCortex embedded engine, when the `tinycortex` feature is on.
+///
+/// Re-exported so a host selects an engine by feature rather than by taking a
+/// second dependency: `tinymemory = { features = ["tinycortex"] }` is the whole
+/// wiring, and `tinymemory::tinycortex::provider(backend)` binds it (#18 §D1).
+#[cfg(feature = "tinycortex")]
+pub use tinymemory_tinycortex as tinycortex;
+
+/// The hosted HTTP engines, when any of `supermemory`, `mem0` or `cognee` is on.
+///
+/// One module for all three because they share one adapter crate — enabling
+/// two of them costs one dependency, not two. The per-engine features still
+/// exist so a host states which it actually uses, and so a future split can
+/// happen without changing how hosts ask for them.
+#[cfg(any(feature = "supermemory", feature = "mem0", feature = "cognee"))]
+pub use tinymemory_remote as remote;
 pub mod registry;
 
 // The contract, re-exported wholesale. Listed module by module rather than as a

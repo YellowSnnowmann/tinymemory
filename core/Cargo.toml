@@ -21,7 +21,6 @@ tinymemory-api = { path = "../api" }
 # different engine could not have Composio sync despite none of this code
 # caring which engine is bound.
 tinymemory-sync = { path = "../sync" }
-tinymemory = { path = ".." }
 
 # The default embedded engine. `store/`, `tree/` and `sync/` drive it directly;
 # `tinycortex-api` is a direct dependency because `tinycortex::memory` aliases
@@ -78,6 +77,13 @@ tinymemory-conformance = { path = "../conformance" }
 # which put a web framework in the normal graph of every build linking this
 # crate (#18 §D2).
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio", "query", "ws", "macros"] }
+# The facade, for `registry::DriverRegistry` in the admission test — the registry
+# is where the trust decision lives and it stays in the facade, so a test that
+# exercises admission has to name it. A **dev**-dependency: cargo permits a cycle
+# through dev-deps, and this must not become a normal one, which is exactly what
+# #18 §D1 removed (a facade that depends on adapters cannot have adapters that
+# depend, through core, back on it).
+tinymemory = { path = ".." }
 tempfile = "3"
 tokio = { version = "1", features = ["test-util"] }
 
