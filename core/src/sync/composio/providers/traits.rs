@@ -59,7 +59,7 @@ pub trait ComposioProvider: Send + Sync {
             )
         })?;
         let started_at_ms = now_ms();
-        let outcome = crate::engine::run_composio_connection_with_budgets(
+        let outcome = crate::sync::pipelines::host::run_composio_connection(
             self.toolkit_slug(),
             connection_id,
             ctx.config.as_ref(),

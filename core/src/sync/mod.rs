@@ -29,5 +29,6 @@
 pub mod audit;
 pub mod composio;
 pub mod mcp;
+pub mod pipelines;
 pub mod sync_status;
 pub mod workspace;

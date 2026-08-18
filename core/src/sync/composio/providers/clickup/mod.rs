@@ -6,8 +6,8 @@
 //! re-learning a new shape:
 //!
 //! - `provider.rs` — `impl ComposioProvider for ClickUpProvider`
-//! - `normalization`  — payload-shape helpers, now reached through
-//!   `crate::engine::engine` (issue #18 §C1)
+//! - `normalization`  — payload-shape helpers, owned by `tinymemory-sync`
+//!   (issue #18 §B3)
 //! - `ingest.rs`   — memory_tree document ingest (issue #2885)
 //! - `tools.rs`    — `CLICKUP_CURATED` whitelist of Composio actions
 //! - `tests.rs`    — unit tests for the helpers + trait metadata

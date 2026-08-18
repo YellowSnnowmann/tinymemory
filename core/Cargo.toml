@@ -25,6 +25,11 @@ tinymemory-sync = { path = "../sync" }
 # crate's sync path drives the GitHub/RSS/web-page readers; a host that only
 # reads local folders can take the crate without them.
 tinymemory-sources = { path = "../sources", features = ["network"] }
+# Slack mention tokens (`<@U…>`) in synced messages are rewritten to display
+# names before ingestion. Returns to the normal graph for this one user —
+# #18 §D2 removed it when nothing used it, which is no argument against a
+# real consumer.
+regex = "1.10"
 
 # The default embedded engine. `store/`, `tree/` and `sync/` drive it directly;
 # `tinycortex-api` is a direct dependency because `tinycortex::memory` aliases
@@ -68,6 +73,9 @@ uuid = { version = "1", features = ["v4"] }
 walkdir = "2"
 
 [dev-dependencies]
+# The ported Composio connect tests stand up a mock HTTP server (#18 §B1),
+# exactly as they did in the engine.
+wiremock = "0.6"
 # `TestHostConfig` — the concrete `MemoryHostConfig` the extracted test suites
 # build, since `Config` is a trait object and cannot be `Default`ed.
 tinymemory-api = { path = "../api", features = ["test-support"] }

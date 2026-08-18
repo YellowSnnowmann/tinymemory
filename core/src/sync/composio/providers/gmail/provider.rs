@@ -152,9 +152,14 @@ impl ComposioProvider for GmailProvider {
             let Some(connection_id) = ctx.connection_id.as_deref() else {
                 return Err("[composio:gmail] trigger missing connection_id".to_string());
             };
-            if let Err(e) =
-                crate::engine::run_composio_connection("gmail", connection_id, ctx.config.as_ref())
-                    .await
+            if let Err(e) = crate::sync::pipelines::host::run_composio_connection(
+                "gmail",
+                connection_id,
+                ctx.config.as_ref(),
+                None,
+                None,
+            )
+            .await
             {
                 tracing::warn!(
                     error = %e,
@@ -168,5 +173,5 @@ impl ComposioProvider for GmailProvider {
 
 // Message fetching (the `GMAIL_FETCH_EMAILS` action, the search query, the
 // `max_items` cap math and the `sync_depth_days` `after:<epoch>` floor) is owned
-// by `crate::engine::backend::sync::GmailSyncPipeline`. What stays here is the
+// by `crate::sync::pipelines::composio::GmailSyncPipeline`. What stays here is the
 // host-side provider surface: profile lookup and trigger dispatch.

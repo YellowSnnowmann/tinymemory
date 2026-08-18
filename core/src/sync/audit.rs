@@ -63,6 +63,15 @@ impl SyncAuditEntry {
     }
 }
 
+/// Estimated inference cost for a sync batch, in USD.
+///
+/// The engine prices identically from its copy; both are estimates the audit
+/// records alongside the real charge when one is reported. Owned here with
+/// the audit log because this is where the number lands.
+pub fn estimate_cost_usd(input_tokens: u64, output_tokens: u64) -> f64 {
+    input_tokens as f64 * 0.07 / 1_000_000.0 + output_tokens as f64 * 0.28 / 1_000_000.0
+}
+
 /// Append one entry to the audit log under `workspace`.
 ///
 /// # Errors
