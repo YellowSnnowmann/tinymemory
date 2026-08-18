@@ -10,7 +10,7 @@
 // driver-side). Re-exported under the old module name — `pub`, not a plain
 // `use`, because `tests/raw_coverage/memory_threads_raw_coverage_e2e.rs`
 // imports this path directly.
-pub use crate::engine::backend::sync::composio::providers::normalize::slack_post_process as post_process;
+pub use tinymemory_sync::slack_post_process as post_process;
 pub mod types;
 
 mod provider;

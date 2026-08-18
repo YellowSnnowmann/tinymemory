@@ -601,7 +601,7 @@ pub async fn assert_awkward_content_round_trips(provider: &dyn MemoryProvider) {
         ("large", "x".repeat(64 * 1024)),
         ("newlines", "a\nb\r\nc\0d".to_string()),
     ];
-    let mut accepted = 0usize;
+    let mut accepted: Vec<&str> = Vec::new();
     for (key, content) in &cases {
         // A driver may refuse a shape outright — `MemoryCore::store` documents
         // `Invalid` "for caller input the driver rejects", and the TinyCortex
@@ -629,7 +629,7 @@ pub async fn assert_awkward_content_round_trips(provider: &dyn MemoryProvider) {
         {
             continue;
         }
-        accepted += 1;
+        accepted.push(key);
         if let Some(got) = provider
             .get(&ns, key)
             .await
@@ -638,12 +638,17 @@ pub async fn assert_awkward_content_round_trips(provider: &dyn MemoryProvider) {
             assert_eq!(&got.content, content, "{who}: `{key}` content was mangled");
         }
     }
-    // Without this a driver that refused every shape would pass having stored
-    // nothing, which is the vacuous reading of "may refuse".
+    // "May refuse" needs a floor, or a driver that refused everything would pass
+    // having stored nothing. The floor is `unicode` specifically rather than a
+    // count: refusing `empty` is documented validation, and refusing `large` is
+    // a defensible size limit, but refusing ordinary UTF-8 text is a broken
+    // driver — and unicode is the case where mangling actually shows, since
+    // truncation and re-encoding are invisible on ASCII.
     assert!(
-        accepted > 0,
-        "{who}: refused every content shape — unicode, empty, large and \
-         newlines were all rejected, so this assertion proved nothing"
+        accepted.contains(&"unicode"),
+        "{who}: refused ordinary UTF-8 content — accepted {accepted:?}. A driver \
+         may refuse a shape, but not this one; every assertion about content \
+         surviving a round trip rests on it."
     );
     let keys: Vec<&str> = cases.iter().map(|(k, _)| *k).collect();
     cleanup(provider, &ns, &keys).await;

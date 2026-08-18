@@ -38,6 +38,26 @@ printf '%-52s %s\n' "tinymemory-api" "$(count -p tinymemory-api)"
 printf '%-52s %s\n' "tinymemory-tinycortex (default)" "$(count -p tinymemory-tinycortex --no-default-features)"
 printf '%-52s %s\n' "tinymemory-tinycortex --features memory-git" "$(count -p tinymemory-tinycortex --features memory-git)"
 printf '%-52s %s\n' "tinymemory-remote" "$(count -p tinymemory-remote)"
+printf '%-52s %s\n' "tinymemory-sync" "$(count -p tinymemory-sync)"
+
+# The sync crate exists because it has no engine behind it (issue #18 §B3):
+# the Composio normalisers lived inside TinyCortex, and a host binding a
+# different engine could not run them. Nothing else enforces that, and a
+# dependency added two crates away would reintroduce the coupling silently —
+# the build would still be green, and the property would just quietly stop
+# being true.
+sync_engine="$(
+  cargo tree -p tinymemory-sync -e normal --prefix none 2>/dev/null \
+    | grep -Ei '^(tinycortex|rusqlite|libsqlite|tinymemory-core|tinymemory-api)' || true
+)"
+if [ -n "$sync_engine" ]; then
+  echo "tinymemory-sync reached an engine, a store, or the contract:" >&2
+  echo "$sync_engine" >&2
+  echo >&2
+  echo "That crate is the one piece of Composio sync a non-TinyCortex host can" >&2
+  echo "use. A dependency on any of the above puts it back behind an engine." >&2
+  exit 1
+fi
 
 echo
 if [ "$minimal" -gt "$MINIMAL_CEILING" ]; then
