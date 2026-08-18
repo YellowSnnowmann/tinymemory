@@ -41,3 +41,6 @@ pub fn cognee_provider(memory: CogneeMemory) -> MemoryTraitProvider {
 
 #[cfg(test)]
 mod failure_test;
+
+#[cfg(test)]
+mod conformance_test;
