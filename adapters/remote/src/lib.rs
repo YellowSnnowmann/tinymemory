@@ -38,3 +38,6 @@ pub fn mem0_provider(memory: Mem0Memory) -> MemoryTraitProvider {
 pub fn cognee_provider(memory: CogneeMemory) -> MemoryTraitProvider {
     MemoryTraitProvider::new(Arc::new(memory), COGNEE_DRIVER_ID)
 }
+
+#[cfg(test)]
+mod failure_test;
