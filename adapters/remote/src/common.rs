@@ -28,6 +28,13 @@ enum Auth {
     None,
     Bearer(String),
     ApiKey(String),
+    /// `Authorization: Token <key>` — Mem0's hosted platform.
+    ///
+    /// Distinct from [`Auth::Bearer`] on the wire *and* in behaviour:
+    /// api.mem0.ai routes a `Bearer` credential into its JWT verifier and
+    /// answers `token_not_valid`, so sending the wrong one of the two reports
+    /// a failure in the wrong subsystem.
+    Token(String),
 }
 
 impl std::fmt::Debug for HttpClient {
@@ -100,6 +107,14 @@ impl HttpClient {
     }
 
     /// Builds a client that optionally authenticates with `X-API-Key`.
+    /// A client authenticating with `Authorization: Token <key>`.
+    pub(crate) fn token(endpoint: &str, credential: Option<&str>) -> anyhow::Result<Self> {
+        Self::new(
+            endpoint,
+            credential.map_or(Auth::None, |value| Auth::Token(value.into())),
+        )
+    }
+
     pub(crate) fn api_key(endpoint: &str, credential: Option<&str>) -> anyhow::Result<Self> {
         Self::new(
             endpoint,
@@ -137,6 +152,7 @@ impl HttpClient {
             Auth::None => request,
             Auth::Bearer(token) => request.bearer_auth(token),
             Auth::ApiKey(key) => request.header("X-API-Key", key),
+            Auth::Token(key) => request.header("Authorization", format!("Token {key}")),
         })
     }
 
@@ -185,7 +201,7 @@ impl HttpClient {
         match status.as_u16() {
             401 | 403 => {
                 let hint = match &self.auth {
-                    Auth::ApiKey(_) => "check the API key",
+                    Auth::ApiKey(_) | Auth::Token(_) => "check the API key",
                     Auth::Bearer(_) => "check the bearer token",
                     Auth::None => {
                         "the endpoint requires credentials this client was not configured with"
