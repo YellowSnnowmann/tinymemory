@@ -8,9 +8,10 @@
 //! field added to one contract had to be added to the other and to the
 //! conversion — three places, or the value was silently dropped. Since
 //! issue #18 §A1 `tinycortex-api` re-exports `tinymemory-api` rather than
-//! redefining it, so both sides name one type and `convert` is gone. What
-//! remains is the trait shape: the engine's storage trait and the contract's
-//! are still separate traits over the same values.
+//! redefining it, so both sides name one type and `convert` is gone — and
+//! since the contract re-export landed upstream, `tinycortex::memory::Memory`
+//! *is* `tinymemory_api::traits::Memory`: one trait, one set of values. What
+//! this crate adds on top is composition, not translation.
 //!
 //! ## What is here
 //! - [`TinycortexMemory`] — wraps any TinyCortex [`tinycortex::memory::Memory`]

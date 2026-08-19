@@ -4,8 +4,18 @@ use std::process::Command;
 
 /// Run `git` with the given args in `cwd`, asserting success and returning
 /// stdout as a string.
+///
+/// The developer's own git configuration is neutralised: a global
+/// `commit.gpgsign = true` would otherwise park `git commit` on a pinentry
+/// prompt and hang the whole test binary — on exactly the machines most
+/// likely to run these tests. `GIT_CONFIG_GLOBAL`/`GIT_CONFIG_SYSTEM` point
+/// at nothing, and signing is off explicitly for good measure.
 fn git_ok(cwd: &Path, args: &[&str]) -> String {
     let out = Command::new("git")
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .args(["-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"])
         .args(args)
         .current_dir(cwd)
         .output()
