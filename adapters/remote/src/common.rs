@@ -196,8 +196,24 @@ impl HttpClient {
     /// rejected credential specifically, because "HTTP 401" three layers deep
     /// in an anyhow chain reads as "the engine is down" and sends the operator
     /// to the wrong runbook.
-    fn status_error(&self, path: &str, status: reqwest::StatusCode) -> anyhow::Error {
+    fn status_error(&self, path: &str, status: reqwest::StatusCode, body: &str) -> anyhow::Error {
         let host = self.endpoint.host_str().unwrap_or("<endpoint>");
+        // Hosted engines explain a rejection in the response body — mem0
+        // answers `{"detail": "..."}`, cognee likewise — and discarding it
+        // turned "this one field is invalid" into a bare status code that
+        // said only that something, somewhere, was wrong. Truncated because
+        // an error body is not a payload budget, and only ever an error
+        // body: success responses never reach here.
+        let detail = body.trim();
+        let detail = if detail.is_empty() {
+            String::new()
+        } else {
+            let mut shown: String = detail.chars().take(300).collect();
+            if detail.chars().count() > 300 {
+                shown.push('…');
+            }
+            format!(" — {shown}")
+        };
         match status.as_u16() {
             401 | 403 => {
                 let hint = match &self.auth {
@@ -209,10 +225,10 @@ impl HttpClient {
                 };
                 anyhow::anyhow!(
                     "memory API {path} on {host}: the configured credential was rejected \
-                     (HTTP {status}) — {hint}"
+                     (HTTP {status}) — {hint}{detail}"
                 )
             }
-            _ => anyhow::anyhow!("memory API {path} on {host} returned HTTP {status}"),
+            _ => anyhow::anyhow!("memory API {path} on {host} returned HTTP {status}{detail}"),
         }
     }
 
@@ -232,7 +248,8 @@ impl HttpClient {
             .map_err(|error| self.transport_error(error))?;
         let status = response.status();
         if !status.is_success() {
-            return Err(self.status_error(path, status));
+            let body = response.text().await.unwrap_or_default();
+            return Err(self.status_error(path, status, &body));
         }
         let body = read_capped(response, path).await?;
         serde_json::from_slice(&body)
@@ -248,7 +265,8 @@ impl HttpClient {
             .map_err(|error| self.transport_error(error))?;
         let status = response.status();
         if !status.is_success() {
-            return Err(self.status_error(path, status));
+            let body = response.text().await.unwrap_or_default();
+            return Err(self.status_error(path, status, &body));
         }
         let body = read_capped(response, path).await?;
         String::from_utf8(body).context("memory API response was not valid UTF-8")
@@ -271,7 +289,8 @@ impl HttpClient {
             .map_err(|error| self.transport_error(error))?;
         let status = response.status();
         if !status.is_success() {
-            return Err(self.status_error(path, status));
+            let body = response.text().await.unwrap_or_default();
+            return Err(self.status_error(path, status, &body));
         }
         Ok(status)
     }

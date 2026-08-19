@@ -286,6 +286,26 @@ impl Mem0Dialect {
         }
     }
 
+    /// The search body both flavours send.
+    ///
+    /// `threshold` is **omitted** rather than sent as null when the caller set
+    /// no minimum score: the platform types it as a number in 0..=1 and
+    /// rejects an explicit null with a 400, which is how a recall against
+    /// mem0's hosted API failed while store and list succeeded. `top_k` is
+    /// clamped to the documented 1..=1000 for the same reason — a limit
+    /// outside it is a validation error, not a smaller result set.
+    fn search_body(query: &str, limit: usize, filters: Value, min_score: Option<f64>) -> Value {
+        let mut body = json!({
+            "query": query,
+            "filters": filters,
+            "top_k": limit.clamp(1, 1000),
+        });
+        if let (Some(object), Some(threshold)) = (body.as_object_mut(), min_score) {
+            object.insert("threshold".into(), json!(threshold));
+        }
+        body
+    }
+
     /// The path addressing one record by its remote id.
     ///
     /// The platform serves the by-id operations under **v1** while add,
@@ -421,9 +441,12 @@ impl Dialect for Mem0Dialect {
                     .json(
                         Method::POST,
                         "search",
-                        Some(&json!({
-                            "query": query, "filters": filters, "top_k": limit, "threshold": opts.min_score
-                        })),
+                        Some(&Self::search_body(
+                            query,
+                            limit,
+                            Value::Object(filters),
+                            opts.min_score,
+                        )),
                     )
                     .await?
             }
@@ -442,9 +465,7 @@ impl Dialect for Mem0Dialect {
                     .json(
                         Method::POST,
                         "v3/memories/search/",
-                        Some(&json!({
-                            "query": query, "filters": filters, "top_k": limit, "threshold": opts.min_score
-                        })),
+                        Some(&Self::search_body(query, limit, filters, opts.min_score)),
                     )
                     .await?
             }
@@ -483,3 +504,42 @@ impl Dialect for Mem0Dialect {
 #[cfg(test)]
 #[path = "mem0_test.rs"]
 mod test;
+
+#[cfg(test)]
+mod search_body_tests {
+    use super::*;
+
+    /// A recall with no minimum score must omit `threshold`, not send null.
+    /// The hosted platform types it as a number in 0..=1 and answers 400 to
+    /// an explicit null — store and list succeeded while recall failed.
+    #[test]
+    fn an_unset_min_score_omits_the_threshold_field() {
+        let body = Mem0Dialect::search_body("q", 10, json!({"user_id": "ns"}), None);
+        assert!(
+            body.get("threshold").is_none(),
+            "threshold must be absent, not null: {body}"
+        );
+        assert_eq!(body["top_k"], 10);
+        assert_eq!(body["query"], "q");
+    }
+
+    #[test]
+    fn a_set_min_score_is_sent() {
+        let body = Mem0Dialect::search_body("q", 10, json!({"user_id": "ns"}), Some(0.25));
+        assert_eq!(body["threshold"], 0.25);
+    }
+
+    /// `top_k` outside the documented 1..=1000 is a validation error, so a
+    /// caller's limit is clamped rather than forwarded into a 400.
+    #[test]
+    fn top_k_is_clamped_to_the_documented_range() {
+        assert_eq!(
+            Mem0Dialect::search_body("q", 0, json!({}), None)["top_k"],
+            1
+        );
+        assert_eq!(
+            Mem0Dialect::search_body("q", 5000, json!({}), None)["top_k"],
+            1000
+        );
+    }
+}
