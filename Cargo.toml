@@ -186,3 +186,7 @@ tinyagents = { path = "vendor/tinyagents" }
 lto = "thin"
 codegen-units = 1
 strip = "debuginfo"
+
+[[example]]
+name = "tinycortex"
+required-features = ["tinycortex"]

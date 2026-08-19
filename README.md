@@ -45,11 +45,79 @@ workspace builds without it — `core` names `tinyagents` and `tinycortex` by
 path through `vendor/`, so an uninitialized checkout fails at manifest
 resolution rather than at compile time, which reads as a confusing error.
 
+## Using from your project
+
+None of these crates are on crates.io yet, so you take the facade by git.
+Which patch table you need depends on the engine you pick.
+
+**Hosted engines only (Supermemory, Mem0, Cognee) — no patch table:**
+
+```toml
+[dependencies]
+tinymemory = { git = "https://github.com/tinyhumansai/tinymemory", features = ["supermemory"] }
+```
+
+```rust,ignore
+use std::sync::Arc;
+
+let backend = tinymemory::remote::SupermemoryMemory::cloud("sm_...")?;
+let provider = Arc::new(tinymemory::remote::supermemory_provider(backend));
+```
+
+The remote adapter reaches only crates.io dependencies, so cargo resolves it
+without any `[patch]` entries.
+
+**The embedded engine (TinyCortex) — three patch entries:**
+
+```toml
+[dependencies]
+tinymemory = { git = "https://github.com/tinyhumansai/tinymemory", features = ["tinycortex"] }
+
+# The engine and its api are unpublished; without these, cargo resolves a
+# second copy of each from the network and type identities split at the seam.
+[patch.crates-io]
+tinycortex = { git = "https://github.com/tinyhumansai/tinycortex" }
+tinycortex-api = { git = "https://github.com/tinyhumansai/tinycortex" }
+[patch."https://github.com/tinyhumansai/tinymemory"]
+tinymemory-api = { git = "https://github.com/tinyhumansai/tinymemory" }
+```
+
+```rust,ignore
+use std::sync::Arc;
+use tinymemory::tinycortex::{provider, InMemoryMemoryStore};
+
+let provider = Arc::new(provider(Arc::new(InMemoryMemoryStore::new())));
+```
+
+That is a complete embedded setup for the mandatory three families. The full
+eighteen-family engine (`TinycortexProvider`) additionally needs the host
+seams (`EmbeddingHost` et al.) installed — see
+`adapters/tinycortex/tests/full_provider_conformance.rs` for the minimal
+working wiring.
+
+| Feature | Engine | Class | Families served |
+| --- | --- | --- | --- |
+| `tinycortex` | TinyCortex, in-process | embedded | 3 (mandatory) via `provider`; all 18 via `TinycortexProvider` |
+| `supermemory` | Supermemory, hosted | external | 3 (mandatory) |
+| `mem0` | Mem0, self-hosted | external | 3 (mandatory) |
+| `cognee` | Cognee, hosted or self-hosted | external | 3 (mandatory) |
+| `memory-git` | add-on: git-backed diff snapshots | — | requires `tinycortex` |
+| *(none)* | `NullMemoryProvider` | null | contract + registry only, 40 crates |
+
+The `namespace` driver id you may see in the registry's reserved table is
+host-internal: it names `tinymemory-core`'s own store, whose constructors live
+in that crate — it is not selectable from the facade.
+
+**A note on remote-engine performance:** recall is native to each hosted API,
+but exact-CRUD operations (`get`, `list`, `count`, upsert-by-key) are
+enumeration-based — the adapter pages the hosted API to find the record. Fine
+for assistant-memory workloads; wrong for high-volume keyed storage.
+
 ## The contract
 
 `MemoryProvider` is an object-safe trait with **three mandatory** capability
-families and **ten optional** ones. The mandatory three are supertraits, so a
-driver missing any of them cannot be constructed; the optional ten are reached
+families and **fifteen optional** ones. The mandatory three are supertraits, so a
+driver missing any of them cannot be constructed; the optional fifteen are reached
 through `as_ingest()` / `as_tree()` / … accessors that default to `None`, so a
 minimal driver implements what it supports and inherits correct absence for
 everything else.

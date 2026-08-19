@@ -37,6 +37,13 @@ struct Row {
     id: String,
     content: String,
     metadata: Value,
+    /// The `containerTag` the adapter sent at create time. The real service
+    /// files the row under exactly this tag and answers tag-filtered lists
+    /// with it; the double must do the same, or a lookup scoped to the tag
+    /// the adapter derives (as `upsert`/`delete` now do) misses rows this
+    /// double filed under an invented tag — which is a bug in the double, not
+    /// in the adapter.
+    tag: String,
 }
 
 /// The doubles' shared store: `id -> Row`, plus a counter for fresh ids.
@@ -105,6 +112,9 @@ async fn mem0_create(State(store): State<Store>, Json(body): Json<Value>) -> Jso
             id: id.clone(),
             content,
             metadata,
+            // Mem0 has no container tags; rows carry an empty one and the
+            // supermemory-only tag routes never see them.
+            tag: String::new(),
         },
     );
     Json(json!({ "results": [{ "id": id }] }))
@@ -196,11 +206,7 @@ async fn the_mem0_double_actually_retains() {
 
 /// The tag the adapter derives, as sent on create.
 fn tag_of(row: &Row) -> String {
-    row.metadata
-        .get("tinymemory_namespace")
-        .and_then(Value::as_str)
-        .map(|ns| format!("tinymemory-{ns}"))
-        .unwrap_or_default()
+    row.tag.clone()
 }
 
 async fn sm_tags(State(store): State<Store>) -> Json<Value> {
@@ -253,6 +259,7 @@ async fn sm_create(State(store): State<Store>, Json(body): Json<Value>) -> Json<
             id: id.clone(),
             content: first["content"].as_str().unwrap_or_default().to_owned(),
             metadata: first["metadata"].clone(),
+            tag: body["containerTag"].as_str().unwrap_or_default().to_owned(),
         },
     );
     Json(json!({ "memories": [{ "id": id }] }))
