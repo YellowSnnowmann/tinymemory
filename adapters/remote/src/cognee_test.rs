@@ -139,7 +139,10 @@ fn cognee_remote_names_are_bounded_and_safe_for_arbitrary_contract_keys() {
 async fn native_cognee_round_trips_the_tinymemory_contract() {
     let state = AppState::default();
     let app = Router::new()
-        .route("/api/v1/datasets", get(datasets))
+        // The real API serves the collection at the slashed form and 307s the
+        // bare one; the adapter now asks for `/api/v1/datasets/` directly, so
+        // the double must answer there or it stops mirroring the service.
+        .route("/api/v1/datasets/", get(datasets))
         .route("/api/v1/datasets/{dataset}/data", get(data))
         .route("/api/v1/datasets/{dataset}/data/{data}/raw", get(raw))
         .route("/api/v1/datasets/{dataset}/data/{data}", delete(remove))
