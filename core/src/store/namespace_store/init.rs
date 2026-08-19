@@ -405,7 +405,7 @@ impl UnifiedMemory {
         if trimmed.is_empty() {
             return GLOBAL_NAMESPACE.to_string();
         }
-        trimmed
+        let sanitized: String = trimmed
             .chars()
             .map(|ch| {
                 if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '/' {
@@ -414,7 +414,19 @@ impl UnifiedMemory {
                     '_'
                 }
             })
-            .collect()
+            .collect();
+        // `/` is kept so a namespace can be hierarchical, but a LEADING one
+        // makes the result an absolute path — and `Path::join` with an
+        // absolute path discards the base entirely, so
+        // `memory_dir/namespaces/` vanishes and the namespace addresses
+        // anywhere on the filesystem. `clear_namespace` calls
+        // `remove_dir_all` on that path. (`..` is already neutralised above:
+        // `.` is not in the allow-list, so it becomes `_`.)
+        let sanitized = sanitized.trim_start_matches('/').to_string();
+        if sanitized.is_empty() {
+            return GLOBAL_NAMESPACE.to_string();
+        }
+        sanitized
     }
 
     /// Resolved memory subdirectory for this store instance (e.g.
@@ -470,6 +482,36 @@ mod tests {
                 UnifiedMemory::sanitize_namespace(namespace),
                 namespace.replace(['@', ':', '.'], "_"),
                 "scanner-built namespace must only get the character scrub: {namespace}"
+            );
+        }
+    }
+
+    /// A namespace beginning with `/` must not escape the workspace:
+    /// `Path::join` with an absolute path DISCARDS the base, so
+    /// `memory_dir/namespaces/` would vanish and `clear_namespace`'s
+    /// `remove_dir_all` would run against an arbitrary absolute path.
+    #[test]
+    fn a_namespace_cannot_escape_the_workspace() {
+        for hostile in [
+            "/Users/me/Documents",
+            "//tmp/x",
+            "///etc",
+            "/",
+            "a/../../etc",
+            "../../etc",
+        ] {
+            let sanitized = UnifiedMemory::sanitize_namespace(hostile);
+            assert!(
+                !sanitized.starts_with('/'),
+                "{hostile:?} sanitized to {sanitized:?}, which is absolute"
+            );
+            let dir = std::path::Path::new("/w/memory")
+                .join("namespaces")
+                .join(&sanitized);
+            assert!(
+                dir.starts_with("/w/memory/namespaces"),
+                "{hostile:?} escaped to {}",
+                dir.display()
             );
         }
     }

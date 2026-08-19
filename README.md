@@ -67,20 +67,40 @@ let provider = Arc::new(tinymemory::remote::supermemory_provider(backend));
 The remote adapter reaches only crates.io dependencies, so cargo resolves it
 without any `[patch]` entries.
 
-**The embedded engine (TinyCortex) — three patch entries:**
+**The embedded engine (TinyCortex) — vendor this repository as a submodule.**
+
+The remote recipe above works by git because the remote adapter reaches only
+published crates. The embedded engine does not: it pulls `tinycortex`,
+`tinycortex-api` and `tinyagents`, none of which are published, and
+`tinycortex-api` takes `tinymemory-api` *by git*, which cargo will resolve as a
+second copy of a crate this workspace also provides by path. Patching that away
+needs the crates on disk, so the embedded path is a submodule dependency until
+these crates are published:
+
+```sh
+git submodule add https://github.com/tinyhumansai/tinymemory vendor/tinymemory
+git -C vendor/tinymemory submodule update --init --recursive
+```
 
 ```toml
 [dependencies]
-tinymemory = { git = "https://github.com/tinyhumansai/tinymemory", features = ["tinycortex"] }
+tinymemory = { path = "vendor/tinymemory", features = ["tinycortex"] }
 
-# The engine and its api are unpublished; without these, cargo resolves a
-# second copy of each from the network and type identities split at the seam.
+# All four are required. The first three are unpublished crates the engine
+# needs; the fourth collapses `tinycortex-api`'s git dependency on
+# `tinymemory-api` onto the copy in this tree — without it two distinct
+# `tinymemory_api::MemoryEntry` types exist and the seam stops type-checking.
 [patch.crates-io]
-tinycortex = { git = "https://github.com/tinyhumansai/tinycortex" }
-tinycortex-api = { git = "https://github.com/tinyhumansai/tinycortex" }
+tinycortex = { path = "vendor/tinymemory/vendor/tinycortex" }
+tinycortex-api = { path = "vendor/tinymemory/vendor/tinycortex/api" }
+tinyagents = { path = "vendor/tinymemory/vendor/tinyagents" }
 [patch."https://github.com/tinyhumansai/tinymemory"]
-tinymemory-api = { git = "https://github.com/tinyhumansai/tinymemory" }
+tinymemory-api = { path = "vendor/tinymemory/api" }
 ```
+
+This exact patch set is what the reference consumer in `examples/` and the
+repository's own root manifest use; a build missing any of the four fails at
+resolution, before compiling a line.
 
 ```rust,ignore
 use std::sync::Arc;

@@ -1024,6 +1024,7 @@ impl MemorySourceSink for TinycortexProvider {
         items: Vec<SourceItem>,
         taint: MemoryTaint,
     ) -> Result<IngestOutcome, MemoryError> {
+        let items_len = items.len();
         let namespace = format!("source:{source_id}");
         let mut outcome = IngestOutcome::default();
         for item in items {
@@ -1063,8 +1064,20 @@ impl MemorySourceSink for TinycortexProvider {
                     outcome.written = outcome.written.saturating_add(1);
                     outcome.ids.push(id);
                 }
-                Err(_) => {
-                    outcome.skipped = outcome.skipped.saturating_add(1);
+                // A write failure is NOT `skipped`. The contract defines that
+                // field as "units the driver recognised as already present"
+                // (`IngestOutcome::skipped`), so counting a failed write there
+                // reports a locked database, a full disk or a dead embedder as
+                // a successful no-op: the sync caller marks the items done and
+                // they are never written. Propagate instead — a partial batch
+                // has no truthful representation in `IngestOutcome`, and a
+                // caller that wants best-effort ingestion can catch this.
+                Err(error) => {
+                    return Err(MemoryError::Other(anyhow::anyhow!(
+                        "source ingest failed after {} of {} item(s) were written: {error}",
+                        outcome.written,
+                        items_len
+                    )));
                 }
             }
         }

@@ -16,9 +16,14 @@ async-trait = "0.1"
 # The storage trait deliberately uses opaque backend errors.
 anyhow = "1"
 # Native self-hosted APIs are HTTP/JSON; multipart is required by Cognee.
-reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls"] }
+# `stream` is for `bytes_stream()`: response bodies are read against a byte
+# cap rather than buffered whole, because the endpoint is operator-supplied
+# and a broken or hostile one must not be able to OOM the host.
+reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "stream"] }
 # Remote records are translated through a private, lossless envelope.
 serde = { version = "1", features = ["derive"] }
+# Streaming a capped body needs a Stream combinator.
+futures = "0.3"
 serde_json = "1"
 # Supermemory custom ids are bounded, so namespace/key identities use SHA-256.
 sha2 = "0.10"

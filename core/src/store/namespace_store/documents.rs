@@ -46,11 +46,19 @@ impl UnifiedMemory {
         let document_id = input
             .document_id
             .or(existing_document_id)
-            .unwrap_or_else(|| {
-                let ts = Self::now_ts() as u64;
-                let short = &Uuid::new_v4().to_string()[..8];
-                format!("{ts}_{short}")
-            });
+            // Derived from (namespace, key), NOT random. The lookup above and
+            // the write below are separated by `.await`s, so two concurrent
+            // stores of a not-yet-existing key both miss and both mint an id.
+            // The ROW is safe -- `ON CONFLICT(namespace, key) DO UPDATE` keeps
+            // exactly one -- but that clause does not update `document_id`,
+            // and each writer has already written `vector_chunks` under ITS
+            // OWN id. The loser's chunks are then unreachable from the row, so
+            // `forget` (which deletes chunks by the row's document_id) leaves
+            // them behind and recall keeps returning content the caller
+            // deleted. A deterministic id makes both writers choose the same
+            // one, so the second write updates the first's chunks instead of
+            // orphaning them.
+            .unwrap_or_else(|| Self::derive_document_id(&namespace, &key));
         let now = Self::now_ts();
         let created_at = {
             let conn = self.conn.lock();
@@ -659,8 +667,60 @@ impl UnifiedMemory {
         }
         Ok(json!({"deleted": deleted, "namespace": ns, "documentId": document_id }))
     }
+
+    /// A document id derived from `(namespace, key)`.
+    ///
+    /// Deterministic so two concurrent first-writes of one key agree, which is
+    /// what keeps `vector_chunks` addressable from the row. Hashed rather than
+    /// concatenated so the id is a fixed-width opaque token whatever the
+    /// namespace or key contains; the zero byte is a domain separator, so
+    /// ("a","bc") and ("ab","c") cannot collide.
+    pub(crate) fn derive_document_id(namespace: &str, key: &str) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(namespace.as_bytes());
+        hasher.update([0u8]);
+        hasher.update(key.as_bytes());
+        format!("{:x}", hasher.finalize())[..32].to_string()
+    }
 }
 
 #[cfg(test)]
 #[path = "documents_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod document_id_tests {
+    use super::UnifiedMemory;
+
+    /// Two concurrent first-writes of one key must choose the SAME document
+    /// id. If they do not, each writes `vector_chunks` under its own id, the
+    /// `ON CONFLICT(namespace, key)` row keeps only one of them, and the
+    /// loser's chunks outlive `forget` — deleted content stays recallable.
+    #[test]
+    fn the_id_is_derived_from_namespace_and_key_not_random() {
+        let a = UnifiedMemory::derive_document_id("notes", "q3-plan");
+        let b = UnifiedMemory::derive_document_id("notes", "q3-plan");
+        assert_eq!(a, b, "the same key must derive the same id");
+        assert_ne!(
+            a,
+            UnifiedMemory::derive_document_id("notes", "q4-plan"),
+            "different keys must not collide"
+        );
+        assert_ne!(
+            a,
+            UnifiedMemory::derive_document_id("other", "q3-plan"),
+            "the namespace must participate"
+        );
+    }
+
+    /// The separator matters: without it ("a","bc") and ("ab","c") hash the
+    /// same bytes and two distinct records share one id.
+    #[test]
+    fn the_namespace_key_boundary_cannot_be_shifted() {
+        assert_ne!(
+            UnifiedMemory::derive_document_id("a", "bc"),
+            UnifiedMemory::derive_document_id("ab", "c")
+        );
+    }
+}

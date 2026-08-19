@@ -119,17 +119,52 @@ struct Mem0Dialect {
 }
 
 impl Mem0Dialect {
+    /// Largest listing this adapter will request in one call.
+    ///
+    /// Every exact-CRUD path here enumerates through [`Self::values`], so this
+    /// is the ceiling on the whole store, not on one page.
+    const LISTING_TOP_K: usize = 1000;
+
     /// Fetches Mem0's administrative memory listing.
+    ///
+    /// # A hard ceiling, deliberately loud
+    ///
+    /// This is a single unpaginated request, and it is the ONLY enumeration
+    /// path in this adapter -- `get`, `list`, `count` and `export_page` all
+    /// route through it. Past the ceiling the results are not merely
+    /// incomplete, they are silently WRONG: `get(ns, key)` for a record beyond
+    /// the cut-off returns `Ok(None)`, which the contract defines as "no such
+    /// entry", so a caller reads "deleted" where the truth is "present but
+    /// past the window".
+    ///
+    /// Returning an error instead is the honest failure. A full response is
+    /// indistinguishable from a truncated one -- both are exactly `top_k`
+    /// items -- so this cannot detect truncation, only its own boundary, and
+    /// it refuses at that boundary rather than answering wrongly. Paginating
+    /// properly needs Mem0's paging parameters verified against a live
+    /// service; guessing them here would trade a loud failure for a quiet one.
     async fn values(&self) -> anyhow::Result<Vec<Value>> {
+        let top_k = Self::LISTING_TOP_K;
         let response: Value = self
             .client
-            .json(Method::GET, "memories?top_k=1000", None)
+            .json(Method::GET, &format!("memories?top_k={top_k}"), None)
             .await?;
-        Ok(response
+        let results = response
             .get("results")
             .and_then(Value::as_array)
             .cloned()
-            .unwrap_or_default())
+            .unwrap_or_default();
+        if results.len() >= top_k {
+            anyhow::bail!(
+                "mem0 returned {} memories, this adapter's unpaginated listing ceiling. \
+                 Exact reads (get/list/count/export) cannot be answered correctly beyond \
+                 it -- a record past the window would read as absent -- so the adapter \
+                 refuses rather than answering wrongly. Recall is unaffected (it queries \
+                 mem0's search API directly).",
+                results.len()
+            );
+        }
+        Ok(results)
     }
 
     /// Decodes a Mem0 result containing TinyMemory-owned metadata.
