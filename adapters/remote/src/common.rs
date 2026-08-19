@@ -91,6 +91,40 @@ impl HttpClient {
     }
 
     /// Sends a JSON request and decodes a successful JSON response.
+    /// The error for a request that never produced a response.
+    ///
+    /// `reqwest`'s own Display is one clause — "error sending request" — and
+    /// the cause that matters (DNS, TLS, timeout, refused) is one or more
+    /// `source()` hops down, which a host that logs only the top line never
+    /// sees. Real case this was written for: a hosted endpoint that accepted
+    /// TCP and then aborted the TLS handshake, reported to the operator as
+    /// "request failed" with nothing to act on.
+    ///
+    /// So the class is named up front and the underlying chain is appended.
+    /// Naming the class is a judgement, not a parse: `reqwest` exposes
+    /// `is_timeout`/`is_connect` directly, and TLS is recognised from the
+    /// chain's text because rustls' error types are not in this crate's
+    /// public dependencies.
+    fn transport_error(&self, error: reqwest::Error) -> anyhow::Error {
+        let host = self.endpoint.host_str().unwrap_or("<endpoint>");
+        let chain = {
+            let mut parts: Vec<String> = Vec::new();
+            let mut source: Option<&(dyn std::error::Error + 'static)> =
+                std::error::Error::source(&error);
+            while let Some(cause) = source {
+                parts.push(cause.to_string());
+                source = cause.source();
+            }
+            parts.join(": ")
+        };
+        let class = classify_transport(error.is_timeout(), error.is_connect(), &chain);
+        if chain.is_empty() {
+            anyhow::anyhow!("memory API request to {host}: {class}")
+        } else {
+            anyhow::anyhow!("memory API request to {host}: {class} ({chain})")
+        }
+    }
+
     /// The error for a non-success status, written for the operator reading a
     /// log: it names the endpoint host (never the credential) and calls out a
     /// rejected credential specifically, because "HTTP 401" three layers deep
@@ -126,11 +160,10 @@ impl HttpClient {
         if let Some(body) = body {
             request = request.json(body);
         }
-        let host = self.endpoint.host_str().unwrap_or("<endpoint>").to_owned();
         let response = request
             .send()
             .await
-            .with_context(|| format!("memory API request to {host} failed"))?;
+            .map_err(|error| self.transport_error(error))?;
         let status = response.status();
         if !status.is_success() {
             return Err(self.status_error(path, status));
@@ -143,12 +176,11 @@ impl HttpClient {
 
     /// Sends a request and returns a successful response body as text.
     pub(crate) async fn text(&self, method: Method, path: &str) -> anyhow::Result<String> {
-        let host = self.endpoint.host_str().unwrap_or("<endpoint>").to_owned();
         let response = self
             .request(method, path)?
             .send()
             .await
-            .with_context(|| format!("memory API request to {host} failed"))?;
+            .map_err(|error| self.transport_error(error))?;
         let status = response.status();
         if !status.is_success() {
             return Err(self.status_error(path, status));
@@ -170,11 +202,10 @@ impl HttpClient {
         if let Some(body) = body {
             request = request.json(body);
         }
-        let host = self.endpoint.host_str().unwrap_or("<endpoint>").to_owned();
         let response = request
             .send()
             .await
-            .with_context(|| format!("memory API request to {host} failed"))?;
+            .map_err(|error| self.transport_error(error))?;
         let status = response.status();
         if !status.is_success() {
             return Err(self.status_error(path, status));
@@ -475,4 +506,91 @@ fn matches_filters(entry: &StoredEntry, opts: &RecallOpts<'_>) -> bool {
         && opts
             .session_id
             .is_none_or(|value| entry.session_id.as_deref() == Some(value))
+}
+
+/// Name the class of a transport failure from what the error chain says.
+///
+/// Pure so the ORDER is testable, which is the whole reason it exists as its
+/// own function: `is_connect()` is also true for DNS and TLS failures, so a
+/// naive `if is_connect()` first collapses every class into "could not
+/// connect". That is exactly what the first version of this did, and it took
+/// a live run against a real broken endpoint to notice.
+fn classify_transport(is_timeout: bool, is_connect: bool, chain: &str) -> &'static str {
+    let lower = chain.to_ascii_lowercase();
+    if is_timeout {
+        "timed out"
+    } else if lower.contains("dns")
+        || lower.contains("name or service")
+        || lower.contains("failed to lookup")
+    {
+        "the host could not be resolved — check the URL"
+    } else if lower.contains("tls")
+        || lower.contains("handshake")
+        || lower.contains("certificate")
+        || lower.contains("fatal alert")
+        || lower.contains("invalid peer")
+        || lower.contains("unknown issuer")
+    {
+        "TLS failed — the endpoint answered on the port but could not establish a \
+         secure connection; check that the URL is the engine's real API host"
+    } else if is_connect {
+        "could not connect — check the URL and that the service is reachable"
+    } else {
+        "the request did not complete"
+    }
+}
+
+#[cfg(test)]
+mod transport_tests {
+    use super::classify_transport;
+
+    /// The verbatim chain a rustls handshake abort produces. Cognee's hosted
+    /// endpoint answered TCP and then sent this; `reqwest` reports it as a
+    /// CONNECT error, so an `is_connect` check placed first swallows it — and
+    /// the string never contains the word "TLS", so matching on that alone
+    /// misses it too. Both traps, pinned.
+    #[test]
+    fn a_rustls_handshake_abort_is_named_tls_not_connect() {
+        let class = classify_transport(
+            false,
+            true, // reqwest really does set is_connect for this
+            "client error (Connect): received fatal alert: InternalError",
+        );
+        assert!(class.starts_with("TLS failed"), "got: {class}");
+    }
+
+    /// DNS failures are also CONNECT errors; the specific class must win.
+    #[test]
+    fn a_dns_failure_is_named_dns_not_connect() {
+        let class = classify_transport(
+            false,
+            true,
+            "client error (Connect): dns error: failed to lookup address information",
+        );
+        assert!(class.contains("could not be resolved"), "got: {class}");
+    }
+
+    #[test]
+    fn a_refused_connection_is_the_connect_class() {
+        let class = classify_transport(
+            false,
+            true,
+            "client error (Connect): tcp connect error: Connection refused (os error 61)",
+        );
+        assert!(class.starts_with("could not connect"), "got: {class}");
+    }
+
+    /// A timeout outranks everything: it is the one class reqwest states
+    /// outright rather than leaving to the chain's wording.
+    #[test]
+    fn a_timeout_wins_over_every_chain_hint() {
+        let class = classify_transport(true, true, "dns error: something tls certificate");
+        assert_eq!(class, "timed out");
+    }
+
+    #[test]
+    fn an_unrecognised_chain_degrades_without_claiming_a_cause() {
+        let class = classify_transport(false, false, "body error: incomplete message");
+        assert_eq!(class, "the request did not complete");
+    }
 }
