@@ -2009,6 +2009,7 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "tempfile",
  "tinycortex",
  "tinymemory-api",
  "tinymemory-conformance",

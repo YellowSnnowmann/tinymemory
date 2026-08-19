@@ -13,13 +13,23 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 # Strip comment lines (`//`, `///`, `//!`) before matching so prose cannot
-# trip it; then require the crate name in path position.
+# trip it; then require the crate name in path position. The audit probed the
+# first version of this regex and found three bypasses, each closed below:
+# `extern crate tinycortex;` (no `::`), whitespace between the crate name and
+# the path separator (`tinycortex ::memory`), and a `//` inside a string
+# literal on the same line eating a real use (`let u="//x"; use tinycortex::A;`
+# — comment-stripping must not fire inside quotes). Block comments can still
+# yield false POSITIVES (prose inside `/* */` is not stripped), which fails
+# safe: a human looks, nothing slips through.
 offenders="$(
   grep -rln --include='*.rs' 'tinycortex' core/src \
     | grep -v '^core/src/engine/' \
     | while read -r f; do
-        if sed -E 's://.*$::' "$f" \
-           | grep -Eq '(^|[^A-Za-z0-9_])(use[[:space:]]+tinycortex\b|tinycortex::)'; then
+        # Strip string literals first (so a `//` inside one cannot hide the
+        # rest of the line), then line comments; then match path positions.
+        if sed -E 's:"([^"\\]|\\.)*"::g' "$f" \
+           | sed -E 's://.*$::' \
+           | grep -Eq '(^|[^A-Za-z0-9_])(use[[:space:]]+tinycortex\b|extern[[:space:]]+crate[[:space:]]+tinycortex\b|tinycortex[[:space:]]*::)'; then
           echo "$f"
         fi
       done

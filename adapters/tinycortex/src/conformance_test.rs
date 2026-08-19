@@ -15,9 +15,8 @@
 //! needs a `MemoryClient` — which needs the host's process-global seams
 //! (`set_embedding_host` and friends) installed before it will open. A test
 //! that installs a process global is order-dependent, which `AGENTS.md` rules
-//! out, so covering it needs its own integration target that owns the global
-//! for the whole binary. That is not written yet, and criterion 5 is not
-//! complete until it is.
+//! out, so it is covered in `tests/full_provider_conformance.rs`: an
+//! integration target that owns the global for its whole binary.
 //!
 //! Running against `InMemoryMemoryStore` rather than a SQLite workspace is
 //! deliberate and is also the sharper test: it is the engine's simplest

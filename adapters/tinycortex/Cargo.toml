@@ -53,6 +53,8 @@ anyhow = "1"
 # The behavioural contract suite, run against this crate's drivers
 # (issue #18 §E1, acceptance criterion 5).
 tinymemory-conformance = { path = "../../conformance" }
+# The full-provider conformance target opens a real workspace store.
+tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [lints.rust]
