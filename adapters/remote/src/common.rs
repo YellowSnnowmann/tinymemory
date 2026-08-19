@@ -91,6 +91,31 @@ impl HttpClient {
     }
 
     /// Sends a JSON request and decodes a successful JSON response.
+    /// The error for a non-success status, written for the operator reading a
+    /// log: it names the endpoint host (never the credential) and calls out a
+    /// rejected credential specifically, because "HTTP 401" three layers deep
+    /// in an anyhow chain reads as "the engine is down" and sends the operator
+    /// to the wrong runbook.
+    fn status_error(&self, path: &str, status: reqwest::StatusCode) -> anyhow::Error {
+        let host = self.endpoint.host_str().unwrap_or("<endpoint>");
+        match status.as_u16() {
+            401 | 403 => {
+                let hint = match &self.auth {
+                    Auth::ApiKey(_) => "check the API key",
+                    Auth::Bearer(_) => "check the bearer token",
+                    Auth::None => {
+                        "the endpoint requires credentials this client was not configured with"
+                    }
+                };
+                anyhow::anyhow!(
+                    "memory API {path} on {host}: the configured credential was rejected \
+                     (HTTP {status}) — {hint}"
+                )
+            }
+            _ => anyhow::anyhow!("memory API {path} on {host} returned HTTP {status}"),
+        }
+    }
+
     pub(crate) async fn json<T: DeserializeOwned>(
         &self,
         method: Method,
@@ -101,10 +126,14 @@ impl HttpClient {
         if let Some(body) = body {
             request = request.json(body);
         }
-        let response = request.send().await.context("memory API request failed")?;
+        let host = self.endpoint.host_str().unwrap_or("<endpoint>").to_owned();
+        let response = request
+            .send()
+            .await
+            .with_context(|| format!("memory API request to {host} failed"))?;
         let status = response.status();
         if !status.is_success() {
-            bail!("memory API {path} returned HTTP {status}");
+            return Err(self.status_error(path, status));
         }
         response
             .json()
@@ -114,10 +143,15 @@ impl HttpClient {
 
     /// Sends a request and returns a successful response body as text.
     pub(crate) async fn text(&self, method: Method, path: &str) -> anyhow::Result<String> {
-        let response = self.request(method, path)?.send().await?;
+        let host = self.endpoint.host_str().unwrap_or("<endpoint>").to_owned();
+        let response = self
+            .request(method, path)?
+            .send()
+            .await
+            .with_context(|| format!("memory API request to {host} failed"))?;
         let status = response.status();
         if !status.is_success() {
-            bail!("memory API {path} returned HTTP {status}");
+            return Err(self.status_error(path, status));
         }
         response
             .text()
@@ -136,10 +170,14 @@ impl HttpClient {
         if let Some(body) = body {
             request = request.json(body);
         }
-        let response = request.send().await?;
+        let host = self.endpoint.host_str().unwrap_or("<endpoint>").to_owned();
+        let response = request
+            .send()
+            .await
+            .with_context(|| format!("memory API request to {host} failed"))?;
         let status = response.status();
         if !status.is_success() {
-            bail!("memory API {path} returned HTTP {status}");
+            return Err(self.status_error(path, status));
         }
         Ok(status)
     }

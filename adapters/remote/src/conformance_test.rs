@@ -37,6 +37,13 @@ struct Row {
     id: String,
     content: String,
     metadata: Value,
+    /// The `containerTag` the adapter sent at create time. The real service
+    /// files the row under exactly this tag and answers tag-filtered lists
+    /// with it; the double must do the same, or a lookup scoped to the tag
+    /// the adapter derives (as `upsert`/`delete` now do) misses rows this
+    /// double filed under an invented tag — which is a bug in the double, not
+    /// in the adapter.
+    tag: String,
 }
 
 /// The doubles' shared store: `id -> Row`, plus a counter for fresh ids.
@@ -105,6 +112,9 @@ async fn mem0_create(State(store): State<Store>, Json(body): Json<Value>) -> Jso
             id: id.clone(),
             content,
             metadata,
+            // Mem0 has no container tags; rows carry an empty one and the
+            // supermemory-only tag routes never see them.
+            tag: String::new(),
         },
     );
     Json(json!({ "results": [{ "id": id }] }))
@@ -196,16 +206,19 @@ async fn the_mem0_double_actually_retains() {
 
 /// The tag the adapter derives, as sent on create.
 fn tag_of(row: &Row) -> String {
-    row.metadata
-        .get("tinymemory_namespace")
-        .and_then(Value::as_str)
-        .map(|ns| format!("tinymemory-{ns}"))
-        .unwrap_or_default()
+    row.tag.clone()
 }
 
 async fn sm_tags(State(store): State<Store>) -> Json<Value> {
     let store = store.lock().expect("store lock");
-    let mut tags: Vec<String> = store.rows.values().map(tag_of).collect();
+    // Mem0 rows carry an empty tag (that dialect has no containers); they must
+    // not surface as a Supermemory container.
+    let mut tags: Vec<String> = store
+        .rows
+        .values()
+        .map(tag_of)
+        .filter(|tag| !tag.is_empty())
+        .collect();
     tags.sort();
     tags.dedup();
     Json(Value::Array(
@@ -243,7 +256,15 @@ async fn sm_list(State(store): State<Store>, Json(body): Json<Value>) -> Json<Va
     Json(json!({ "memoryEntries": entries }))
 }
 
-async fn sm_create(State(store): State<Store>, Json(body): Json<Value>) -> Json<Value> {
+async fn sm_create(
+    State(store): State<Store>,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, axum::http::StatusCode> {
+    // The real v4 API requires `containerTag`; a double that silently filed a
+    // malformed create under "" would hide an adapter regression.
+    let Some(tag) = body["containerTag"].as_str().filter(|tag| !tag.is_empty()) else {
+        return Err(axum::http::StatusCode::BAD_REQUEST);
+    };
     let mut store = store.lock().expect("store lock");
     let id = store.fresh_id();
     let first = &body["memories"][0];
@@ -253,9 +274,10 @@ async fn sm_create(State(store): State<Store>, Json(body): Json<Value>) -> Json<
             id: id.clone(),
             content: first["content"].as_str().unwrap_or_default().to_owned(),
             metadata: first["metadata"].clone(),
+            tag: tag.to_owned(),
         },
     );
-    Json(json!({ "memories": [{ "id": id }] }))
+    Ok(Json(json!({ "memories": [{ "id": id }] })))
 }
 
 async fn sm_update(State(store): State<Store>, Json(body): Json<Value>) -> Json<Value> {

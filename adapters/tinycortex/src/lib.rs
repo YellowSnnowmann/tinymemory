@@ -65,6 +65,19 @@ use tinymemory_api::mandatory::MemoryTraitProvider;
 /// this adapter out still refuses to bind something else under the name.
 pub use tinymemory_api::drivers::TINYCORTEX_DRIVER_ID;
 
+/// The engine crate itself, re-exported so a consumer of this adapter can
+/// name the [`tinycortex::memory::Memory`] argument type and construct a
+/// backend without adding a second git dependency and its `[patch]` table.
+/// `tinymemory::tinycortex::provider(...)` was unusable from outside this
+/// workspace before this line: the feature compiled, the constructor
+/// resolved, and its argument type was unnameable.
+pub use tinycortex;
+
+/// The engine's simplest backend, re-exported for first-run and test wiring:
+/// `provider(Arc::new(InMemoryMemoryStore::new()))` is a complete embedded
+/// setup for the mandatory three families.
+pub use tinycortex::memory::store::InMemoryMemoryStore;
+
 /// Wrap a TinyCortex backend as a bound memory driver.
 ///
 /// The returned provider advertises the mandatory three families and nothing

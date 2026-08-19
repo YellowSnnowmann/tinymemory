@@ -224,6 +224,20 @@ impl SupermemoryDialect {
         }
         let mut entries = Vec::new();
         for container_tag in container_tags {
+            entries.extend(self.memories_in_tag(container_tag).await?);
+        }
+        Ok(entries)
+    }
+
+    /// Enumerates the live memories of one container tag.
+    ///
+    /// Split out so the keyed paths (`upsert`, `delete`) can page the single
+    /// tag their namespace maps to instead of every tag the account holds —
+    /// before this, each store of one record enumerated the entire account
+    /// over HTTP.
+    async fn memories_in_tag(&self, container_tag: &str) -> anyhow::Result<Vec<StoredEntry>> {
+        let mut entries = Vec::new();
+        {
             let mut page = 1_u64;
             loop {
                 let response: Value = self
@@ -273,6 +287,16 @@ impl SupermemoryDialect {
         }
         Ok(entries)
     }
+
+    /// The live entry stored under `(namespace, key)`, if any — paging only
+    /// that namespace's container tag.
+    async fn find_entry(&self, namespace: &str, key: &str) -> anyhow::Result<Option<StoredEntry>> {
+        Ok(self
+            .memories_in_tag(&Self::container_tag(namespace))
+            .await?
+            .into_iter()
+            .find(|item| item.namespace == namespace && item.key == key))
+    }
 }
 
 #[async_trait]
@@ -284,11 +308,7 @@ impl Dialect for SupermemoryDialect {
 
     /// Replaces an existing exact record or creates a direct v4 memory.
     async fn upsert(&self, entry: StoredEntry) -> anyhow::Result<()> {
-        let existing = self
-            .memories()
-            .await?
-            .into_iter()
-            .find(|item| item.namespace == entry.namespace && item.key == entry.key);
+        let existing = self.find_entry(&entry.namespace, &entry.key).await?;
         let metadata = Self::metadata(&entry);
         if let Some(existing) = existing {
             self.client
@@ -361,12 +381,7 @@ impl Dialect for SupermemoryDialect {
 
     /// Finds and deletes an exact TinyMemory logical record.
     async fn delete(&self, namespace: &str, key: &str) -> anyhow::Result<bool> {
-        let Some(entry) = self
-            .memories()
-            .await?
-            .into_iter()
-            .find(|item| item.namespace == namespace && item.key == key)
-        else {
+        let Some(entry) = self.find_entry(namespace, key).await? else {
             return Ok(false);
         };
         self.client
