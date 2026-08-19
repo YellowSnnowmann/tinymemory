@@ -259,3 +259,145 @@ fn max_items_is_applicable_to_composio_and_rss_but_not_other_kinds() {
     assert!(patch().validate_for_kind(SourceKind::GithubRepo).is_err());
     assert!(patch().validate_for_kind(SourceKind::WebPage).is_err());
 }
+
+/// The engine keeps its own copy of these types in `memory/sources/types.rs`,
+/// and the two are joined by a live wire: `tinymemory-core`'s engine seam
+/// converts between them with `serde_json::to_value` / `from_value` for the
+/// tree-coupled source kinds, in both directions. Nothing but the serialised
+/// shape holds that seam together — the copies are distinct Rust types in
+/// distinct crates and neither compiles against the other.
+///
+/// So a renamed field or a new `SourceKind` variant on either side is not a
+/// compile error. It is a runtime failure on the first external-source sync
+/// after the engine pin moves, at the point of conversion, far from the edit
+/// that caused it.
+///
+/// These pin the full serialised shape of each type that crosses. A failure
+/// here means the copies have diverged and the change needs coordinating
+/// across both crates, never a local edit to the expectation.
+#[test]
+fn source_entry_wire_format_is_pinned() {
+    let entry = MemorySourceEntry {
+        id: "src_pinned".into(),
+        kind: SourceKind::GithubRepo,
+        label: "Pinned".into(),
+        enabled: false,
+        toolkit: Some("gmail".into()),
+        connection_id: Some("conn-1".into()),
+        path: Some("/notes".into()),
+        glob: Some("**/*.md".into()),
+        url: Some("https://github.com/tinyhumansai/tinymemory".into()),
+        branch: Some("main".into()),
+        paths: vec!["core/src".into()],
+        max_commits: Some(10),
+        max_issues: Some(20),
+        max_prs: Some(30),
+        query: Some("from:me".into()),
+        since_days: Some(7),
+        max_items: Some(40),
+        selector: Some("article".into()),
+        max_tokens_per_sync: Some(50_000),
+        max_cost_per_sync_usd: Some(1.5),
+        sync_depth_days: Some(90),
+    };
+
+    assert_eq!(
+        serde_json::to_value(&entry).unwrap(),
+        serde_json::json!({
+            "id": "src_pinned",
+            "kind": "github_repo",
+            "label": "Pinned",
+            "enabled": false,
+            "toolkit": "gmail",
+            "connection_id": "conn-1",
+            "path": "/notes",
+            "glob": "**/*.md",
+            "url": "https://github.com/tinyhumansai/tinymemory",
+            "branch": "main",
+            "paths": ["core/src"],
+            "max_commits": 10,
+            "max_issues": 20,
+            "max_prs": 30,
+            "query": "from:me",
+            "since_days": 7,
+            "max_items": 40,
+            "selector": "article",
+            "max_tokens_per_sync": 50000,
+            "max_cost_per_sync_usd": 1.5,
+            "sync_depth_days": 90
+        })
+    );
+}
+
+/// Every optional field is skipped when absent, so an entry carrying only its
+/// required fields is a four-key object. A `skip_serializing_if` dropped from
+/// one copy and not the other changes what the seam sends without changing
+/// what either side compiles.
+#[test]
+fn an_empty_source_entry_serialises_to_its_required_fields_only() {
+    let entry = MemorySourceEntry {
+        id: "src_min".into(),
+        label: "Minimal".into(),
+        ..default_entry()
+    };
+
+    assert_eq!(
+        serde_json::to_value(&entry).unwrap(),
+        serde_json::json!({
+            "id": "src_min",
+            "kind": "folder",
+            "label": "Minimal",
+            "enabled": true
+        })
+    );
+}
+
+/// `SourceItem` crosses the same seam, on the `list_items` direction.
+#[test]
+fn source_item_wire_format_is_pinned() {
+    assert_eq!(
+        serde_json::to_value(SourceItem {
+            id: "item-1".into(),
+            title: "Quarterly planning".into(),
+            updated_at_ms: Some(1_777_000_000_000),
+        })
+        .unwrap(),
+        serde_json::json!({
+            "id": "item-1",
+            "title": "Quarterly planning",
+            "updated_at_ms": 1_777_000_000_000i64
+        })
+    );
+
+    assert_eq!(
+        serde_json::to_value(SourceItem {
+            id: "item-2".into(),
+            title: "No timestamp".into(),
+            updated_at_ms: None,
+        })
+        .unwrap(),
+        serde_json::json!({ "id": "item-2", "title": "No timestamp" })
+    );
+}
+
+/// `SourceContent` crosses the same seam, on the `read_item` direction.
+#[test]
+fn source_content_wire_format_is_pinned() {
+    assert_eq!(
+        serde_json::to_value(SourceContent {
+            id: "item-1".into(),
+            title: "Quarterly planning".into(),
+            body: "# Roadmap".into(),
+            content_type: ContentType::Markdown,
+            metadata: serde_json::json!({ "author": "shanu" }),
+        })
+        .unwrap(),
+        serde_json::json!({
+            "id": "item-1",
+            "title": "Quarterly planning",
+            "body": "# Roadmap",
+            "content_type": "markdown",
+            "metadata": { "author": "shanu" }
+        })
+    );
+}

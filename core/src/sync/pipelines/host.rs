@@ -8,9 +8,11 @@
 //! [`MemoryClient`](crate::store::MemoryClient), so whatever driver the host
 //! bound serves the sync.
 
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use async_trait::async_trait;
+use tokio::sync::OwnedMutexGuard;
 
 use crate::store::MemoryClientRef;
 use crate::sync::composio::providers::sync_state::SyncStateStore;
@@ -145,25 +147,64 @@ impl SkillDocSink for PipelineHost {
     }
 }
 
-/// Mirror of the engine adapter's tree reconnect: route the stored document
-/// through core's ingest funnel under the same source id scheme.
+/// Mirror of the engine adapter's tree reconnect (`engine::sync`'s
+/// `ingest_document_into_memory_tree`): route the stored document through
+/// core's ingest funnel under the same addressing scheme.
+///
+/// # The scheme is the contract, not an implementation detail
+///
+/// The tree scope a chunk seals under is `path_scope`, falling back to
+/// `source_id`. Retrieval selects source trees by that scope and classifies
+/// them by their **platform prefix** — `gmail:` is email, `slack:` is chat.
+/// So the scope has to be `"{toolkit}:{connection_id}"`: one tree per
+/// connection, named by a prefix retrieval knows.
+///
+/// Passing no `path_scope` is not a smaller version of that. It makes each
+/// item's own `source_id` the scope, which is a *tree per document*, named by
+/// a prefix that matches no platform — the items are stored and then
+/// unreachable, which is the #5473 defect this reconnect exists to fix. The
+/// `source_id LIKE` prefix the memory-source status and diff snapshots query
+/// by is keyed on this same scheme — see `sources::status::source_id_prefix`.
+///
+/// Tags are a deliberate superset of the engine adapter's: it tags the toolkit
+/// alone, this also tags `composio_sync`. Tags feed scoring and filtering, not
+/// addressing, so the extra one costs nothing and marks the ingest path.
 async fn ingest_into_tree(config: &Config, document: &SkillDocument) -> anyhow::Result<()> {
-    let source_id = format!(
-        "composio:{}:{}:{}",
-        document.toolkit, document.connection_id, document.document_id
-    );
+    let toolkit = document.toolkit.trim().to_ascii_lowercase();
+    let connection_id = document.connection_id.trim();
+    // A blank toolkit or connection would yield a scope with no platform
+    // prefix (`":conn"`, `"gmail:"`), which no retrieval kind matches; skip
+    // rather than write an unreachable tree. The skill store still holds the
+    // item.
+    if toolkit.is_empty() || connection_id.is_empty() {
+        tracing::debug!(
+            document_id = %document.document_id,
+            "[memory_sync] skipping memory-tree ingest: item has no toolkit/connection scope"
+        );
+        return Ok(());
+    }
+    let tree_scope = format!("{toolkit}:{connection_id}");
+    let source_id = format!("{tree_scope}:{}", document.document_id);
+    let owner = format!("{toolkit}-sync:{connection_id}");
     let doc = crate::ingest_pipeline::IngestDocumentInput {
-        provider: document.toolkit.clone(),
+        provider: format!("composio:{toolkit}"),
         title: document.title.clone(),
         body: document.content.clone(),
         modified_at: chrono::Utc::now(),
-        source_ref: Some(source_id.clone()),
+        source_ref: Some(document.document_id.clone()),
     };
-    let tags = vec!["composio_sync".to_string(), document.toolkit.clone()];
-    crate::ingest_pipeline::ingest_document(config, &source_id, "", tags, doc)
-        .await
-        .map(|_| ())
-        .map_err(|error| anyhow::anyhow!("{error}"))
+    let tags = vec!["composio_sync".to_string(), toolkit];
+    crate::ingest_pipeline::ingest_document_with_scope(
+        config,
+        &source_id,
+        &owner,
+        tags,
+        doc,
+        Some(tree_scope),
+    )
+    .await
+    .map(|_| ())
+    .map_err(|error| anyhow::anyhow!("memory-tree ingest failed for source `{source_id}`: {error}"))
 }
 
 #[async_trait]
@@ -333,7 +374,14 @@ pub async fn run_composio_connection_with_caps(
         max_cost_per_sync_usd: caps.max_cost_per_sync_usd,
     };
     let host = Arc::new(PipelineHost::new(memory, config.to_arc()));
-    run_pipeline(pipeline, &pipeline_config, &host.context()).await
+    run_pipeline(
+        pipeline,
+        toolkit,
+        connection_id,
+        &pipeline_config,
+        &host.context(),
+    )
+    .await
 }
 
 /// Run a bounded Gmail backfill through the engine-free pipelines.
@@ -353,7 +401,17 @@ pub async fn run_gmail_backfill(
             .with_query(query),
     );
     let host = Arc::new(PipelineHost::new(memory, config.to_arc()));
-    run_pipeline(pipeline, &PipelineConfig::default(), &host.context()).await
+    // The backfill drives the Gmail pipeline, which keys its `SyncState` on
+    // `"gmail"`; naming the same toolkit here puts it behind the same guard as
+    // a periodic or RPC Gmail sync of this connection.
+    run_pipeline(
+        pipeline,
+        "gmail",
+        connection_id,
+        &PipelineConfig::default(),
+        &host.context(),
+    )
+    .await
 }
 
 /// Run the Slack search backfill through the engine-free pipelines.
@@ -372,14 +430,105 @@ pub async fn run_slack_search_backfill(
         backfill_days,
     ));
     let host = Arc::new(PipelineHost::new(memory, config.to_arc()));
-    run_pipeline(pipeline, &PipelineConfig::default(), &host.context()).await
+    // `SlackSearchBackfillPipeline` loads and saves the same
+    // `("slack", connection_id)` state the Slack sync pipeline does, so the two
+    // must share one guard or they clobber each other's cursor and budget.
+    run_pipeline(
+        pipeline,
+        "slack",
+        connection_id,
+        &PipelineConfig::default(),
+        &host.context(),
+    )
+    .await
+}
+
+/// The note a run carries when another run already holds its connection.
+///
+/// Callers that distinguish "nothing to sync" from "did not sync" match on
+/// this rather than on a message they would have to keep in step by hand.
+pub const SYNC_ALREADY_RUNNING: &str = "sync already running for this connection";
+
+/// One guard per connection, so two runs cannot clobber each other's state.
+type ConnectionLock = Arc<tokio::sync::Mutex<()>>;
+
+/// The process-wide guard table.
+///
+/// `run_incremental_sync` loads the connection's `SyncState` once, mutates it
+/// in memory for the whole run, and saves at the end; the Slack search
+/// backfill does the same over the same `("slack", connection_id)` record. Two
+/// runs of one connection therefore race on the cursor, the dedup set and the
+/// daily budget, and whichever saves last wins — losing either the dedup set
+/// (re-fetch, re-spend) or the budget count (overspend past the cap). The
+/// periodic loop, the sync RPC and a trigger can each fire the same
+/// connection, so the race is reachable as the code stands.
+///
+/// This is the single-process answer, which is how the loop and the RPC paths
+/// actually run. An optimistic version stamp on the KV record is what a
+/// multi-process host would need instead.
+///
+/// The table only ever grows, bounded by the number of connections the host
+/// has seen — the same shape, and the same bound, as the periodic scheduler's
+/// last-fired map. An entry is one `Arc` and an unlocked mutex.
+fn connection_locks() -> &'static Mutex<HashMap<(String, String), ConnectionLock>> {
+    static LOCKS: OnceLock<Mutex<HashMap<(String, String), ConnectionLock>>> = OnceLock::new();
+    LOCKS.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// The guard key for a connection.
+///
+/// Normalised exactly as [`build_composio_pipeline`] normalises the toolkit
+/// gate, so `" Gmail "` and `gmail` name one connection rather than two — and
+/// so the Slack sync pipeline and the Slack search backfill, which share one
+/// `SyncState` record, share one guard.
+fn connection_key(toolkit: &str, connection_id: &str) -> (String, String) {
+    (
+        toolkit.trim().to_ascii_lowercase(),
+        connection_id.trim().to_owned(),
+    )
+}
+
+/// Take the guard for one connection, or `None` if a run already holds it.
+///
+/// Deliberately non-blocking. Queueing behind the running sync would stall the
+/// periodic loop's whole tick — it walks connections sequentially — and then
+/// run a second sync of a connection that has just been synced, which is the
+/// Composio spend this guard exists to avoid.
+fn try_hold_connection(toolkit: &str, connection_id: &str) -> Option<OwnedMutexGuard<()>> {
+    let lock = {
+        // A panic inside a run cannot corrupt the table: it holds `Arc`s, and
+        // the async guard is released by its own `Drop`. Recovering from the
+        // poison keeps one panicking sync from disabling every later one.
+        let mut locks = connection_locks()
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Arc::clone(
+            locks
+                .entry(connection_key(toolkit, connection_id))
+                .or_default(),
+        )
+    };
+    lock.try_lock_owned().ok()
 }
 
 async fn run_pipeline(
     pipeline: Arc<dyn SyncPipeline>,
+    toolkit: &str,
+    connection_id: &str,
     config: &PipelineConfig,
     context: &SyncContext,
 ) -> Result<SyncOutcome, PipelineFailure> {
+    let Some(_connection) = try_hold_connection(toolkit, connection_id) else {
+        tracing::debug!(
+            toolkit,
+            connection_id,
+            "[memory_sync] a sync of this connection is already running; skipping"
+        );
+        return Ok(SyncOutcome {
+            note: Some(SYNC_ALREADY_RUNNING.to_owned()),
+            ..SyncOutcome::default()
+        });
+    };
     let pipeline_id = pipeline.id().to_owned();
     let mut dispatcher = SyncDispatcher::new();
     dispatcher
@@ -438,5 +587,270 @@ mod tests {
                 "{toolkit:?} passes the gate and must build"
             );
         }
+    }
+
+    /// The guard table is process-global and shared by every test in this
+    /// binary, so each test names connections nothing else touches.
+    #[test]
+    fn one_connection_admits_one_run_at_a_time() {
+        let held =
+            try_hold_connection("gmail", "guard-single").expect("the first run takes the guard");
+        assert!(
+            try_hold_connection("gmail", "guard-single").is_none(),
+            "a second run of the same connection must be refused, not queued"
+        );
+        drop(held);
+        assert!(
+            try_hold_connection("gmail", "guard-single").is_some(),
+            "the guard must be released when the run ends"
+        );
+    }
+
+    /// The guard is per connection, not per toolkit: one slow Gmail sync must
+    /// not stop every other Gmail connection from syncing.
+    #[test]
+    fn different_connections_hold_independent_guards() {
+        let first = try_hold_connection("gmail", "guard-independent-a")
+            .expect("the first connection takes its guard");
+        let second = try_hold_connection("gmail", "guard-independent-b")
+            .expect("a different connection has its own guard");
+        drop((first, second));
+    }
+
+    /// `build_composio_pipeline` accepts `" Gmail "` by normalising it. The
+    /// guard key must normalise identically, or a padded toolkit syncs the
+    /// same connection concurrently with an unpadded one and they clobber each
+    /// other's state — the defect the guard exists to prevent.
+    #[test]
+    fn the_guard_key_normalises_the_toolkit_like_the_gate() {
+        assert_eq!(
+            connection_key(" Gmail ", " conn-1 "),
+            connection_key("gmail", "conn-1")
+        );
+        let held = try_hold_connection("gmail", "guard-normalised")
+            .expect("the first run takes the guard");
+        assert!(
+            try_hold_connection(" GMAIL\t", "guard-normalised").is_none(),
+            "a padded, mixed-case toolkit names the same connection"
+        );
+        drop(held);
+    }
+
+    /// The Slack sync pipeline and the Slack search backfill load and save the
+    /// same `("slack", connection_id)` state, so they must contend.
+    #[test]
+    fn the_slack_backfill_shares_the_slack_sync_guard() {
+        assert_eq!(
+            connection_key("slack", "guard-slack"),
+            connection_key("Slack", "guard-slack")
+        );
+        let held = try_hold_connection("slack", "guard-slack").expect("the sync takes the guard");
+        assert!(
+            try_hold_connection("slack", "guard-slack").is_none(),
+            "the backfill must not run while a Slack sync of this connection is running"
+        );
+        drop(held);
+    }
+
+    /// The engine adapter's tree reconnect has this test
+    /// (`engine::sync`'s `composio_sync_document_reaches_memory_tree`); the
+    /// engine-free host that replaced it on the live path did not, and drifted
+    /// — it wrote a `composio:`-prefixed source id and no `path_scope`, so
+    /// every synced item became its own tree under a scope no platform prefix
+    /// matches. Chunks existed, recall could not reach them. Asserting the
+    /// addressing, not merely the row count, is what catches that.
+    #[tokio::test]
+    async fn a_synced_document_is_keyed_by_its_connection_scope() {
+        use tinymemory_api::host::test_support::TestHostConfig;
+        use tinymemory_api::host::MemoryHostConfig;
+
+        crate::test_seams::init();
+        let workspace = tempfile::tempdir().expect("workspace");
+        let workspace_dir = workspace.path().join("workspace");
+        let mut host_config = TestHostConfig::default();
+        host_config.workspace_dir = workspace_dir.clone();
+        let config = host_config.to_arc();
+        let client: MemoryClientRef = Arc::new(
+            crate::store::MemoryClient::from_workspace_dir(workspace_dir)
+                .expect("memory client initialises against a fresh workspace"),
+        );
+        let host = PipelineHost::new(client, config.clone());
+
+        // A fresh tree is empty, so a non-zero count after the store is
+        // attributable to this sync rather than to pre-existing state.
+        assert_eq!(
+            crate::store::chunks::store::count_chunks(&*config).expect("count chunks"),
+            0,
+            "fresh workspace must start with an empty memory tree"
+        );
+
+        host.store(SkillDocument {
+            namespace_skill_id: "gmail".into(),
+            connection_id: "conn-1".into(),
+            document_id: "gmail:msg-1".into(),
+            title: "Quarterly planning".into(),
+            content: "Let's finalise the Q3 roadmap and align on the launch date.".into(),
+            toolkit: "gmail".into(),
+            metadata: serde_json::json!({ "source": "composio-provider-incremental" }),
+        })
+        .await
+        .expect("storing a synced document must also ingest it into the memory tree");
+
+        let scoped = crate::store::chunks::store::list_chunks(
+            &*config,
+            &crate::store::chunks::store::ListChunksQuery {
+                source_id: Some("gmail:conn-1:gmail:msg-1".into()),
+                limit: Some(8),
+                ..Default::default()
+            },
+        )
+        .expect("list chunks by source id");
+        assert!(
+            !scoped.is_empty(),
+            "ingested chunks must be keyed by `{{toolkit}}:{{connection_id}}:{{document_id}}` — \
+             the scheme the memory-source status and diff snapshots query by"
+        );
+        assert!(
+            scoped
+                .iter()
+                .all(|chunk| chunk.metadata.path_scope.as_deref() == Some("gmail:conn-1")),
+            "connector chunks must carry the `{{toolkit}}:{{connection_id}}` tree scope so \
+             query_source resolves them (gmail → email)"
+        );
+        assert!(
+            scoped
+                .iter()
+                .all(|chunk| chunk.metadata.owner == "gmail-sync:conn-1"),
+            "connector chunks must be owned by the connection that synced them"
+        );
+    }
+
+    /// A blank toolkit or connection cannot produce a scope any retrieval kind
+    /// matches, so the tree half is skipped rather than writing an unreachable
+    /// tree. The skill store, which committed first, still holds the item.
+    #[tokio::test]
+    async fn an_item_without_a_connection_scope_skips_the_tree_but_not_the_store() {
+        use tinymemory_api::host::test_support::TestHostConfig;
+        use tinymemory_api::host::MemoryHostConfig;
+
+        crate::test_seams::init();
+        let workspace = tempfile::tempdir().expect("workspace");
+        let workspace_dir = workspace.path().join("workspace");
+        let mut host_config = TestHostConfig::default();
+        host_config.workspace_dir = workspace_dir.clone();
+        let config = host_config.to_arc();
+        let client: MemoryClientRef = Arc::new(
+            crate::store::MemoryClient::from_workspace_dir(workspace_dir)
+                .expect("memory client initialises against a fresh workspace"),
+        );
+        let host = PipelineHost::new(client.clone(), config.clone());
+
+        host.store(SkillDocument {
+            namespace_skill_id: "gmail".into(),
+            connection_id: "   ".into(),
+            document_id: "gmail:msg-2".into(),
+            title: "No connection".into(),
+            content: "This item has no connection scope.".into(),
+            toolkit: "gmail".into(),
+            metadata: serde_json::Value::Null,
+        })
+        .await
+        .expect("a scopeless item must not fail the sync");
+
+        assert_eq!(
+            crate::store::chunks::store::count_chunks(&*config).expect("count chunks"),
+            0,
+            "a scopeless item must not write a tree no retrieval can reach"
+        );
+        let stored = client
+            .list_documents(Some("skill-gmail"))
+            .await
+            .expect("list skill documents");
+        let documents = stored
+            .get("documents")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(
+            documents.len(),
+            1,
+            "the skill store is the source of truth and must still hold the item"
+        );
+    }
+
+    /// A pipeline that records whether it was ticked, so the refusal path can
+    /// be shown to skip the run rather than to run and discard the result.
+    struct RecordingPipeline(Arc<std::sync::atomic::AtomicBool>);
+
+    #[async_trait]
+    impl SyncPipeline for RecordingPipeline {
+        fn id(&self) -> &str {
+            "test:recording"
+        }
+
+        fn kind(&self) -> crate::sync::pipelines::traits::SyncPipelineKind {
+            crate::sync::pipelines::traits::SyncPipelineKind::Composio
+        }
+
+        async fn init(&self, _: &PipelineConfig, _: &SyncContext) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        async fn tick(&self, _: &PipelineConfig, _: &SyncContext) -> anyhow::Result<SyncOutcome> {
+            self.0.store(true, std::sync::atomic::Ordering::SeqCst);
+            Ok(SyncOutcome {
+                records_ingested: 7,
+                ..SyncOutcome::default()
+            })
+        }
+    }
+
+    /// End to end: with the connection held, `run_pipeline` returns the note
+    /// without ticking the pipeline — no fetch, no Composio spend, and no
+    /// second writer of the connection's `SyncState`.
+    #[tokio::test]
+    async fn a_held_connection_short_circuits_the_run() {
+        crate::test_seams::init();
+        let workspace = tempfile::tempdir().expect("workspace");
+        let client: MemoryClientRef = Arc::new(
+            crate::store::MemoryClient::from_workspace_dir(workspace.path().join("store"))
+                .expect("memory client initialises against a fresh workspace"),
+        );
+        let host = Arc::new(PipelineHost::without_tree_ingest(client));
+        let ticked = Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+        let held = try_hold_connection("gmail", "guard-short-circuit")
+            .expect("the first run takes the guard");
+        let outcome = run_pipeline(
+            Arc::new(RecordingPipeline(ticked.clone())),
+            "gmail",
+            "guard-short-circuit",
+            &PipelineConfig::default(),
+            &host.context(),
+        )
+        .await
+        .expect("a refused run is not a failure");
+
+        assert_eq!(outcome.note.as_deref(), Some(SYNC_ALREADY_RUNNING));
+        assert_eq!(outcome.records_ingested, 0);
+        assert!(
+            !ticked.load(std::sync::atomic::Ordering::SeqCst),
+            "the refused run must not tick the pipeline"
+        );
+
+        // Released, the same call runs normally — the guard skips a concurrent
+        // run, it does not disable the connection.
+        drop(held);
+        let outcome = run_pipeline(
+            Arc::new(RecordingPipeline(ticked.clone())),
+            "gmail",
+            "guard-short-circuit",
+            &PipelineConfig::default(),
+            &host.context(),
+        )
+        .await
+        .expect("the run succeeds once the guard is free");
+        assert_eq!(outcome.records_ingested, 7);
+        assert!(ticked.load(std::sync::atomic::Ordering::SeqCst));
     }
 }
