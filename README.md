@@ -50,7 +50,7 @@ resolution rather than at compile time, which reads as a confusing error.
 None of these crates are on crates.io yet, so you take the facade by git.
 Which patch table you need depends on the engine you pick.
 
-**Hosted engines only (Supermemory, Mem0, Cognee) — no patch table:**
+**Remote engines (Supermemory, Mem0, Cognee — hosted or self-hosted) — no patch table:**
 
 ```toml
 [dependencies]

@@ -99,10 +99,19 @@ impl HttpClient {
     fn status_error(&self, path: &str, status: reqwest::StatusCode) -> anyhow::Error {
         let host = self.endpoint.host_str().unwrap_or("<endpoint>");
         match status.as_u16() {
-            401 | 403 => anyhow::anyhow!(
-                "memory API {path} on {host}: the configured credential was rejected \
-                 (HTTP {status}) — check the API key"
-            ),
+            401 | 403 => {
+                let hint = match &self.auth {
+                    Auth::ApiKey(_) => "check the API key",
+                    Auth::Bearer(_) => "check the bearer token",
+                    Auth::None => {
+                        "the endpoint requires credentials this client was not configured with"
+                    }
+                };
+                anyhow::anyhow!(
+                    "memory API {path} on {host}: the configured credential was rejected \
+                     (HTTP {status}) — {hint}"
+                )
+            }
             _ => anyhow::anyhow!("memory API {path} on {host} returned HTTP {status}"),
         }
     }
