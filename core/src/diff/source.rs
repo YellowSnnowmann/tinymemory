@@ -18,9 +18,10 @@
 //! `mem_src:<id>:%`, and neither is derivable from the logical id alone. The
 //! adapter is therefore built from the full [`MemorySourceEntry`] list (which
 //! carries both) and resolves each id → prefix up front, through
-//! [`crate::sources::status::source_id_prefix`] — the one definition of the
-//! scheme, shared so a snapshot and a status can never disagree about which
-//! chunks belong to a source.
+//! `sources::status::source_id_prefix` — the one definition of the scheme,
+//! shared so a snapshot and a status can never disagree about which chunks
+//! belong to a source. Named rather than linked: it is `pub(crate)`, and a
+//! link to it from this module's public documentation is a rustdoc error.
 
 use std::collections::HashMap;
 use std::sync::Arc;
