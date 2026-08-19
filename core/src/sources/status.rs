@@ -27,31 +27,14 @@ use crate::sources::types::{MemorySourceEntry, SourceKind};
 use crate::store::chunks::store::with_connection;
 use crate::Config;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FreshnessLabel {
-    Active,
-    Recent,
-    Idle,
-}
-
-impl FreshnessLabel {
-    pub fn from_age_ms(last_ms: Option<i64>, now_ms: i64) -> Self {
-        match last_ms {
-            None => Self::Idle,
-            Some(ts) => {
-                let age = now_ms.saturating_sub(ts);
-                if age <= 30_000 {
-                    Self::Active
-                } else if age <= 5 * 60_000 {
-                    Self::Recent
-                } else {
-                    Self::Idle
-                }
-            }
-        }
-    }
-}
+/// Freshness is one vocabulary, owned by [`crate::sync::sync_status`].
+///
+/// It was declared a second time here, with the same variants, the same
+/// snake_case wire strings and the same thresholds — two definitions that had
+/// to be kept in step by hand and nothing checking that they were. Re-exported
+/// rather than merely imported, so `sources::status::FreshnessLabel` stays a
+/// working path for callers that already name it.
+pub use crate::sync::sync_status::FreshnessLabel;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct SourceStatus {
@@ -149,16 +132,30 @@ pub async fn status_list(config: &Config) -> Result<Vec<SourceStatus>, String> {
 }
 
 /// Build the `source_id LIKE` prefix that matches chunks belonging to a source.
-fn source_id_prefix(source: &MemorySourceEntry) -> String {
+///
+/// The scheme is set by the ingest paths, not chosen here: reader-backed kinds
+/// key chunks `mem_src:{source.id}:{item}`, and the Composio sync keys them
+/// `{toolkit}:{connection_id}:{document_id}`.
+///
+/// Matching a Composio source on its toolkit alone would sweep in every *other*
+/// connection of that toolkit — two Gmail accounts would each report the
+/// other's chunks as their own — so the connection narrows it. A Composio entry
+/// without a connection id does not pass validation; the toolkit-only fallback
+/// is there so a malformed row degrades to a wide match rather than to no
+/// match at all.
+///
+/// Shared with [`crate::diff::source`], which builds its snapshot item source
+/// from the same prefixes. It held a second copy of this function whose comment
+/// said it mirrored this one, which is a mirror only for as long as someone
+/// remembers it is.
+pub(crate) fn source_id_prefix(source: &MemorySourceEntry) -> String {
     match source.kind {
         SourceKind::Composio => {
-            // Composio providers write chunks with source_id = `{toolkit}:%`
-            // (e.g. `gmail:user@example.com:msg_xxx`). Match by toolkit only.
-            source
-                .toolkit
-                .as_deref()
-                .map(|t| format!("{t}:%"))
-                .unwrap_or_else(|| "__no_toolkit__:%".to_string())
+            match (source.toolkit.as_deref(), source.connection_id.as_deref()) {
+                (Some(toolkit), Some(connection_id)) => format!("{toolkit}:{connection_id}:%"),
+                (Some(toolkit), None) => format!("{toolkit}:%"),
+                (None, _) => "__no_toolkit__:%".to_string(),
+            }
         }
         _ => format!("mem_src:{}:%", source.id),
     }
@@ -167,24 +164,6 @@ fn source_id_prefix(source: &MemorySourceEntry) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn freshness_thresholds() {
-        let now = 1_000_000_000_000;
-        assert_eq!(
-            FreshnessLabel::from_age_ms(Some(now - 1_000), now),
-            FreshnessLabel::Active
-        );
-        assert_eq!(
-            FreshnessLabel::from_age_ms(Some(now - 60_000), now),
-            FreshnessLabel::Recent
-        );
-        assert_eq!(
-            FreshnessLabel::from_age_ms(Some(now - 600_000), now),
-            FreshnessLabel::Idle
-        );
-        assert_eq!(FreshnessLabel::from_age_ms(None, now), FreshnessLabel::Idle);
-    }
 
     /// A folder source, the shape the prefix and status tests both start from.
     fn folder_entry(id: &str) -> MemorySourceEntry {
@@ -218,9 +197,18 @@ mod tests {
         let mut entry = folder_entry("src_abc");
         assert_eq!(source_id_prefix(&entry), "mem_src:src_abc:%");
 
+        // A Composio source is matched on its connection, not just its
+        // toolkit: a second Gmail account must not count the first's chunks.
         entry.kind = SourceKind::Composio;
         entry.toolkit = Some("gmail".into());
+        entry.connection_id = Some("conn-1".into());
+        assert_eq!(source_id_prefix(&entry), "gmail:conn-1:%");
+
+        entry.connection_id = None;
         assert_eq!(source_id_prefix(&entry), "gmail:%");
+
+        entry.toolkit = None;
+        assert_eq!(source_id_prefix(&entry), "__no_toolkit__:%");
     }
 
     /// A chunk under `source_id`, with a deterministic id the test can address.
