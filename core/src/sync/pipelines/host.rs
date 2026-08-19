@@ -250,11 +250,16 @@ fn build_composio_pipeline(
 ) -> Result<Arc<dyn SyncPipeline>, String> {
     // Fail closed before resolving credentials for any toolkit without a
     // native pipeline (#4957) — the gate stays a single testable list.
-    if !is_composio_toolkit_syncable(toolkit) {
+    //
+    // Normalise once and match on the normalised slug: the gate accepts
+    // `" Gmail "` (trim + lowercase), so matching on the raw input would let a
+    // padded or mixed-case toolkit through the gate and into `unreachable!`.
+    let slug = toolkit.trim().to_ascii_lowercase();
+    if !syncable_composio_toolkits().contains(&slug.as_str()) {
         return Err(format!("memory sync does not support toolkit '{toolkit}'"));
     }
     let client = ComposioClient::new(composio);
-    Ok(match toolkit {
+    Ok(match slug.as_str() {
         "gmail" => Arc::new(GmailSyncPipeline::new(client, connection_id)),
         "github" => Arc::new(GitHubSyncPipeline::new(client, connection_id)),
         "notion" => Arc::new(NotionSyncPipeline::new(client, connection_id)),
@@ -377,5 +382,17 @@ mod tests {
         }
         assert!(!is_composio_toolkit_syncable("googlecalendar"));
         assert!(is_composio_toolkit_syncable(" Gmail "));
+    }
+
+    /// The gate normalises; the build must match on the same normalised
+    /// slug, or a padded/mixed-case toolkit passes the gate and panics.
+    #[test]
+    fn a_padded_or_mixed_case_toolkit_builds_rather_than_panicking() {
+        for toolkit in [" Gmail ", "GMAIL", "gmail\t", " Slack"] {
+            assert!(
+                build_composio_pipeline(toolkit, "conn-1", ComposioSyncConfig::default()).is_ok(),
+                "{toolkit:?} passes the gate and must build"
+            );
+        }
     }
 }

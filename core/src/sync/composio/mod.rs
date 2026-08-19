@@ -156,7 +156,7 @@ pub async fn run_connection_sync(
         "[composio:sync] run_connection_sync: caps from registry"
     );
 
-    let _ = (provider, src_max_items, src_sync_depth_days);
+    let _ = provider;
     let started_at_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -165,8 +165,8 @@ pub async fn run_connection_sync(
         &target.toolkit,
         &target.connection_id,
         &*config,
-        None,
-        None,
+        src_max_items,
+        src_sync_depth_days,
     )
     .await
     {
