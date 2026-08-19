@@ -40,6 +40,15 @@ pub mod diff;
 pub mod embedding_adapter;
 pub mod embedding_host;
 pub mod engine;
+/// The engine module under its pre-#18 name.
+///
+/// OpenHuman's shim re-exports `tinymemory_core::tinycortex` wholesale
+/// (`memory/mod.rs`), and 25 call sites reach through that path. The rename to
+/// `engine` (#18 §C1) would otherwise make the next pin bump a coordinated
+/// two-repo edit for zero behavioural gain. An alias, not a module: one item
+/// to delete once downstream says `engine`.
+#[doc(hidden)]
+pub use engine as tinycortex;
 pub mod events;
 pub mod global;
 pub mod ingest_pipeline;
