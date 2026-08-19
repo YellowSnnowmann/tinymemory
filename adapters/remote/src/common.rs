@@ -72,14 +72,20 @@ async fn read_capped(response: reqwest::Response, path: &str) -> anyhow::Result<
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let chunk = chunk.with_context(|| format!("memory API {path} body read failed"))?;
-        body.extend_from_slice(&chunk);
-        if body.len() as u64 > MAX_RESPONSE_BYTES {
+        // Check BEFORE appending: one oversized chunk would otherwise be
+        // allocated in full before the limit is noticed, which is the
+        // allocation this cap exists to prevent.
+        let next_len = body
+            .len()
+            .checked_add(chunk.len())
+            .context("memory API response length overflowed")?;
+        if next_len as u64 > MAX_RESPONSE_BYTES {
             anyhow::bail!(
                 "memory API {path} response exceeds {MAX_RESPONSE_BYTES}-byte limit \
-                 (read {} bytes)",
-                body.len()
+                 (would reach {next_len} bytes)"
             );
         }
+        body.extend_from_slice(&chunk);
     }
     Ok(body)
 }
