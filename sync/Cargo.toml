@@ -13,6 +13,8 @@ description = "Engine-neutral Composio payload normalisers for TinyMemory"
 # runtime. A dependency added here should have to argue for itself against that
 # sentence (issue #18 §B3).
 [dependencies]
+# `email_markdown`'s thread shapes are (de)serialised at the pipeline seam.
+serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # Two logging facades, neither an implementation, both carried over from the
 # engine layout this crate was extracted from: `gmail_post_process` traces
@@ -31,7 +33,8 @@ log = "0.4"
 # alongside — but it means "pure `Value -> Value`" is true of every normaliser
 # here except that one. Better said out loud than discovered by someone whose
 # output moved when they changed TZ.
-chrono = { version = "0.4", features = ["clock"] }
+# `serde` joined for `email_markdown`'s timestamp (de)serialisers (#18 §B1).
+chrono = { version = "0.4", features = ["clock", "serde"] }
 
 [lints.rust]
 unsafe_code = "forbid"

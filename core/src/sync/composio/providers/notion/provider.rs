@@ -278,9 +278,14 @@ impl ComposioProvider for NotionProvider {
         let Some(connection_id) = ctx.connection_id.as_deref() else {
             return Err("[composio:notion] trigger missing connection_id".to_string());
         };
-        if let Err(e) =
-            crate::engine::run_composio_connection("notion", connection_id, ctx.config.as_ref())
-                .await
+        if let Err(e) = crate::sync::pipelines::host::run_composio_connection(
+            "notion",
+            connection_id,
+            ctx.config.as_ref(),
+            None,
+            None,
+        )
+        .await
         {
             tracing::warn!(
                 error = %e,

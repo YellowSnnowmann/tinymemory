@@ -1,41 +1,308 @@
-//! Compatibility exports for sync state now owned by tinycortex.
+//! Cursor, dedup and daily-budget state for Composio sync (#18 §B2).
+//!
+//! Owned here, engine-neutral, persisted through the [`SyncStateStore`] KV
+//! seam — any provider whose KV family can get/set a JSON value can carry
+//! sync state. This was a re-export of the engine's copy; §B2 asks for the
+//! state to be engine-neutral, and the type is nothing but serde shapes over
+//! std/chrono, so owning it costs one copy.
+//!
+//! The engine keeps its own copy for its internal pipelines until §B1's
+//! orchestrator move retires them. The two persist under the same KV
+//! namespace with the same serde shape; `the_state_namespace_is_pinned` and
+//! `state_line_format_is_pinned` below hold this copy to that contract.
 
-pub use crate::engine::backend::sync::state::DEFAULT_DAILY_REQUEST_LIMIT;
-pub use crate::engine::backend::sync::{DailyBudget, SyncState};
+use std::collections::{HashMap, HashSet};
 
-pub const KV_NAMESPACE: &str = crate::engine::HOST_SYNC_STATE_NAMESPACE;
+use async_trait::async_trait;
+use chrono::Utc;
+use serde::{Deserialize, Serialize};
 
-pub fn extract_item_id(item: &serde_json::Value, paths: &[&str]) -> Option<String> {
-    paths.iter().find_map(|path| {
-        let value = path
-            .split('.')
-            .try_fold(item, |current, segment| current.get(segment))?;
-        value
-            .as_str()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned)
-    })
+/// The KV namespace every persisted sync cursor lives under.
+///
+/// Durable: changing it strands every cursor. See the pin test.
+pub const KV_NAMESPACE: &str = STATE_NAMESPACE;
+
+pub const DEFAULT_DAILY_REQUEST_LIMIT: u32 = 500;
+pub const STATE_NAMESPACE: &str = "composio-sync-state";
+
+#[async_trait]
+pub trait SyncStateStore: Send + Sync {
+    async fn get(&self, namespace: &str, key: &str) -> anyhow::Result<Option<serde_json::Value>>;
+    async fn set(
+        &self,
+        namespace: &str,
+        key: &str,
+        value: &serde_json::Value,
+    ) -> anyhow::Result<()>;
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyBudget {
+    pub date: String,
+    pub requests_used: u32,
+    pub limit: u32,
+}
+
+impl Default for DailyBudget {
+    fn default() -> Self {
+        Self {
+            date: today(),
+            requests_used: 0,
+            limit: DEFAULT_DAILY_REQUEST_LIMIT,
+        }
+    }
+}
+
+impl DailyBudget {
+    pub fn remaining(&self) -> u32 {
+        if self.date != today() {
+            self.limit
+        } else {
+            self.limit.saturating_sub(self.requests_used)
+        }
+    }
+
+    pub fn is_exhausted(&self) -> bool {
+        self.remaining() == 0
+    }
+
+    pub fn record_requests(&mut self, count: u32) {
+        let today = today();
+        if self.date != today {
+            self.date = today;
+            self.requests_used = 0;
+        }
+        self.requests_used = self.requests_used.saturating_add(count);
+    }
+
+    pub fn record_request(&mut self) {
+        self.record_requests(1);
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncState {
+    pub toolkit: String,
+    pub connection_id: String,
+    #[serde(default)]
+    pub cursor: Option<String>,
+    #[serde(default)]
+    pub synced_ids: HashSet<String>,
+    #[serde(default)]
+    pub item_versions: HashMap<String, String>,
+    #[serde(default)]
+    pub daily_budget: DailyBudget,
+    #[serde(default)]
+    pub last_seen_id: Option<String>,
+    #[serde(default)]
+    pub last_sync_at_ms: Option<u64>,
+    #[serde(skip)]
+    pub run_requests: u32,
+    #[serde(skip)]
+    pub run_provider_cost_usd: f64,
+}
+
+impl SyncState {
+    pub fn new(toolkit: impl Into<String>, connection_id: impl Into<String>) -> Self {
+        Self {
+            toolkit: toolkit.into(),
+            connection_id: connection_id.into(),
+            cursor: None,
+            synced_ids: HashSet::new(),
+            item_versions: HashMap::new(),
+            daily_budget: DailyBudget::default(),
+            last_seen_id: None,
+            last_sync_at_ms: None,
+            run_requests: 0,
+            run_provider_cost_usd: 0.0,
+        }
+    }
+
+    pub fn key(toolkit: &str, connection_id: &str) -> String {
+        format!("{toolkit}:{connection_id}")
+    }
+
+    pub fn is_synced(&self, id: &str) -> bool {
+        self.synced_ids.contains(id)
+    }
+
+    pub fn mark_synced(&mut self, id: impl Into<String>) {
+        self.synced_ids.insert(id.into());
+    }
+
+    pub fn advance_cursor(&mut self, cursor: impl Into<String>) {
+        self.cursor = Some(cursor.into());
+    }
+
+    pub fn set_last_seen_id(&mut self, id: impl Into<String>) {
+        self.last_seen_id = Some(id.into());
+    }
+
+    pub fn set_last_sync_at_ms(&mut self, timestamp_ms: u64) {
+        self.last_sync_at_ms = Some(timestamp_ms);
+    }
+
+    pub fn budget_exhausted(&self) -> bool {
+        self.daily_budget.is_exhausted()
+    }
+
+    pub fn budget_remaining(&self) -> u32 {
+        self.daily_budget.remaining()
+    }
+
+    pub fn record_requests(&mut self, count: u32) {
+        self.daily_budget.record_requests(count);
+        self.run_requests = self.run_requests.saturating_add(count);
+    }
+
+    pub fn record_action(&mut self, attempts: u32, cost_usd: f64) {
+        self.record_requests(attempts.max(1));
+        if cost_usd.is_finite() && cost_usd > 0.0 {
+            self.run_provider_cost_usd += cost_usd;
+        }
+    }
+
+    pub async fn load(
+        store: &dyn SyncStateStore,
+        toolkit: &str,
+        connection_id: &str,
+    ) -> anyhow::Result<Self> {
+        let key = Self::key(toolkit, connection_id);
+        match store.get(STATE_NAMESPACE, &key).await? {
+            Some(value) => {
+                let mut state: Self = serde_json::from_value(value)?;
+                if state.daily_budget.date != today() {
+                    state.daily_budget.date = today();
+                    state.daily_budget.requests_used = 0;
+                }
+                Ok(state)
+            }
+            None => Ok(Self::new(toolkit, connection_id)),
+        }
+    }
+
+    pub async fn save(&self, store: &dyn SyncStateStore) -> anyhow::Result<()> {
+        let value = serde_json::to_value(self)?;
+        store
+            .set(
+                STATE_NAMESPACE,
+                &Self::key(&self.toolkit, &self.connection_id),
+                &value,
+            )
+            .await
+    }
+}
+
+fn today() -> String {
+    Utc::now().format("%Y-%m-%d").to_string()
 }
 
 #[cfg(test)]
 mod tests {
-    /// The namespace is durable, so changing it is a data migration.
-    ///
-    /// `KV_NAMESPACE` now re-exports the engine's constant, which makes host
-    /// and engine agree by construction — they previously agreed only because
-    /// two separate `const`s happened to hold the same literal. This pins the
-    /// *value* as well: every persisted Composio sync cursor lives under this
-    /// string, so a change upstream silently strands all of them. Failing here
-    /// turns that into a deliberate decision with a migration attached rather
-    /// than a quiet loss discovered when a sync re-runs from the beginning.
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    use super::*;
+
+    #[derive(Default)]
+    struct MemoryStateStore(Mutex<HashMap<String, serde_json::Value>>);
+
+    #[async_trait]
+    impl SyncStateStore for MemoryStateStore {
+        async fn get(
+            &self,
+            namespace: &str,
+            key: &str,
+        ) -> anyhow::Result<Option<serde_json::Value>> {
+            Ok(self
+                .0
+                .lock()
+                .unwrap()
+                .get(&format!("{namespace}:{key}"))
+                .cloned())
+        }
+
+        async fn set(
+            &self,
+            namespace: &str,
+            key: &str,
+            value: &serde_json::Value,
+        ) -> anyhow::Result<()> {
+            self.0
+                .lock()
+                .unwrap()
+                .insert(format!("{namespace}:{key}"), value.clone());
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn state_round_trips_cursor_dedup_and_budget() {
+        let store = MemoryStateStore::default();
+        let mut state = SyncState::new("gmail", "conn-1");
+        state.advance_cursor("cursor-2");
+        state.mark_synced("message-1");
+        state.record_requests(3);
+        state.save(&store).await.unwrap();
+
+        let loaded = SyncState::load(&store, "gmail", "conn-1").await.unwrap();
+        assert_eq!(loaded.cursor.as_deref(), Some("cursor-2"));
+        assert!(loaded.is_synced("message-1"));
+        assert_eq!(loaded.daily_budget.requests_used, 3);
+    }
+
+    /// The namespace is durable: every persisted Composio sync cursor lives
+    /// under this string, so a change strands all of them. The engine's copy
+    /// must agree; failing here means a coordinated migration, never a local
+    /// edit.
     #[test]
     fn the_state_namespace_is_pinned() {
         assert_eq!(
-            super::KV_NAMESPACE,
-            "composio-sync-state",
+            KV_NAMESPACE, "composio-sync-state",
             "the Composio sync-state KV namespace changed; every persisted \
              cursor is stored under the old value and needs migrating"
         );
+        assert_eq!(STATE_NAMESPACE, KV_NAMESPACE);
+    }
+
+    /// The engine persists the same state with its own copy of this type.
+    /// Pins the serialised shape so the copies cannot drift silently.
+    #[test]
+    fn state_line_format_is_pinned() {
+        let mut state = SyncState::new("gmail", "conn-1");
+        state.daily_budget.date = "2026-01-02".into();
+        state.daily_budget.requests_used = 3;
+        state.advance_cursor("c2");
+        state.mark_synced("m1");
+        state.item_versions.insert("m1".into(), "v1".into());
+        state.set_last_seen_id("m1");
+        state.set_last_sync_at_ms(1_000);
+        let value = serde_json::to_value(&state).unwrap();
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "toolkit": "gmail",
+                "connection_id": "conn-1",
+                "cursor": "c2",
+                "synced_ids": ["m1"],
+                "item_versions": {"m1": "v1"},
+                "daily_budget": {"date": "2026-01-02", "requests_used": 3, "limit": 500},
+                "last_seen_id": "m1",
+                "last_sync_at_ms": 1000
+            })
+        );
+    }
+
+    #[test]
+    fn stale_budget_reports_full_and_resets_on_record() {
+        let mut budget = DailyBudget {
+            date: "2000-01-01".into(),
+            requests_used: 499,
+            limit: 500,
+        };
+        assert_eq!(budget.remaining(), 500);
+        budget.record_requests(1);
+        assert_eq!(budget.requests_used, 1);
+        assert_eq!(budget.remaining(), 499);
     }
 }

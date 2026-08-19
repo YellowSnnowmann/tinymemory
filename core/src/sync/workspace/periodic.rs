@@ -33,10 +33,10 @@ use chrono::{DateTime, Utc};
 use tokio::time::interval;
 
 use crate::config_loader as config_rpc;
-use crate::engine::{try_read_audit_log, SyncAuditEntry};
 use crate::scheduler_gate::resume_notify;
 use crate::sources::sync::sync_source;
 use crate::sources::types::{MemorySourceEntry, SourceKind};
+use crate::sync::audit::{read_audit_log, SyncAuditEntry};
 use crate::sync::composio::periodic::{
     connection_is_due, effective_interval_secs, periodic_pause_reason,
 };
@@ -181,7 +181,8 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
         return Ok(());
     };
 
-    let (audit_index, audit_available) = workspace_audit_state(try_read_audit_log(&*config));
+    let (audit_index, audit_available) =
+        workspace_audit_state(read_audit_log(config.workspace_dir()));
     if !audit_available {
         tracing::warn!(
             "[memory_sync:workspace:periodic] audit unavailable; sources without in-memory cadence will be skipped"

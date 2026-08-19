@@ -3,11 +3,9 @@
 use async_trait::async_trait;
 use std::sync::Arc;
 use tinycortex::memory::sync::{
-    ClickUpSyncPipeline, ComposioClient, ExternalSourceReader, GitHubSyncPipeline,
-    GithubRepoSyncPipeline, GmailSyncPipeline, LinearSyncPipeline, LocalDocument,
-    LocalDocumentSink, NotionSyncPipeline, SkillDocSink, SkillDocument,
-    SlackSearchBackfillPipeline, SlackSyncPipeline, SyncContext, SyncDispatcher, SyncEvent,
-    SyncEventSink, SyncOutcome, SyncPipeline, SyncStage, SyncStateStore, WorkspaceSourcePipeline,
+    ExternalSourceReader, GithubRepoSyncPipeline, LocalDocument, LocalDocumentSink, SkillDocSink,
+    SkillDocument, SyncContext, SyncDispatcher, SyncEvent, SyncEventSink, SyncOutcome,
+    SyncPipeline, SyncStage, SyncStateStore, WorkspaceSourcePipeline,
 };
 
 use crate::sources::{MemorySourceEntry, SourceKind};
@@ -24,9 +22,7 @@ use crate::Config;
 /// persisted sync cursor with no error anywhere. A duplicated literal is a
 /// drift hazard precisely when the thing it names is durable (#18 §B2).
 pub use tinycortex::memory::sync::state::STATE_NAMESPACE as HOST_SYNC_STATE_NAMESPACE;
-pub use tinycortex::memory::sync::{
-    RawCoverage, RawFileRef, RealCostAccumulator, RebuildOutcome, SyncAuditEntry,
-};
+pub use tinycortex::memory::sync::{RawCoverage, RawFileRef, RealCostAccumulator, RebuildOutcome};
 
 pub struct HostSyncAdapter {
     memory: MemoryClientRef,
@@ -134,50 +130,20 @@ impl HostSyncAdapter {
     }
 }
 
-/// Append one host sync audit record, logging failures without exposing source identifiers.
-pub fn append_audit_entry(config: &Config, entry: &SyncAuditEntry) {
-    tracing::debug!(
-        source_kind = %entry.source_kind,
-        success = entry.success,
-        items_fetched = entry.items_fetched,
-        "[tinycortex:sync] audit append starting"
-    );
-    let memory_config = super::memory_config_from(config, config.workspace_dir().clone());
-    match tinycortex::memory::sync::append_audit_entry(&memory_config, entry) {
-        Ok(()) => tracing::debug!(
-            source_kind = %entry.source_kind,
-            success = entry.success,
-            "[tinycortex:sync] audit append completed"
-        ),
-        Err(error) => {
-            tracing::warn!(%error, source_kind = %entry.source_kind, "[tinycortex:sync] audit append failed");
-        }
-    }
-}
-
-/// Read persisted sync audit records while preserving storage failures for fail-closed callers.
-pub fn try_read_audit_log(config: &Config) -> anyhow::Result<Vec<SyncAuditEntry>> {
-    tracing::debug!("[tinycortex:sync] audit read starting");
-    let memory_config = super::memory_config_from(config, config.workspace_dir().clone());
-    let entries = tinycortex::memory::sync::read_audit_log(&memory_config).map_err(|error| {
-        tracing::warn!(%error, "[tinycortex:sync] audit read failed");
-        error
-    })?;
-    tracing::debug!(
-        entries = entries.len(),
-        "[tinycortex:sync] audit read completed"
-    );
-    Ok(entries)
-}
-
 /// Read persisted sync audit records for best-effort RPC and reporting surfaces.
-pub fn read_audit_log(config: &Config) -> Vec<SyncAuditEntry> {
-    try_read_audit_log(config).unwrap_or_default()
+///
+/// Backed by `crate::sync::audit` — the host-owned log — not the engine;
+/// this stays in the engine module only because OpenHuman reaches it through
+/// the engine shim path.
+pub fn read_audit_log(config: &Config) -> Vec<crate::sync::audit::SyncAuditEntry> {
+    crate::sync::audit::read_audit_log(config.workspace_dir()).unwrap_or_default()
 }
 
 /// Estimate sync inference cost using TinyCortex's canonical pricing model.
+/// Delegates to the host-owned pricing (#18 §B1); kept because OpenHuman
+/// reaches it through the engine shim path.
 pub fn estimate_cost_usd(input_tokens: u64, output_tokens: u64) -> f64 {
-    tinycortex::memory::sync::estimate_cost_usd(input_tokens, output_tokens)
+    crate::sync::audit::estimate_cost_usd(input_tokens, output_tokens)
 }
 
 /// Measure coverage of a raw archive by its TinyCortex memory tree.
@@ -343,6 +309,47 @@ pub async fn run_source_pipeline(
     source: &MemorySourceEntry,
     config: &Config,
 ) -> Result<SyncOutcome, SourcePipelineFailure> {
+    // Composio sources run on the engine-free pipelines (#18 §B1); this seam
+    // keeps only the tree-coupled kinds (folder/repo/rss/web — they summarise
+    // into the engine tree by design) and converts at the boundary for its
+    // OpenHuman-facing callers.
+    if source.kind == SourceKind::Composio {
+        let toolkit = source
+            .toolkit
+            .as_deref()
+            .map(str::trim)
+            .filter(|toolkit| !toolkit.is_empty())
+            .ok_or_else(|| SourcePipelineFailure::without_usage("composio source missing toolkit"))?
+            .to_ascii_lowercase();
+        let connection_id = source
+            .connection_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|connection_id| !connection_id.is_empty())
+            .ok_or_else(|| {
+                SourcePipelineFailure::without_usage("composio source missing connection_id")
+            })?;
+        let outcome = crate::sync::pipelines::host::run_composio_connection_with_caps(
+            &toolkit,
+            connection_id,
+            config,
+            crate::sync::pipelines::host::SourceCaps::from_source(source),
+        )
+        .await
+        .map_err(|failure| SourcePipelineFailure {
+            message: failure.message,
+            actions_called: failure.actions_called,
+            provider_cost_usd: failure.provider_cost_usd,
+        })?;
+        return Ok(SyncOutcome {
+            records_ingested: outcome.records_ingested,
+            more_pending: outcome.more_pending,
+            actions_called: outcome.actions_called,
+            provider_cost_usd: outcome.provider_cost_usd,
+            note: outcome.note,
+        });
+    }
+
     let memory = crate::global::client_if_ready()
         .ok_or_else(|| SourcePipelineFailure::without_usage("memory client is not ready"))?;
     let mut memory_config = super::memory_config_from(config, config.workspace_dir().clone());
@@ -447,14 +454,22 @@ pub async fn run_composio_connection_with_budgets(
     run_source_pipeline(&source, config).await
 }
 
+/// Load the persisted Composio sync state, in core's own vocabulary.
+///
+/// Was typed with the engine's `SyncState`; the copies share one serde shape
+/// and one KV namespace (pinned by tests in
+/// `sync::composio::providers::sync_state`), so the retype changes no bytes.
+/// Kept in the engine module only because OpenHuman reaches it through the
+/// engine shim path.
 pub async fn load_composio_sync_state(
     toolkit: &str,
     connection_id: &str,
-) -> anyhow::Result<tinycortex::memory::sync::SyncState> {
+) -> anyhow::Result<crate::sync::composio::providers::sync_state::SyncState> {
     let memory = crate::global::client_if_ready()
         .ok_or_else(|| anyhow::anyhow!("memory client is not ready"))?;
-    let adapter = HostSyncAdapter::new(memory);
-    tinycortex::memory::sync::SyncState::load(&adapter, toolkit, connection_id).await
+    let host = crate::sync::pipelines::host::PipelineHost::without_tree_ingest(memory);
+    crate::sync::composio::providers::sync_state::SyncState::load(&host, toolkit, connection_id)
+        .await
 }
 
 pub async fn run_slack_search_backfill(
@@ -462,31 +477,30 @@ pub async fn run_slack_search_backfill(
     backfill_days: i64,
     config: &Config,
 ) -> Result<SyncOutcome, SourcePipelineFailure> {
-    let memory = crate::global::client_if_ready()
-        .ok_or_else(|| SourcePipelineFailure::without_usage("memory client is not ready"))?;
-    let mut memory_config = super::memory_config_from(config, config.workspace_dir().clone());
-    let composio = composio_config(config).map_err(SourcePipelineFailure::without_usage)?;
-    memory_config.sync.composio = Some(composio.clone());
-    let pipeline = std::sync::Arc::new(SlackSearchBackfillPipeline::new(
-        ComposioClient::new(composio),
+    // Delegates to the engine-free pipelines (#18 §B1); kept here because
+    // OpenHuman reaches this function through the engine shim path.
+    let outcome = crate::sync::pipelines::host::run_slack_search_backfill(
         connection_id,
         backfill_days,
-    ));
-    let pipeline_id = pipeline.id().to_owned();
-    let mut dispatcher = SyncDispatcher::new();
-    dispatcher
-        .register(pipeline)
-        .map_err(|error| SourcePipelineFailure::without_usage(error.to_string()))?;
-    dispatcher
-        .tick(
-            &pipeline_id,
-            &memory_config,
-            &source_sync_context(memory, config, false),
-        )
-        .await
-        .map_err(|error| SourcePipelineFailure::without_usage(error.to_string()))
+        config,
+    )
+    .await
+    .map_err(|failure| SourcePipelineFailure {
+        message: failure.message,
+        actions_called: failure.actions_called,
+        provider_cost_usd: failure.provider_cost_usd,
+    })?;
+    Ok(SyncOutcome {
+        records_ingested: outcome.records_ingested,
+        more_pending: outcome.more_pending,
+        actions_called: outcome.actions_called,
+        provider_cost_usd: outcome.provider_cost_usd,
+        note: outcome.note,
+    })
 }
 
+/// Delegates to the engine-free pipelines (#18 §B1); kept because OpenHuman's
+/// backfill binary reaches it through the engine shim path.
 pub async fn run_gmail_backfill(
     connection_id: &str,
     query: &str,
@@ -494,59 +508,32 @@ pub async fn run_gmail_backfill(
     page_size: usize,
     config: &Config,
 ) -> Result<SyncOutcome, SourcePipelineFailure> {
-    let memory = crate::global::client_if_ready()
-        .ok_or_else(|| SourcePipelineFailure::without_usage("memory client is not ready"))?;
-    let mut memory_config = super::memory_config_from(config, config.workspace_dir().clone());
-    let composio = composio_config(config).map_err(SourcePipelineFailure::without_usage)?;
-    memory_config.sync.composio = Some(composio.clone());
-    let pipeline = std::sync::Arc::new(
-        GmailSyncPipeline::new(ComposioClient::new(composio), connection_id)
-            .with_limits(max_pages, page_size)
-            .with_query(query),
-    );
-    let pipeline_id = pipeline.id().to_owned();
-    let mut dispatcher = SyncDispatcher::new();
-    dispatcher
-        .register(pipeline)
-        .map_err(|error| SourcePipelineFailure::without_usage(error.to_string()))?;
-    dispatcher
-        .tick(
-            &pipeline_id,
-            &memory_config,
-            &source_sync_context(memory, config, false),
-        )
-        .await
-        .map_err(|error| SourcePipelineFailure::without_usage(error.to_string()))
-}
-
-/// Composio toolkit slugs that have a native memory-sync pipeline in
-/// [`build_pipeline`] — the authoritative "can actually ingest into memory" set.
-///
-/// This MUST stay in lockstep with the registered memory-sync providers
-/// (`memory_sync::composio::all_composio_sync_providers`): the
-/// `memory_sources.supported_toolkits` RPC advertises the provider registry, and
-/// the `connection_created` auto-register gates on it, so any divergence
-/// reintroduces the "connection reports ACTIVE but silently never ingests"
-/// failure this guards against (#4957). The registry↔pipeline equality is pinned
-/// by `composio_syncable_set_matches_provider_registry` in the tests below, and
-/// the arms of the `match` in [`build_pipeline`] map 1:1 to these slugs.
-pub fn syncable_composio_toolkits() -> &'static [&'static str] {
-    &["clickup", "github", "gmail", "linear", "notion", "slack"]
-}
-
-/// Whether `toolkit` has a native memory-sync pipeline (case-insensitive).
-/// Callers deciding *whether to offer/register* a Composio source should prefer
-/// the provider registry (`get_composio_sync_provider`) so there is a single
-/// advertised source of truth; this mirror exists for the sync layer itself.
-pub fn is_composio_toolkit_syncable(toolkit: &str) -> bool {
-    let slug = toolkit.trim().to_ascii_lowercase();
-    syncable_composio_toolkits().contains(&slug.as_str())
+    let outcome = crate::sync::pipelines::host::run_gmail_backfill(
+        connection_id,
+        query,
+        max_pages,
+        page_size,
+        config,
+    )
+    .await
+    .map_err(|failure| SourcePipelineFailure {
+        message: failure.message,
+        actions_called: failure.actions_called,
+        provider_cost_usd: failure.provider_cost_usd,
+    })?;
+    Ok(SyncOutcome {
+        records_ingested: outcome.records_ingested,
+        more_pending: outcome.more_pending,
+        actions_called: outcome.actions_called,
+        provider_cost_usd: outcome.provider_cost_usd,
+        note: outcome.note,
+    })
 }
 
 fn build_pipeline(
     source: &MemorySourceEntry,
-    config: &Config,
-    memory_config: &mut tinycortex::memory::config::MemoryConfig,
+    _config: &Config,
+    _memory_config: &mut tinycortex::memory::config::MemoryConfig,
 ) -> Result<std::sync::Arc<dyn SyncPipeline>, String> {
     if source.kind != SourceKind::Composio {
         let crate_source: tinycortex::memory::sources::MemorySourceEntry = serde_json::from_value(
@@ -563,75 +550,13 @@ fn build_pipeline(
             .map_err(|error| error.to_string());
     }
 
-    let toolkit = source
-        .toolkit
-        .as_deref()
-        .map(str::trim)
-        .filter(|toolkit| !toolkit.is_empty())
-        .ok_or_else(|| "composio source missing toolkit".to_string())?
-        .to_ascii_lowercase();
-    let connection_id = source
-        .connection_id
-        .as_deref()
-        .map(str::trim)
-        .filter(|connection_id| !connection_id.is_empty())
-        .ok_or_else(|| "composio source missing connection_id".to_string())?;
-    // Fail closed *before* resolving credentials/client for any toolkit without a
-    // native pipeline. This keeps the unsupported-toolkit error identical to the
-    // match's fallback while making the syncable set a single, testable gate that
-    // stays pinned to the provider registry (#4957).
-    if !is_composio_toolkit_syncable(&toolkit) {
-        return Err(format!(
-            "tinycortex sync does not support toolkit '{toolkit}'"
-        ));
-    }
-    let composio = composio_config(config)?;
-    memory_config.sync.composio = Some(composio.clone());
-    let client = ComposioClient::new(composio);
-    let pipeline: std::sync::Arc<dyn SyncPipeline> = match toolkit.as_str() {
-        "gmail" => std::sync::Arc::new(GmailSyncPipeline::new(client, connection_id)),
-        "github" => std::sync::Arc::new(GitHubSyncPipeline::new(client, connection_id)),
-        "notion" => std::sync::Arc::new(NotionSyncPipeline::new(client, connection_id)),
-        "linear" => std::sync::Arc::new(LinearSyncPipeline::new(client, connection_id)),
-        "clickup" => std::sync::Arc::new(ClickUpSyncPipeline::new(client, connection_id)),
-        "slack" => std::sync::Arc::new(SlackSyncPipeline::new(client, connection_id)),
-        _ => {
-            return Err(format!(
-                "tinycortex sync does not support toolkit '{toolkit}'"
-            ))
-        }
-    };
-    Ok(pipeline)
-}
-
-fn composio_config(
-    config: &Config,
-) -> Result<tinycortex::memory::config::ComposioSyncConfig, String> {
-    use tinycortex::memory::config::{ComposioMode, ComposioSyncConfig, SecretString};
-
-    if config.composio().mode.eq_ignore_ascii_case("direct") {
-        let api_key = crate::composio_host::api_key(config)
-            .or_else(|| config.composio().api_key.clone())
-            .ok_or_else(|| "Composio direct API key is not configured".to_string())?;
-        Ok(ComposioSyncConfig {
-            mode: ComposioMode::Direct,
-            base_url: "https://backend.composio.dev/api/v3".into(),
-            api_key: Some(SecretString::new(api_key)),
-            bearer_token: None,
-            entity_id: Some(config.composio().entity_id.clone()),
-        })
-    } else {
-        let bearer = config
-            .session_token()?
-            .ok_or_else(|| "OpenHuman backend bearer token is not configured".to_string())?;
-        Ok(ComposioSyncConfig {
-            mode: ComposioMode::Proxied,
-            base_url: config.effective_backend_api_url(),
-            api_key: None,
-            bearer_token: Some(SecretString::new(bearer)),
-            entity_id: Some(config.composio().entity_id.clone()),
-        })
-    }
+    // Composio sources never reach this seam: `run_source_pipeline` routes
+    // them to `crate::sync::pipelines` (#18 §B1) before building. Only the
+    // tree-coupled kinds are built here.
+    Err(format!(
+        "engine seam does not build composio pipelines (kind {:?} unexpected here)",
+        source.kind
+    ))
 }
 
 #[async_trait]
@@ -798,12 +723,10 @@ fn stage_name(stage: SyncStage) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        build_pipeline, is_composio_toolkit_syncable, syncable_composio_toolkits,
-        try_read_audit_log,
-    };
+    use super::build_pipeline;
     use crate::sources::MemorySourceEntry;
     use crate::sync::composio::{get_composio_sync_provider, init_default_composio_sync_providers};
+    use crate::sync::pipelines::host::{is_composio_toolkit_syncable, syncable_composio_toolkits};
 
     /// The advertised set (`memory_sources.supported_toolkits`, sourced from the
     /// provider registry) and the syncable set (`build_pipeline`) must not
@@ -875,7 +798,7 @@ mod tests {
     /// we must get the unsupported-toolkit error, proving the fail-closed
     /// ordering that stops an unsyncable toolkit from ever reaching a pipeline.
     #[test]
-    fn build_pipeline_rejects_unsupported_toolkit_before_resolving_config() {
+    fn build_pipeline_refuses_composio_sources() {
         // `googlecalendar` is a real Composio toolkit with no native pipeline —
         // exactly the prod case from #4957.
         let source: MemorySourceEntry = serde_json::from_value(serde_json::json!({
@@ -891,16 +814,16 @@ mod tests {
         let mut memory_config =
             tinycortex::memory::config::MemoryConfig::new("/tmp/openhuman-test-ws");
 
-        // `build_pipeline` returns `Result<Arc<dyn SyncPipeline>, String>`; the
-        // Ok arm is not `Debug`, so match rather than `expect_err`.
+        // Composio never reaches this seam any more: `run_source_pipeline`
+        // routes it to the engine-free pipelines (#18 §B1). The seam's job is
+        // to say so, not to half-build one.
         let err = match build_pipeline(&source, &config, &mut memory_config) {
-            Ok(_) => panic!("unsupported toolkit must be rejected before config resolution"),
+            Ok(_) => panic!("the engine seam must refuse composio sources"),
             Err(e) => e,
         };
         assert!(
-            err.contains("does not support toolkit 'googlecalendar'"),
-            "expected the unsupported-toolkit error (proving rejection precedes \
-             config resolution), got: {err}"
+            err.contains("does not build composio pipelines"),
+            "expected the composio refusal, got: {err}"
         );
     }
 
@@ -915,22 +838,6 @@ mod tests {
         assert!(is_composio_toolkit_syncable("gmail"));
         assert!(is_composio_toolkit_syncable("Gmail"));
         assert!(is_composio_toolkit_syncable("  slack "));
-    }
-
-    #[test]
-    fn fallible_audit_read_distinguishes_io_failure_from_empty_log() {
-        let workspace = tempfile::tempdir().expect("workspace");
-        let audit_path = workspace.path().join("memory_tree/sync_audit.jsonl");
-        std::fs::create_dir_all(&audit_path).expect("create directory at audit file path");
-
-        let mut config = tinymemory_api::host::test_support::TestHostConfig::default();
-        config.workspace_dir = workspace.path().to_path_buf();
-
-        let error = try_read_audit_log(&config).expect_err("directory read must fail");
-        assert!(
-            error.downcast_ref::<std::io::Error>().is_some(),
-            "expected the audit I/O error to remain distinguishable: {error:#}"
-        );
     }
 
     /// Regression for #5473: a Composio connector sync must feed the memory tree,

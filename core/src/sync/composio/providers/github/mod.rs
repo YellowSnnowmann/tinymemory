@@ -7,7 +7,7 @@
 //!
 //! - `provider.rs` — `impl ComposioProvider for GitHubProvider`
 //! - `normalization`  — payload-shape helpers, now reached through
-//!   `crate::engine::engine` (issue #18 §C1)
+//!   `tinymemory-sync` (issue #18 §B3)
 //! - `tools.rs`    — `GITHUB_CURATED` whitelist of Composio actions
 //! - `tests.rs`    — unit tests for the helpers + trait metadata
 //!

@@ -34,5 +34,7 @@ pub mod notion;
 // The `_post_process` suffix is kept from the engine layout it came from, where
 // `slack.rs` and `github.rs` one directory up already held those names. Renaming
 // on the way out would have made this a rename *and* a move in one diff.
+pub mod email_clean;
+pub mod email_markdown;
 pub mod gmail_post_process;
 pub mod slack_post_process;

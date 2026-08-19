@@ -156,13 +156,19 @@ pub async fn run_connection_sync(
         "[composio:sync] run_connection_sync: caps from registry"
     );
 
-    let _ = (provider, src_max_items, src_sync_depth_days);
+    let _ = provider;
     let started_at_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as u64;
-    match crate::engine::run_composio_connection(&target.toolkit, &target.connection_id, &*config)
-        .await
+    match crate::sync::pipelines::host::run_composio_connection(
+        &target.toolkit,
+        &target.connection_id,
+        &*config,
+        src_max_items,
+        src_sync_depth_days,
+    )
+    .await
     {
         Ok(outcome) => {
             let usage = ComposioUsage {
