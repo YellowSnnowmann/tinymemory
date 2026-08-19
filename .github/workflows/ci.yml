@@ -152,8 +152,16 @@ jobs:
       # deliberately can still be built by someone else's dependency. `--depth 2`
       # covers every pair without the combinatorial blow-up of the full set.
       #
-      # Check-only: this is about whether the combinations *compile*, and the
-      # behaviour of each is the main job's business.
+      # Check-only: this is about whether the combinations *compile*, and
+      # whether they link and run is the `feature-configs` job's business.
+      #
+      # This is also where §E2's `contacts` row is covered, without a step of
+      # its own: `contacts` is a feature of `tinymemory-core`, and the powerset
+      # enumerates it as a subset of size one on this same runner. What it does
+      # not cover is *executing* it, which needs `macos-latest` — the feature's
+      # only behaviour is a CNContactStore reader whose dependencies sit behind
+      # a `cfg(target_os = "macos")` table, so on ubuntu there is nothing to run
+      # but the empty stub. That runner is deliberately not spent.
       - name: Feature powerset compiles
         run: cargo hack --feature-powerset --depth 2 --workspace check --all-targets
 
@@ -165,6 +173,63 @@ jobs:
         run: |
           cargo llvm-cov --all-features --workspace --summary-only \
             | tee "$GITHUB_STEP_SUMMARY"
+
+  # §E2's first half: build **and test** each engine configuration on its own.
+  #
+  # What this adds over the powerset pass, precisely: `cargo check` never
+  # links, and it never runs a test binary. A feature set that type-checks can
+  # still fail to link — the root `Cargo.toml` documents one such hazard, where
+  # a second crate claiming `links = "git2"` becomes a hard cargo error — and
+  # that failure is invisible to a check. So these rows are worth their minutes
+  # for linking and running, not for behaviour that varies by feature: the
+  # facade's own suite is the same set of tests in every configuration, because
+  # `DriverRegistry` admission is a static policy table rather than a function
+  # of which adapters were compiled in.
+  #
+  # Two of §E2's nine configurations name features the facade does not have.
+  # `--features contacts` belongs to `tinymemory-core` and is covered by the
+  # powerset job above. `--features sync-composio` names a feature that exists
+  # nowhere in the workspace: the Composio sync is unconditional in
+  # `tinymemory-core`, so there is nothing to select and nothing to isolate.
+  # Recorded here rather than quietly dropped, because a missing row in a
+  # matrix reads as covered.
+  feature-configs:
+    name: Test ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      # Every configuration is independent, and knowing that three of them
+      # broke is worth more than stopping at the first.
+      fail-fast: false
+      matrix:
+        include:
+          - name: no default features
+            features: --no-default-features
+          - name: tinycortex
+            features: --features tinycortex
+          - name: tinycortex and memory-git
+            features: --features tinycortex,memory-git
+          - name: mem0
+            features: --features mem0
+          - name: supermemory
+            features: --features supermemory
+          - name: cognee
+            features: --features cognee
+          - name: all features
+            features: --all-features
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: recursive
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Scoped to the facade: these are *its* features, and it is what a host
+      # compiles against. An engine's own suite runs in the main job.
+      - name: Test
+        run: cargo test -p tinymemory ${{ matrix.features }}
 
   # The module crate is its own workspace root (see the `exclude` note in the
   # root Cargo.toml), so NONE of the steps above touch it: `--all-targets`,

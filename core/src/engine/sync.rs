@@ -695,6 +695,34 @@ impl SyncStateStore for HostSyncAdapter {
     }
 }
 
+/// Core's state seam, on the engine adapter.
+///
+/// `SyncState` is core-owned now (#18 §B1a) and its `load`/`save` take
+/// core's `SyncStateStore`; OpenHuman pairs that type with this adapter in
+/// its integration tests. Same KV calls as the engine-trait impl below —
+/// one storage, two trait names during the transition.
+#[async_trait]
+impl crate::sync::composio::providers::sync_state::SyncStateStore for HostSyncAdapter {
+    async fn get(&self, namespace: &str, key: &str) -> anyhow::Result<Option<serde_json::Value>> {
+        self.memory
+            .kv_get(Some(namespace), key)
+            .await
+            .map_err(anyhow::Error::msg)
+    }
+
+    async fn set(
+        &self,
+        namespace: &str,
+        key: &str,
+        value: &serde_json::Value,
+    ) -> anyhow::Result<()> {
+        self.memory
+            .kv_set(Some(namespace), key, value)
+            .await
+            .map_err(anyhow::Error::msg)
+    }
+}
+
 #[async_trait]
 impl SyncEventSink for HostSyncAdapter {
     async fn emit(&self, event: SyncEvent) -> anyhow::Result<()> {

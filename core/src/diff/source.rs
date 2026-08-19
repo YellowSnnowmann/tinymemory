@@ -14,10 +14,14 @@
 //!
 //! The crate calls `items_for_source(source_id)` with the *logical* source id,
 //! but the host chunk `source_id LIKE` prefix is kind-dependent — Composio
-//! sources key their chunks by `<toolkit>:%`, not `mem_src:<id>:%`, and the
-//! toolkit is not derivable from the logical id alone. The adapter is therefore
-//! built from the full [`MemorySourceEntry`] list (which carries `toolkit`) and
-//! resolves each id → prefix up front.
+//! sources key their chunks by `<toolkit>:<connection_id>:%`, not
+//! `mem_src:<id>:%`, and neither is derivable from the logical id alone. The
+//! adapter is therefore built from the full [`MemorySourceEntry`] list (which
+//! carries both) and resolves each id → prefix up front, through
+//! `sources::status::source_id_prefix` — the one definition of the scheme,
+//! shared so a snapshot and a status can never disagree about which chunks
+//! belong to a source. Named rather than linked: it is `pub(crate)`, and a
+//! link to it from this module's public documentation is a rustdoc error.
 
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -27,7 +31,8 @@ use crate::engine::backend::diff::{extract_item_id, SnapshotItem, SnapshotItemSo
 #[cfg(test)]
 use tinymemory_api::host::test_support::TestHostConfig;
 
-use crate::sources::types::{MemorySourceEntry, SourceKind};
+use crate::sources::status::source_id_prefix;
+use crate::sources::types::MemorySourceEntry;
 use crate::Config;
 
 /// Host [`SnapshotItemSource`] backed by `mem_tree_chunks`.
@@ -126,22 +131,10 @@ impl SnapshotItemSource for ChunkStoreItemSource {
     }
 }
 
-/// Build the `source_id LIKE` prefix that matches chunks belonging to a source.
-/// Mirrors `memory_sources::status::source_id_prefix`.
-pub(crate) fn source_id_prefix(source: &MemorySourceEntry) -> String {
-    match source.kind {
-        SourceKind::Composio => source
-            .toolkit
-            .as_deref()
-            .map(|t| format!("{t}:%"))
-            .unwrap_or_else(|| "__no_toolkit__:%".to_string()),
-        _ => format!("mem_src:{}:%", source.id),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::sources::types::SourceKind;
 
     fn folder_source(id: &str) -> MemorySourceEntry {
         MemorySourceEntry {
@@ -169,28 +162,19 @@ mod tests {
         }
     }
 
+    /// The prefix scheme itself is covered where it is defined
+    /// (`sources::status::source_id_prefix_dispatch`). What matters here is
+    /// that the adapter resolves through *that* definition, so a snapshot and
+    /// a status agree on which chunks belong to a source.
     #[test]
-    fn source_id_prefix_folder() {
+    fn the_adapter_resolves_prefixes_through_the_shared_definition() {
+        let source = folder_source("src_abc");
+        let adapter =
+            ChunkStoreItemSource::single(std::sync::Arc::new(TestHostConfig::default()), &source);
         assert_eq!(
-            source_id_prefix(&folder_source("src_abc")),
-            "mem_src:src_abc:%"
+            adapter.prefixes.get("src_abc").map(String::as_str),
+            Some(crate::sources::status::source_id_prefix(&source).as_str())
         );
-    }
-
-    #[test]
-    fn source_id_prefix_composio() {
-        let mut entry = folder_source("src_cmp");
-        entry.kind = SourceKind::Composio;
-        entry.toolkit = Some("gmail".into());
-        assert_eq!(source_id_prefix(&entry), "gmail:%");
-    }
-
-    #[test]
-    fn source_id_prefix_composio_without_toolkit() {
-        let mut entry = folder_source("src_cmp");
-        entry.kind = SourceKind::Composio;
-        entry.toolkit = None;
-        assert_eq!(source_id_prefix(&entry), "__no_toolkit__:%");
     }
 
     #[test]

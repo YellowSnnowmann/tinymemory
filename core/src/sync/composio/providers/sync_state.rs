@@ -193,6 +193,24 @@ impl SyncState {
     }
 }
 
+/// First non-empty string at any of `paths` (dot-separated) in `item`.
+///
+/// Removed in the §B1a move as dead within this workspace; restored because
+/// OpenHuman's raw-coverage integration tests import and exercise it through
+/// the pin — "dead here" was measured with too small a grep.
+pub fn extract_item_id(item: &serde_json::Value, paths: &[&str]) -> Option<String> {
+    paths.iter().find_map(|path| {
+        let value = path
+            .split('.')
+            .try_fold(item, |current, segment| current.get(segment))?;
+        value
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_owned)
+    })
+}
+
 fn today() -> String {
     Utc::now().format("%Y-%m-%d").to_string()
 }

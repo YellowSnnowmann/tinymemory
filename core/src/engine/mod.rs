@@ -71,3 +71,7 @@ pub use sync::{
     sync_context, HostSyncAdapter, RawCoverage, RawFileRef, RealCostAccumulator, RebuildOutcome,
     SourcePipelineFailure, HOST_SYNC_STATE_NAMESPACE,
 };
+// The audit type, under the seam path OpenHuman already names
+// (`memory::tinycortex::SyncAuditEntry` embeds it in an RPC response type).
+// The type itself is core-owned (#18 §B1a); only the address is preserved.
+pub use crate::sync::audit::SyncAuditEntry;
