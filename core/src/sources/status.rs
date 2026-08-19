@@ -3,9 +3,23 @@
 //! Queries `mem_tree_chunks` filtered by source-id prefix:
 //! - Reader-backed kinds (folder/github/rss/web/twitter) tag chunks
 //!   with `mem_src:{source.id}:%`, so we count those directly.
-//! - Composio sources tag chunks with the toolkit-specific id
-//!   (e.g. `gmail:user@example.com:msg_xxx`), so we match by toolkit
+//! - Composio sources tag chunks with the connector id
+//!   (`{toolkit}:{connection_id}:{document_id}`), so we match by that
 //!   prefix instead.
+//!
+//! # Where "pending" lives
+//!
+//! Not on `mem_tree_chunks`. That table carries a legacy `embedding` column,
+//! added by an idempotent migration and written by nothing — counting
+//! `embedding IS NULL` reports every chunk as pending forever, so a healthy
+//! source shows `chunks_pending == chunks_synced` and the memory-sources UI
+//! shows eternal work in flight.
+//!
+//! Embeddings live in the `mem_tree_chunk_embeddings` sidecar, one row per
+//! `(chunk, model signature)`. A chunk with no row there is still not
+//! necessarily pending: the lifecycle may have dropped it, or it may be
+//! recorded in `mem_tree_chunk_reembed_skipped`. Both are terminal, and both
+//! count as resolved.
 
 use serde::Serialize;
 
@@ -62,13 +76,27 @@ pub async fn source_status(
 
             // Surface real query errors so status telemetry doesn't lie about
             // a healthy zero-row state when the DB is actually broken.
+            //
+            // "Pending" is "not resolved", and a chunk resolves three ways:
+            // it has an embedding, it was dropped by the lifecycle, or it was
+            // deliberately skipped for re-embedding. This is the engine's own
+            // predicate from `list_sync_statuses`, kept identical so the
+            // per-source view and the per-provider one cannot disagree about
+            // the same chunk.
             let (synced, pending, last_ts): (i64, i64, Option<i64>) = conn.query_row(
                 "SELECT \
                        COUNT(*), \
-                       SUM(CASE WHEN embedding IS NULL THEN 1 ELSE 0 END), \
-                       MAX(timestamp_ms) \
-                     FROM mem_tree_chunks \
-                     WHERE source_id LIKE ?1",
+                       SUM(CASE WHEN EXISTS ( \
+                                 SELECT 1 FROM mem_tree_chunk_embeddings e \
+                                 WHERE e.chunk_id = c.id) \
+                               OR c.lifecycle_status = 'dropped' \
+                               OR EXISTS ( \
+                                 SELECT 1 FROM mem_tree_chunk_reembed_skipped s \
+                                 WHERE s.chunk_id = c.id) \
+                             THEN 0 ELSE 1 END), \
+                       MAX(c.timestamp_ms) \
+                     FROM mem_tree_chunks c \
+                     WHERE c.source_id LIKE ?1",
                 [&prefix],
                 |r| {
                     Ok((
@@ -158,10 +186,10 @@ mod tests {
         assert_eq!(FreshnessLabel::from_age_ms(None, now), FreshnessLabel::Idle);
     }
 
-    #[test]
-    fn source_id_prefix_dispatch() {
-        let mut entry = MemorySourceEntry {
-            id: "src_abc".into(),
+    /// A folder source, the shape the prefix and status tests both start from.
+    fn folder_entry(id: &str) -> MemorySourceEntry {
+        MemorySourceEntry {
+            id: id.into(),
             kind: SourceKind::Folder,
             label: "x".into(),
             enabled: true,
@@ -182,11 +210,127 @@ mod tests {
             max_tokens_per_sync: None,
             max_cost_per_sync_usd: None,
             sync_depth_days: None,
-        };
+        }
+    }
+
+    #[test]
+    fn source_id_prefix_dispatch() {
+        let mut entry = folder_entry("src_abc");
         assert_eq!(source_id_prefix(&entry), "mem_src:src_abc:%");
 
         entry.kind = SourceKind::Composio;
         entry.toolkit = Some("gmail".into());
         assert_eq!(source_id_prefix(&entry), "gmail:%");
+    }
+
+    /// A chunk under `source_id`, with a deterministic id the test can address.
+    fn chunk(id: &str, source_id: &str) -> crate::store::chunks::types::Chunk {
+        use crate::store::chunks::types::{Chunk, Metadata, SourceKind as ChunkSourceKind};
+
+        let at = chrono::Utc::now();
+        Chunk {
+            id: id.into(),
+            content: "content".into(),
+            metadata: Metadata::point_in_time(ChunkSourceKind::Document, source_id, "owner", at),
+            token_count: 1,
+            seq_in_source: 0,
+            created_at: at,
+            partial_message: false,
+        }
+    }
+
+    /// The status query counted pending as `embedding IS NULL` over
+    /// `mem_tree_chunks`. That column is a legacy migration artefact nothing
+    /// writes, so every chunk read as pending and a healthy source reported
+    /// `chunks_pending == chunks_synced` forever.
+    ///
+    /// Pending is "not resolved", and a chunk resolves by carrying an
+    /// embedding, by being dropped, or by being recorded as skipped for
+    /// re-embedding. Only the first of these four is genuinely still in
+    /// flight.
+    #[tokio::test]
+    async fn pending_counts_unresolved_chunks_not_the_dead_embedding_column() {
+        use tinymemory_api::host::test_support::TestHostConfig;
+        use tinymemory_api::host::MemoryHostConfig;
+
+        crate::test_seams::init();
+        let workspace = tempfile::tempdir().expect("workspace");
+        let mut host = TestHostConfig::default();
+        host.workspace_dir = workspace.path().join("workspace");
+        let config = host.to_arc();
+
+        let source = folder_entry("src_status");
+        let chunks = [
+            chunk("chunk-embedded", "mem_src:src_status:item-1"),
+            chunk("chunk-pending", "mem_src:src_status:item-2"),
+            chunk("chunk-dropped", "mem_src:src_status:item-3"),
+            chunk("chunk-skipped", "mem_src:src_status:item-4"),
+        ];
+        crate::store::chunks::store::upsert_chunks(&*config, &chunks).expect("upsert chunks");
+
+        crate::store::chunks::store::set_chunk_embedding(&*config, "chunk-embedded", &[0.1, 0.2])
+            .expect("set embedding");
+        crate::store::chunks::store::set_chunk_lifecycle_status(
+            &*config,
+            "chunk-dropped",
+            crate::store::chunks::store::CHUNK_STATUS_DROPPED,
+        )
+        .expect("set lifecycle status");
+        crate::store::chunks::store::mark_chunk_reembed_skipped(
+            &*config,
+            "chunk-skipped",
+            "test-signature",
+            "too long",
+        )
+        .expect("mark reembed skipped");
+
+        // Guard against a vacuous test: the legacy column must still be NULL
+        // for every row, so a pending count of 1 is attributable to the new
+        // predicate rather than to the old one happening to agree.
+        let legacy_nulls: i64 = crate::store::chunks::store::with_connection(&*config, |conn| {
+            Ok(conn.query_row(
+                "SELECT COUNT(*) FROM mem_tree_chunks \
+                 WHERE embedding IS NULL AND source_id LIKE 'mem_src:src_status:%'",
+                [],
+                |row| row.get(0),
+            )?)
+        })
+        .expect("count legacy nulls");
+        assert_eq!(
+            legacy_nulls, 4,
+            "nothing writes the legacy column, so counting it would report all four pending"
+        );
+
+        let status = source_status(&*config, &source)
+            .await
+            .expect("source status");
+        assert_eq!(status.chunks_synced, 4);
+        assert_eq!(
+            status.chunks_pending, 1,
+            "only the chunk with no embedding, no drop and no skip is still in flight"
+        );
+        assert!(status.last_chunk_at_ms.is_some());
+    }
+
+    /// A source with no chunks reports zeroes rather than failing on the
+    /// `NULL` a `SUM` over no rows produces.
+    #[tokio::test]
+    async fn a_source_with_no_chunks_reports_zeroes() {
+        use tinymemory_api::host::test_support::TestHostConfig;
+        use tinymemory_api::host::MemoryHostConfig;
+
+        crate::test_seams::init();
+        let workspace = tempfile::tempdir().expect("workspace");
+        let mut host = TestHostConfig::default();
+        host.workspace_dir = workspace.path().join("workspace");
+        let config = host.to_arc();
+
+        let status = source_status(&*config, &folder_entry("src_empty"))
+            .await
+            .expect("source status");
+        assert_eq!(status.chunks_synced, 0);
+        assert_eq!(status.chunks_pending, 0);
+        assert_eq!(status.last_chunk_at_ms, None);
+        assert_eq!(status.freshness, FreshnessLabel::Idle);
     }
 }
