@@ -1,4 +1,9 @@
-//! Self-hosted Mem0 REST adapter.
+//! Mem0 REST adapter — self-hosted server and hosted platform.
+//!
+//! The two are different APIs behind one product name, and this adapter speaks
+//! both. What differs is the credential header, the path shapes, and how a
+//! listing is scoped; what does not differ is the record model, so `decode`
+//! and `metadata` are shared verbatim.
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -13,7 +18,37 @@ use crate::common::{category, Dialect, HttpClient, RemoteMemory, StoredEntry};
 /// Stable driver id used by configuration and status output.
 pub use tinymemory_api::drivers::MEM0_DRIVER_ID;
 
-/// A self-hosted Mem0 server exposed through TinyMemory's storage contract.
+/// Base URL of Mem0's hosted platform.
+pub const MEM0_API_ENDPOINT: &str = "https://api.mem0.ai";
+
+/// The Mem0 API this client speaks.
+///
+/// Selected by the constructor rather than sniffed: the two APIs answer the
+/// same 401 to an unauthenticated probe, so a client that guessed would only
+/// discover it guessed wrong after a credential was accepted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Flavour {
+    /// The open-source server: `X-API-Key`, un-prefixed REST paths.
+    SelfHosted,
+    /// The hosted platform at api.mem0.ai: `Authorization: Token`, v3 paths
+    /// for add/search/list and v1 for the by-id operations. That version mix
+    /// is the platform's own, not an oversight here.
+    Cloud,
+}
+
+/// The `agent_id` every record this adapter writes to the hosted platform
+/// carries.
+///
+/// The platform refuses a listing that names no entity id, so an adapter that
+/// only ever set `user_id` could not enumerate across namespaces — and
+/// `namespace_summaries`, `count`, and every exact-key lookup need exactly
+/// that. Stamping one constant agent id makes "everything this adapter owns"
+/// expressible as a filter, and keeps the adapter's records distinguishable
+/// from anything else in the same Mem0 project.
+const CLOUD_AGENT_ID: &str = "tinymemory";
+
+/// A Mem0 service — self-hosted or hosted — exposed through TinyMemory's
+/// storage contract.
 #[derive(Debug)]
 pub struct Mem0Memory {
     inner: RemoteMemory<Mem0Dialect>,
@@ -29,9 +64,50 @@ impl Mem0Memory {
     ///
     /// Returns an error when `endpoint` is not an HTTP(S) URL.
     pub fn new(endpoint: &str, api_key: Option<&str>) -> anyhow::Result<Self> {
+        Self::self_hosted(endpoint, api_key)
+    }
+
+    /// Connect to a self-hosted Mem0 REST server (`X-API-Key`).
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `endpoint` is not an HTTP(S) URL.
+    pub fn self_hosted(endpoint: &str, api_key: Option<&str>) -> anyhow::Result<Self> {
         Ok(Self {
             inner: RemoteMemory::new(Mem0Dialect {
                 client: HttpClient::api_key(endpoint, api_key)?,
+                flavour: Flavour::SelfHosted,
+            }),
+        })
+    }
+
+    /// Connect to Mem0's hosted platform at [`MEM0_API_ENDPOINT`].
+    ///
+    /// Authenticates with `Authorization: Token <api_key>` — the platform's
+    /// scheme, and not interchangeable with a bearer token: a `Bearer`
+    /// credential reaches the platform's JWT verifier instead and fails as
+    /// `token_not_valid`, which reads as a broken token rather than a wrong
+    /// header.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `api_key` is blank.
+    pub fn cloud(api_key: &str) -> anyhow::Result<Self> {
+        anyhow::ensure!(!api_key.trim().is_empty(), "mem0 API key must not be empty");
+        Self::api(MEM0_API_ENDPOINT, api_key)
+    }
+
+    /// Connect to a Mem0 platform deployment at a custom base URL.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `endpoint` is invalid or `api_key` is blank.
+    pub fn api(endpoint: &str, api_key: &str) -> anyhow::Result<Self> {
+        anyhow::ensure!(!api_key.trim().is_empty(), "mem0 API key must not be empty");
+        Ok(Self {
+            inner: RemoteMemory::new(Mem0Dialect {
+                client: HttpClient::token(endpoint, Some(api_key))?,
+                flavour: Flavour::Cloud,
             }),
         })
     }
@@ -116,20 +192,68 @@ impl Memory for Mem0Memory {
 /// Mem0-specific REST operations and wire-format conversion.
 struct Mem0Dialect {
     client: HttpClient,
+    flavour: Flavour,
 }
 
 impl Mem0Dialect {
     /// Fetches Mem0's administrative memory listing.
     async fn values(&self) -> anyhow::Result<Vec<Value>> {
-        let response: Value = self
-            .client
-            .json(Method::GET, "memories?top_k=1000", None)
-            .await?;
-        Ok(response
-            .get("results")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default())
+        match self.flavour {
+            Flavour::SelfHosted => {
+                let response: Value = self
+                    .client
+                    .json(Method::GET, "memories?top_k=1000", None)
+                    .await?;
+                Ok(response
+                    .get("results")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default())
+            }
+            // The platform lists by POST with a mandatory entity filter, and
+            // pages: `{count, next, previous, results}`. Paging stops on an
+            // empty page as well as a null `next`, so a server that omits the
+            // cursor cannot spin this loop.
+            Flavour::Cloud => {
+                let mut all = Vec::new();
+                let mut page = 1_u32;
+                loop {
+                    let response: Value = self
+                        .client
+                        .json(
+                            Method::POST,
+                            &format!("v3/memories/?page={page}&page_size=200"),
+                            Some(&json!({"filters": {"agent_id": CLOUD_AGENT_ID}})),
+                        )
+                        .await?;
+                    let results = response
+                        .get("results")
+                        .and_then(Value::as_array)
+                        .cloned()
+                        .unwrap_or_default();
+                    let exhausted =
+                        results.is_empty() || response.get("next").is_none_or(Value::is_null);
+                    all.extend(results);
+                    if exhausted {
+                        break;
+                    }
+                    page = page.saturating_add(1);
+                }
+                Ok(all)
+            }
+        }
+    }
+
+    /// The path addressing one record by its remote id.
+    ///
+    /// The platform serves the by-id operations under **v1** while add,
+    /// search and list are v3. That mix is the platform's own; keeping it in
+    /// one place stops it being re-derived (or "corrected") at each call site.
+    fn by_id_path(&self, remote_id: &str) -> String {
+        match self.flavour {
+            Flavour::SelfHosted => format!("memories/{remote_id}"),
+            Flavour::Cloud => format!("v1/memories/{remote_id}/"),
+        }
     }
 
     /// Decodes a Mem0 result containing TinyMemory-owned metadata.
@@ -197,27 +321,33 @@ impl Dialect for Mem0Dialect {
             .find(|item| item.namespace == entry.namespace && item.key == entry.key);
         let metadata = Self::metadata(&entry);
         if let Some(existing) = existing {
+            // Both APIs take the same update body; only the path differs.
             self.client
                 .empty(
                     Method::PUT,
-                    &format!("memories/{}", existing.remote_id),
+                    &self.by_id_path(&existing.remote_id),
                     Some(&json!({"text": entry.content, "metadata": metadata})),
                 )
                 .await?;
         } else {
-            self.client
-                .empty(
-                    Method::POST,
-                    "memories",
-                    Some(&json!({
-                        "messages": [{"role": "user", "content": entry.content}],
-                        "user_id": entry.namespace,
-                        "run_id": entry.session_id,
-                        "metadata": metadata,
-                        "infer": false
-                    })),
-                )
-                .await?;
+            let mut body = json!({
+                "messages": [{"role": "user", "content": entry.content}],
+                "user_id": entry.namespace,
+                "run_id": entry.session_id,
+                "metadata": metadata,
+                "infer": false
+            });
+            if self.flavour == Flavour::Cloud {
+                // Makes this record enumerable — see `CLOUD_AGENT_ID`.
+                if let Some(object) = body.as_object_mut() {
+                    object.insert("agent_id".into(), json!(CLOUD_AGENT_ID));
+                }
+            }
+            let path = match self.flavour {
+                Flavour::SelfHosted => "memories",
+                Flavour::Cloud => "v3/memories/add/",
+            };
+            self.client.empty(Method::POST, path, Some(&body)).await?;
         }
         Ok(())
     }
@@ -239,20 +369,44 @@ impl Dialect for Mem0Dialect {
         limit: usize,
         opts: RecallOpts<'_>,
     ) -> anyhow::Result<Vec<StoredEntry>> {
-        let mut filters = serde_json::Map::new();
-        if let Some(namespace) = opts.namespace {
-            filters.insert("user_id".into(), json!(namespace));
-        }
-        let response: Value = self
-            .client
-            .json(
-                Method::POST,
-                "search",
-                Some(&json!({
-                    "query": query, "filters": filters, "top_k": limit, "threshold": opts.min_score
-                })),
-            )
-            .await?;
+        let response: Value = match self.flavour {
+            Flavour::SelfHosted => {
+                let mut filters = serde_json::Map::new();
+                if let Some(namespace) = opts.namespace {
+                    filters.insert("user_id".into(), json!(namespace));
+                }
+                self.client
+                    .json(
+                        Method::POST,
+                        "search",
+                        Some(&json!({
+                            "query": query, "filters": filters, "top_k": limit, "threshold": opts.min_score
+                        })),
+                    )
+                    .await?
+            }
+            // The platform requires entity ids inside `filters` and supports
+            // AND/OR; scoping to this adapter's agent id keeps a search from
+            // returning records written by anything else in the project.
+            Flavour::Cloud => {
+                let filters = match opts.namespace {
+                    Some(namespace) => json!({"AND": [
+                        {"agent_id": CLOUD_AGENT_ID},
+                        {"user_id": namespace}
+                    ]}),
+                    None => json!({"agent_id": CLOUD_AGENT_ID}),
+                };
+                self.client
+                    .json(
+                        Method::POST,
+                        "v3/memories/search/",
+                        Some(&json!({
+                            "query": query, "filters": filters, "top_k": limit, "threshold": opts.min_score
+                        })),
+                    )
+                    .await?
+            }
+        };
         let values = response
             .get("results")
             .and_then(Value::as_array)
@@ -272,11 +426,7 @@ impl Dialect for Mem0Dialect {
             return Ok(false);
         };
         self.client
-            .empty(
-                Method::DELETE,
-                &format!("memories/{}", entry.remote_id),
-                None,
-            )
+            .empty(Method::DELETE, &self.by_id_path(&entry.remote_id), None)
             .await
             .context("failed to delete Mem0 memory")?;
         Ok(true)
