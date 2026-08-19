@@ -485,7 +485,10 @@ async fn cg_recall(State(sets): State<Datasets>, Json(body): Json<Value>) -> Jso
 async fn cognee_backend() -> String {
     let sets: Datasets = Arc::new(Mutex::new(BTreeMap::new()));
     let app = Router::new()
-        .route("/api/v1/datasets", get(cg_datasets))
+        // The real API serves the collection at the slashed form and 307s the
+        // bare one; the adapter now asks for `/api/v1/datasets/` directly, so
+        // the double must answer there or it stops mirroring the service.
+        .route("/api/v1/datasets/", get(cg_datasets))
         .route("/api/v1/datasets/{dataset}/data", get(cg_data))
         .route("/api/v1/datasets/{dataset}/data/{data_id}/raw", get(cg_raw))
         .route(
