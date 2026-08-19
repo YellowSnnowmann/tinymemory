@@ -86,6 +86,9 @@ jobs:
       - name: Run the bundled example
         run: cargo run --example basic
 
+      - name: Assert engine containment (#18 §C1)
+        run: ./scripts/ci/engine-containment.sh
+
       - name: Assert the contract crate stays free of heavy dependencies
         run: |
           forbidden="$(cargo tree -p tinymemory-api -e normal,build --prefix none \
