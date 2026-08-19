@@ -198,7 +198,9 @@ confused with a self-hosted token:
 ```rust
 use tinymemory_remote::{CogneeMemory, SupermemoryMemory};
 
-let cognee = CogneeMemory::cloud("cognee-api-key")?;
+// Cognee Cloud issues a per-tenant base URL (the API-key dashboard shows it);
+// there is no shared endpoint.
+let cognee = CogneeMemory::api("https://tenant-<uuid>.aws.cognee.ai", "cognee-api-key")?;
 let supermemory = SupermemoryMemory::cloud("sm_...")?;
 
 // Cognee also issues tenant-specific API origins.
