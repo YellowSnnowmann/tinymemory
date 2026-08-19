@@ -137,6 +137,12 @@ pub struct PipelineConfig {
     pub composio: Option<ComposioSyncConfig>,
     pub sync_depth_days: Option<u32>,
     pub max_items: Option<u32>,
+    /// Stop the run once this many tokens (estimated from stored content)
+    /// have been ingested. `None` = unbounded.
+    pub max_tokens_per_sync: Option<u64>,
+    /// Stop the run once the provider has charged this much. `None` =
+    /// unbounded.
+    pub max_cost_per_sync_usd: Option<f64>,
 }
 
 /// Host capabilities required by sync pipelines.

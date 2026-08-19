@@ -556,12 +556,11 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
             "[composio:periodic] firing sync"
         );
         let sync_started = Instant::now();
-        let result = crate::sync::pipelines::host::run_composio_connection(
+        let result = crate::sync::pipelines::host::run_composio_connection_with_caps(
             &toolkit,
             &conn.id,
             &*config,
-            source.max_items,
-            source.sync_depth_days,
+            crate::sync::pipelines::host::SourceCaps::from_source(&source),
         )
         .await;
         let duration_ms = sync_started.elapsed().as_millis() as u64;

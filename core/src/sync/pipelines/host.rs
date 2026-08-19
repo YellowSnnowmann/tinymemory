@@ -278,6 +278,48 @@ pub async fn run_composio_connection(
     max_items: Option<u32>,
     sync_depth_days: Option<u32>,
 ) -> Result<SyncOutcome, PipelineFailure> {
+    run_composio_connection_with_caps(
+        toolkit,
+        connection_id,
+        config,
+        SourceCaps {
+            max_items,
+            sync_depth_days,
+            ..SourceCaps::default()
+        },
+    )
+    .await
+}
+
+/// The per-source limits a run honours. All `None` = the source's defaults.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SourceCaps {
+    pub max_items: Option<u32>,
+    pub sync_depth_days: Option<u32>,
+    pub max_tokens_per_sync: Option<u64>,
+    pub max_cost_per_sync_usd: Option<f64>,
+}
+
+impl SourceCaps {
+    /// The caps a registry entry carries.
+    pub fn from_source(source: &tinymemory_sources::MemorySourceEntry) -> Self {
+        Self {
+            max_items: source.max_items,
+            sync_depth_days: source.sync_depth_days,
+            max_tokens_per_sync: source.max_tokens_per_sync,
+            max_cost_per_sync_usd: source.max_cost_per_sync_usd,
+        }
+    }
+}
+
+/// Run one Composio connection through the engine-free pipelines, honouring
+/// every per-source cap.
+pub async fn run_composio_connection_with_caps(
+    toolkit: &str,
+    connection_id: &str,
+    config: &Config,
+    caps: SourceCaps,
+) -> Result<SyncOutcome, PipelineFailure> {
     let memory = crate::global::client_if_ready()
         .ok_or_else(|| PipelineFailure::without_usage("memory client is not ready"))?;
     let composio = composio_config(config).map_err(PipelineFailure::without_usage)?;
@@ -285,8 +327,10 @@ pub async fn run_composio_connection(
         .map_err(PipelineFailure::without_usage)?;
     let pipeline_config = PipelineConfig {
         composio: None, // the client already holds the connection settings
-        sync_depth_days,
-        max_items,
+        sync_depth_days: caps.sync_depth_days,
+        max_items: caps.max_items,
+        max_tokens_per_sync: caps.max_tokens_per_sync,
+        max_cost_per_sync_usd: caps.max_cost_per_sync_usd,
     };
     let host = Arc::new(PipelineHost::new(memory, config.to_arc()));
     run_pipeline(pipeline, &pipeline_config, &host.context()).await

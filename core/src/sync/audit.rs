@@ -85,8 +85,14 @@ pub fn append_audit_entry(workspace: &Path, entry: &SyncAuditEntry) -> anyhow::R
         .create(true)
         .append(true)
         .open(directory.join(AUDIT_FILENAME))?;
-    serde_json::to_writer(&mut file, entry)?;
-    writeln!(file)?;
+    // One buffer, one write. Two appenders share this file (the periodic loop
+    // and the manual source sync), and a two-syscall append lets their lines
+    // interleave; the reader would then skip both as malformed. A single
+    // `write_all` on an O_APPEND handle lands the whole line atomically for
+    // any plausible entry size.
+    let mut line = serde_json::to_vec(entry)?;
+    line.push(b'\n');
+    file.write_all(&line)?;
     tracing::debug!(source_id = %entry.source_id, success = entry.success, "[memory_sync:audit] entry appended");
     Ok(())
 }

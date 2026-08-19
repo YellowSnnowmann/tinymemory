@@ -76,9 +76,28 @@ impl SyncPipeline for SlackSearchBackfillPipeline {
             });
         }
 
+        // Run the body, then save the state on BOTH paths. `checked_execute`
+        // records billable requests and provider cost into `state` before it
+        // returns an error; propagating that error before the save would lose
+        // the accounting and leave the daily budget unadvanced, so a backfill
+        // that fails repeatedly could keep calling the search action unbudgeted.
+        // Same contract `run_incremental_sync` keeps.
+        let result = self.run_backfill(&mut state, context).await;
+        state.last_sync_at_ms = Some(Utc::now().timestamp_millis() as u64);
+        state.save(context.state.as_ref()).await?;
+        result
+    }
+}
+
+impl SlackSearchBackfillPipeline {
+    async fn run_backfill(
+        &self,
+        state: &mut SyncState,
+        context: &SyncContext,
+    ) -> anyhow::Result<SyncOutcome> {
         let directory = SlackSyncPipeline::new(self.client.clone(), self.connection_id.clone());
         let scopes = directory
-            .scopes(&self.client, &self.connection_id, &mut state)
+            .scopes(&self.client, &self.connection_id, state)
             .await?;
         let channels: HashMap<_, _> = scopes
             .into_iter()
@@ -109,7 +128,7 @@ impl SyncPipeline for SlackSearchBackfillPipeline {
                     "page": page,
                 }),
                 &self.connection_id,
-                &mut state,
+                state,
             )
             .await?;
             if page == 1 {
@@ -161,8 +180,6 @@ impl SyncPipeline for SlackSearchBackfillPipeline {
             page = page.saturating_add(1);
         }
 
-        state.last_sync_at_ms = Some(Utc::now().timestamp_millis() as u64);
-        state.save(context.state.as_ref()).await?;
         Ok(SyncOutcome {
             records_ingested: stored,
             more_pending: page < total_pages,

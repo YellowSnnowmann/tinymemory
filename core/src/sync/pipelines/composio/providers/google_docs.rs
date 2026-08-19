@@ -78,14 +78,44 @@ impl IncrementalSource for GoogleDocsSyncPipeline {
     fn arguments(
         &self,
         _: &SyncScope,
-        _: &PipelineConfig,
-        _: &SyncState,
+        config: &PipelineConfig,
+        state: &SyncState,
         _page: Option<&str>,
     ) -> Value {
-        // NOTE: an empty/broad `query` enumerates every accessible document;
-        // `max_results` bounds the batch. Both mirror the underlying Drive
-        // search parameters. No page token is emitted (see `max_pages`).
-        serde_json::json!({"query": "", "max_results": self.page_size})
+        // `GOOGLEDOCS_SEARCH_DOCUMENTS` fronts Drive's `files.list`, so it takes
+        // the same server-side controls Drive does. Order deterministically by
+        // modification time and bound the window with a `q` clause, so each
+        // tick fetches what changed since the cursor rather than the same
+        // first batch forever. Without this the action returned the identical
+        // page every tick and documents past `max_results` were unreachable.
+        let mut args = serde_json::json!({
+            "query": "",
+            "max_results": self.page_size,
+            "order_by": "modifiedTime desc",
+        });
+        // Prefer the last-synced cursor, else the configured horizon. The
+        // cursor is validated as RFC 3339 before it is interpolated into `q`,
+        // so a malformed persisted value can never inject into the query — on
+        // a bad value the depth filter is simply omitted (full scan).
+        let floor = state
+            .cursor
+            .as_deref()
+            .filter(|cursor| chrono::DateTime::parse_from_rfc3339(cursor).is_ok())
+            .map(str::to_owned)
+            .or_else(|| {
+                config.sync_depth_days.map(|days| {
+                    (chrono::Utc::now() - chrono::Duration::days(days as i64)).to_rfc3339()
+                })
+            });
+        if let Some(floor) = floor {
+            args["q"] = serde_json::json!(format!("modifiedTime > '{floor}'"));
+        }
+        args
+    }
+    fn server_side_depth(&self) -> bool {
+        // The `q` floor above bounds depth on the server, so the orchestrator
+        // must not additionally treat the cursor as a client-side stop.
+        true
     }
     fn extract_page(&self, data: &Value, _: Option<&str>) -> PageFetch {
         PageFetch {

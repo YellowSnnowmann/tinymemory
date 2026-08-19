@@ -32,6 +32,12 @@ pub struct ExecuteError {
     message: String,
 }
 
+/// Time to establish a TCP/TLS connection to Composio or the proxy.
+const CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
+/// Whole-request ceiling. Composio actions that page a large mailbox can run
+/// long, so this is generous, but it is finite.
+const REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
+
 #[derive(Clone)]
 pub struct ComposioClient {
     http: reqwest::Client,
@@ -61,11 +67,23 @@ impl ActionExecutor for ComposioClient {
 }
 
 impl ComposioClient {
+    /// A client with explicit connect and request timeouts.
+    ///
+    /// `reqwest::Client::new()` has none: a hung Composio or proxy connection
+    /// would stall the sync task indefinitely and hold the sync-state
+    /// mutation window open with it. The builder is fallible only on TLS
+    /// backend initialisation, which cannot happen with the rustls feature this
+    /// crate compiles; if it ever did, an untimed fallback would silently drop
+    /// the guarantee, so it panics loudly instead of degrading.
     pub fn new(config: ComposioSyncConfig) -> Self {
-        Self {
-            http: reqwest::Client::new(),
-            config,
-        }
+        let http = reqwest::Client::builder()
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(REQUEST_TIMEOUT)
+            .build()
+            .unwrap_or_else(|error| {
+                panic!("Composio HTTP client failed to build (TLS backend unavailable): {error}")
+            });
+        Self { http, config }
     }
 
     pub fn with_http_client(mut self, http: reqwest::Client) -> Self {
@@ -165,31 +183,14 @@ impl ComposioClient {
             .json(&body)
             .send()
             .await
-            .map_err(|error| anyhow::anyhow!("Composio direct request failed: {error}"))?;
+            .map_err(|error| anyhow::anyhow!("Composio direct transport error: {error}"))?;
         let status = response.status();
         if !status.is_success() {
             let _ = response.bytes().await;
             anyhow::bail!("Composio direct request failed with HTTP {status}");
         }
         let raw: serde_json::Value = decode_response(response, "direct").await?;
-        let successful = raw
-            .get("successful")
-            .and_then(serde_json::Value::as_bool)
-            .or_else(|| raw.get("success").and_then(serde_json::Value::as_bool))
-            .unwrap_or(true);
-        let error = raw
-            .get("error")
-            .and_then(serde_json::Value::as_str)
-            .map(str::to_owned);
-        let data = raw.get("data").cloned().unwrap_or(raw);
-        Ok(ExecuteResponse {
-            data,
-            successful,
-            error,
-            cost_usd: 0.0,
-            markdown_formatted: None,
-            attempts: 1,
-        })
+        Ok(decode_direct_response(raw))
     }
 
     async fn execute_proxied(
@@ -214,7 +215,7 @@ impl ComposioClient {
             .json(&serde_json::json!({ "tool": action, "arguments": arguments }))
             .send()
             .await
-            .map_err(|error| anyhow::anyhow!("Composio proxy request failed: {error}"))?;
+            .map_err(|error| anyhow::anyhow!("Composio proxy transport error: {error}"))?;
         let status = response.status();
         if !status.is_success() {
             let _ = response.bytes().await;
@@ -225,6 +226,35 @@ impl ComposioClient {
             .await
             .map_err(|error| anyhow::anyhow!("Composio proxy response decode failed: {error}"))?;
         decode_proxy_response(raw)
+    }
+}
+
+/// Shape a direct-API payload into an [`ExecuteResponse`].
+///
+/// A payload that reports an `error` is not a success, whatever the
+/// `successful` flag says or omits: consumers gate document creation on the
+/// flag, and an error body must never be stored as content.
+fn decode_direct_response(raw: serde_json::Value) -> ExecuteResponse {
+    let flagged = raw
+        .get("successful")
+        .and_then(serde_json::Value::as_bool)
+        .or_else(|| raw.get("success").and_then(serde_json::Value::as_bool))
+        .unwrap_or(true);
+    let error = raw
+        .get("error")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|error| !error.is_empty())
+        .map(str::to_owned);
+    let successful = flagged && error.is_none();
+    let data = raw.get("data").cloned().unwrap_or(raw);
+    ExecuteResponse {
+        data,
+        successful,
+        error,
+        cost_usd: 0.0,
+        markdown_formatted: None,
+        attempts: 1,
     }
 }
 
@@ -247,6 +277,14 @@ fn retryable_provider_error(error: Option<&str>) -> bool {
     })
 }
 
+/// Whether a failed execute is worth retrying with backoff.
+///
+/// Retryable: rate limiting and upstream unavailability (429/502/503/504),
+/// and transport failures (connect/read errors, timeouts) — reported by the
+/// request paths as `"… transport error: …"`. NOT retryable: any other HTTP
+/// status. 400/401/403/404 are permanent — an invalid API key must fail once,
+/// not storm three times — and used to be caught by a `"request failed"`
+/// needle that both status-bail messages also matched.
 fn retryable_transport_error(error: &anyhow::Error) -> bool {
     let message = error.to_string();
     [
@@ -254,7 +292,7 @@ fn retryable_transport_error(error: &anyhow::Error) -> bool {
         "HTTP 502",
         "HTTP 503",
         "HTTP 504",
-        "request failed",
+        "transport error",
     ]
     .iter()
     .any(|needle| message.contains(needle))
@@ -273,6 +311,57 @@ async fn decode_response(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 4xx is permanent: an invalid key must fail once, not retry with
+    /// backoff. Only rate-limit/upstream statuses and transport failures
+    /// (connect/read errors, timeouts) are worth another attempt.
+    #[test]
+    fn retry_classification_is_by_status_not_by_substring() {
+        let retry = |m: &str| retryable_transport_error(&anyhow::anyhow!("{m}"));
+        assert!(retry(
+            "Composio direct request failed with HTTP 429 Too Many Requests"
+        ));
+        assert!(retry(
+            "Composio proxy request failed with HTTP 503 Service Unavailable"
+        ));
+        assert!(retry("Composio direct transport error: connection reset"));
+        assert!(!retry(
+            "Composio direct request failed with HTTP 401 Unauthorized"
+        ));
+        assert!(!retry(
+            "Composio proxy request failed with HTTP 404 Not Found"
+        ));
+        assert!(!retry(
+            "Composio direct request failed with HTTP 400 Bad Request"
+        ));
+    }
+
+    /// An error payload is a failure even when the flag is absent or true.
+    #[test]
+    fn an_error_payload_is_never_a_success() {
+        let r = decode_direct_response(serde_json::json!({"error": "quota exceeded"}));
+        assert!(!r.successful, "missing flag + error must be a failure");
+        assert_eq!(r.error.as_deref(), Some("quota exceeded"));
+
+        let r = decode_direct_response(serde_json::json!({"successful": true, "error": " boom "}));
+        assert!(!r.successful, "flag=true + error must still be a failure");
+        assert_eq!(r.error.as_deref(), Some("boom"));
+
+        let r = decode_direct_response(
+            serde_json::json!({"successful": true, "error": "  ", "data": {"x": 1}}),
+        );
+        assert!(r.successful, "an empty error string is no error");
+        assert!(r.error.is_none());
+        assert_eq!(r.data["x"], 1);
+    }
+
+    /// The client is built with finite timeouts; a build failure must not
+    /// silently degrade to an untimed client.
+    #[test]
+    fn client_builds_with_timeouts() {
+        let _ = ComposioClient::new(ComposioSyncConfig::default());
+        assert!(CONNECT_TIMEOUT < REQUEST_TIMEOUT);
+    }
 
     #[test]
     fn proxied_backend_envelope_decodes_provider_response() {

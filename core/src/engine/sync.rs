@@ -329,12 +329,11 @@ pub async fn run_source_pipeline(
             .ok_or_else(|| {
                 SourcePipelineFailure::without_usage("composio source missing connection_id")
             })?;
-        let outcome = crate::sync::pipelines::host::run_composio_connection(
+        let outcome = crate::sync::pipelines::host::run_composio_connection_with_caps(
             &toolkit,
             connection_id,
             config,
-            source.max_items,
-            source.sync_depth_days,
+            crate::sync::pipelines::host::SourceCaps::from_source(source),
         )
         .await
         .map_err(|failure| SourcePipelineFailure {

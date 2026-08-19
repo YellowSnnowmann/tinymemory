@@ -224,6 +224,8 @@ async fn run_pages(
 ) -> anyhow::Result<SyncOutcome> {
     let mut newest_cursor = state.cursor.clone();
     let mut ingested = 0u32;
+    // Estimated tokens of stored content this run, for `max_tokens_per_sync`.
+    let mut tokens_ingested: u64 = 0;
     let mut more_pending = false;
     let depth_floor = (!source.server_side_depth())
         .then(|| source.depth_floor(config, state))
@@ -346,6 +348,23 @@ async fn run_pages(
                     more_pending = true;
                     break 'scopes;
                 }
+                // Per-source spend caps (#18): checked with the same "stop,
+                // leave the rest pending" contract as `max_items`, so a
+                // capped run resumes from its cursor next tick.
+                if config
+                    .max_cost_per_sync_usd
+                    .is_some_and(|cap| state.run_provider_cost_usd >= cap)
+                {
+                    more_pending = true;
+                    break 'scopes;
+                }
+                if config
+                    .max_tokens_per_sync
+                    .is_some_and(|cap| tokens_ingested >= cap)
+                {
+                    more_pending = true;
+                    break 'scopes;
+                }
                 let Some(dedup_key) = source.dedup_key(&raw) else {
                     continue;
                 };
@@ -401,6 +420,10 @@ async fn run_pages(
                     }
                     Err(error) => return Err(error),
                 };
+                // Same rough estimate the tree's budgeting uses (~4 chars per
+                // token); a cap, not an invoice.
+                tokens_ingested =
+                    tokens_ingested.saturating_add((document.content.len() / 4) as u64);
                 if let Err(error) = context.documents.store(document).await {
                     if source.tolerate_scope_errors() {
                         tracing::warn!(toolkit = source.toolkit(), connection_id, scope = %scope.label, %error, "[sync:orchestrator] scope document store failed; continuing");
