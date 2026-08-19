@@ -119,7 +119,7 @@ working wiring.
 | --- | --- | --- | --- |
 | `tinycortex` | TinyCortex, in-process | embedded | 3 (mandatory) via `provider`; all 18 via `TinycortexProvider` |
 | `supermemory` | Supermemory, hosted | external | 3 (mandatory) |
-| `mem0` | Mem0, self-hosted | external | 3 (mandatory) |
+| `mem0` | Mem0, hosted (`cloud`) or self-hosted | external | 3 (mandatory) |
 | `cognee` | Cognee, hosted or self-hosted | external | 3 (mandatory) |
 | `memory-git` | add-on: git-backed diff snapshots | — | requires `tinycortex` |
 | *(none)* | `NullMemoryProvider` | null | contract + registry only, 40 crates |
