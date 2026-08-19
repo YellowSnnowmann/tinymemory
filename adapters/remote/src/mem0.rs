@@ -47,6 +47,19 @@ enum Flavour {
 /// from anything else in the same Mem0 project.
 const CLOUD_AGENT_ID: &str = "tinymemory";
 
+/// Records requested per hosted-platform listing page.
+const CLOUD_PAGE_SIZE: u32 = 200;
+
+/// The most pages one hosted-platform listing will walk.
+///
+/// The walk already stops on an empty page and on a null `next`, which covers
+/// a well-behaved server. It does not cover a server that keeps answering a
+/// full page and a non-null cursor: that spins the loop and grows the buffer
+/// until the process dies. 500 pages is 100_000 records -- far past any real
+/// account this adapter writes, and small enough that the failure arrives as a
+/// message rather than an OOM.
+const CLOUD_MAX_PAGES: u32 = 500;
+
 /// A Mem0 service — self-hosted or hosted — exposed through TinyMemory's
 /// storage contract.
 #[derive(Debug)]
@@ -253,9 +266,12 @@ impl Mem0Dialect {
             // `{count, next, previous, results}`. That is the paging this
             // adapter's self-hosted arm documents as unverified — here it is
             // verified against Mem0's API reference, so this arm has no
-            // ceiling to refuse at. Paging stops on an empty page as well as
-            // a null `next`, so a server that omits the cursor cannot spin
-            // the loop.
+            // ceiling to refuse at for a *correct* server. Paging stops on an
+            // empty page as well as a null `next`, so a server that omits the
+            // cursor cannot spin the loop -- but one that keeps answering a
+            // full page and a non-null `next` still can, so the walk is
+            // bounded below and fails loudly at the bound rather than
+            // collecting for ever.
             Flavour::Cloud => {
                 let mut all = Vec::new();
                 let mut page = 1_u32;
@@ -264,7 +280,7 @@ impl Mem0Dialect {
                         .client
                         .json(
                             Method::POST,
-                            &format!("v3/memories/?page={page}&page_size=200"),
+                            &format!("v3/memories/?page={page}&page_size={CLOUD_PAGE_SIZE}"),
                             Some(&json!({"filters": {"agent_id": CLOUD_AGENT_ID}})),
                         )
                         .await?;
@@ -279,6 +295,13 @@ impl Mem0Dialect {
                     if exhausted {
                         break;
                     }
+                    anyhow::ensure!(
+                        page < CLOUD_MAX_PAGES,
+                        "mem0's hosted platform still reported more memories after \
+                         {CLOUD_MAX_PAGES} pages of {CLOUD_PAGE_SIZE}. A cursor that never \
+                         clears is a server fault, not a large account, and continuing \
+                         would neither terminate nor answer correctly."
+                    );
                     page = page.saturating_add(1);
                 }
                 Ok(all)
