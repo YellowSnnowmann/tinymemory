@@ -40,6 +40,56 @@ impl std::fmt::Debug for HttpClient {
     }
 }
 
+/// Largest response body any hosted engine may return.
+///
+/// The endpoint is operator-supplied (`SupermemoryMemory::api`,
+/// `Mem0Memory::new`, `CogneeMemory::self_hosted` all take an arbitrary URL),
+/// so a broken or hostile server must not be able to exhaust the host's
+/// memory. 64 MiB is far above any real memory payload -- the largest thing
+/// these APIs return is a page of records -- and far below a size that
+/// threatens a process.
+const MAX_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Read a response body, failing once it exceeds [`MAX_RESPONSE_BYTES`].
+///
+/// `Response::json()`/`text()` buffer the whole body before any size check, so
+/// a server that omits or understates `Content-Length` (a chunked response,
+/// say) could OOM the process despite a declared limit. Reading incrementally
+/// enforces the cap while the bytes arrive. Same argument, and same shape, as
+/// `tinymemory-sources`' `read_body_capped` -- that guard was written for the
+/// web-page reader and simply had not been applied on this path.
+async fn read_capped(response: reqwest::Response, path: &str) -> anyhow::Result<Vec<u8>> {
+    use futures::StreamExt;
+    if let Some(len) = response.content_length() {
+        if len > MAX_RESPONSE_BYTES {
+            anyhow::bail!(
+                "memory API {path} response exceeds {MAX_RESPONSE_BYTES}-byte limit \
+                 (Content-Length={len})"
+            );
+        }
+    }
+    let mut body = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.with_context(|| format!("memory API {path} body read failed"))?;
+        // Check BEFORE appending: one oversized chunk would otherwise be
+        // allocated in full before the limit is noticed, which is the
+        // allocation this cap exists to prevent.
+        let next_len = body
+            .len()
+            .checked_add(chunk.len())
+            .context("memory API response length overflowed")?;
+        if next_len as u64 > MAX_RESPONSE_BYTES {
+            anyhow::bail!(
+                "memory API {path} response exceeds {MAX_RESPONSE_BYTES}-byte limit \
+                 (would reach {next_len} bytes)"
+            );
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
 impl HttpClient {
     /// Builds a client that optionally authenticates with a bearer token.
     pub(crate) fn bearer(endpoint: &str, credential: Option<&str>) -> anyhow::Result<Self> {
@@ -168,9 +218,8 @@ impl HttpClient {
         if !status.is_success() {
             return Err(self.status_error(path, status));
         }
-        response
-            .json()
-            .await
+        let body = read_capped(response, path).await?;
+        serde_json::from_slice(&body)
             .with_context(|| format!("memory API {path} returned invalid JSON"))
     }
 
@@ -185,10 +234,8 @@ impl HttpClient {
         if !status.is_success() {
             return Err(self.status_error(path, status));
         }
-        response
-            .text()
-            .await
-            .context("memory API response was unreadable")
+        let body = read_capped(response, path).await?;
+        String::from_utf8(body).context("memory API response was not valid UTF-8")
     }
 
     /// Sends a request whose successful response body is not needed.

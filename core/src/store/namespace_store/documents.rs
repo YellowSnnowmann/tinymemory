@@ -33,6 +33,19 @@ impl UnifiedMemory {
         if key.is_empty() {
             return Err("document key cannot be empty".to_string());
         }
+        // Serialise writers of one key for the WHOLE operation. A deterministic
+        // document id stops two writers orphaning each other's chunks, but it
+        // does not ORDER them: the row write and the chunk replacement are
+        // separated by embedding, which awaits. Without this, writer A can
+        // update the row, await the embedder, and have B update the row and
+        // replace the chunks in between -- leaving B's content beside A's
+        // chunks, plus A's trailing chunks if A had more. The metadata-only
+        // path below takes the same lock: it writes the same row, so it must
+        // not interleave with a full write either. Same guard shape as the
+        // sync path's per-connection lock.
+        let _write_guard = Self::document_write_lock(&self.db_path, &namespace, &key)
+            .lock_owned()
+            .await;
         let existing_document_id = {
             let conn = self.conn.lock();
             conn.query_row(
@@ -46,11 +59,19 @@ impl UnifiedMemory {
         let document_id = input
             .document_id
             .or(existing_document_id)
-            .unwrap_or_else(|| {
-                let ts = Self::now_ts() as u64;
-                let short = &Uuid::new_v4().to_string()[..8];
-                format!("{ts}_{short}")
-            });
+            // Derived from (namespace, key), NOT random. The lookup above and
+            // the write below are separated by `.await`s, so two concurrent
+            // stores of a not-yet-existing key both miss and both mint an id.
+            // The ROW is safe -- `ON CONFLICT(namespace, key) DO UPDATE` keeps
+            // exactly one -- but that clause does not update `document_id`,
+            // and each writer has already written `vector_chunks` under ITS
+            // OWN id. The loser's chunks are then unreachable from the row, so
+            // `forget` (which deletes chunks by the row's document_id) leaves
+            // them behind and recall keeps returning content the caller
+            // deleted. A deterministic id makes both writers choose the same
+            // one, so the second write updates the first's chunks instead of
+            // orphaning them.
+            .unwrap_or_else(|| Self::derive_document_id(&namespace, &key));
         let now = Self::now_ts();
         let created_at = {
             let conn = self.conn.lock();
@@ -221,6 +242,19 @@ impl UnifiedMemory {
         if key.is_empty() {
             return Err("document key cannot be empty".to_string());
         }
+        // Serialise writers of one key for the WHOLE operation. A deterministic
+        // document id stops two writers orphaning each other's chunks, but it
+        // does not ORDER them: the row write and the chunk replacement are
+        // separated by embedding, which awaits. Without this, writer A can
+        // update the row, await the embedder, and have B update the row and
+        // replace the chunks in between -- leaving B's content beside A's
+        // chunks, plus A's trailing chunks if A had more. The metadata-only
+        // path below takes the same lock: it writes the same row, so it must
+        // not interleave with a full write either. Same guard shape as the
+        // sync path's per-connection lock.
+        let _write_guard = Self::document_write_lock(&self.db_path, &namespace, &key)
+            .lock_owned()
+            .await;
         let existing_document_id = {
             let conn = self.conn.lock();
             conn.query_row(
@@ -659,8 +693,126 @@ impl UnifiedMemory {
         }
         Ok(json!({"deleted": deleted, "namespace": ns, "documentId": document_id }))
     }
+
+    /// The write lock for one `(database, namespace, key)`.
+    ///
+    /// Process-global rather than per-instance: the same store file can be
+    /// opened by more than one `UnifiedMemory`, and a lock living on the
+    /// instance would not serialise those. Keyed by db path so two workspaces
+    /// never contend.
+    ///
+    /// The table only grows, bounded by the number of distinct keys this
+    /// process has written -- one `Arc` and an unlocked mutex each.
+    fn document_write_lock(
+        db_path: &std::path::Path,
+        namespace: &str,
+        key: &str,
+    ) -> std::sync::Arc<tokio::sync::Mutex<()>> {
+        use std::collections::HashMap;
+        use std::sync::{Arc, Mutex, OnceLock};
+        type Table = Mutex<HashMap<(String, String, String), Arc<tokio::sync::Mutex<()>>>>;
+        static LOCKS: OnceLock<Table> = OnceLock::new();
+        let table = LOCKS.get_or_init(|| Mutex::new(HashMap::new()));
+        let id = (
+            db_path.to_string_lossy().into_owned(),
+            namespace.to_owned(),
+            key.to_owned(),
+        );
+        // Recover from a poisoned table: it holds `Arc`s only, so a panicking
+        // writer leaves nothing torn, and refusing every later write would be
+        // a worse failure than continuing.
+        let mut table = table
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        Arc::clone(table.entry(id).or_default())
+    }
+
+    /// A document id derived from `(namespace, key)`.
+    ///
+    /// Deterministic so two concurrent first-writes of one key agree, which is
+    /// what keeps `vector_chunks` addressable from the row. Hashed rather than
+    /// concatenated so the id is a fixed-width opaque token whatever the
+    /// namespace or key contains; the zero byte is a domain separator, so
+    /// ("a","bc") and ("ab","c") cannot collide.
+    pub(crate) fn derive_document_id(namespace: &str, key: &str) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(namespace.as_bytes());
+        hasher.update([0u8]);
+        hasher.update(key.as_bytes());
+        format!("{:x}", hasher.finalize())[..32].to_string()
+    }
 }
 
 #[cfg(test)]
 #[path = "documents_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod document_id_tests {
+    use super::UnifiedMemory;
+
+    /// Two concurrent first-writes of one key must choose the SAME document
+    /// id. If they do not, each writes `vector_chunks` under its own id, the
+    /// `ON CONFLICT(namespace, key)` row keeps only one of them, and the
+    /// loser's chunks outlive `forget` — deleted content stays recallable.
+    #[test]
+    fn the_id_is_derived_from_namespace_and_key_not_random() {
+        let a = UnifiedMemory::derive_document_id("notes", "q3-plan");
+        let b = UnifiedMemory::derive_document_id("notes", "q3-plan");
+        assert_eq!(a, b, "the same key must derive the same id");
+        assert_ne!(
+            a,
+            UnifiedMemory::derive_document_id("notes", "q4-plan"),
+            "different keys must not collide"
+        );
+        assert_ne!(
+            a,
+            UnifiedMemory::derive_document_id("other", "q3-plan"),
+            "the namespace must participate"
+        );
+    }
+
+    /// The guard must be per key, not global: two different keys writing at
+    /// once must not serialise, or every concurrent write in the process
+    /// queues behind one slow embedding.
+    #[test]
+    fn the_write_lock_is_per_key_and_shared_per_key() {
+        let db = std::path::Path::new("/w/memory/memory.db");
+        let a1 = UnifiedMemory::document_write_lock(db, "notes", "k1");
+        let a2 = UnifiedMemory::document_write_lock(db, "notes", "k1");
+        let b = UnifiedMemory::document_write_lock(db, "notes", "k2");
+        let other_ns = UnifiedMemory::document_write_lock(db, "other", "k1");
+        let other_db = UnifiedMemory::document_write_lock(
+            std::path::Path::new("/w2/memory/memory.db"),
+            "notes",
+            "k1",
+        );
+        assert!(
+            std::sync::Arc::ptr_eq(&a1, &a2),
+            "same key must share one lock"
+        );
+        assert!(
+            !std::sync::Arc::ptr_eq(&a1, &b),
+            "different keys must not contend"
+        );
+        assert!(
+            !std::sync::Arc::ptr_eq(&a1, &other_ns),
+            "the namespace must participate"
+        );
+        assert!(
+            !std::sync::Arc::ptr_eq(&a1, &other_db),
+            "two workspaces must not contend"
+        );
+    }
+
+    /// The separator matters: without it ("a","bc") and ("ab","c") hash the
+    /// same bytes and two distinct records share one id.
+    #[test]
+    fn the_namespace_key_boundary_cannot_be_shifted() {
+        assert_ne!(
+            UnifiedMemory::derive_document_id("a", "bc"),
+            UnifiedMemory::derive_document_id("ab", "c")
+        );
+    }
+}

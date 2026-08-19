@@ -1957,6 +1957,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "axum",
+ "futures",
  "reqwest",
  "serde",
  "serde_json",
