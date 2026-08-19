@@ -147,25 +147,64 @@ impl SkillDocSink for PipelineHost {
     }
 }
 
-/// Mirror of the engine adapter's tree reconnect: route the stored document
-/// through core's ingest funnel under the same source id scheme.
+/// Mirror of the engine adapter's tree reconnect (`engine::sync`'s
+/// `ingest_document_into_memory_tree`): route the stored document through
+/// core's ingest funnel under the same addressing scheme.
+///
+/// # The scheme is the contract, not an implementation detail
+///
+/// The tree scope a chunk seals under is `path_scope`, falling back to
+/// `source_id`. Retrieval selects source trees by that scope and classifies
+/// them by their **platform prefix** — `gmail:` is email, `slack:` is chat.
+/// So the scope has to be `"{toolkit}:{connection_id}"`: one tree per
+/// connection, named by a prefix retrieval knows.
+///
+/// Passing no `path_scope` is not a smaller version of that. It makes each
+/// item's own `source_id` the scope, which is a *tree per document*, named by
+/// a prefix that matches no platform — the items are stored and then
+/// unreachable, which is the #5473 defect this reconnect exists to fix. The
+/// `source_id LIKE` prefix the memory-source status and diff snapshots query
+/// by is keyed on this same scheme — see `sources::status::source_id_prefix`.
+///
+/// Tags are a deliberate superset of the engine adapter's: it tags the toolkit
+/// alone, this also tags `composio_sync`. Tags feed scoring and filtering, not
+/// addressing, so the extra one costs nothing and marks the ingest path.
 async fn ingest_into_tree(config: &Config, document: &SkillDocument) -> anyhow::Result<()> {
-    let source_id = format!(
-        "composio:{}:{}:{}",
-        document.toolkit, document.connection_id, document.document_id
-    );
+    let toolkit = document.toolkit.trim().to_ascii_lowercase();
+    let connection_id = document.connection_id.trim();
+    // A blank toolkit or connection would yield a scope with no platform
+    // prefix (`":conn"`, `"gmail:"`), which no retrieval kind matches; skip
+    // rather than write an unreachable tree. The skill store still holds the
+    // item.
+    if toolkit.is_empty() || connection_id.is_empty() {
+        tracing::debug!(
+            document_id = %document.document_id,
+            "[memory_sync] skipping memory-tree ingest: item has no toolkit/connection scope"
+        );
+        return Ok(());
+    }
+    let tree_scope = format!("{toolkit}:{connection_id}");
+    let source_id = format!("{tree_scope}:{}", document.document_id);
+    let owner = format!("{toolkit}-sync:{connection_id}");
     let doc = crate::ingest_pipeline::IngestDocumentInput {
-        provider: document.toolkit.clone(),
+        provider: format!("composio:{toolkit}"),
         title: document.title.clone(),
         body: document.content.clone(),
         modified_at: chrono::Utc::now(),
-        source_ref: Some(source_id.clone()),
+        source_ref: Some(document.document_id.clone()),
     };
-    let tags = vec!["composio_sync".to_string(), document.toolkit.clone()];
-    crate::ingest_pipeline::ingest_document(config, &source_id, "", tags, doc)
-        .await
-        .map(|_| ())
-        .map_err(|error| anyhow::anyhow!("{error}"))
+    let tags = vec!["composio_sync".to_string(), toolkit];
+    crate::ingest_pipeline::ingest_document_with_scope(
+        config,
+        &source_id,
+        &owner,
+        tags,
+        doc,
+        Some(tree_scope),
+    )
+    .await
+    .map(|_| ())
+    .map_err(|error| anyhow::anyhow!("memory-tree ingest failed for source `{source_id}`: {error}"))
 }
 
 #[async_trait]
@@ -611,6 +650,132 @@ mod tests {
             "the backfill must not run while a Slack sync of this connection is running"
         );
         drop(held);
+    }
+
+    /// The engine adapter's tree reconnect has this test
+    /// (`engine::sync`'s `composio_sync_document_reaches_memory_tree`); the
+    /// engine-free host that replaced it on the live path did not, and drifted
+    /// — it wrote a `composio:`-prefixed source id and no `path_scope`, so
+    /// every synced item became its own tree under a scope no platform prefix
+    /// matches. Chunks existed, recall could not reach them. Asserting the
+    /// addressing, not merely the row count, is what catches that.
+    #[tokio::test]
+    async fn a_synced_document_is_keyed_by_its_connection_scope() {
+        use tinymemory_api::host::test_support::TestHostConfig;
+        use tinymemory_api::host::MemoryHostConfig;
+
+        crate::test_seams::init();
+        let workspace = tempfile::tempdir().expect("workspace");
+        let workspace_dir = workspace.path().join("workspace");
+        let mut host_config = TestHostConfig::default();
+        host_config.workspace_dir = workspace_dir.clone();
+        let config = host_config.to_arc();
+        let client: MemoryClientRef = Arc::new(
+            crate::store::MemoryClient::from_workspace_dir(workspace_dir)
+                .expect("memory client initialises against a fresh workspace"),
+        );
+        let host = PipelineHost::new(client, config.clone());
+
+        // A fresh tree is empty, so a non-zero count after the store is
+        // attributable to this sync rather than to pre-existing state.
+        assert_eq!(
+            crate::store::chunks::store::count_chunks(&*config).expect("count chunks"),
+            0,
+            "fresh workspace must start with an empty memory tree"
+        );
+
+        host.store(SkillDocument {
+            namespace_skill_id: "gmail".into(),
+            connection_id: "conn-1".into(),
+            document_id: "gmail:msg-1".into(),
+            title: "Quarterly planning".into(),
+            content: "Let's finalise the Q3 roadmap and align on the launch date.".into(),
+            toolkit: "gmail".into(),
+            metadata: serde_json::json!({ "source": "composio-provider-incremental" }),
+        })
+        .await
+        .expect("storing a synced document must also ingest it into the memory tree");
+
+        let scoped = crate::store::chunks::store::list_chunks(
+            &*config,
+            &crate::store::chunks::store::ListChunksQuery {
+                source_id: Some("gmail:conn-1:gmail:msg-1".into()),
+                limit: Some(8),
+                ..Default::default()
+            },
+        )
+        .expect("list chunks by source id");
+        assert!(
+            !scoped.is_empty(),
+            "ingested chunks must be keyed by `{{toolkit}}:{{connection_id}}:{{document_id}}` — \
+             the scheme the memory-source status and diff snapshots query by"
+        );
+        assert!(
+            scoped
+                .iter()
+                .all(|chunk| chunk.metadata.path_scope.as_deref() == Some("gmail:conn-1")),
+            "connector chunks must carry the `{{toolkit}}:{{connection_id}}` tree scope so \
+             query_source resolves them (gmail → email)"
+        );
+        assert!(
+            scoped
+                .iter()
+                .all(|chunk| chunk.metadata.owner == "gmail-sync:conn-1"),
+            "connector chunks must be owned by the connection that synced them"
+        );
+    }
+
+    /// A blank toolkit or connection cannot produce a scope any retrieval kind
+    /// matches, so the tree half is skipped rather than writing an unreachable
+    /// tree. The skill store, which committed first, still holds the item.
+    #[tokio::test]
+    async fn an_item_without_a_connection_scope_skips_the_tree_but_not_the_store() {
+        use tinymemory_api::host::test_support::TestHostConfig;
+        use tinymemory_api::host::MemoryHostConfig;
+
+        crate::test_seams::init();
+        let workspace = tempfile::tempdir().expect("workspace");
+        let workspace_dir = workspace.path().join("workspace");
+        let mut host_config = TestHostConfig::default();
+        host_config.workspace_dir = workspace_dir.clone();
+        let config = host_config.to_arc();
+        let client: MemoryClientRef = Arc::new(
+            crate::store::MemoryClient::from_workspace_dir(workspace_dir)
+                .expect("memory client initialises against a fresh workspace"),
+        );
+        let host = PipelineHost::new(client.clone(), config.clone());
+
+        host.store(SkillDocument {
+            namespace_skill_id: "gmail".into(),
+            connection_id: "   ".into(),
+            document_id: "gmail:msg-2".into(),
+            title: "No connection".into(),
+            content: "This item has no connection scope.".into(),
+            toolkit: "gmail".into(),
+            metadata: serde_json::Value::Null,
+        })
+        .await
+        .expect("a scopeless item must not fail the sync");
+
+        assert_eq!(
+            crate::store::chunks::store::count_chunks(&*config).expect("count chunks"),
+            0,
+            "a scopeless item must not write a tree no retrieval can reach"
+        );
+        let stored = client
+            .list_documents(Some("skill-gmail"))
+            .await
+            .expect("list skill documents");
+        let documents = stored
+            .get("documents")
+            .and_then(|value| value.as_array())
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(
+            documents.len(),
+            1,
+            "the skill store is the source of truth and must still hold the item"
+        );
     }
 
     /// A pipeline that records whether it was ticked, so the refusal path can
