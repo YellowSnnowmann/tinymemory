@@ -119,7 +119,7 @@ working wiring.
 | --- | --- | --- | --- |
 | `tinycortex` | TinyCortex, in-process | embedded | 3 (mandatory) via `provider`; all 18 via `TinycortexProvider` |
 | `supermemory` | Supermemory, hosted | external | 3 (mandatory) |
-| `mem0` | Mem0, self-hosted | external | 3 (mandatory) |
+| `mem0` | Mem0, hosted (`cloud`) or self-hosted | external | 3 (mandatory) |
 | `cognee` | Cognee, hosted or self-hosted | external | 3 (mandatory) |
 | `memory-git` | add-on: git-backed diff snapshots | — | requires `tinycortex` |
 | *(none)* | `NullMemoryProvider` | null | contract + registry only, 40 crates |
@@ -177,10 +177,10 @@ that skips enforcement is the entire reason the policy layer exists.
 ## Remote engines
 
 The `tinymemory-remote` crate supports the managed and self-hosted native APIs
-of Supermemory and Cognee, plus self-hosted Mem0. Each adapter stores
-TinyMemory's key, category, session, and provenance in backend metadata (or a
-Cognee raw-data envelope), so exact CRUD and portability survive the seam while
-recall remains engine-native. Provider-facing dataset names, container tags,
+of Supermemory, Cognee, and Mem0. Each adapter stores TinyMemory's key,
+category, session, and provenance in backend metadata (or a Cognee raw-data
+envelope), so exact CRUD and portability survive the seam while recall remains
+engine-native. Provider-facing dataset names, container tags,
 and filenames are bounded stable hashes, so every namespace and key accepted by
 the TinyMemory contract remains valid on the remote API.
 
@@ -196,19 +196,23 @@ Managed APIs have explicit constructors so their authentication cannot be
 confused with a self-hosted token:
 
 ```rust
-use tinymemory_remote::{CogneeMemory, SupermemoryMemory};
+use tinymemory_remote::{CogneeMemory, Mem0Memory, SupermemoryMemory};
 
-let cognee = CogneeMemory::cloud("cognee-api-key")?;
+// Cognee Cloud issues a per-tenant base URL (the API-key dashboard shows it);
+// there is no shared endpoint, so its constructor takes one.
+let cognee = CogneeMemory::api("https://tenant-<uuid>.aws.cognee.ai", "cognee-api-key")?;
+
+// Supermemory and Mem0 both serve one hosted origin, so theirs take only a key.
 let supermemory = SupermemoryMemory::cloud("sm_...")?;
-
-// Cognee also issues tenant-specific API origins.
-let tenant = CogneeMemory::api("https://tenant.example.cognee.ai", "api-key")?;
-# Ok::<_, anyhow::Error>((cognee, supermemory, tenant))
+let mem0 = Mem0Memory::cloud("m0-...")?;
+# Ok::<_, anyhow::Error>((cognee, supermemory, mem0))
 ```
 
 Cognee Cloud uses `X-Api-Key`; authenticated self-hosted Cognee uses a bearer
-access token. Supermemory uses bearer API keys for both deployment modes. All
-constructors redact credentials from `Debug` output and transport errors.
+access token. Supermemory uses bearer API keys for both deployment modes. Mem0's
+hosted platform uses `Authorization: Token`, and self-hosted Mem0 uses
+`X-API-Key`. All constructors redact credentials from `Debug` output, from
+transport errors, and from the request's own header rendering.
 
 All three advertise the mandatory Core, Recall, and Portability families. The
 live Docker harness and conformance command are documented in

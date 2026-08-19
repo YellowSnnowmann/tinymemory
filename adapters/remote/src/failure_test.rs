@@ -181,6 +181,41 @@ async fn an_unreachable_backend_is_reported_rather_than_hanging() {
 }
 
 #[tokio::test]
+async fn a_cursor_that_never_clears_is_refused_rather_than_walked_for_ever() {
+    // Mem0's hosted arm pages until the server says stop: an empty page or a
+    // null `next`. Both are things the *server* controls, so a server that
+    // keeps answering a page and a cursor -- a bug, a proxy replaying one
+    // response, a filter that never narrows -- would spin the request loop and
+    // grow the buffer until the process died. The self-hosted arm already
+    // refuses past its ceiling; this pins the hosted one doing the same.
+    let app = Router::new().fallback(any(|| async {
+        axum::Json(serde_json::json!({
+            "count": 1,
+            "next": "https://api.mem0.ai/v3/memories/?page=2",
+            "previous": null,
+            "results": [{"id": "m-1", "memory": "x", "metadata": {}}]
+        }))
+    }));
+    let endpoint = serve(app).await;
+    let memory = Mem0Memory::api(&endpoint, "m0-test-key").expect("client");
+
+    // Bounded so a genuinely unbounded loop fails the test rather than hanging
+    // the suite: the ceiling is 500 requests against a local socket, which
+    // finishes far inside this.
+    let outcome =
+        tokio::time::timeout(std::time::Duration::from_secs(60), memory.get("ns", "k")).await;
+
+    let Ok(result) = outcome else {
+        panic!("the hosted listing never terminated against a cursor that never clears");
+    };
+    let error = result.expect_err("a cursor that never clears cannot be answered correctly");
+    assert!(
+        format!("{error:#}").contains("pages"),
+        "the refusal must name the page ceiling it hit, got: {error:#}"
+    );
+}
+
+#[tokio::test]
 async fn a_paginated_export_terminates_instead_of_looping() {
     // The partial-page leg of §E6. A backend that keeps answering with a page
     // and a cursor would spin an exporter forever; the contract terminates on

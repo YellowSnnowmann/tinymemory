@@ -13,8 +13,8 @@ mod common;
 pub mod mem0;
 pub mod supermemory;
 
-pub use cognee::{CogneeMemory, COGNEE_API_ENDPOINT, COGNEE_DRIVER_ID};
-pub use mem0::{Mem0Memory, MEM0_DRIVER_ID};
+pub use cognee::{CogneeMemory, COGNEE_DRIVER_ID};
+pub use mem0::{Mem0Memory, MEM0_API_ENDPOINT, MEM0_DRIVER_ID};
 pub use supermemory::{SupermemoryMemory, SUPERMEMORY_API_ENDPOINT, SUPERMEMORY_DRIVER_ID};
 
 use std::sync::Arc;

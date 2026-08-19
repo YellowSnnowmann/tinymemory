@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use anyhow::{bail, Context};
 use async_trait::async_trait;
+use reqwest::header::{HeaderValue, AUTHORIZATION};
 use reqwest::{Method, RequestBuilder, StatusCode, Url};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -28,6 +29,13 @@ enum Auth {
     None,
     Bearer(String),
     ApiKey(String),
+    /// `Authorization: Token <key>` — Mem0's hosted platform.
+    ///
+    /// Distinct from [`Auth::Bearer`] on the wire *and* in behaviour:
+    /// api.mem0.ai routes a `Bearer` credential into its JWT verifier and
+    /// answers `token_not_valid`, so sending the wrong one of the two reports
+    /// a failure in the wrong subsystem.
+    Token(String),
 }
 
 impl std::fmt::Debug for HttpClient {
@@ -90,12 +98,41 @@ async fn read_capped(response: reqwest::Response, path: &str) -> anyhow::Result<
     Ok(body)
 }
 
+/// Wraps a credential in a header value that will not be printed back out.
+///
+/// `RequestBuilder::bearer_auth` marks its `Authorization` value sensitive on
+/// the caller's behalf; `RequestBuilder::header` handed a plain string does
+/// not. So the two schemes that have no such helper -- `X-API-Key` and
+/// `Authorization: Token` -- would otherwise carry a live API key through
+/// every `Debug` rendering of the request and through any middleware that
+/// formats headers. The flag is set here instead.
+///
+/// Parsing up front is the second half of the same fix: a credential holding a
+/// newline or another byte no header may carry becomes an error at the call
+/// site, naming the credential, rather than a deferred failure inside `send`
+/// that reads as a transport fault. The parse error carries no value, so the
+/// credential does not reach the message either.
+fn credential_header(value: &str) -> anyhow::Result<HeaderValue> {
+    let mut header =
+        HeaderValue::from_str(value).context("credential is not a valid HTTP header value")?;
+    header.set_sensitive(true);
+    Ok(header)
+}
+
 impl HttpClient {
     /// Builds a client that optionally authenticates with a bearer token.
     pub(crate) fn bearer(endpoint: &str, credential: Option<&str>) -> anyhow::Result<Self> {
         Self::new(
             endpoint,
             credential.map_or(Auth::None, |value| Auth::Bearer(value.into())),
+        )
+    }
+
+    /// A client authenticating with `Authorization: Token <key>`.
+    pub(crate) fn token(endpoint: &str, credential: Option<&str>) -> anyhow::Result<Self> {
+        Self::new(
+            endpoint,
+            credential.map_or(Auth::None, |value| Auth::Token(value.into())),
         )
     }
 
@@ -136,7 +173,10 @@ impl HttpClient {
         Ok(match &self.auth {
             Auth::None => request,
             Auth::Bearer(token) => request.bearer_auth(token),
-            Auth::ApiKey(key) => request.header("X-API-Key", key),
+            Auth::ApiKey(key) => request.header("X-API-Key", credential_header(key)?),
+            Auth::Token(key) => {
+                request.header(AUTHORIZATION, credential_header(&format!("Token {key}"))?)
+            }
         })
     }
 
@@ -180,12 +220,28 @@ impl HttpClient {
     /// rejected credential specifically, because "HTTP 401" three layers deep
     /// in an anyhow chain reads as "the engine is down" and sends the operator
     /// to the wrong runbook.
-    fn status_error(&self, path: &str, status: reqwest::StatusCode) -> anyhow::Error {
+    fn status_error(&self, path: &str, status: reqwest::StatusCode, body: &str) -> anyhow::Error {
         let host = self.endpoint.host_str().unwrap_or("<endpoint>");
+        // Hosted engines explain a rejection in the response body — mem0
+        // answers `{"detail": "..."}`, cognee likewise — and discarding it
+        // turned "this one field is invalid" into a bare status code that
+        // said only that something, somewhere, was wrong. Truncated because
+        // an error body is not a payload budget, and only ever an error
+        // body: success responses never reach here.
+        let detail = body.trim();
+        let detail = if detail.is_empty() {
+            String::new()
+        } else {
+            let mut shown: String = detail.chars().take(300).collect();
+            if detail.chars().count() > 300 {
+                shown.push('…');
+            }
+            format!(" — {shown}")
+        };
         match status.as_u16() {
             401 | 403 => {
                 let hint = match &self.auth {
-                    Auth::ApiKey(_) => "check the API key",
+                    Auth::ApiKey(_) | Auth::Token(_) => "check the API key",
                     Auth::Bearer(_) => "check the bearer token",
                     Auth::None => {
                         "the endpoint requires credentials this client was not configured with"
@@ -193,10 +249,10 @@ impl HttpClient {
                 };
                 anyhow::anyhow!(
                     "memory API {path} on {host}: the configured credential was rejected \
-                     (HTTP {status}) — {hint}"
+                     (HTTP {status}) — {hint}{detail}"
                 )
             }
-            _ => anyhow::anyhow!("memory API {path} on {host} returned HTTP {status}"),
+            _ => anyhow::anyhow!("memory API {path} on {host} returned HTTP {status}{detail}"),
         }
     }
 
@@ -216,7 +272,8 @@ impl HttpClient {
             .map_err(|error| self.transport_error(error))?;
         let status = response.status();
         if !status.is_success() {
-            return Err(self.status_error(path, status));
+            let body = response.text().await.unwrap_or_default();
+            return Err(self.status_error(path, status, &body));
         }
         let body = read_capped(response, path).await?;
         serde_json::from_slice(&body)
@@ -232,7 +289,8 @@ impl HttpClient {
             .map_err(|error| self.transport_error(error))?;
         let status = response.status();
         if !status.is_success() {
-            return Err(self.status_error(path, status));
+            let body = response.text().await.unwrap_or_default();
+            return Err(self.status_error(path, status, &body));
         }
         let body = read_capped(response, path).await?;
         String::from_utf8(body).context("memory API response was not valid UTF-8")
@@ -255,7 +313,8 @@ impl HttpClient {
             .map_err(|error| self.transport_error(error))?;
         let status = response.status();
         if !status.is_success() {
-            return Err(self.status_error(path, status));
+            let body = response.text().await.unwrap_or_default();
+            return Err(self.status_error(path, status, &body));
         }
         Ok(status)
     }
@@ -584,6 +643,72 @@ fn classify_transport(is_timeout: bool, is_connect: bool, chain: &str) -> &'stat
         "could not connect — check the URL and that the service is reachable"
     } else {
         "the request did not complete"
+    }
+}
+
+#[cfg(test)]
+mod credential_header_tests {
+    #![allow(clippy::expect_used, clippy::panic)]
+
+    use super::{credential_header, Auth, HttpClient};
+
+    /// The point of the helper. `reqwest` only redacts a header value whose
+    /// sensitive flag is set, and `RequestBuilder::header` handed a plain
+    /// string leaves it clear -- which is how an API key ends up rendered in
+    /// full by anything that formats the request.
+    #[test]
+    fn a_credential_header_is_marked_sensitive() {
+        let header = credential_header("Token m0-secret").expect("a plain key is a valid header");
+        assert!(header.is_sensitive());
+    }
+
+    /// The value still has to be the credential; marking it sensitive must not
+    /// change what goes on the wire.
+    #[test]
+    fn marking_it_sensitive_does_not_change_the_value() {
+        let header = credential_header("Token m0-secret").expect("valid");
+        assert_eq!(header.as_bytes(), b"Token m0-secret");
+    }
+
+    /// A credential carrying a newline cannot be a header. Rejecting it here
+    /// names the credential; letting it through defers the failure into `send`,
+    /// where it reads as a transport fault.
+    #[test]
+    fn a_credential_that_cannot_be_a_header_is_refused_by_name() {
+        let error = credential_header("key\r\nX-Injected: 1").expect_err("must not be accepted");
+        assert!(format!("{error}").contains("credential"), "got: {error}");
+    }
+
+    /// And the refusal must not print the credential it refused.
+    #[test]
+    fn the_refusal_does_not_echo_the_credential() {
+        let error =
+            credential_header("supersecret\nX-Injected: 1").expect_err("must not be accepted");
+        let rendered = format!("{error:?}");
+        assert!(!rendered.contains("supersecret"), "leaked: {rendered}");
+    }
+
+    /// Both credential-bearing schemes go through the helper, so both reach
+    /// the wire redacted. `Auth::Bearer` is covered by `reqwest`'s own
+    /// `bearer_auth`, which sets the flag itself.
+    #[test]
+    fn both_manual_schemes_send_a_sensitive_authorization_value() {
+        for auth in [
+            Auth::ApiKey("cg-secret".into()),
+            Auth::Token("m0-secret".into()),
+        ] {
+            let client = HttpClient::new("https://example.test", auth).expect("valid endpoint");
+            let request = client
+                .request(reqwest::Method::GET, "v1/thing")
+                .expect("a plain key builds")
+                .build()
+                .expect("request builds");
+            let sensitive = request
+                .headers()
+                .values()
+                .any(reqwest::header::HeaderValue::is_sensitive);
+            assert!(sensitive, "no sensitive header on {:?}", request.headers());
+        }
     }
 }
 

@@ -13,9 +13,6 @@ use crate::common::{stable_id, Dialect, HttpClient, RemoteMemory, StoredEntry};
 /// Stable driver id used by configuration and status output.
 pub use tinymemory_api::drivers::COGNEE_DRIVER_ID;
 
-/// Default base URL for Cognee's managed API.
-pub const COGNEE_API_ENDPOINT: &str = "https://api.cognee.ai";
-
 /// A Cognee managed or self-hosted service exposed through TinyMemory's contract.
 #[derive(Debug)]
 pub struct CogneeMemory {
@@ -51,10 +48,20 @@ impl CogneeMemory {
         })
     }
 
-    /// Connect to a Cognee managed API using `X-Api-Key` authentication.
+    /// Connect to Cognee Cloud using `X-Api-Key` authentication.
     ///
-    /// This accepts a custom endpoint because Cognee Cloud may issue a
-    /// tenant-specific base URL. Use [`Self::cloud`] for the shared default.
+    /// `endpoint` is **your tenant's** base URL, which Cognee Cloud issues per
+    /// account and prints on the API-key dashboard — it looks like
+    /// `https://tenant-<uuid>.aws.cognee.ai`. There is deliberately no shared
+    /// default: this crate carried a `COGNEE_API_ENDPOINT` pointing at
+    /// `api.cognee.ai`, and that host answers no TLS handshake at all (its DNS
+    /// record resolves, nothing listens), so every "just use the default"
+    /// caller met a confusing transport error instead of a working client.
+    /// The tenant URL is the only address that exists.
+    ///
+    /// The tenant and user ids the dashboard shows alongside the URL are not
+    /// needed here: the tenant is identified by the hostname, and the API's
+    /// only security scheme is this key.
     ///
     /// # Errors
     ///
@@ -69,15 +76,6 @@ impl CogneeMemory {
                 client: HttpClient::api_key(endpoint, Some(api_key))?,
             }),
         })
-    }
-
-    /// Connect to Cognee's shared managed API endpoint.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error when `api_key` is blank.
-    pub fn cloud(api_key: &str) -> anyhow::Result<Self> {
-        Self::api(COGNEE_API_ENDPOINT, api_key)
     }
 }
 
@@ -183,7 +181,7 @@ impl CogneeDialect {
     async fn datasets(&self) -> anyhow::Result<Vec<Dataset>> {
         let response: Value = self
             .client
-            .json(Method::GET, "api/v1/datasets", None)
+            .json(Method::GET, "api/v1/datasets/", None)
             .await?;
         Ok(response
             .as_array()
