@@ -82,6 +82,11 @@ capability cannot produce a build where nothing implements it. `test-support`
 is deliberately outside `full`: "give me the whole workspace" is not the same
 request as "give me the test doubles".
 
+This table says which crate each feature brings in. For what each *engine*
+feature actually serves — driver class, and how many of the eighteen capability
+families answer — see the engine table under
+[Using from your project](#using-from-your-project).
+
 
 Run `git submodule update --init --recursive` after cloning. Nothing in the
 workspace builds without it — `tinymemory-core` names `tinyagents` and
@@ -142,9 +147,9 @@ tinyagents = { path = "vendor/tinymemory/vendor/tinyagents" }
 tinymemory-api = { path = "vendor/tinymemory/api" }
 ```
 
-This exact patch set is what the reference consumer in `crates/tinymemory/examples/` and the
-repository's own root manifest use; a build missing any of the four fails at
-resolution, before compiling a line.
+This exact patch set is what the reference consumer in
+`crates/tinymemory/examples/` and the repository's own root manifest use; a
+build missing any of the four fails at resolution, before compiling a line.
 
 ```rust,ignore
 use std::sync::Arc;
@@ -156,8 +161,8 @@ let provider = Arc::new(provider(Arc::new(InMemoryMemoryStore::new())));
 That is a complete embedded setup for the mandatory three families. The full
 eighteen-family engine (`TinycortexProvider`) additionally needs the host
 seams (`EmbeddingHost` et al.) installed — see
-`crates/tinymemory-tinycortex/tests/full_provider_conformance.rs` for the minimal
-working wiring.
+`crates/tinymemory-tinycortex/tests/full_provider_conformance.rs` for the
+minimal working wiring.
 
 | Feature | Engine | Class | Families served |
 | --- | --- | --- | --- |
