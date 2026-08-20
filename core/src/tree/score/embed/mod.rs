@@ -313,10 +313,8 @@ pub fn unpack_embedding(b: &[u8]) -> Result<Vec<f32>> {
             b.len()
         );
     }
-    let floats: Vec<f32> = b
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-        .collect();
+    let (chunks, _remainder) = b.as_chunks::<4>();
+    let floats: Vec<f32> = chunks.iter().map(|c| f32::from_le_bytes(*c)).collect();
     if floats.len() != EMBEDDING_DIM {
         anyhow::bail!(
             "embedding blob length {} floats, expected {}",
