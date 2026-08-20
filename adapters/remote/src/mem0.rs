@@ -581,18 +581,29 @@ impl Dialect for Mem0Dialect {
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
+        // Scan the whole page before judging it: a server that ignores the
+        // metadata clause answers with the namespace's records, and the one
+        // asked for may sit anywhere in that page. An exact match anywhere
+        // wins. Decoded records with no match can only mean the filter was
+        // not honored — an honored filter makes every result match — so
+        // refuse rather than serve someone else's memory.
+        let mut foreign: Option<StoredEntry> = None;
         for value in &results {
             if let Some(entry) = Self::decode(value) {
-                anyhow::ensure!(
-                    entry.namespace == namespace && entry.key == key,
-                    "mem0's filtered lookup answered a DIFFERENT record ({}/{}) than asked \
-                     ({namespace}/{key}) — the server did not honor the metadata filter; \
-                     refusing rather than serving someone else's memory",
-                    entry.namespace,
-                    entry.key
-                );
-                return Ok(Some(entry));
+                if entry.namespace == namespace && entry.key == key {
+                    return Ok(Some(entry));
+                }
+                foreign.get_or_insert(entry);
             }
+        }
+        if let Some(entry) = foreign {
+            anyhow::bail!(
+                "mem0's filtered lookup answered a DIFFERENT record ({}/{}) than asked \
+                 ({namespace}/{key}) — the server did not honor the metadata filter; \
+                 refusing rather than serving someone else's memory",
+                entry.namespace,
+                entry.key
+            );
         }
         Ok(None)
     }

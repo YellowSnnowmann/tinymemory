@@ -24,20 +24,10 @@ async fn list(
     State(state): State<AppState>,
     axum::extract::RawQuery(query): axum::extract::RawQuery,
 ) -> Json<Value> {
-    state
-        .1
-        .lock()
-        .expect("query lock")
-        .push(query.unwrap_or_default());
+    let query = query.unwrap_or_default();
+    state.1.lock().expect("query lock").push(query.clone());
     // Honour the user_id filter the way the OSS server does (issue #69): a
     // scoped request must not receive the whole store back.
-    let query = state
-        .1
-        .lock()
-        .expect("query lock")
-        .last()
-        .cloned()
-        .unwrap_or_default();
     let user = query
         .split('&')
         .find_map(|pair| pair.strip_prefix("user_id="))
@@ -238,7 +228,7 @@ async fn cloud_keyed_lookup_filters_by_metadata_and_verifies() {
             let served = served.clone();
             async move {
                 captured.lock().expect("bodies").push(body);
-                Json(json!({"results": [served.lock().expect("answer").clone()], "next": null}))
+                Json(json!({"results": served.lock().expect("answer").clone(), "next": null}))
             }
         }),
     );
@@ -259,7 +249,7 @@ async fn cloud_keyed_lookup_filters_by_metadata_and_verifies() {
     };
 
     let driver = crate::mem0_provider(super::Mem0Memory::api(&endpoint, "key").expect("client"));
-    *answer.lock().expect("answer") = record("project", "decision");
+    *answer.lock().expect("answer") = json!([record("project", "decision")]);
     let got = driver.get("project", "decision").await.expect("get");
     assert!(got.is_some());
     let sent = bodies.lock().expect("bodies").clone();
@@ -272,8 +262,22 @@ async fn cloud_keyed_lookup_filters_by_metadata_and_verifies() {
         "the filter carries the key: {sent:?}"
     );
 
-    // A server ignoring the filter answers a DIFFERENT record: refuse loudly.
-    *answer.lock().expect("answer") = record("project", "someone-elses");
+    // A server that ignores the metadata clause answers with the whole
+    // namespace: the asked-for record must still resolve even when a sibling
+    // rides ahead of it in the page.
+    *answer.lock().expect("answer") = json!([
+        record("project", "someone-elses"),
+        record("project", "decision"),
+    ]);
+    let got = driver
+        .get("project", "decision")
+        .await
+        .expect("degraded-filter get")
+        .expect("record present in the degraded page");
+    assert_eq!(got.key, "decision", "the exact match wins, not the sibling");
+
+    // A server answering ONLY foreign records: refuse loudly.
+    *answer.lock().expect("answer") = json!([record("project", "someone-elses")]);
     let err = driver.get("project", "decision").await;
     assert!(
         err.is_err(),

@@ -383,7 +383,7 @@ impl Dialect for SupermemoryDialect {
         Ok(())
     }
 
-    /// Enumerates TinyMemory-owned Supermemory records.
+    /// Enumerates one namespace's TinyMemory-owned Supermemory records.
     /// Issue #69: one tag's records instead of the whole account — the
     /// scoped fetch `find_entry`/`delete` always used, now serving reads.
     async fn namespace_entries(&self, namespace: &str) -> anyhow::Result<Vec<StoredEntry>> {
@@ -397,6 +397,8 @@ impl Dialect for SupermemoryDialect {
             .collect())
     }
 
+    /// One record by key — `find_entry` already pages only this namespace's
+    /// container tag, so the keyed seam has nothing to add.
     async fn entry(&self, namespace: &str, key: &str) -> anyhow::Result<Option<StoredEntry>> {
         self.find_entry(namespace, key).await
     }

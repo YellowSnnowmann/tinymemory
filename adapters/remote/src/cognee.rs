@@ -511,6 +511,11 @@ impl Dialect for CogneeDialect {
     async fn delete(&self, namespace: &str, key: &str) -> anyhow::Result<bool> {
         // Three requests, no raw fan-out (issue #69): the filename match
         // resolves the id, and delete needs nothing from the envelope.
+        // Deliberately weaker than `fetch_entry`'s envelope check: the
+        // filename is the key's SHA-256 digest and the dataset scopes the
+        // namespace, so a wrong-record match would need a digest collision —
+        // and verifying the envelope would cost exactly the raw fetch this
+        // path exists to avoid.
         let Some(dataset) = self.find_dataset(namespace).await? else {
             return Ok(false);
         };
