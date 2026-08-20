@@ -30,6 +30,18 @@
 //! failure mode with a real precedent, and it is silent; see
 //! `docs/specs/2026-08-13-memory-module-port.md` §3.
 
+use async_trait::async_trait;
+
+use crate::chunks::{Chunk, SourceKind};
+use crate::error::MemoryError;
+use crate::provider::types::SourceScope;
+
+// The value types this family exchanges. They are defined in `tinymemory-bus`
+// — they cross the module boundary, and a host that only makes calls must be
+// able to name them without compiling this trait — and re-exported here so
+// every historical path keeps resolving and the types stay the same types.
+pub use tinymemory_bus::provider::chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery};
+
 /// Direct read access to the chunk tier.
 ///
 /// Reached through [`MemoryProvider::as_chunks`](super::MemoryProvider::as_chunks).

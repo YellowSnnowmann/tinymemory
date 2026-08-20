@@ -40,6 +40,16 @@
 //! trip instead of two, and no reliance on connection-local state. The engine
 //! knows the id it just wrote; nothing else has to guess.
 
+use async_trait::async_trait;
+
+use crate::error::MemoryError;
+
+// The value types this family exchanges. They are defined in `tinymemory-bus`
+// — they cross the module boundary, and a host that only makes calls must be
+// able to name them without compiling this trait — and re-exported here so
+// every historical path keeps resolving and the types stay the same types.
+pub use tinymemory_bus::provider::episodic::{ConversationSegment, EpisodicTurn};
+
 /// The turn-by-turn conversation record.
 ///
 /// Reached through [`MemoryProvider::as_episodic`](super::MemoryProvider::as_episodic).

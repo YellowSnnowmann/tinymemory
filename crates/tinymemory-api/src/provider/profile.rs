@@ -28,6 +28,16 @@
 //! [`FacetState::Dropped`] and is *meant* to be collected — protecting it would
 //! keep the thing the user asked to forget on disk indefinitely.
 
+use async_trait::async_trait;
+
+use crate::error::MemoryError;
+
+// The value types this family exchanges. They are defined in `tinymemory-bus`
+// — they cross the module boundary, and a host that only makes calls must be
+// able to name them without compiling this trait — and re-exported here so
+// every historical path keeps resolving and the types stay the same types.
+pub use tinymemory_bus::provider::profile::{FacetState, FacetType, ProfileFacet, UserState};
+
 /// Learned facets about the user.
 ///
 /// Reached through [`MemoryProvider::as_profile`](super::MemoryProvider::as_profile).

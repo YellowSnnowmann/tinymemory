@@ -31,6 +31,16 @@
 //! not promise that every engine identifies people by UUID, and a caller must
 //! not parse one out — it round-trips an id it was given and nothing more.
 
+use async_trait::async_trait;
+
+use crate::error::MemoryError;
+
+// The value types this family exchanges. They are defined in `tinymemory-bus`
+// — they cross the module boundary, and a host that only makes calls must be
+// able to name them without compiling this trait — and re-exported here so
+// every historical path keeps resolving and the types stay the same types.
+pub use tinymemory_bus::provider::people::{AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonRef, PersonScore, RankedPerson, ResolvedPerson};
+
 /// Contacts, handle resolution, and closeness scoring.
 ///
 /// Reached through

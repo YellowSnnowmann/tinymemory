@@ -34,6 +34,18 @@
 //! reports as [`MemoryError::Invalid`], because silently matching nothing would
 //! look identical to a genuine empty result.
 
+use async_trait::async_trait;
+
+use crate::error::MemoryError;
+use crate::provider::types::SourceScope;
+use crate::types::NamespaceMemoryHit;
+
+// The value types this family exchanges. They are defined in `tinymemory-bus`
+// — they cross the module boundary, and a host that only makes calls must be
+// able to name them without compiling this trait — and re-exported here so
+// every historical path keeps resolving and the types stay the same types.
+pub use tinymemory_bus::provider::retrieval::{CoverWindowQuery, EntityMatch, FastRetrieveQuery, RetrievalHit, RetrievalNodeKind, RetrievalResponse, SourceRetrievalQuery};
+
 /// The engine's deterministic retrieval primitives.
 ///
 /// Reached through [`MemoryProvider::as_retrieval`](super::MemoryProvider::as_retrieval).
