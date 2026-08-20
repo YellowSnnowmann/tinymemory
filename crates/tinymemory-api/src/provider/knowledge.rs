@@ -13,8 +13,20 @@
 use async_trait::async_trait;
 
 use crate::error::MemoryError;
+use crate::graph::{GraphEdge, GraphNode, GraphView, GraphViewQuery};
 use crate::provider::types::{DiffReport, EntityHit, SnapshotRef};
 use crate::types::{GraphRelationRecord, MemoryKvRecord};
+
+/// How many edges the default [`MemoryGraph::graph_view`] traversal scans per
+/// predicate when it has to resolve *inbound* edges.
+///
+/// [`MemoryGraph::relations`] filters by subject and predicate but not by
+/// object, so inbound expansion has no indexed form in this contract and the
+/// default traversal falls back to a bounded scan. The bound exists so a graph
+/// larger than memory cannot be pulled into a view; hitting it sets
+/// [`GraphView::truncated`]. A driver whose store indexes the object column
+/// should override `graph_view` and skip this path entirely.
+pub const INBOUND_SCAN_LIMIT: usize = 4_096;
 
 /// The entity index: who and what the stored memory is about.
 #[async_trait]
@@ -140,6 +152,213 @@ pub trait MemoryGraph: Send + Sync {
     /// [`MemoryError::Invalid`] for a malformed edge, otherwise backend
     /// failures.
     async fn put_relation(&self, relation: GraphRelationRecord) -> Result<(), MemoryError>;
+
+    /// Assemble a bounded, renderable slice of the graph.
+    ///
+    /// This is to [`Self::relations`] what
+    /// [`crate::provider::MemoryTree::drill_down`] is to a raw node read: one
+    /// call returns a node *together with its surroundings*, already joined
+    /// into a node set and an edge set, so navigating a graph is a sequence of
+    /// view calls rather than a client-side reassembly that every caller would
+    /// write differently.
+    ///
+    /// # The default implementation
+    ///
+    /// Provided, not required: it breadth-first expands
+    /// [`GraphViewQuery::seeds`] using [`Self::relations`] alone, so every
+    /// existing driver gains a graph view without writing one, and a driver
+    /// that advertises no [`crate::capabilities::Capability::Graph`] family
+    /// still surfaces the same [`MemoryError::Unsupported`] its `relations`
+    /// returns.
+    ///
+    /// It costs one `relations` call per node visited, including one final
+    /// round at the outermost hop that adds no nodes and exists only to close
+    /// edges *between* nodes already in the view — without it the outer ring
+    /// renders as a star rather than as the graph it is. A driver with a native
+    /// multi-hop traversal should override this and use it.
+    ///
+    /// Inbound expansion has no indexed form here — `relations` cannot filter
+    /// by object — so [`crate::graph::GraphDirection::In`] and
+    /// [`crate::graph::GraphDirection::Both`] fall back to a scan capped at
+    /// [`INBOUND_SCAN_LIMIT`] per predicate.
+    ///
+    /// # Errors
+    ///
+    /// Whatever [`Self::relations`] returns. Bounds are never an error: a
+    /// traversal that hits one returns the partial view with
+    /// [`GraphView::truncated`] set.
+    async fn graph_view(&self, query: &GraphViewQuery) -> Result<GraphView, MemoryError> {
+        let namespace = query.namespace.as_deref();
+        let mut view = GraphView {
+            namespace: query.namespace.clone(),
+            seeds: query.seeds.clone(),
+            ..GraphView::default()
+        };
+
+        // Each predicate needs its own call: `relations` takes one, not a set.
+        // An empty filter becomes the single unfiltered call rather than a
+        // special case further down.
+        let predicates: Vec<Option<&str>> = if query.predicates.is_empty() {
+            vec![None]
+        } else {
+            query.predicates.iter().map(|p| Some(p.as_str())).collect()
+        };
+
+        // Unseeded: an overview, not a traversal. One bounded scan of the
+        // slice, and the node set is whatever the returned edges touch.
+        if query.seeds.is_empty() {
+            for predicate in &predicates {
+                let records = self
+                    .relations(namespace, None, *predicate, query.max_edges)
+                    .await?;
+                if records.len() >= query.max_edges {
+                    view.truncated = true;
+                }
+                for record in records {
+                    push_view_edge(&mut view, record, &mut 0, query, 0);
+                }
+            }
+            view.recompute_stats();
+            return Ok(view);
+        }
+
+        // Inbound edges are resolved from one scan per predicate rather than
+        // one per node: the scan is the expensive part, and repeating it for
+        // every node visited would multiply it by `max_nodes`.
+        let mut inbound: Vec<GraphRelationRecord> = Vec::new();
+        if query.direction.follows_in() {
+            for predicate in &predicates {
+                let records = self
+                    .relations(namespace, None, *predicate, INBOUND_SCAN_LIMIT)
+                    .await?;
+                if records.len() >= INBOUND_SCAN_LIMIT {
+                    view.truncated = true;
+                }
+                inbound.extend(records);
+            }
+        }
+
+        let mut frontier: Vec<String> = Vec::new();
+        for seed in &query.seeds {
+            if view.nodes.iter().any(|n| &n.id == seed) {
+                continue;
+            }
+            view.nodes.push(GraphNode::bare(seed.clone(), 0));
+            frontier.push(seed.clone());
+        }
+
+        let mut deferred = 0usize;
+        for hop in 0..=query.depth {
+            if frontier.is_empty() {
+                break;
+            }
+            let mut next: Vec<String> = Vec::new();
+            for node_id in &frontier {
+                let mut incident: Vec<GraphRelationRecord> = Vec::new();
+                if query.direction.follows_out() {
+                    for predicate in &predicates {
+                        incident.extend(
+                            self.relations(namespace, Some(node_id), *predicate, query.max_edges)
+                                .await?,
+                        );
+                    }
+                }
+                if query.direction.follows_in() {
+                    incident.extend(
+                        inbound
+                            .iter()
+                            .filter(|record| &record.object == node_id)
+                            .cloned(),
+                    );
+                }
+
+                for record in incident {
+                    if !query.accepts_predicate(&record.predicate) {
+                        continue;
+                    }
+                    let other = if &record.subject == node_id {
+                        record.object.clone()
+                    } else {
+                        record.subject.clone()
+                    };
+                    let known = view.nodes.iter().any(|n| n.id == other);
+                    if !known {
+                        // At the outermost hop, and once the node ceiling is
+                        // reached, an edge to an unknown node would dangle.
+                        // Drop it and record that the view is partial.
+                        if hop >= query.depth || view.nodes.len() >= query.max_nodes {
+                            deferred += 1;
+                            view.truncated = true;
+                            continue;
+                        }
+                        view.nodes.push(GraphNode::bare(other.clone(), hop + 1));
+                        next.push(other);
+                    }
+                    push_view_edge(&mut view, record, &mut deferred, query, hop);
+                }
+            }
+            frontier = next;
+        }
+
+        view.stats.frontier_remaining = deferred + frontier.len();
+        if !frontier.is_empty() {
+            view.truncated = true;
+        }
+        view.recompute_stats();
+        Ok(view)
+    }
+}
+
+/// Add one relation to a view, deduplicating by triple and honouring
+/// [`GraphViewQuery::max_edges`].
+///
+/// A separate function rather than a closure so the borrow of `view` ends
+/// between calls, which the traversal above needs while it is also pushing
+/// nodes.
+fn push_view_edge(
+    view: &mut GraphView,
+    record: GraphRelationRecord,
+    deferred: &mut usize,
+    query: &GraphViewQuery,
+    depth: u32,
+) {
+    if !query.accepts_predicate(&record.predicate) {
+        return;
+    }
+    let triple = (
+        record.subject.clone(),
+        record.predicate.clone(),
+        record.object.clone(),
+    );
+    if view
+        .edges
+        .iter()
+        .any(|e| e.key() == (&triple.0, &triple.1, &triple.2))
+    {
+        return;
+    }
+    if view.edges.len() >= query.max_edges {
+        *deferred += 1;
+        view.truncated = true;
+        return;
+    }
+    // The unseeded overview derives its node set from the edges it found; the
+    // seeded traversal has already placed both endpoints.
+    for (id, present) in [(&triple.0, ()), (&triple.2, ())]
+        .into_iter()
+        .map(|(id, ())| (id.clone(), view.nodes.iter().any(|n| &n.id == id)))
+    {
+        if present {
+            continue;
+        }
+        if view.nodes.len() >= query.max_nodes {
+            *deferred += 1;
+            view.truncated = true;
+            return;
+        }
+        view.nodes.push(GraphNode::bare(id, depth));
+    }
+    view.edges.push(GraphEdge::from(record));
 }
 
 /// Snapshot capture and change computation over synced sources.
