@@ -44,7 +44,10 @@ use crate::types::NamespaceMemoryHit;
 // — they cross the module boundary, and a host that only makes calls must be
 // able to name them without compiling this trait — and re-exported here so
 // every historical path keeps resolving and the types stay the same types.
-pub use tinymemory_bus::provider::retrieval::{CoverWindowQuery, EntityMatch, FastRetrieveQuery, RetrievalHit, RetrievalNodeKind, RetrievalResponse, SourceRetrievalQuery};
+pub use tinymemory_bus::provider::retrieval::{
+    CoverWindowQuery, EntityMatch, FastRetrieveQuery, RetrievalHit, RetrievalNodeKind,
+    RetrievalResponse, SourceRetrievalQuery,
+};
 
 /// The engine's deterministic retrieval primitives.
 ///

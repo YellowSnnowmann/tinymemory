@@ -39,7 +39,10 @@ use crate::error::MemoryError;
 // — they cross the module boundary, and a host that only makes calls must be
 // able to name them without compiling this trait — and re-exported here so
 // every historical path keeps resolving and the types stay the same types.
-pub use tinymemory_bus::provider::people::{AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonRef, PersonScore, RankedPerson, ResolvedPerson};
+pub use tinymemory_bus::provider::people::{
+    AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonRef, PersonScore,
+    RankedPerson, ResolvedPerson,
+};
 
 /// Contacts, handle resolution, and closeness scoring.
 ///

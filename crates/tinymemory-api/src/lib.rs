@@ -82,17 +82,7 @@ pub mod host;
 // point: a second definition would need a conversion at the module seam that
 // nothing type-checks.
 pub use tinymemory_bus::{
-    capabilities,
-    chunks,
-    error,
-    goals,
-    health,
-    recall,
-    tool_memory,
-    tree,
-    types,
-    version,
-    wire,
+    capabilities, chunks, error, goals, health, recall, tool_memory, tree, types, version, wire,
 };
 /// The mandatory-family composition: wrap any [`traits::Memory`] backend as a
 /// complete [`provider::MemoryProvider`].

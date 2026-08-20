@@ -42,7 +42,6 @@
 
 use serde::{Deserialize, Serialize};
 
-
 /// One recorded turn.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EpisodicTurn {

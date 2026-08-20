@@ -33,7 +33,6 @@
 
 use serde::{Deserialize, Serialize};
 
-
 /// Opaque identity of one person, as the driver issued it.
 ///
 /// Treat as a token: round-trip it, compare it for equality, never parse it.
