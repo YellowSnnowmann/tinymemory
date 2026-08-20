@@ -172,7 +172,7 @@
       <input id="endpoint" placeholder="http://localhost:6767">
     </div>
     <div id="field-key" class="field-group">
-      <label for="api-key">API key (optional)</label>
+      <label for="api-key" id="api-key-label">API key (optional)</label>
       <input id="api-key" type="password" placeholder="sm_...">
     </div>
     <p class="hint" id="engine-hint">Runs entirely in this server's process; nothing persists across a restart.</p>
@@ -381,17 +381,21 @@ async function refreshStatus() {
 const ENGINE_HINTS = {
   local: "Runs entirely in this server's process (a TinyCortex in-memory store); nothing persists across a restart, and no endpoint or key is needed.",
   supermemory: "Defaults to Supermemory's hosted API. Needs an API key. Note: this adapter was built and verified against Supermemory's self-hosted dialect (see integration/remote-engines/README.md) — if the hosted API has diverged from it, requests may fail or behave oddly. Point it at a self-hosted instance instead if so.",
-  mem0: "Defaults to Mem0's hosted API. Needs an API key. Note: this adapter was built and verified against Mem0's self-hosted dialect (see integration/remote-engines/README.md) — if the hosted API has diverged from it, requests may fail or behave oddly. Point it at a self-hosted instance instead if so.",
-  cognee: "Cognee has no single well-known hosted API base URL, so this is left blank — fill in your Cognee Cloud (or self-hosted) instance URL and access token.",
+  mem0: "Choose Cloud for Mem0's hosted API and Token authentication, or self-hosted for an OSS server using X-API-Key.",
+  cognee: "Choose Cloud for a tenant URL using X-Api-Key, or self-hosted for a server using bearer-token authentication.",
 };
 
 // Best-known hosted API base URLs; edit freely, and per-engine edits are
 // remembered (see the persistence block below).
 const DEFAULT_ENDPOINTS = {
   supermemory: "https://api.supermemory.ai",
-  mem0: "https://api.mem0.ai",
-  cognee: "",
+  "mem0:cloud": "https://api.mem0.ai",
+  "mem0:self_hosted": "http://localhost:8888",
+  "cognee:cloud": "",
+  "cognee:self_hosted": "http://localhost:8001",
 };
+
+const DEFAULT_DEPLOYMENTS = { mem0: "cloud", cognee: "self_hosted" };
 
 // --- Persistence -----------------------------------------------------------
 // Everything typed into this page (endpoints, API keys, namespaces, keys,
@@ -411,14 +415,23 @@ function saveValue(key, value) {
   else localStorage.removeItem(STORE_PREFIX + key);
 }
 
-function engineEndpointKey(engine) { return `endpoint:${engine}`; }
-function engineApiKeyKey(engine) { return `api-key:${engine}`; }
+function deploymentFor(engine) {
+  return (engine === "mem0" || engine === "cognee") ? $("deployment").value : "self_hosted";
+}
+
+function connectionKey(engine) {
+  const deployment = deploymentFor(engine);
+  return (engine === "mem0" || engine === "cognee") ? `${engine}:${deployment}` : engine;
+}
+
+function engineEndpointKey(engine) { return `endpoint:${connectionKey(engine)}`; }
+function engineApiKeyKey(engine) { return `api-key:${connectionKey(engine)}`; }
 
 // Generic persistence for every other field (namespaces, keys, queries,
 // categories, session ids, …): restore on load, save on every change. File
 // inputs and the connect-panel fields (handled specially above) are skipped.
 function wirePersistentFields() {
-  const skip = new Set(["engine", "endpoint", "api-key"]);
+  const skip = new Set(["engine", "deployment", "endpoint", "api-key"]);
   document.querySelectorAll("input, select, textarea").forEach((el) => {
     if (!el.id || skip.has(el.id) || el.type === "file") return;
     const saved = loadValue("field:" + el.id, null);
@@ -437,19 +450,39 @@ wirePersistentFields();
 function updateEngineFields() {
   const engine = $("engine").value;
   const needsRemote = engine !== "local";
+  const hasDeploymentChoice = engine === "mem0" || engine === "cognee";
+  $("field-deployment").classList.toggle("active", hasDeploymentChoice);
   $("field-endpoint").classList.toggle("active", needsRemote);
   $("field-key").classList.toggle("active", needsRemote);
   $("engine-hint").textContent = ENGINE_HINTS[engine];
+  $("api-key-label").textContent = deploymentFor(engine) === "cloud"
+    ? "API key (required)"
+    : "API key (optional)";
   if (needsRemote) {
-    $("endpoint").value = loadValue(engineEndpointKey(engine), DEFAULT_ENDPOINTS[engine] || "");
+    const key = connectionKey(engine);
+    $("endpoint").value = loadValue(engineEndpointKey(engine), DEFAULT_ENDPOINTS[key] || "");
     $("api-key").value = loadValue(engineApiKeyKey(engine), "");
   }
 }
 
 // Restore the last-selected engine before wiring the change handler.
 $("engine").value = loadValue("engine", $("engine").value);
+const initialEngine = $("engine").value;
+$("deployment").value = loadValue(
+  `deployment:${initialEngine}`,
+  DEFAULT_DEPLOYMENTS[initialEngine] || "self_hosted",
+);
 $("engine").addEventListener("change", () => {
-  saveValue("engine", $("engine").value);
+  const engine = $("engine").value;
+  saveValue("engine", engine);
+  $("deployment").value = loadValue(
+    `deployment:${engine}`,
+    DEFAULT_DEPLOYMENTS[engine] || "self_hosted",
+  );
+  updateEngineFields();
+});
+$("deployment").addEventListener("change", () => {
+  saveValue(`deployment:${$("engine").value}`, $("deployment").value);
   updateEngineFields();
 });
 updateEngineFields();
@@ -469,6 +502,7 @@ $("connect-btn").addEventListener("click", async () => {
     const engine = $("engine").value;
     const body = {
       engine,
+      deployment: deploymentFor(engine),
       endpoint: $("endpoint").value || null,
       api_key: $("api-key").value || null,
     };
