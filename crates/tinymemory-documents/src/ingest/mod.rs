@@ -130,8 +130,7 @@ impl<'a> DocumentIntake<'a> {
                     // The body is markdown now whatever it started as, and a
                     // driver that chunks on headings needs to be told that
                     // rather than shown the original `application/pdf`.
-                    mime: Some(tinymemory_api::chunks::SourceKind::Document)
-                        .map(|_| "text/markdown".to_string()),
+                    mime: Some("text/markdown".to_string()),
                     timestamp: request.timestamp,
                     tags: request.tags.clone(),
                     taint: request.taint,
