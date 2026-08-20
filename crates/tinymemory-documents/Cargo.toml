@@ -1,0 +1,65 @@
+[package]
+name = "tinymemory-documents"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.96"
+license = "MIT"
+repository = "https://github.com/tinyhumansai/tinymemory"
+description = "Document and URL intake for TinyMemory: sniff a format, convert it to markdown, put it in whichever engine is bound"
+publish = false
+
+[dependencies]
+# The contract. Everything this crate produces is handed to a `MemoryProvider`,
+# and every error it returns is a `MemoryError`, so intake speaks the same
+# language as the drivers it feeds.
+tinymemory-api = { path = "../tinymemory-api" }
+# `DocumentConverter` is an object-safe async trait: a host swaps the converter
+# without this crate knowing which one it got.
+async-trait = "0.1"
+# `ConvertedDocument::metadata` is an open `Value`, and `MemoryDocuments`
+# returns its listings as one.
+serde_json = "1"
+# The intake types are persisted by whichever engine receives them and cross
+# the testing harness's HTTP boundary.
+serde = { version = "1", features = ["derive"] }
+# Ingested content carries an event time for tree placement.
+chrono = { version = "0.4", features = ["serde"] }
+# The URL path reuses the source readers' SSRF guard rather than growing a
+# second one — see `fetch`. Optional because a host that only accepts uploads
+# links no HTTP stack.
+tinymemory-sources = { path = "../tinymemory-sources", optional = true }
+# The fetch path needs the response's status, content type and body. Same
+# default-features-off rustls configuration as `tinymemory-sources`, so the two
+# do not pull in two TLS backends.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"], optional = true }
+
+[dev-dependencies]
+# The converter and ingest paths are async.
+tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
+
+[features]
+# Nothing by default: uploads and conversion need no network.
+default = []
+# The URL intake path, and with it the SSRF guard and an HTTP client.
+network = ["dep:tinymemory-sources", "dep:reqwest"]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+
+[lints.rustdoc]
+broken_intra_doc_links = "warn"
+private_intra_doc_links = "warn"
