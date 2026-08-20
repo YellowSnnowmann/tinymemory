@@ -1,5 +1,10 @@
 //! Tests for the `<section>:<scope>` namespace convention and its validator.
 
+// A failed assertion in a test is a panic either way; `unwrap`/`expect` here say
+// what the invariant was. Same allowance every other test module in this crate
+// takes.
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use super::*;
 
 #[test]
