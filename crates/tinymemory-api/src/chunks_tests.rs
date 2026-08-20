@@ -90,7 +90,7 @@ fn data_source_round_trip() {
 
 #[test]
 fn data_source_has_all_variants() {
-    assert_eq!(DataSource::all().len(), 9);
+    assert_eq!(DataSource::all().len(), 11);
 }
 
 #[test]
