@@ -9,25 +9,31 @@ no longer applies rather than leaving it to rot.
 
 ## Project Structure
 
-This is a Cargo **workspace**: the `tinymemory` facade at the root, the
-`tinymemory-api` contract in `api/`, and one engine adapter per directory under
-`adapters/`. Engines themselves are submodules under `vendor/`, excluded from
-the workspace.
+This is a Cargo **workspace** with a virtual root: there is no root package,
+and every crate lives in its own directory under `crates/`, named for the
+package it holds. `members` is the glob `crates/*`, so a new crate joins the
+workspace by existing. `crates/tinymemory` is the facade a host depends on;
+`crates/tinymemory-api` is the contract; the rest are the subsystems and the
+engine adapters, each reachable from the facade by a feature named after it.
+Engines themselves are submodules under `vendor/`, excluded from the workspace.
 
-See [`README.md`](README.md) for the layout and the rules that govern it — in
-particular, why policy stays in the host and why adapters name their engines by
-version requirement rather than by path.
+See [`README.md`](README.md) for the full layout, the feature table, and the
+rules that govern them — in particular, why policy stays in the host and why
+adapters name their engines by version requirement rather than by path.
 
 ```text
-src/
-├── lib.rs              # crate docs + the entire public re-export surface
-├── error/mod.rs        # crate-wide `Error` and `Result<T>`
-└── <feature>/          # one directory per feature area
-    ├── mod.rs          # module docs, wiring, smallest useful public API
-    ├── types.rs        # substantial type definitions
-    └── test.rs         # module-local unit tests
-tests/                  # integration tests against the public API only
-examples/               # runnable, compiled-in-CI usage examples
+crates/<package>/
+├── Cargo.toml          # one package; `[lints]` opted into per crate
+├── README.md           # required of complex crates: design, surface, caveats
+└── src/
+    ├── lib.rs          # crate docs + the entire public re-export surface
+    ├── error/mod.rs    # crate-wide `Error` and `Result<T>`
+    └── <feature>/      # one directory per feature area
+        ├── mod.rs      # module docs, wiring, smallest useful public API
+        ├── types.rs    # substantial type definitions
+        └── test.rs     # module-local unit tests
+crates/<package>/tests/     # integration tests against the public API only
+crates/<package>/examples/  # runnable, compiled-in-CI usage examples
 vendor/tinybus/         # pinned TinyBus source; optional until wired by a project
 docs/
 ├── specs/              # behavior and architecture specifications
@@ -35,9 +41,14 @@ docs/
 └── adr/                # immutable architecture decision records
 ```
 
-Each feature area belongs in a focused module directory under `src/`. A module
-root explains the module, wires its pieces together, and exposes the smallest
-useful API. Move substantial type definitions into `types.rs` and put
+A new crate goes in `crates/<package>/`, and a package that is not an adapter
+or a subsystem of the memory layer probably does not belong here at all. Reach
+it from the facade by adding an optional dependency and a feature of the same
+name, so a host keeps taking one dependency and stating what it wants.
+
+Each feature area belongs in a focused module directory under the crate's
+`src/`. A module root explains the module, wires its pieces together, and
+exposes the smallest useful API. Move substantial type definitions into `types.rs` and put
 module-local unit tests in a dedicated `test.rs`, wired from the bottom of the
 module root with:
 
@@ -51,9 +62,10 @@ let a general-purpose `utils.rs` or `helpers.rs` grow — those are a symptom of
 missing module. Prefer many small modules that each do one thing well over few
 broad ones.
 
-Keep public exports centralized in `src/lib.rs` so downstream users have one
-predictable surface. Put shared error variants in `src/error/mod.rs` and return
-the crate-wide `Result<T>` from fallible public APIs.
+Keep public exports centralized in each crate's `src/lib.rs` so downstream
+users have one predictable surface. Put shared error variants in
+`src/error/mod.rs` and return the crate-wide `Result<T>` from fallible public
+APIs.
 
 ## Build And Test
 
@@ -71,7 +83,9 @@ Supporting commands:
 
 - `cargo fmt --all` — format before committing.
 - `cargo test <filter>` — run a focused subset while iterating.
-- `cargo run --example basic` — run the bundled example.
+- `cargo run -p tinymemory --example basic` — run the bundled example. The
+  `-p` is required: the workspace root is virtual, so cargo cannot infer which
+  package an example belongs to.
 - `cargo doc --no-deps --all-features` — build the rustdoc CI also builds with
   `RUSTDOCFLAGS="-D warnings"`.
 - `cargo test --doc` — run doctests alone when editing documentation examples.
@@ -93,13 +107,15 @@ Use standard `rustfmt` output and Rust 2024 idioms. Do not hand-format around
   `impl Into<String>` at boundaries; return owned, concrete types.
 - Keep the public surface minimal: default to private, and export deliberately
   from `src/lib.rs`.
-- `unsafe` is forbidden crate-wide by the lint configuration in `Cargo.toml`.
+- `unsafe` is forbidden crate-wide by the `[lints]` table in each crate's own
+  `Cargo.toml` — the root is virtual and carries no lint configuration.
   If a project genuinely needs it, relax the lint in its own commit and document
   every invariant with a `// SAFETY:` comment.
 
 ### Errors
 
-- One crate-wide `Error` enum in `src/error/mod.rs`, built with `thiserror`.
+- One crate-wide `Error` enum in the crate's `src/error/mod.rs`, built with
+  `thiserror`.
 - Fallible public functions return `Result<T>`, the crate alias.
 - Add a specific variant instead of stuffing context into a string; error
   messages are lowercase, without trailing punctuation.
@@ -143,9 +159,10 @@ on every generated crate.
 
 ## Testing
 
-- Module-local unit tests live in `src/<feature>/test.rs` and may touch private
-  items.
-- Integration tests live in `tests/` and exercise only the public API — they are
+- Module-local unit tests live in `crates/<package>/src/<feature>/test.rs` and
+  may touch private items.
+- Integration tests live in `crates/<package>/tests/` and exercise only the
+  public API — they are
   the regression suite for the crate's contract.
 - Use descriptive, behavioral test names: `rejects_an_empty_name`, not
   `test_greet_2`.
@@ -171,7 +188,7 @@ Write documentation for the reader who has never seen the code.
   treats as an error.
 - Start every `mod.rs` and `test.rs` with a concise module-level `//!`
   description.
-- `src/lib.rs` carries the crate-level overview: what the crate does, the
+- Each crate's `src/lib.rs` carries its crate-level overview: what the crate does, the
   primary entry points, and a short runnable example.
 - Prefer concrete examples over vague description. Doc examples are compiled and
   run by `cargo test`, so they cannot drift.
@@ -226,8 +243,8 @@ publishes to crates.io using the `CARGO_REGISTRY_TOKEN` secret.
 
 Consequently:
 
-- Do not hand-edit the `version` field in `Cargo.toml`; the release workflow
-  owns it.
+- Do not hand-edit the `version` field in `crates/tinymemory/Cargo.toml`; the
+  release workflow owns it.
 - Follow semantic versioning. Any change to the public surface that is not
   purely additive is a breaking change and needs a major bump (pre-1.0: a minor
   bump).
