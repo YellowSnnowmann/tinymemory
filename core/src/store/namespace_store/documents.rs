@@ -744,10 +744,13 @@ impl UnifiedMemory {
         // folded byte-by-byte; the id keeps the first 32 hex chars (16 bytes).
         let hex = {
             use std::fmt::Write;
-            hasher.finalize().iter().fold(String::with_capacity(64), |mut acc, b| {
-                let _ = write!(acc, "{b:02x}");
-                acc
-            })
+            hasher
+                .finalize()
+                .iter()
+                .fold(String::with_capacity(64), |mut acc, b| {
+                    let _ = write!(acc, "{b:02x}");
+                    acc
+                })
         };
         hex[..32].to_string()
     }
