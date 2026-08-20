@@ -253,7 +253,7 @@ pub struct Capabilities {
 
 impl Capabilities {
     /// The empty default capability set. The `null` driver advertises
-    /// [`Self::mandatory`] via its [`MemoryProvider::capabilities`](crate::provider::MemoryProvider::capabilities)
+    /// [`Self::mandatory`] via its `MemoryProvider::capabilities`
     /// implementation, not this.
     pub const fn empty() -> Self {
         Self { bits: 0 }

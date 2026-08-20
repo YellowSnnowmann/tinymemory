@@ -157,7 +157,7 @@ impl fmt::Display for MemorySection {
 /// # Examples
 ///
 /// ```
-/// use tinymemory_api::namespace::{MemorySection, Namespace};
+/// use tinymemory_bus::namespace::{MemorySection, Namespace};
 ///
 /// let ns = Namespace::conversation("thread-8f21")?;
 /// assert_eq!(ns.as_str(), "conversation:thread-8f21");
@@ -169,7 +169,7 @@ impl fmt::Display for MemorySection {
 /// let legacy = Namespace::parse("research-notes")?;
 /// assert!(legacy.section().is_none());
 /// assert_eq!(legacy.as_str(), "research-notes");
-/// # Ok::<(), tinymemory_api::error::MemoryError>(())
+/// # Ok::<(), tinymemory_bus::error::MemoryError>(())
 /// ```
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
@@ -351,11 +351,11 @@ impl Namespace {
     /// # Examples
     ///
     /// ```
-    /// use tinymemory_api::namespace::Namespace;
+    /// use tinymemory_bus::namespace::Namespace;
     ///
     /// let ns = Namespace::document("handbook")?;
     /// assert_eq!(ns.flatten("__"), "document__handbook");
-    /// # Ok::<(), tinymemory_api::error::MemoryError>(())
+    /// # Ok::<(), tinymemory_bus::error::MemoryError>(())
     /// ```
     pub fn flatten(&self, separator: &str) -> String {
         match &self.section {

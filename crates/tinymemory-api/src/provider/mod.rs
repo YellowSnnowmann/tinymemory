@@ -68,7 +68,10 @@ pub mod people;
 pub mod profile;
 pub mod records;
 pub mod retrieval;
-pub mod types;
+// The value types every family exchanges, defined in `tinymemory-bus` and
+// re-exported at their historical path. See this crate's `lib.rs` for why the
+// vocabulary sits a layer below the traits.
+pub use tinymemory_bus::provider::types;
 
 pub use audit::{audit_provider, CapabilityAudit};
 pub use chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery, MemoryChunks};

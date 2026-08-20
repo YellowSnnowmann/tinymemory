@@ -11,28 +11,29 @@ license = "MIT"
 repository = "https://github.com/tinyhumansai/tinymemory"
 description = "Stable public contracts for the TinyMemory memory system"
 
-# Deliberately dependency-light: this crate is the stable contract surface that
-# hosts compile against, so it must stay free of native, async-runtime, and
-# storage dependencies. Anything heavier belongs in the `tinycortex` engine
-# crate, never here.
+# Deliberately dependency-light: this crate is the driver contract an engine
+# compiles against, so it must stay free of native, async-runtime, and storage
+# dependencies. Anything heavier belongs in the `tinycortex` engine crate, never
+# here.
 #
-# The full set is intentionally small and pure-Rust. Beyond the
-# serde/error/async-trait baseline it carries exactly three additions, each
-# pulled in by a value type that has to keep behaving identically after the
-# move out of the engine crate:
+# The set shrank when the payload vocabulary moved to `tinymemory-bus`:
+# `chrono`, `sha2` and `uuid` went with the types that needed them
+# (`chunks::Metadata`, `chunks::chunk_id`, `ToolMemoryRule::generate_id`), and
+# `thiserror` went with `MemoryError`. What is left is what the *traits* and the
+# host seam need:
 #
-# - `chrono`  — timestamps on chunk/tree nodes; the `serde` feature backs
-#               `chunks::Metadata`'s `chrono::serde::ts_milliseconds`.
-# - `sha2`    — the deterministic `chunks::chunk_id`.
-# - `uuid`    — `tool_memory::ToolMemoryRule::generate_id` (v4 bytes, nibble
-#               encoded). Only the `v4` feature is needed here; the engine
-#               crate additionally enables `serde`.
-# - `schemars` — the `host::` config sections are still fields of the host's
-#               root `Config`, which derives `JsonSchema` to generate the
-#               settings schema the UI renders. Dropping the derive on the way
-#               down here would silently shrink that schema. `schemars` is pure
-#               Rust (serde + serde_json + dyn-clone + ref-cast) and carries
-#               none of the forbidden dependencies below.
+# - `async-trait` — every capability-family trait is `async fn` on an
+#                   object-safe trait.
+# - `anyhow`      — `traits::Memory` and the mandatory composition are
+#                   anyhow-typed.
+# - `schemars`    — the `host::` config sections are still fields of the host's
+#                   root `Config`, which derives `JsonSchema` to generate the
+#                   settings schema the UI renders. Dropping the derive on the
+#                   way down here would silently shrink that schema. `schemars`
+#                   is pure Rust (serde + serde_json + dyn-clone + ref-cast).
+# - `log`         — the `host::cloud_providers` legacy-field migration logs what
+#                   it rewrote. The zero-dependency facade, not an
+#                   implementation.
 #
 # Nothing here may pull in `rusqlite`, `git2`, `reqwest`, `regex`, or an async
 # runtime. Guard with the FORWARD form, which is scoped to this package:
@@ -44,18 +45,17 @@ description = "Stable public contracts for the TinyMemory memory system"
 # scope and prints the whole-workspace inverse tree, so it exits 0 and looks
 # clean even when this crate is the one pulling the dependency in.
 [dependencies]
+# The wire vocabulary. Every payload type this crate exposes is defined there
+# and re-exported here, so a host that only makes calls into the loadable module
+# can depend on that crate alone and compile none of the traits, the null
+# driver, or the `host::` config surface. See `src/lib.rs`.
+tinymemory-bus = { path = "../tinymemory-bus" }
 anyhow = "1"
 async-trait = "0.1"
-chrono = { version = "0.4", features = ["serde"] }
-# `log` is the zero-dependency logging facade, not an implementation. The
-# `host::cloud_providers` legacy-field migration logs what it rewrote.
 log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = "1.2"
-sha2 = "0.11"
-thiserror = "2"
-uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]
 # The moved `host::` config sections are parsed from TOML in their own tests,

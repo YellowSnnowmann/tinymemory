@@ -22,7 +22,7 @@
 //! only those three responses. That is wrong for two reasons.
 //!
 //! A host does not merely *react* to a driver error; it **is** a
-//! [`MemoryProvider`](crate::provider::MemoryProvider) to everything above it,
+//! `MemoryProvider` to everything above it,
 //! so it has to hand its own callers a `MemoryError`. Collapsing on the way out
 //! and guessing on the way back in would turn a `NotFound` into an `Invalid`,
 //! and `get`'s contract says a missing entry is `Ok(None)` while an `Invalid` is
