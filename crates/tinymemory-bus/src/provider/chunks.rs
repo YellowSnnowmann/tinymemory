@@ -30,7 +30,6 @@
 //! failure mode with a real precedent, and it is silent; see
 //! `docs/specs/2026-08-13-memory-module-port.md` §3.
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::chunks::{Chunk, SourceKind};

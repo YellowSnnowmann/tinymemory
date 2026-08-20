@@ -40,7 +40,6 @@
 //! trip instead of two, and no reliance on connection-local state. The engine
 //! knows the id it just wrote; nothing else has to guess.
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::error::MemoryError;

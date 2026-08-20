@@ -31,7 +31,6 @@
 //! not promise that every engine identifies people by UUID, and a caller must
 //! not parse one out — it round-trips an id it was given and nothing more.
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 
 use crate::error::MemoryError;

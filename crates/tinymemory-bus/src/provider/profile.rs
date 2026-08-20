@@ -28,12 +28,11 @@
 //! [`FacetState::Dropped`] and is *meant* to be collected — protecting it would
 //! keep the thing the user asked to forget on disk indefinitely.
 
-use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use crate::error::MemoryError;
-use crate::host::EvidenceRef;
+use crate::evidence::EvidenceRef;
 
 /// What kind of claim a facet makes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]

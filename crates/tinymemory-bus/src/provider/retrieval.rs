@@ -34,7 +34,6 @@
 //! reports as [`MemoryError::Invalid`], because silently matching nothing would
 //! look identical to a genuine empty result.
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
