@@ -41,7 +41,7 @@ chrono = { version = "0.4", features = ["serde"], optional = true }
 # The GitHub reader shells out to `git` for clones.
 tokio = { version = "1", features = ["process", "io-util"], optional = true }
 # The registry is the host's `sources.toml`: it reads, mutates and rewrites it.
-toml = "0.9"
+toml = "1.1"
 # New sources get a generated id.
 uuid = { version = "1", features = ["v4"] }
 
