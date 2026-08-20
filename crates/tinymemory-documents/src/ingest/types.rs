@@ -181,7 +181,11 @@ impl IntakeRequest {
             .clone()
             .or_else(|| document.filename.clone())
             .unwrap_or_else(|| title.to_string());
-        slugify(&raw)
+        // `https://` and `http://` slugify into a `https-//` prefix that is on
+        // every key and distinguishes nothing. Dropping the scheme also makes
+        // the same page fetched over both schemes upsert rather than duplicate.
+        let raw = raw.split_once("://").map_or(raw.as_str(), |(_, rest)| rest);
+        slugify(raw)
     }
 
     /// The title to use when the document carries none.

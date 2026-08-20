@@ -355,7 +355,7 @@ async fn a_url_origin_beats_a_filename_when_deriving_the_key() {
         .await
         .unwrap();
 
-    assert_eq!(receipt.key, "https-/example.com/docs/guide-page");
+    assert_eq!(receipt.key, "example.com/docs/guide-page");
 }
 
 #[tokio::test]

@@ -175,7 +175,10 @@ fn runs_of_whitespace_inside_a_paragraph_collapse() {
 
 #[test]
 fn an_unterminated_tag_is_treated_as_text() {
-    assert_eq!(to_markdown("<p>ok</p><notclosed"), "ok<notclosed");
+    // The `</p>` closed a block, so the break before the literal text is
+    // correct; what matters is that the unterminated tag is not swallowed.
+    assert_eq!(to_markdown("<p>ok</p><notclosed"), "ok\n\n<notclosed");
+    assert_eq!(to_markdown("plain <notclosed"), "plain <notclosed");
 }
 
 #[test]

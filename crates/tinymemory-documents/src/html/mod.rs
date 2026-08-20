@@ -15,7 +15,10 @@
 //! [`crate::convert::DocumentConverter`].
 //!
 //! Script and style bodies are removed before anything else, so their contents
-//! can never reach the output as text.
+//! can never reach the output as text. `<title>` goes with them: it is document
+//! metadata, [`extract_title`] reads it from the original source, and leaving it
+//! in would open every converted page with its own title as a stray line of
+//! prose.
 
 mod entity;
 
@@ -80,7 +83,7 @@ fn strip_raw_text_elements(html: &str) -> String {
             continue;
         }
 
-        for name in ["script", "style", "template", "svg", "noscript"] {
+        for name in ["script", "style", "template", "svg", "noscript", "title"] {
             let head = lower(&tail[..tail.len().min(name.len() + 1)]);
             if head == format!("<{name}") {
                 let closing = format!("</{name}");
