@@ -20,13 +20,17 @@ crates/
 │   │                   binds as, and the fail-closed external-driver gate
 │   ├── tests/          integration tests against the public API only
 │   └── examples/       runnable, compiled-in-CI usage examples
-├── tinymemory-api/     the contract. Dependency-light on purpose: depending on
-│                       it never drags in SQLite, git2, reqwest, or an async
-│                       runtime
-├── tinymemory-bus/     the wire contract for the loadable module: member names,
-│                       the payload types, and one typed call per member. What a
-│                       *host* links to talk to `tinymemory-module`, which ships
-│                       as a `cdylib` and exports no Rust surface of its own
+├── tinymemory-api/     the driver contract: the traits an engine implements and
+│                       the host seam it binds through, plus every
+│                       `tinymemory-bus` type re-exported at its historical path.
+│                       Dependency-light on purpose: depending on it never drags
+│                       in SQLite, git2, reqwest, or an async runtime
+├── tinymemory-bus/     the wire vocabulary: every type that crosses the module
+│                       boundary, plus the member names. Sits *below* the
+│                       contract — `tinymemory-api` depends on it and re-exports
+│                       it — so a host that only makes calls into
+│                       `tinymemory-module` links this alone and compiles no
+│                       traits, no null driver and no config surface
 ├── tinymemory-core/    the substance: ingestion, the summary tree, chunk
 │                       storage, entities, the graph, the diff ledger, goals,
 │                       tool-memory, and the Composio sync layer. The largest
