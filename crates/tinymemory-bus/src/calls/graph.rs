@@ -111,7 +111,8 @@ impl BusCall for Relations {
     type Response = Vec<types::GraphRelationRecord>;
 
     fn into_args(self) -> crate::Result<Value> {
-        serde_json::to_value((self.namespace, self.subject, self.predicate, self.limit)).map_err(Error::Encode)
+        serde_json::to_value((self.namespace, self.subject, self.predicate, self.limit))
+            .map_err(Error::Encode)
     }
 }
 

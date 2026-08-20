@@ -90,7 +90,14 @@ impl BusCall for RetrieveChildren {
     type Response = Vec<types::RetrievalHit>;
 
     fn into_args(self) -> crate::Result<Value> {
-        serde_json::to_value((self.node_id, self.max_depth, self.query, self.limit, self.scope)).map_err(Error::Encode)
+        serde_json::to_value((
+            self.node_id,
+            self.max_depth,
+            self.query,
+            self.limit,
+            self.scope,
+        ))
+        .map_err(Error::Encode)
     }
 }
 

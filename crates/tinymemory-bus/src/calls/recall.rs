@@ -59,6 +59,12 @@ impl BusCall for RecallNamespaceScored {
     type Response = Vec<types::NamespaceMemoryHit>;
 
     fn into_args(self) -> crate::Result<Value> {
-        serde_json::to_value((self.namespace, self.query, self.limit, self.exclude_session_id)).map_err(Error::Encode)
+        serde_json::to_value((
+            self.namespace,
+            self.query,
+            self.limit,
+            self.exclude_session_id,
+        ))
+        .map_err(Error::Encode)
     }
 }

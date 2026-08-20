@@ -116,7 +116,10 @@ fn every_member_has_a_call_struct() {
         .filter(|member| !COVERED.contains(member))
         .collect();
     missing.sort_unstable();
-    assert!(missing.is_empty(), "members with no call struct: {missing:?}");
+    assert!(
+        missing.is_empty(),
+        "members with no call struct: {missing:?}"
+    );
 }
 
 #[test]
@@ -126,7 +129,10 @@ fn every_call_struct_names_a_known_member() {
         .filter(|member| !METHODS.contains(member))
         .collect();
     unknown.sort_unstable();
-    assert!(unknown.is_empty(), "call structs naming no member: {unknown:?}");
+    assert!(
+        unknown.is_empty(),
+        "call structs naming no member: {unknown:?}"
+    );
 }
 
 #[test]
@@ -135,7 +141,11 @@ fn no_member_is_covered_twice() {
     seen.sort_unstable();
     let mut unique = seen.to_vec();
     unique.dedup();
-    assert_eq!(unique.len(), seen.len(), "two call structs name the same member");
+    assert_eq!(
+        unique.len(),
+        seen.len(),
+        "two call structs name the same member"
+    );
 }
 
 #[test]

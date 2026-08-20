@@ -118,7 +118,16 @@ impl BusCall for UpsertProviderFacet {
     type Response = ();
 
     fn into_args(self) -> crate::Result<Value> {
-        serde_json::to_value((self.facet_id, self.facet_type, self.key, self.value, self.confidence, self.segment_id, self.observed_at)).map_err(Error::Encode)
+        serde_json::to_value((
+            self.facet_id,
+            self.facet_type,
+            self.key,
+            self.value,
+            self.confidence,
+            self.segment_id,
+            self.observed_at,
+        ))
+        .map_err(Error::Encode)
     }
 }
 

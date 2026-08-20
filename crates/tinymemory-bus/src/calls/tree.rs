@@ -46,7 +46,8 @@ impl BusCall for QuerySource {
     type Response = Vec<types::Chunk>;
 
     fn into_args(self) -> crate::Result<Value> {
-        serde_json::to_value((self.namespace, self.source_id, self.limit, self.scope)).map_err(Error::Encode)
+        serde_json::to_value((self.namespace, self.source_id, self.limit, self.scope))
+            .map_err(Error::Encode)
     }
 }
 

@@ -40,7 +40,15 @@ impl BusCall for Store {
     type Response = ();
 
     fn into_args(self) -> crate::Result<Value> {
-        serde_json::to_value((self.namespace, self.key, self.content, self.category, self.session_id, self.taint)).map_err(Error::Encode)
+        serde_json::to_value((
+            self.namespace,
+            self.key,
+            self.content,
+            self.category,
+            self.session_id,
+            self.taint,
+        ))
+        .map_err(Error::Encode)
     }
 }
 
@@ -110,7 +118,8 @@ impl BusCall for List {
     type Response = Vec<types::MemoryEntry>;
 
     fn into_args(self) -> crate::Result<Value> {
-        serde_json::to_value((self.namespace, self.category, self.session_id)).map_err(Error::Encode)
+        serde_json::to_value((self.namespace, self.category, self.session_id))
+            .map_err(Error::Encode)
     }
 }
 

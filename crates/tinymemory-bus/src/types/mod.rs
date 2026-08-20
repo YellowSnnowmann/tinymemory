@@ -29,19 +29,32 @@
 
 pub use tinymemory_api::capabilities::{Capabilities, Capability};
 pub use tinymemory_api::chunks::{Chunk, Metadata, SourceRef};
-pub use tinymemory_api::error::{MemoryError};
+pub use tinymemory_api::error::MemoryError;
 pub use tinymemory_api::goals::{GoalItem, GoalsDoc};
-pub use tinymemory_api::health::{MemoryHealth};
+pub use tinymemory_api::health::MemoryHealth;
 pub use tinymemory_api::provider::chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery};
 pub use tinymemory_api::provider::episodic::{ConversationSegment, EpisodicTurn};
-pub use tinymemory_api::provider::people::{AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonScore, RankedPerson, ResolvedPerson};
+pub use tinymemory_api::provider::people::{
+    AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
+    RankedPerson, ResolvedPerson,
+};
 pub use tinymemory_api::provider::profile::{FacetType, ProfileFacet, UserState};
-pub use tinymemory_api::provider::retrieval::{CoverWindowQuery, EntityMatch, FastRetrieveQuery, RetrievalHit, RetrievalResponse, SourceRetrievalQuery};
-pub use tinymemory_api::provider::types::{DiffReport, EntityHit, ExportPage, ExportRecord, ImportOutcome, IngestItem, IngestOutcome, MaintenanceReport, SnapshotRef, SourceItem, SourceScope};
-pub use tinymemory_api::recall::{OwnedRecallOpts};
-pub use tinymemory_api::tool_memory::{ToolMemoryRule};
+pub use tinymemory_api::provider::retrieval::{
+    CoverWindowQuery, EntityMatch, FastRetrieveQuery, RetrievalHit, RetrievalResponse,
+    SourceRetrievalQuery,
+};
+pub use tinymemory_api::provider::types::{
+    DiffReport, EntityHit, ExportPage, ExportRecord, ImportOutcome, IngestItem, IngestOutcome,
+    MaintenanceReport, SnapshotRef, SourceItem, SourceScope,
+};
+pub use tinymemory_api::recall::OwnedRecallOpts;
+pub use tinymemory_api::tool_memory::ToolMemoryRule;
 pub use tinymemory_api::tree::{IngestRequest, QueryResult, TreeStatus};
-pub use tinymemory_api::types::{GraphRelationRecord, MemoryCategory, MemoryEntry, MemoryKvRecord, MemoryTaint, NamespaceDocumentInput, NamespaceMemoryHit, NamespaceRetrievalContext, NamespaceSummary, StoredMemoryDocument};
+pub use tinymemory_api::types::{
+    GraphRelationRecord, MemoryCategory, MemoryEntry, MemoryKvRecord, MemoryTaint,
+    NamespaceDocumentInput, NamespaceMemoryHit, NamespaceRetrievalContext, NamespaceSummary,
+    StoredMemoryDocument,
+};
 
 /// `serde_json::Value`, which three document methods return verbatim.
 ///

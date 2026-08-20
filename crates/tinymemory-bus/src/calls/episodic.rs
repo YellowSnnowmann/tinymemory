@@ -90,7 +90,15 @@ impl BusCall for CreateSegment {
     type Response = ();
 
     fn into_args(self) -> crate::Result<Value> {
-        serde_json::to_value((self.segment_id, self.session_id, self.namespace, self.start_episodic_id, self.start_timestamp, self.now)).map_err(Error::Encode)
+        serde_json::to_value((
+            self.segment_id,
+            self.session_id,
+            self.namespace,
+            self.start_episodic_id,
+            self.start_timestamp,
+            self.now,
+        ))
+        .map_err(Error::Encode)
     }
 }
 
@@ -115,7 +123,8 @@ impl BusCall for AppendTurn {
     type Response = ();
 
     fn into_args(self) -> crate::Result<Value> {
-        serde_json::to_value((self.segment_id, self.episodic_id, self.timestamp, self.now)).map_err(Error::Encode)
+        serde_json::to_value((self.segment_id, self.episodic_id, self.timestamp, self.now))
+            .map_err(Error::Encode)
     }
 }
 
@@ -184,6 +193,12 @@ impl BusCall for UpsertSegmentEmbedding {
     type Response = ();
 
     fn into_args(self) -> crate::Result<Value> {
-        serde_json::to_value((self.segment_id, self.model_signature, self.embedding, self.created_at)).map_err(Error::Encode)
+        serde_json::to_value((
+            self.segment_id,
+            self.model_signature,
+            self.embedding,
+            self.created_at,
+        ))
+        .map_err(Error::Encode)
     }
 }

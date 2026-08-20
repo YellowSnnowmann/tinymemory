@@ -57,5 +57,8 @@ fn the_constants_and_the_table_are_the_same_set() {
     assert!(METHODS.contains(&methods::WORKFLOW_IDENTITY_MATCHES));
     assert_eq!(methods::STORE, "Store");
     assert_eq!(methods::OPEN_STORE, "OpenStore");
-    assert_eq!(methods::WORKFLOW_IDENTITY_MATCHES, "WorkflowIdentityMatches");
+    assert_eq!(
+        methods::WORKFLOW_IDENTITY_MATCHES,
+        "WorkflowIdentityMatches"
+    );
 }
