@@ -1,0 +1,335 @@
+//! The object this contract addresses, and every member name on it.
+//!
+//! A member name is what actually travels in a frame, so it is the part of
+//! the contract a typo breaks at runtime rather than at compile time. The
+//! constants here exist so neither end spells one by hand.
+//!
+//! The names are the `PascalCase` of the module's method identifiers, which is
+//! what `#[tinybus::interface]` derives them from. [`METHODS`] lists all of
+//! them; the module asserts its served members against it, so a method added
+//! there without a constant here fails that crate's tests.
+
+/// Well-known bus name exported by the `TinyMemory` module.
+pub const BUS_NAME: &str = "ai.tinyhumans.tinymemory.Memory";
+
+/// Object path the interface is served at.
+///
+/// `OpenStore` returns a *different* path — a sibling store under the same
+/// workspace, exporting this identical interface. Treat this constant as the
+/// root object, not as the only one.
+pub const OBJECT_PATH: &str = "/ai/tinyhumans/tinymemory/Memory";
+
+/// One constant per member name on [`BUS_NAME`].
+pub mod methods {
+    // Driver identity, capability negotiation, health and store opening.
+    /// `DriverId` — driver id.
+    pub const DRIVER_ID: &str = "DriverId";
+    /// `Capabilities` — capabilities.
+    pub const CAPABILITIES: &str = "Capabilities";
+    /// `Health` — health.
+    pub const HEALTH: &str = "Health";
+    /// `Shutdown` — shutdown.
+    pub const SHUTDOWN: &str = "Shutdown";
+    /// `OpenStore` — open store.
+    pub const OPEN_STORE: &str = "OpenStore";
+
+    // The mandatory key/value surface every driver implements.
+    /// `Store` — store.
+    pub const STORE: &str = "Store";
+    /// `Get` — get.
+    pub const GET: &str = "Get";
+    /// `Forget` — forget.
+    pub const FORGET: &str = "Forget";
+    /// `List` — list.
+    pub const LIST: &str = "List";
+    /// `Namespaces` — namespaces.
+    pub const NAMESPACES: &str = "Namespaces";
+
+    // Semantic recall over stored entries.
+    /// `Recall` — recall.
+    pub const RECALL: &str = "Recall";
+    /// `RecallNamespaceScored` — recall namespace scored.
+    pub const RECALL_NAMESPACE_SCORED: &str = "RecallNamespaceScored";
+
+    // Paged export and bulk import of raw records.
+    /// `ExportPage` — export page.
+    pub const EXPORT_PAGE: &str = "ExportPage";
+    /// `ImportRecords` — import records.
+    pub const IMPORT_RECORDS: &str = "ImportRecords";
+
+    // Document and chat ingestion through the summary pipeline.
+    /// `IngestDocument` — ingest document.
+    pub const INGEST_DOCUMENT: &str = "IngestDocument";
+    /// `IngestChat` — ingest chat.
+    pub const INGEST_CHAT: &str = "IngestChat";
+
+    // Namespace-scoped document storage and retrieval.
+    /// `PutDocument` — put document.
+    pub const PUT_DOCUMENT: &str = "PutDocument";
+    /// `GetDocument` — get document.
+    pub const GET_DOCUMENT: &str = "GetDocument";
+    /// `ListDocuments` — list documents.
+    pub const LIST_DOCUMENTS: &str = "ListDocuments";
+    /// `ListNamespaces` — list namespaces.
+    pub const LIST_NAMESPACES: &str = "ListNamespaces";
+    /// `DeleteDocument` — delete document.
+    pub const DELETE_DOCUMENT: &str = "DeleteDocument";
+    /// `ClearNamespace` — clear namespace.
+    pub const CLEAR_NAMESPACE: &str = "ClearNamespace";
+    /// `QueryDocuments` — query documents.
+    pub const QUERY_DOCUMENTS: &str = "QueryDocuments";
+    /// `RecallDocuments` — recall documents.
+    pub const RECALL_DOCUMENTS: &str = "RecallDocuments";
+
+    // The markdown summary tree: append, query, drill down, seal, cascade.
+    /// `Append` — append.
+    pub const APPEND: &str = "Append";
+    /// `QuerySource` — query source.
+    pub const QUERY_SOURCE: &str = "QuerySource";
+    /// `DrillDown` — drill down.
+    pub const DRILL_DOWN: &str = "DrillDown";
+    /// `Seal` — seal.
+    pub const SEAL: &str = "Seal";
+    /// `Cascade` — cascade.
+    pub const CASCADE: &str = "Cascade";
+
+    // Entities, relations and the namespaced key/value store.
+    /// `Entities` — entities.
+    pub const ENTITIES: &str = "Entities";
+    /// `EntityEdges` — entity edges.
+    pub const ENTITY_EDGES: &str = "EntityEdges";
+    /// `TouchEntities` — touch entities.
+    pub const TOUCH_ENTITIES: &str = "TouchEntities";
+    /// `SearchEntities` — search entities.
+    pub const SEARCH_ENTITIES: &str = "SearchEntities";
+    /// `Relations` — relations.
+    pub const RELATIONS: &str = "Relations";
+    /// `PutRelation` — put relation.
+    pub const PUT_RELATION: &str = "PutRelation";
+    /// `KvGet` — kv get.
+    pub const KV_GET: &str = "KvGet";
+    /// `KvPut` — kv put.
+    pub const KV_PUT: &str = "KvPut";
+    /// `KvDelete` — kv delete.
+    pub const KV_DELETE: &str = "KvDelete";
+    /// `KvList` — kv list.
+    pub const KV_LIST: &str = "KvList";
+
+    // Source snapshots, diffs, item acceptance and forgetting.
+    /// `CaptureSnapshot` — capture snapshot.
+    pub const CAPTURE_SNAPSHOT: &str = "CaptureSnapshot";
+    /// `Snapshots` — snapshots.
+    pub const SNAPSHOTS: &str = "Snapshots";
+    /// `Diff` — diff.
+    pub const DIFF: &str = "Diff";
+    /// `AcceptSourceItems` — accept source items.
+    pub const ACCEPT_SOURCE_ITEMS: &str = "AcceptSourceItems";
+    /// `ForgetSource` — forget source.
+    pub const FORGET_SOURCE: &str = "ForgetSource";
+
+    // The long-term goals document.
+    /// `Goals` — goals.
+    pub const GOALS: &str = "Goals";
+    /// `SetGoals` — set goals.
+    pub const SET_GOALS: &str = "SetGoals";
+
+    // Tool-scoped memory rules.
+    /// `ToolRules` — tool rules.
+    pub const TOOL_RULES: &str = "ToolRules";
+    /// `PutToolRule` — put tool rule.
+    pub const PUT_TOOL_RULE: &str = "PutToolRule";
+    /// `DeleteToolRule` — delete tool rule.
+    pub const DELETE_TOOL_RULE: &str = "DeleteToolRule";
+
+    // Re-embedding, compaction, consolidation and diagnosis.
+    /// `Reembed` — reembed.
+    pub const REEMBED: &str = "Reembed";
+    /// `Compact` — compact.
+    pub const COMPACT: &str = "Compact";
+    /// `Consolidate` — consolidate.
+    pub const CONSOLIDATE: &str = "Consolidate";
+    /// `Doctor` — doctor.
+    pub const DOCTOR: &str = "Doctor";
+
+    // The people store: ranking, handles, scores and interactions.
+    /// `ListPeople` — list people.
+    pub const LIST_PEOPLE: &str = "ListPeople";
+    /// `GetPerson` — get person.
+    pub const GET_PERSON: &str = "GetPerson";
+    /// `ResolveHandle` — resolve handle.
+    pub const RESOLVE_HANDLE: &str = "ResolveHandle";
+    /// `AddHandleAlias` — add handle alias.
+    pub const ADD_HANDLE_ALIAS: &str = "AddHandleAlias";
+    /// `ScorePerson` — score person.
+    pub const SCORE_PERSON: &str = "ScorePerson";
+    /// `RecordInteraction` — record interaction.
+    pub const RECORD_INTERACTION: &str = "RecordInteraction";
+    /// `SeedFromAddressBook` — seed from address book.
+    pub const SEED_FROM_ADDRESS_BOOK: &str = "SeedFromAddressBook";
+
+    // The persisted chunk model and its embeddings.
+    /// `ListChunks` — list chunks.
+    pub const LIST_CHUNKS: &str = "ListChunks";
+    /// `GetChunk` — get chunk.
+    pub const GET_CHUNK: &str = "GetChunk";
+    /// `ChunkDetail` — chunk detail.
+    pub const CHUNK_DETAIL: &str = "ChunkDetail";
+    /// `StorageKinds` — storage kinds.
+    pub const STORAGE_KINDS: &str = "StorageKinds";
+    /// `ChunkEmbeddings` — chunk embeddings.
+    pub const CHUNK_EMBEDDINGS: &str = "ChunkEmbeddings";
+
+    // The scored retrieval surface.
+    /// `FastRetrieve` — fast retrieve.
+    pub const FAST_RETRIEVE: &str = "FastRetrieve";
+    /// `CoverWindow` — cover window.
+    pub const COVER_WINDOW: &str = "CoverWindow";
+    /// `RetrieveSource` — retrieve source.
+    pub const RETRIEVE_SOURCE: &str = "RetrieveSource";
+    /// `RetrieveChildren` — retrieve children.
+    pub const RETRIEVE_CHILDREN: &str = "RetrieveChildren";
+    /// `RetrieveLeaves` — retrieve leaves.
+    pub const RETRIEVE_LEAVES: &str = "RetrieveLeaves";
+
+    // Profile facets and their provenance.
+    /// `ListActiveFacets` — list active facets.
+    pub const LIST_ACTIVE_FACETS: &str = "ListActiveFacets";
+    /// `ListAllFacets` — list all facets.
+    pub const LIST_ALL_FACETS: &str = "ListAllFacets";
+    /// `GetFacet` — get facet.
+    pub const GET_FACET: &str = "GetFacet";
+    /// `FacetsByType` — facets by type.
+    pub const FACETS_BY_TYPE: &str = "FacetsByType";
+    /// `UpsertFacet` — upsert facet.
+    pub const UPSERT_FACET: &str = "UpsertFacet";
+    /// `UpsertProviderFacet` — upsert provider facet.
+    pub const UPSERT_PROVIDER_FACET: &str = "UpsertProviderFacet";
+    /// `SetFacetUserState` — set facet user state.
+    pub const SET_FACET_USER_STATE: &str = "SetFacetUserState";
+    /// `DeleteFacet` — delete facet.
+    pub const DELETE_FACET: &str = "DeleteFacet";
+    /// `DeleteFacetById` — delete facet by id.
+    pub const DELETE_FACET_BY_ID: &str = "DeleteFacetById";
+    /// `DropFacetsBelow` — drop facets below.
+    pub const DROP_FACETS_BELOW: &str = "DropFacetsBelow";
+    /// `WorkflowIdentityMatches` — workflow identity matches.
+    pub const WORKFLOW_IDENTITY_MATCHES: &str = "WorkflowIdentityMatches";
+
+    // Episodic turns and conversation segments.
+    /// `InsertTurn` — insert turn.
+    pub const INSERT_TURN: &str = "InsertTurn";
+    /// `SessionTurns` — session turns.
+    pub const SESSION_TURNS: &str = "SessionTurns";
+    /// `OpenSegment` — open segment.
+    pub const OPEN_SEGMENT: &str = "OpenSegment";
+    /// `CreateSegment` — create segment.
+    pub const CREATE_SEGMENT: &str = "CreateSegment";
+    /// `AppendTurn` — append turn.
+    pub const APPEND_TURN: &str = "AppendTurn";
+    /// `CloseSegment` — close segment.
+    pub const CLOSE_SEGMENT: &str = "CloseSegment";
+    /// `SetSegmentSummary` — set segment summary.
+    pub const SET_SEGMENT_SUMMARY: &str = "SetSegmentSummary";
+    /// `UpsertSegmentEmbedding` — upsert segment embedding.
+    pub const UPSERT_SEGMENT_EMBEDDING: &str = "UpsertSegmentEmbedding";
+}
+
+/// Every member name, in the order the module declares them.
+///
+/// The order matters: `tinybus`'s `Interface::members()` returns declaration
+/// order, and the module compares the two sequences directly rather than as
+/// sets, so a reordering is caught alongside an addition or a removal.
+pub const METHODS: [&str; 89] = [
+    methods::DRIVER_ID,
+    methods::CAPABILITIES,
+    methods::HEALTH,
+    methods::SHUTDOWN,
+    methods::OPEN_STORE,
+    methods::STORE,
+    methods::GET,
+    methods::FORGET,
+    methods::LIST,
+    methods::NAMESPACES,
+    methods::RECALL,
+    methods::EXPORT_PAGE,
+    methods::IMPORT_RECORDS,
+    methods::INGEST_DOCUMENT,
+    methods::INGEST_CHAT,
+    methods::PUT_DOCUMENT,
+    methods::GET_DOCUMENT,
+    methods::LIST_DOCUMENTS,
+    methods::LIST_NAMESPACES,
+    methods::DELETE_DOCUMENT,
+    methods::CLEAR_NAMESPACE,
+    methods::QUERY_DOCUMENTS,
+    methods::RECALL_DOCUMENTS,
+    methods::APPEND,
+    methods::QUERY_SOURCE,
+    methods::DRILL_DOWN,
+    methods::SEAL,
+    methods::CASCADE,
+    methods::ENTITIES,
+    methods::ENTITY_EDGES,
+    methods::TOUCH_ENTITIES,
+    methods::KV_GET,
+    methods::KV_PUT,
+    methods::KV_DELETE,
+    methods::KV_LIST,
+    methods::RELATIONS,
+    methods::PUT_RELATION,
+    methods::CAPTURE_SNAPSHOT,
+    methods::SNAPSHOTS,
+    methods::DIFF,
+    methods::GOALS,
+    methods::SET_GOALS,
+    methods::TOOL_RULES,
+    methods::PUT_TOOL_RULE,
+    methods::DELETE_TOOL_RULE,
+    methods::ACCEPT_SOURCE_ITEMS,
+    methods::FORGET_SOURCE,
+    methods::REEMBED,
+    methods::COMPACT,
+    methods::CONSOLIDATE,
+    methods::DOCTOR,
+    methods::LIST_PEOPLE,
+    methods::GET_PERSON,
+    methods::RESOLVE_HANDLE,
+    methods::ADD_HANDLE_ALIAS,
+    methods::SCORE_PERSON,
+    methods::RECORD_INTERACTION,
+    methods::SEED_FROM_ADDRESS_BOOK,
+    methods::LIST_CHUNKS,
+    methods::GET_CHUNK,
+    methods::CHUNK_DETAIL,
+    methods::STORAGE_KINDS,
+    methods::CHUNK_EMBEDDINGS,
+    methods::FAST_RETRIEVE,
+    methods::COVER_WINDOW,
+    methods::LIST_ACTIVE_FACETS,
+    methods::LIST_ALL_FACETS,
+    methods::GET_FACET,
+    methods::FACETS_BY_TYPE,
+    methods::INSERT_TURN,
+    methods::SESSION_TURNS,
+    methods::OPEN_SEGMENT,
+    methods::CREATE_SEGMENT,
+    methods::APPEND_TURN,
+    methods::CLOSE_SEGMENT,
+    methods::SET_SEGMENT_SUMMARY,
+    methods::UPSERT_SEGMENT_EMBEDDING,
+    methods::UPSERT_FACET,
+    methods::UPSERT_PROVIDER_FACET,
+    methods::SET_FACET_USER_STATE,
+    methods::DELETE_FACET,
+    methods::DELETE_FACET_BY_ID,
+    methods::DROP_FACETS_BELOW,
+    methods::WORKFLOW_IDENTITY_MATCHES,
+    methods::RETRIEVE_SOURCE,
+    methods::RETRIEVE_CHILDREN,
+    methods::RETRIEVE_LEAVES,
+    methods::RECALL_NAMESPACE_SCORED,
+    methods::SEARCH_ENTITIES,
+];
+
+#[cfg(test)]
+mod test;

@@ -1,0 +1,54 @@
+[package]
+name = "tinymemory-bus"
+# Not published, for the same reason `tinymemory-api` is not: the graph below it
+# reaches crates that are not on crates.io. A host takes this by git or by path.
+publish = false
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.96"
+license = "MIT"
+repository = "https://github.com/tinyhumansai/tinymemory"
+description = "The TinyBus wire contract for the TinyMemory module: member names, payload types, and typed calls"
+
+# Three dependencies, and the ceiling is low on purpose.
+#
+# This crate is what a *host* compiles against to talk to the loaded module, so
+# it must cost that host almost nothing: no engine, no storage, no async
+# runtime, and — importantly — no `tinybus`. See `src/lib.rs` for why the
+# transport is deliberately absent, and the root manifest's note on
+# `crates/tinymemory-module` for what depending on the vendored `tinybus` from a
+# workspace member would do to this workspace.
+[dependencies]
+# The single definition of every type on the wire. Re-exported, never
+# redefined — see `src/types/mod.rs`.
+tinymemory-api = { path = "../tinymemory-api" }
+# The call structs derive both halves: `Serialize` to build an argument array,
+# `Deserialize` so a module-side test can decode one back.
+serde = { version = "1", features = ["derive"] }
+# A tinybus frame body is JSON, so an encoded argument list is a
+# `serde_json::Value` and nothing here needs a different representation.
+serde_json = "1"
+thiserror = "2"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+unreachable_pub = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
+doc_markdown = "warn"
+
+[lints.rustdoc]
+broken_intra_doc_links = "warn"
+private_intra_doc_links = "warn"
