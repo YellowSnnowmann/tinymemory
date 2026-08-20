@@ -48,9 +48,9 @@ name, so a host keeps taking one dependency and stating what it wants.
 
 Each feature area belongs in a focused module directory under the crate's
 `src/`. A module root explains the module, wires its pieces together, and
-exposes the smallest useful API. Move substantial type definitions into `types.rs` and put
-module-local unit tests in a dedicated `test.rs`, wired from the bottom of the
-module root with:
+exposes the smallest useful API. Move substantial type definitions into
+`types.rs` and put module-local unit tests in a dedicated `test.rs`, wired from
+the bottom of the module root with:
 
 ```rust
 #[cfg(test)]
@@ -106,11 +106,11 @@ Use standard `rustfmt` output and Rust 2024 idioms. Do not hand-format around
 - Prefer small, typed APIs over stringly-typed ones. Accept `&str` and generic
   `impl Into<String>` at boundaries; return owned, concrete types.
 - Keep the public surface minimal: default to private, and export deliberately
-  from `src/lib.rs`.
+  from the crate's `src/lib.rs`.
 - `unsafe` is forbidden crate-wide by the `[lints]` table in each crate's own
-  `Cargo.toml` — the root is virtual and carries no lint configuration.
-  If a project genuinely needs it, relax the lint in its own commit and document
-  every invariant with a `// SAFETY:` comment.
+  `Cargo.toml` — the root is virtual and carries no lint configuration. If a
+  crate genuinely needs it, relax the lint in its own commit and document every
+  invariant with a `// SAFETY:` comment.
 
 ### Errors
 
@@ -162,8 +162,7 @@ on every generated crate.
 - Module-local unit tests live in `crates/<package>/src/<feature>/test.rs` and
   may touch private items.
 - Integration tests live in `crates/<package>/tests/` and exercise only the
-  public API — they are
-  the regression suite for the crate's contract.
+  public API — they are the regression suite for the crate's contract.
 - Use descriptive, behavioral test names: `rejects_an_empty_name`, not
   `test_greet_2`.
 - Cover the failure paths, not just the happy path. Every new error variant
@@ -188,8 +187,8 @@ Write documentation for the reader who has never seen the code.
   treats as an error.
 - Start every `mod.rs` and `test.rs` with a concise module-level `//!`
   description.
-- Each crate's `src/lib.rs` carries its crate-level overview: what the crate does, the
-  primary entry points, and a short runnable example.
+- Each crate's `src/lib.rs` carries its crate-level overview: what the crate
+  does, its primary entry points, and a short runnable example.
 - Prefer concrete examples over vague description. Doc examples are compiled and
   run by `cargo test`, so they cannot drift.
 - Complex modules must include a module-level `README.md` covering their design,
@@ -238,8 +237,9 @@ explicitly declined with a reason.
 Releases run from `.github/workflows/release.yml` via a manual
 `workflow_dispatch` with a `patch` / `minor` / `major` bump. The workflow
 re-runs the full validation suite, computes the next version, updates
-`Cargo.toml` and `Cargo.lock`, commits and tags `vX.Y.Z`, packages, pushes, and
-publishes to crates.io using the `CARGO_REGISTRY_TOKEN` secret.
+`crates/tinymemory/Cargo.toml` and `Cargo.lock`, commits and tags `vX.Y.Z`,
+packages, pushes, and publishes to crates.io using the `CARGO_REGISTRY_TOKEN`
+secret.
 
 Consequently:
 
