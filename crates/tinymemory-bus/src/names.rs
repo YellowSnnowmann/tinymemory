@@ -332,4 +332,5 @@ pub const METHODS: [&str; 89] = [
 ];
 
 #[cfg(test)]
-mod test;
+#[path = "names_tests.rs"]
+mod tests;
