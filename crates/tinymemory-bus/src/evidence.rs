@@ -22,28 +22,60 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum EvidenceRef {
     /// A single row in `episodic_log`.
-    Episodic { episodic_id: i64 },
+    Episodic {
+        /// Row id in `episodic_log`.
+        episodic_id: i64,
+    },
     /// A contiguous window of rows in `episodic_log`.
-    EpisodicWindow { from_id: i64, to_id: i64 },
+    EpisodicWindow {
+        /// First row id in the window, inclusive.
+        from_id: i64,
+        /// Last row id in the window, inclusive.
+        to_id: i64,
+    },
     /// A row in the tree-source summary table.
-    SourceSummary { summary_id: String },
+    SourceSummary {
+        /// Row id in the tree-source summary table.
+        summary_id: String,
+    },
     /// A node in `tree_topic`.
-    TreeTopic { topic_id: String },
+    TreeTopic {
+        /// Node id in `tree_topic`.
+        topic_id: String,
+    },
     /// A chunk in `vector_chunks` associated with a document source.
-    DocumentChunk { source_id: String, chunk_id: String },
+    DocumentChunk {
+        /// The document source the chunk belongs to.
+        source_id: String,
+        /// Row id in `vector_chunks`.
+        chunk_id: String,
+    },
     /// A specific message in an email source.
     EmailMessage {
+        /// The email source the message arrived in.
         source_id: String,
+        /// Provider-assigned message id.
         message_id: String,
     },
     /// A field value from a connected provider (Composio toolkit).
     Provider {
+        /// Composio toolkit slug the value came from.
         toolkit: String,
+        /// The connection the value was read through.
         connection_id: String,
+        /// Field name within the provider's payload.
         field: String,
     },
     /// A tool call record within an episodic entry.
-    ToolCall { tool_name: String, episodic_id: i64 },
+    ToolCall {
+        /// The tool that was called.
+        tool_name: String,
+        /// The episodic row the call was recorded in.
+        episodic_id: i64,
+    },
     /// A per-window weight from `tree_source`.
-    TreeSourceWeight { window_label: String },
+    TreeSourceWeight {
+        /// The `tree_source` window the weight belongs to.
+        window_label: String,
+    },
 }
