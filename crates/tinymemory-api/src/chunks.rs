@@ -109,11 +109,9 @@ impl DataSource {
                 SourceKind::Chat
             }
             Self::Gmail | Self::OtherEmail => SourceKind::Email,
-            Self::Notion
-            | Self::MeetingNotes
-            | Self::DriveDocs
-            | Self::Upload
-            | Self::WebPage => SourceKind::Document,
+            Self::Notion | Self::MeetingNotes | Self::DriveDocs | Self::Upload | Self::WebPage => {
+                SourceKind::Document
+            }
         }
     }
 

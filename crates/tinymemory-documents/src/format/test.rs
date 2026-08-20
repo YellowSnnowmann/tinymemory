@@ -48,7 +48,11 @@ fn mime_parameters_and_casing_are_ignored() {
 #[test]
 fn an_octet_stream_mime_falls_through_to_the_filename() {
     assert_eq!(
-        DocumentFormat::sniff(b"hello there", Some("notes.md"), Some("application/octet-stream")),
+        DocumentFormat::sniff(
+            b"hello there",
+            Some("notes.md"),
+            Some("application/octet-stream")
+        ),
         DocumentFormat::Markdown
     );
 }
@@ -110,7 +114,10 @@ fn unlabelled_binary_is_unknown() {
 
 #[test]
 fn an_empty_buffer_is_unknown() {
-    assert_eq!(DocumentFormat::sniff(b"", None, None), DocumentFormat::Unknown);
+    assert_eq!(
+        DocumentFormat::sniff(b"", None, None),
+        DocumentFormat::Unknown
+    );
 }
 
 #[test]
@@ -163,7 +170,10 @@ fn a_format_round_trips_through_json() {
         DocumentFormat::Unknown,
     ] {
         let wire = serde_json::to_string(&format).unwrap();
-        assert_eq!(serde_json::from_str::<DocumentFormat>(&wire).unwrap(), format);
+        assert_eq!(
+            serde_json::from_str::<DocumentFormat>(&wire).unwrap(),
+            format
+        );
     }
 }
 

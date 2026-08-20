@@ -293,8 +293,7 @@ async fn several_predicates_are_unioned() {
         ("ada", "wrote", "notes"),
         ("ada", "read", "papers"),
     ]);
-    let query =
-        GraphViewQuery::around("ada").with_predicates(vec!["wrote".into(), "read".into()]);
+    let query = GraphViewQuery::around("ada").with_predicates(vec!["wrote".into(), "read".into()]);
     let view = store.graph_view(&query).await.unwrap();
 
     assert_eq!(ids(&view), vec!["ada", "notes", "papers"]);
@@ -403,8 +402,8 @@ async fn an_unseeded_query_returns_an_overview_of_the_slice() {
 #[tokio::test]
 async fn an_unseeded_query_honours_its_predicate_filter() {
     let store = EdgeList::new(&[("ada", "works_with", "charles"), ("charles", "e", "engine")]);
-    let query = GraphViewQuery::overview("learning:history")
-        .with_predicates(vec!["works_with".into()]);
+    let query =
+        GraphViewQuery::overview("learning:history").with_predicates(vec!["works_with".into()]);
     let view = store.graph_view(&query).await.unwrap();
 
     assert_eq!(ids(&view), vec!["ada", "charles"]);

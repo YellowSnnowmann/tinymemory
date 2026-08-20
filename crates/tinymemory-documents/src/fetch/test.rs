@@ -32,7 +32,11 @@ async fn loopback_and_link_local_targets_are_refused() {
 
 #[tokio::test]
 async fn a_non_http_scheme_is_refused() {
-    for url in ["file:///etc/passwd", "ftp://example.com/x", "gopher://example.com/"] {
+    for url in [
+        "file:///etc/passwd",
+        "ftp://example.com/x",
+        "gopher://example.com/",
+    ] {
         let error = fetch_url(url).await.unwrap_err();
         assert!(
             matches!(error, MemoryError::Invalid(_)),

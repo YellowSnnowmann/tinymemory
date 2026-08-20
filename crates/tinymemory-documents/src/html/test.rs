@@ -6,10 +6,7 @@ use super::*;
 fn headings_become_atx_headings_at_the_right_level() {
     assert_eq!(to_markdown("<h1>Title</h1>"), "# Title");
     assert_eq!(to_markdown("<h3>Sub</h3>"), "### Sub");
-    assert_eq!(
-        to_markdown("<h1>A</h1><h2>B</h2>"),
-        "# A\n\n## B"
-    );
+    assert_eq!(to_markdown("<h1>A</h1><h2>B</h2>"), "# A\n\n## B");
 }
 
 #[test]
@@ -116,7 +113,10 @@ fn a_pre_block_becomes_a_fence_and_keeps_its_whitespace() {
 #[test]
 fn code_inside_a_pre_block_is_not_double_backticked() {
     let markdown = to_markdown("<pre><code>x = 1</code></pre>");
-    assert!(!markdown.contains('`').then(|| markdown.contains("`x")).unwrap_or(false));
+    assert!(!markdown
+        .contains('`')
+        .then(|| markdown.contains("`x"))
+        .unwrap_or(false));
     assert!(markdown.contains("x = 1"), "{markdown}");
 }
 
@@ -137,7 +137,8 @@ fn a_block_quote_is_prefixed() {
 
 #[test]
 fn script_and_style_bodies_never_reach_the_output() {
-    let html = r#"<style>body{color:red}</style><script>var a = "<p>fake</p>";</script><p>real</p>"#;
+    let html =
+        r#"<style>body{color:red}</style><script>var a = "<p>fake</p>";</script><p>real</p>"#;
     let markdown = to_markdown(html);
     assert_eq!(markdown, "real");
 }
@@ -155,7 +156,10 @@ fn comments_are_removed() {
 
 #[test]
 fn entities_in_text_are_decoded() {
-    assert_eq!(to_markdown("<p>Tom &amp; Jerry &hellip;</p>"), "Tom & Jerry …");
+    assert_eq!(
+        to_markdown("<p>Tom &amp; Jerry &hellip;</p>"),
+        "Tom & Jerry …"
+    );
 }
 
 #[test]

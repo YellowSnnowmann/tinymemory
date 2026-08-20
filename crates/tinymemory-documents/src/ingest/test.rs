@@ -80,11 +80,9 @@ impl MemoryCore for FakeProvider {
         _session_id: Option<&str>,
         _taint: MemoryTaint,
     ) -> Result<()> {
-        self.recorded().entries.push((
-            namespace.to_string(),
-            key.to_string(),
-            content.to_string(),
-        ));
+        self.recorded()
+            .entries
+            .push((namespace.to_string(), key.to_string(), content.to_string()));
         Ok(())
     }
 
@@ -256,7 +254,10 @@ async fn a_provider_with_an_ingest_family_gets_the_chunked_route() {
     assert!(receipt.route.is_chunked());
     assert_eq!(receipt.written, 4);
     assert_eq!(receipt.skipped, 1);
-    assert_eq!(receipt.ids, vec!["chunk-1".to_string(), "chunk-2".to_string()]);
+    assert_eq!(
+        receipt.ids,
+        vec!["chunk-1".to_string(), "chunk-2".to_string()]
+    );
 
     let recorded = provider.recorded();
     assert_eq!(recorded.ingested.len(), 1);
@@ -465,7 +466,10 @@ async fn store_writes_an_already_converted_document_without_converting_again() {
         .unwrap();
 
     assert_eq!(receipt.title, "Edited");
-    assert_eq!(provider.recorded().documents[0].content, "# Edited\n\nBy hand.");
+    assert_eq!(
+        provider.recorded().documents[0].content,
+        "# Edited\n\nBy hand."
+    );
 }
 
 #[tokio::test]
@@ -486,7 +490,11 @@ async fn a_receipt_reports_both_sizes() {
 
 #[test]
 fn a_route_round_trips_through_its_wire_spelling() {
-    for route in [IntakeRoute::Ingest, IntakeRoute::Documents, IntakeRoute::Core] {
+    for route in [
+        IntakeRoute::Ingest,
+        IntakeRoute::Documents,
+        IntakeRoute::Core,
+    ] {
         let wire = serde_json::to_string(&route).unwrap();
         assert_eq!(wire, format!("\"{}\"", route.as_str()));
         assert_eq!(serde_json::from_str::<IntakeRoute>(&wire).unwrap(), route);

@@ -42,9 +42,7 @@ impl DocumentFormat {
             Self::PlainText => "text/plain",
             Self::Html => "text/html",
             Self::Pdf => "application/pdf",
-            Self::Docx => {
-                "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            }
+            Self::Docx => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             Self::Unknown => "application/octet-stream",
         }
     }

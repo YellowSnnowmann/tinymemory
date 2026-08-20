@@ -56,7 +56,9 @@ pub fn extract_title(html: &str) -> Option<String> {
     let start = lower.find("<title")?;
     let content_start = lower[start..].find('>')? + start + 1;
     let end = lower[content_start..].find("</title>")? + content_start;
-    let title = decode_entities(html.get(content_start..end)?).trim().to_string();
+    let title = decode_entities(html.get(content_start..end)?)
+        .trim()
+        .to_string();
     (!title.is_empty()).then_some(title)
 }
 
@@ -220,8 +222,8 @@ impl Renderer {
                     self.out.push(' ');
                 }
             }
-            "p" | "div" | "section" | "article" | "header" | "footer" | "main" | "table"
-            | "tr" | "blockquote" | "hr" => {
+            "p" | "div" | "section" | "article" | "header" | "footer" | "main" | "table" | "tr"
+            | "blockquote" | "hr" => {
                 self.block_break();
                 if name == "hr" {
                     self.flush_break();

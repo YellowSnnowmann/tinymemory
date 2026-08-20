@@ -116,9 +116,7 @@ impl<'a> DocumentIntake<'a> {
         match self.route() {
             IntakeRoute::Ingest => {
                 let ingest = self.provider.as_ingest().ok_or_else(|| {
-                    MemoryError::Backend(
-                        "provider withdrew its ingest family mid-call".to_string(),
-                    )
+                    MemoryError::Backend("provider withdrew its ingest family mid-call".to_string())
                 })?;
                 let item = IngestItem {
                     namespace: Some(request.namespace.clone()),

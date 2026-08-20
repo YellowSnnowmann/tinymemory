@@ -151,11 +151,7 @@ impl std::fmt::Debug for ConverterChain {
         f.debug_struct("ConverterChain")
             .field(
                 "converters",
-                &self
-                    .converters
-                    .iter()
-                    .map(|c| c.name())
-                    .collect::<Vec<_>>(),
+                &self.converters.iter().map(|c| c.name()).collect::<Vec<_>>(),
             )
             .finish()
     }
