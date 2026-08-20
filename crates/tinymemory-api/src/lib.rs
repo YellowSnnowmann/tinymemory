@@ -56,6 +56,9 @@
 //! - [`graph`]: the bounded graph-view model ([`graph::GraphView`],
 //!   [`graph::GraphViewQuery`], [`graph::GraphNode`], [`graph::GraphEdge`]) —
 //!   the graph counterpart of [`tree`].
+//! - [`namespace`]: the `<section>:<scope>` namespace convention
+//!   ([`namespace::Namespace`], [`namespace::MemorySection`]) and its
+//!   validator.
 //! - [`tree`]: the markdown summary-tree node model ([`tree::TreeNode`],
 //!   [`tree::NodeLevel`], [`tree::TreeStatus`], …).
 //! - [`tool_memory`]: tool-scoped rule contracts ([`tool_memory::ToolMemoryRule`], …).
@@ -86,6 +89,7 @@ pub mod host;
 /// own contract types. The facade re-exports it, so `tinymemory::mandatory`
 /// keeps resolving.
 pub mod mandatory;
+pub mod namespace;
 pub mod null;
 pub mod provider;
 pub mod recall;
