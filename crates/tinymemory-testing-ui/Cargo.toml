@@ -16,12 +16,12 @@ path = "src/main.rs"
 tinymemory = { path = "../.." }
 tinymemory-api = { path = "../../api" }
 # The TinyCortex adapter backs the "local" engine choice (in-process, no
-# network, no API key).
+# network, no API key). Re-exports the `tinycortex` engine crate itself
+# (`tinymemory_tinycortex::tinycortex`) and its `InMemoryMemoryStore`, so this
+# crate does not need its own direct dependency (and patch table entry) on it.
 tinymemory-tinycortex = { path = "../../adapters/tinycortex" }
 # The Supermemory / Mem0 / Cognee adapters back the "remote" engine choices.
 tinymemory-remote = { path = "../../adapters/remote" }
-# The engine wrapped by the local choice.
-tinycortex = { version = "0.1", default-features = false }
 
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 axum = { version = "0.8" }
