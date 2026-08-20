@@ -243,7 +243,8 @@ impl Metadata {
 /// nodes on top of these leaves; here they live standalone.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Chunk {
-    /// Deterministic id derived from (source_kind, source_id, seq_in_source, content).
+    /// Deterministic id derived from (`source_kind`, `source_id`, `seq_in_source`,
+    /// `content`).
     pub id: String,
     /// Canonical Markdown content.
     pub content: String,
