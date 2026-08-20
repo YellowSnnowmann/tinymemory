@@ -138,6 +138,7 @@
   .msg.ok { color: var(--ok); }
   .msg.err { color: var(--err); }
   .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .output-label { font-size: 12px; color: var(--muted); margin-top: 16px; }
   .field-group { display: none; }
   .field-group.active { display: block; }
 </style>
@@ -325,7 +326,7 @@
       <button id="graph-btn">List relations</button>
     </div>
 
-    <label for="output" style="margin-top:16px;">Response</label>
+    <div class="output-label">Response</div>
     <pre id="output">nothing yet</pre>
   </section>
 </main>

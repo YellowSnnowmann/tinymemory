@@ -123,9 +123,14 @@ async fn connect(
                 .filter(|s| !s.is_empty())
                 .ok_or_else(|| bad_request("mem0 requires an endpoint URL"))?;
             let api_key = req.api_key.as_deref().filter(|s| !s.is_empty());
-            let is_cloud = req.deployment.as_deref() == Some("cloud")
-                || (req.deployment.is_none()
-                    && endpoint == tinymemory_remote::MEM0_API_ENDPOINT);
+            let is_cloud = match req.deployment.as_deref() {
+                Some("cloud") => true,
+                Some("self_hosted") => false,
+                None => endpoint == tinymemory_remote::MEM0_API_ENDPOINT,
+                Some(other) => {
+                    return Err(bad_request(&format!("unknown Mem0 deployment: {other}")));
+                }
+            };
             let memory = if is_cloud {
                 tinymemory_remote::Mem0Memory::api(
                     endpoint,
@@ -148,7 +153,13 @@ async fn connect(
                 .filter(|s| !s.is_empty())
                 .ok_or_else(|| bad_request("cognee requires an endpoint URL"))?;
             let api_key = req.api_key.as_deref().filter(|s| !s.is_empty());
-            let is_cloud = req.deployment.as_deref() == Some("cloud");
+            let is_cloud = match req.deployment.as_deref() {
+                Some("cloud") => true,
+                Some("self_hosted") | None => false,
+                Some(other) => {
+                    return Err(bad_request(&format!("unknown Cognee deployment: {other}")));
+                }
+            };
             let memory = if is_cloud {
                 tinymemory_remote::CogneeMemory::api(
                     endpoint,
@@ -165,7 +176,7 @@ async fn connect(
                 tinymemory_remote::cognee_api_graph_provider(
                     memory,
                     endpoint,
-                    api_key.expect("cloud API key was checked above"),
+                    api_key.unwrap_or_default(),
                 )
             } else {
                 tinymemory_remote::cognee_graph_provider(memory, endpoint, api_key)
