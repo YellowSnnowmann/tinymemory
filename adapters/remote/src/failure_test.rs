@@ -229,9 +229,10 @@ async fn a_cursor_that_never_clears_is_refused_rather_than_walked_for_ever() {
 
     // Bounded so a genuinely unbounded loop fails the test rather than hanging
     // the suite: the ceiling is 500 requests against a local socket, which
-    // finishes far inside this.
-    let outcome =
-        tokio::time::timeout(std::time::Duration::from_secs(60), memory.get("ns", "k")).await;
+    // finishes far inside this. `count` is the walker now — issue #69 made
+    // the keyed `get` a single filtered request, so a poisoned cursor cannot
+    // spin it any more; the whole-store walk is where the ceiling lives.
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(60), memory.count()).await;
 
     let Ok(result) = outcome else {
         panic!("the hosted listing never terminated against a cursor that never clears");
