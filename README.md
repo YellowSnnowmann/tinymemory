@@ -11,27 +11,36 @@ its place without the host learning anything new.
 ## Layout
 
 ```text
-api/                    tinymemory-api — the contract. Dependency-light on
-                        purpose: depending on it never drags in SQLite, git2,
-                        reqwest, or an async runtime.
-src/
-├── lib.rs              re-exports the contract wholesale, so a host takes one
-│                       dependency and the types are the same types
-├── registry/           driver admission — which ids exist, what class each
-│                       binds as, and the fail-closed external-driver gate
-└── mandatory/          the three mandatory capability families, composed once
-                        over the `Memory` storage trait
-core/                   tinymemory-core — the substance: ingestion, the summary
-                        tree, chunk storage, entities, the graph, the diff
-                        ledger, goals, tool-memory, and the Composio sync layer.
-                        The largest crate here by a wide margin, and the one a
-                        real host actually depends on. Unlike `api/` it is not
-                        dependency-light: today it links the TinyCortex engine,
-                        a bundled SQLite, and an HTTP stack unconditionally.
-adapters/
-├── tinycortex/         the TinyCortex engine seen through the contract
-└── remote/             native HTTP dialects for Supermemory, Mem0, and Cognee
 crates/
+├── tinymemory/         the facade a host depends on. Re-exports the contract
+│                       wholesale, so the types are the same types, and reaches
+│                       every other crate here through a feature named after it
+│   ├── src/lib.rs      the entire public re-export surface
+│   ├── src/registry/   driver admission — which ids exist, what class each
+│   │                   binds as, and the fail-closed external-driver gate
+│   ├── tests/          integration tests against the public API only
+│   └── examples/       runnable, compiled-in-CI usage examples
+├── tinymemory-api/     the contract. Dependency-light on purpose: depending on
+│                       it never drags in SQLite, git2, reqwest, or an async
+│                       runtime
+├── tinymemory-core/    the substance: ingestion, the summary tree, chunk
+│                       storage, entities, the graph, the diff ledger, goals,
+│                       tool-memory, and the Composio sync layer. The largest
+│                       crate here by a wide margin. Unlike the contract it is
+│                       not dependency-light: today it links the TinyCortex
+│                       engine, a bundled SQLite, and an HTTP stack
+│                       unconditionally
+├── tinymemory-sync/    the engine-neutral Composio payload normalisers, so a
+│                       host binding a driver that is not TinyCortex can run
+│                       them
+├── tinymemory-sources/ memory-source contracts and readers — local folders
+│                       always, GitHub/RSS/web pages behind `network`
+├── tinymemory-tinycortex/  the TinyCortex engine seen through the contract
+├── tinymemory-remote/  native HTTP dialects for Supermemory, Mem0, and Cognee
+├── tinymemory-conformance/ the behavioural suite every driver must pass
+├── tinymemory-testing-ui/  a local HTTP + web harness for driving engines by
+│                       hand. A workspace member, but held out of
+│                       `default-members` so the contract commands skip it
 └── tinymemory-module/  the TinyBus loadable-module driver. Excluded from the
                         workspace on purpose — see the note in `Cargo.toml`.
 vendor/
@@ -40,8 +49,43 @@ vendor/
 └── tinybus/            pinned TinyBus submodule
 ```
 
+Every crate lives under `crates/`, one directory per package, each directory
+named for the package it holds. The workspace root is virtual — there is no
+root package, so the facade is a member like any other and `members` is the
+glob `crates/*`: a new crate joins the workspace by existing.
+
+## Features
+
+`tinymemory` is the one dependency a host takes, and every other crate in the
+workspace is reachable from it by a feature named after it. Nothing is on by
+default: naming no feature gets the contract, the registry and the mandatory
+composition — no storage engine, no HTTP stack, no native library.
+`scripts/ci/dependency-budget.sh` holds that to a ceiling on every run.
+
+| Feature | Brings in |
+| --- | --- |
+| `tinycortex` | the embedded TinyCortex engine, as `tinymemory::tinycortex` |
+| `supermemory`, `mem0`, `cognee` | the matching HTTP adapter, as `tinymemory::remote` |
+| `engines` | all four of the above |
+| `core` | `tinymemory::core` — the memory subsystem |
+| `sync` | `tinymemory::sync` — the Composio normalisers |
+| `sources` | `tinymemory::sources` — source contracts and local readers |
+| `sources-network` | `sources`, plus the GitHub/RSS/web-page readers |
+| `conformance` | `tinymemory::conformance` — the driver contract suite |
+| `memory-git` | git-backed diff snapshots (implies `tinycortex`; links libgit2) |
+| `contacts` | the macOS address-book seeding path (implies `core`) |
+| `test-support` | the workspace's test doubles and helpers |
+| `full` | every feature above except `test-support` |
+
+Capability features imply the engine that serves them, so asking for a
+capability cannot produce a build where nothing implements it. `test-support`
+is deliberately outside `full`: "give me the whole workspace" is not the same
+request as "give me the test doubles".
+
+
 Run `git submodule update --init --recursive` after cloning. Nothing in the
-workspace builds without it — `core` names `tinyagents` and `tinycortex` by
+workspace builds without it — `tinymemory-core` names `tinyagents` and
+`tinycortex` by
 path through `vendor/`, so an uninitialized checkout fails at manifest
 resolution rather than at compile time, which reads as a confusing error.
 
@@ -98,7 +142,7 @@ tinyagents = { path = "vendor/tinymemory/vendor/tinyagents" }
 tinymemory-api = { path = "vendor/tinymemory/api" }
 ```
 
-This exact patch set is what the reference consumer in `examples/` and the
+This exact patch set is what the reference consumer in `crates/tinymemory/examples/` and the
 repository's own root manifest use; a build missing any of the four fails at
 resolution, before compiling a line.
 
@@ -112,7 +156,7 @@ let provider = Arc::new(provider(Arc::new(InMemoryMemoryStore::new())));
 That is a complete embedded setup for the mandatory three families. The full
 eighteen-family engine (`TinycortexProvider`) additionally needs the host
 seams (`EmbeddingHost` et al.) installed — see
-`adapters/tinycortex/tests/full_provider_conformance.rs` for the minimal
+`crates/tinymemory-tinycortex/tests/full_provider_conformance.rs` for the minimal
 working wiring.
 
 | Feature | Engine | Class | Families served |
