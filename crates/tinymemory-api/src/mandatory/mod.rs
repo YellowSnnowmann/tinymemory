@@ -78,7 +78,7 @@ pub const SCOPE_UNAPPLIED: &str =
 #[must_use]
 pub fn engine_error(error: anyhow::Error) -> MemoryError {
     // §A4: an adapter that already knows the failure's class attaches a typed
-    // MemoryError as the anyhow payload (adapters/remote/src/common.rs does
+    // MemoryError as the anyhow payload (crates/tinymemory-remote/src/common.rs does
     // for transport and HTTP-status failures). Recover it here instead of
     // flattening everything to Other — this one line is what makes
     // "unauthorized" distinguishable from "unreachable" across every
