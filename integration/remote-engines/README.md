@@ -38,7 +38,7 @@ cargo run -p tinymemory-remote --example conformance -- \
 
 Cognee Cloud has **no shared endpoint** — `api.cognee.ai` resolves in DNS but
 nothing listens there (see the constructor note in
-`adapters/remote/src/cognee.rs`), which is why this crate exports no default
+`crates/tinymemory-remote/src/cognee.rs`), which is why this crate exports no default
 Cognee endpoint constant. The tenant URL printed beside your API key on the
 Cognee dashboard is the only address that exists; substitute it above. The command writes a unique conformance namespace,
 verifies Core, Recall, and Portability, and deletes its test record before

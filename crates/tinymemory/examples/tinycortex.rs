@@ -11,7 +11,7 @@
 //! The backend is the engine's own in-memory store — a complete embedded
 //! setup for the mandatory three families: no workspace, no host seams. (The
 //! full eighteen-family `TinycortexProvider` additionally needs the host
-//! seams installed; `adapters/tinycortex/tests/full_provider_conformance.rs`
+//! seams installed; `crates/tinymemory-tinycortex/tests/full_provider_conformance.rs`
 //! is the minimal working wiring for that.)
 
 use std::sync::Arc;

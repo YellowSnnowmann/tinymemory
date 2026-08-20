@@ -13,7 +13,7 @@ repository = "https://github.com/tinyhumansai/tinymemory"
 
 [dependencies]
 # The contract this adapter targets.
-tinymemory-api = { path = "../../api" }
+tinymemory-api = { path = "../tinymemory-api" }
 # The engine being adapted. A version requirement rather than a path, so a host
 # that already pins its own TinyCortex checkout unifies both onto one copy
 # through its `[patch.crates-io]`; the workspace root patches it to the nested
@@ -27,7 +27,7 @@ tinycortex = { version = "0.1", default-features = false }
 # makes this adapter heavier than the mandatory-only version it replaces; §D
 # feature-gates that weight once §A3 has removed the direct engine call sites
 # core still has.
-tinymemory-core = { path = "../../core" }
+tinymemory-core = { path = "../tinymemory-core" }
 # `spawn_blocking`: every family method runs synchronous engine work off the
 # async executor rather than blocking it.
 tokio = { version = "1", features = ["rt"] }
@@ -52,7 +52,7 @@ anyhow = "1"
 [dev-dependencies]
 # The behavioural contract suite, run against this crate's drivers
 # (issue #18 §E1, acceptance criterion 5).
-tinymemory-conformance = { path = "../../conformance" }
+tinymemory-conformance = { path = "../tinymemory-conformance" }
 # The full-provider conformance target opens a real workspace store.
 tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

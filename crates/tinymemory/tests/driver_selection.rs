@@ -14,7 +14,7 @@
 //!
 //! What still does not exist is the last clause of §A5, that `create_memory_*`
 //! return a bound `Arc<dyn MemoryProvider>`. It cannot, and the reason is
-//! structural rather than unfinished: `adapters/tinycortex` depends on
+//! structural rather than unfinished: `crates/tinymemory-tinycortex` depends on
 //! `tinymemory-core` since §C3, so a core factory returning a constructed
 //! adapter provider would be a dependency cycle. Selection resolves the
 //! *decision*; the host constructs — which is what `src/registry`'s own module

@@ -13,15 +13,15 @@ path = "src/main.rs"
 
 [dependencies]
 # The engine-neutral contract this harness drives every engine through.
-tinymemory = { path = "../.." }
-tinymemory-api = { path = "../../api" }
+tinymemory = { path = "../tinymemory" }
+tinymemory-api = { path = "../tinymemory-api" }
 # The TinyCortex adapter backs the "local" engine choice (in-process, no
 # network, no API key). Re-exports the `tinycortex` engine crate itself
 # (`tinymemory_tinycortex::tinycortex`) and its `InMemoryMemoryStore`, so this
 # crate does not need its own direct dependency (and patch table entry) on it.
-tinymemory-tinycortex = { path = "../../adapters/tinycortex" }
+tinymemory-tinycortex = { path = "../tinymemory-tinycortex" }
 # The Supermemory / Mem0 / Cognee adapters back the "remote" engine choices.
-tinymemory-remote = { path = "../../adapters/remote" }
+tinymemory-remote = { path = "../tinymemory-remote" }
 
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 axum = { version = "0.8" }

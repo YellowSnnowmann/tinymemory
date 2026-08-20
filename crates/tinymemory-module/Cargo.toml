@@ -25,14 +25,14 @@ crate-type = ["rlib", "cdylib"]
 # The contract. Every type crossing the bus is one of these, and all of them
 # already carry serde impls — which is why this module needs no `wire` module of
 # its own, unlike the tinywallet one.
-tinymemory-api = { path = "../../api" }
+tinymemory-api = { path = "../tinymemory-api" }
 # `MemoryTraitProvider`, which pairs a `Memory` backend with a driver id.
-tinymemory = { path = "../.." }
+tinymemory = { path = "../tinymemory" }
 # The engine and the seam that adapts it. Carrying these is the entire point of
 # the module: they are 14.7s of the host's critical build path, and a host that
 # loads this binary compiles neither.
-tinymemory-core = { path = "../../core", features = ["memory-git"] }
-tinymemory-tinycortex = { path = "../../adapters/tinycortex", features = ["memory-git"] }
+tinymemory-core = { path = "../tinymemory-core", features = ["memory-git"] }
+tinymemory-tinycortex = { path = "../tinymemory-tinycortex", features = ["memory-git"] }
 # `people` is enabled here rather than inherited: the module serves the
 # `MemoryPeople` family directly off the engine's people store, so it needs the
 # gate on even though `tinymemory-core` only re-exports the domain.
@@ -85,7 +85,7 @@ tempfile = "3"
 # does not reach it. Without this, cargo resolves the git copy alongside the
 # path copy and `MemoryTaint` from one is not the same type as from the other.
 [patch."https://github.com/tinyhumansai/tinymemory"]
-tinymemory-api = { path = "../../api" }
+tinymemory-api = { path = "../tinymemory-api" }
 
 [patch.crates-io]
 tinycortex = { path = "../../vendor/tinycortex" }

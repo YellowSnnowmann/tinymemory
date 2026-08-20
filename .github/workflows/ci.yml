@@ -58,7 +58,7 @@ jobs:
       #
       # This is also the configuration that keeps the promise the feature
       # exists for: no `git2` / `libgit2-sys` in the graph.
-      # `api/Cargo.toml` spells out this exact command in a comment and asks
+      # `crates/tinymemory-api/Cargo.toml` spells out this command in a comment and asks
       # that the contract crate never link a storage engine, a native library,
       # an HTTP client, or an async runtime. It was left as a comment, so
       # nothing checked it — and a forbidden dependency arrives transitively,
@@ -84,7 +84,7 @@ jobs:
         run: ./scripts/ci/dependency-budget.sh
 
       - name: Run the bundled example
-        run: cargo run --example basic
+        run: cargo run -p tinymemory --example basic
 
       - name: Assert engine containment (#18 §C1)
         run: ./scripts/ci/engine-containment.sh

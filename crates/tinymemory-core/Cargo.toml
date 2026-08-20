@@ -10,21 +10,21 @@ rust-version = "1.96"
 license = "MIT"
 description = "The engine-neutral memory subsystem: store, summary tree, sync pipelines, ingestion and recall"
 repository = "https://github.com/tinyhumansai/tinymemory"
-readme = "../README.md"
+readme = "../../README.md"
 
 [dependencies]
 # The contract. `tinymemory-core` implements and consumes it; the host seam
 # traits (config, event sink, embeddings, chat) live in `tinymemory_api::host`.
-tinymemory-api = { path = "../api" }
+tinymemory-api = { path = "../tinymemory-api" }
 # Composio payload normalisers, extracted out of the engine (issue #18 §B3).
 # They were reached through `tinycortex` until now, which meant a host binding a
 # different engine could not have Composio sync despite none of this code
 # caring which engine is bound.
-tinymemory-sync = { path = "../sync" }
+tinymemory-sync = { path = "../tinymemory-sync" }
 # The memory-source contracts and readers (#18 §B4). `network` because this
 # crate's sync path drives the GitHub/RSS/web-page readers; a host that only
 # reads local folders can take the crate without them.
-tinymemory-sources = { path = "../sources", features = ["network"] }
+tinymemory-sources = { path = "../tinymemory-sources", features = ["network"] }
 # Slack mention tokens (`<@U…>`) in synced messages are rewritten to display
 # names before ingestion. Returns to the normal graph for this one user —
 # #18 §D2 removed it when nothing used it, which is no argument against a
@@ -78,11 +78,11 @@ walkdir = "2"
 wiremock = "0.6"
 # `TestHostConfig` — the concrete `MemoryHostConfig` the extracted test suites
 # build, since `Config` is a trait object and cannot be `Default`ed.
-tinymemory-api = { path = "../api", features = ["test-support"] }
+tinymemory-api = { path = "../tinymemory-api", features = ["test-support"] }
 # The driver conformance suite (#18 §E1). A dev-dependency only: it exists to
 # hold this crate's own store to the same contract the adapters are held to.
 # No cycle — `tinymemory-conformance` depends on `tinymemory-api` alone.
-tinymemory-conformance = { path = "../conformance" }
+tinymemory-conformance = { path = "../tinymemory-conformance" }
 # Test-only. `store::factories`' tests stand up a throwaway HTTP server to
 # exercise the embedder's failure paths — the four `axum` references in this
 # crate are all inside `mod tests`. It was declared as a normal dependency,
@@ -95,7 +95,7 @@ axum = { version = "0.8", default-features = false, features = ["http1", "json",
 # through dev-deps, and this must not become a normal one, which is exactly what
 # #18 §D1 removed (a facade that depends on adapters cannot have adapters that
 # depend, through core, back on it).
-tinymemory = { path = ".." }
+tinymemory = { path = "../tinymemory" }
 tempfile = "3"
 tokio = { version = "1", features = ["test-util"] }
 

@@ -91,7 +91,7 @@ the self-hosted deployment for Mem0 and Cognee.
 
 ### Graph support per engine
 
-- **Cognee** — real. `cognee_graph_provider` (`adapters/remote/src/graph_provider.rs`,
+- **Cognee** — real. `cognee_graph_provider` (`crates/tinymemory-remote/src/graph_provider.rs`,
   `cognee_graph.rs`) wraps Cognee's `GET /api/v1/datasets/{id}/graph` and
   reshapes its nodes/edges into `(subject, predicate, object)` triples. Only
   `relations` has a Cognee counterpart — `kv_get`/`kv_put`/`kv_delete`/`kv_list`
@@ -117,7 +117,7 @@ the self-hosted deployment for Mem0 and Cognee.
   `graph_store` makes `/search` and `/memories` responses grow a `relations`
   key, no server code changes needed — but downgrading two major versions of a
   shared test harness's core dependency was judged too risky to keep, so it
-  was reverted. Instead, `Mem0Graph` (`adapters/remote/src/mem0_graph.rs`)
+  was reverted. Instead, `Mem0Graph` (`crates/tinymemory-remote/src/mem0_graph.rs`)
   derives a graph client-side: it lists a namespace's stored entries and runs
   a plain co-occurrence heuristic over each entry's content — no LLM, no NER,
   just grouping runs of capitalized words per sentence and linking consecutive

@@ -24,7 +24,7 @@ anyhow = "1"
 # The contract, for `MemoryError` — `ensure_within_base` reports `PathEscape`,
 # which the contract already models, so readers speak the same error language
 # as the drivers they feed.
-tinymemory-api = { path = "../api" }
+tinymemory-api = { path = "../tinymemory-api" }
 # The readers are the I/O half of this crate: they walk folders, fetch feeds,
 # scrape pages and call the GitHub API. These are theirs, and the reason the
 # readers live here rather than in the contract crate — `tinymemory-api`
