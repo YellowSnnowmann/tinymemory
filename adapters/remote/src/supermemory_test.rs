@@ -23,6 +23,9 @@ struct Fixture {
     records: Vec<Value>,
     container_tags: Vec<String>,
     last_search_tag: Option<String>,
+    /// Every /v4/memories/list request body, for the issue #69 scoping
+    /// assertions: a namespace-scoped read must ask for ONE tag.
+    list_bodies: Vec<Value>,
 }
 
 #[derive(Clone, Default)]
@@ -39,8 +42,9 @@ async fn tags(State(state): State<AppState>) -> Json<Value> {
     ))
 }
 
-async fn list(State(state): State<AppState>) -> Json<Value> {
-    let fixture = state.0.lock().expect("state lock");
+async fn list(State(state): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
+    let mut fixture = state.0.lock().expect("state lock");
+    fixture.list_bodies.push(body);
     Json(json!({"memoryEntries": fixture.records, "pagination": {"totalPages": 1}}))
 }
 async fn add(State(state): State<AppState>, Json(body): Json<Value>) -> Json<Value> {
@@ -108,8 +112,11 @@ async fn capture_auth(State(state): State<Arc<Mutex<Value>>>, headers: HeaderMap
 #[tokio::test]
 async fn supermemory_supports_provided_and_self_hosted_apis() {
     let captured = Arc::new(Mutex::new(Value::Null));
+    // The health probe now proves auth + data plane via the container-tags
+    // list (§U4), so that is where the capture sits — a bare root `/` no
+    // longer receives the probe.
     let app = Router::new()
-        .route("/", get(capture_auth))
+        .route("/v3/container-tags/list", get(capture_auth))
         .with_state(captured.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -221,6 +228,85 @@ async fn native_supermemory_round_trips_the_tinymemory_contract() {
         state.0.lock().expect("state lock").last_search_tag,
         Some(expected_tag)
     );
+    // #68 review Major 2: min_score connected to the double's OWN response
+    // shape — the first cut's strictness was only ever tested against
+    // synthetic Option values, which is how a decode/emit field mismatch
+    // dropped every hit. Below the double's similarity (0.95): survives.
+    // Above it: drops. Semantics AND the decode, in one pair.
+    let scored = |min: f64| {
+        let driver = &driver;
+        async move {
+            driver
+                .recall(
+                    "Rust",
+                    1,
+                    &OwnedRecallOpts {
+                        namespace: Some("project".into()),
+                        min_score: Some(min),
+                        ..OwnedRecallOpts::default()
+                    },
+                    None,
+                )
+                .await
+                .expect("recall")
+                .len()
+        }
+    };
+    assert_eq!(
+        scored(0.1).await,
+        1,
+        "a scored hit above the threshold survives"
+    );
+    assert_eq!(
+        scored(0.99).await,
+        0,
+        "a scored hit below the threshold drops"
+    );
     assert!(driver.forget("project", "decision").await.expect("forget"));
     assert!(driver.health().await.is_usable());
+}
+
+/// Issue #69: a keyed read asks the backend for ONE namespace's tag — never
+/// the whole-account tag walk the pre-seam reads ran.
+#[tokio::test]
+async fn keyed_reads_scope_to_one_container_tag() {
+    let state = AppState::default();
+    let app = Router::new()
+        .route("/v3/container-tags/list", get(tags))
+        .route("/v4/memories/list", post(list))
+        .route("/v4/memories", post(add).patch(update).delete(remove))
+        .route("/", get(|| async { StatusCode::OK }))
+        .with_state(state.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let endpoint = format!("http://{}", listener.local_addr().expect("address"));
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("serve");
+    });
+    let driver = crate::supermemory_provider(
+        super::SupermemoryMemory::self_hosted(&endpoint, "secret").expect("client"),
+    );
+    driver
+        .store(
+            "project",
+            "decision",
+            "use Rust 2024",
+            MemoryCategory::Core,
+            None,
+            MemoryTaint::Internal,
+        )
+        .await
+        .expect("store");
+    state.0.lock().expect("state lock").list_bodies.clear();
+
+    driver.get("project", "decision").await.expect("get");
+    let bodies = state.0.lock().expect("state lock").list_bodies.clone();
+    assert_eq!(bodies.len(), 1, "one scoped list request, not a tag walk");
+    let expected = super::SupermemoryDialect::container_tag("project");
+    assert_eq!(
+        bodies[0]["containerTags"],
+        serde_json::json!([expected]),
+        "the request names exactly the namespace's tag"
+    );
 }

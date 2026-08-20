@@ -8,7 +8,7 @@ use tinymemory_api::recall::RecallOpts;
 use tinymemory_api::traits::Memory;
 use tinymemory_api::types::MemoryTaint;
 
-use crate::common::{stable_id, Dialect, HttpClient, RemoteMemory, StoredEntry};
+use crate::common::{stable_id, Attempts, Dialect, HttpClient, RemoteMemory, StoredEntry};
 
 /// Stable driver id used by configuration and status output.
 pub use tinymemory_api::drivers::COGNEE_DRIVER_ID;
@@ -20,6 +20,26 @@ pub struct CogneeMemory {
 }
 
 impl CogneeMemory {
+    /// Rebuilds the HTTP transport with a different per-request deadline
+    /// (issue #18 follow-up U5). The default is 60s with a 10s connect
+    /// deadline — right for interactive calls; a bulk migration or a tight
+    /// liveness probe may want its own budget.
+    ///
+    /// # Errors
+    ///
+    /// Fails only if the underlying HTTP client cannot be rebuilt — a
+    /// configuration-time failure, before any request is made.
+    pub fn with_request_timeout(mut self, timeout: std::time::Duration) -> anyhow::Result<Self> {
+        let client = self
+            .inner
+            .dialect_mut()
+            .client
+            .clone()
+            .with_timeout(timeout)?;
+        self.inner.dialect_mut().client = client;
+        Ok(self)
+    }
+
     /// Connect to a self-hosted Cognee server.
     ///
     /// `access_token` is sent as a bearer token. Local deployments with
@@ -152,6 +172,13 @@ impl Memory for CogneeMemory {
     async fn health_check(&self) -> bool {
         self.inner.health_check().await
     }
+    /// Forwarded explicitly: this wrapper delegates method-by-method, so the
+    /// defaulted `None` would otherwise shadow `RemoteMemory`'s typed probe —
+    /// which is exactly what the first cut shipped, making §U4's deep health
+    /// unreachable through every public type (the #68 review's Major 1).
+    async fn health_probe(&self) -> Option<tinymemory_api::health::MemoryHealth> {
+        self.inner.health_probe().await
+    }
 }
 
 #[derive(Debug)]
@@ -181,7 +208,12 @@ impl CogneeDialect {
     async fn datasets(&self) -> anyhow::Result<Vec<Dataset>> {
         let response: Value = self
             .client
-            .json(Method::GET, "api/v1/datasets/", None)
+            .json(
+                Method::GET,
+                "api/v1/datasets/",
+                None,
+                Attempts::RetryTransient,
+            )
             .await?;
         Ok(response
             .as_array()
@@ -205,6 +237,7 @@ impl CogneeDialect {
                 Method::GET,
                 &format!("api/v1/datasets/{}/data", dataset.id),
                 None,
+                Attempts::RetryTransient,
             )
             .await?;
         let mut entries = Vec::new();
@@ -225,6 +258,7 @@ impl CogneeDialect {
                 .text(
                     Method::GET,
                     &format!("api/v1/datasets/{}/data/{id}/raw", dataset.id),
+                    Attempts::RetryTransient,
                 )
                 .await?;
             let mut entry: StoredEntry =
@@ -245,6 +279,85 @@ impl CogneeDialect {
         Ok(entries)
     }
 
+    /// One dataset's data index — id and name per row, NO raw fetches
+    /// (issue #69). The listing already carries the uploaded filename, and
+    /// this adapter's filenames are deterministic (`Self::filename`), so a
+    /// key resolves by matching the name — the per-record raw-fetch loop the
+    /// first cut ran existed only because it read the key out of each
+    /// envelope body instead.
+    async fn data_index(&self, dataset: &Dataset) -> anyhow::Result<Vec<(String, String)>> {
+        let response: Value = self
+            .client
+            .json(
+                Method::GET,
+                &format!("api/v1/datasets/{}/data", dataset.id),
+                None,
+                Attempts::RetryTransient,
+            )
+            .await?;
+        Ok(response
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter_map(|data| {
+                Some((
+                    data.get("id")?.as_str()?.to_owned(),
+                    data.get("name")?.as_str()?.to_owned(),
+                ))
+            })
+            .collect())
+    }
+
+    /// Resolves a key to its data id by deterministic-filename match:
+    /// Cognee's loader strips the final `.json`, so both spellings count.
+    /// On a duplicate name (possible only if a historical blind re-add ever
+    /// raced), newest-listed wins deterministically — the listing is
+    /// insertion-ordered — rather than an arbitrary pick.
+    async fn find_data_id(&self, dataset: &Dataset, key: &str) -> anyhow::Result<Option<String>> {
+        let uploaded = Self::filename(key);
+        let stripped = uploaded.trim_end_matches(".json").to_owned();
+        Ok(self
+            .data_index(dataset)
+            .await?
+            .into_iter()
+            .rev()
+            .find(|(_, name)| *name == uploaded || *name == stripped)
+            .map(|(id, _)| id))
+    }
+
+    /// Downloads and decodes ONE envelope by its ids, verifying it is the
+    /// record asked for — the envelope stays authoritative over the filename
+    /// match (a hash collision or a foreign file with our extension must not
+    /// serve as someone else's memory).
+    async fn fetch_entry(
+        &self,
+        dataset: &Dataset,
+        data_id: &str,
+        namespace: &str,
+        key: &str,
+    ) -> anyhow::Result<Option<StoredEntry>> {
+        let raw = self
+            .client
+            .text(
+                Method::GET,
+                &format!("api/v1/datasets/{}/data/{data_id}/raw", dataset.id),
+                Attempts::RetryTransient,
+            )
+            .await?;
+        let mut entry: StoredEntry =
+            serde_json::from_str(&raw).context("Cognee record envelope is invalid")?;
+        if entry.namespace != namespace || entry.key != key {
+            anyhow::bail!(
+                "Cognee data {data_id} matched key `{key}` by filename but its envelope names \
+                 {}/{} — refusing to serve a mismatched record",
+                entry.namespace,
+                entry.key
+            );
+        }
+        entry.remote_id = format!("{}:{data_id}", dataset.id);
+        Ok(Some(entry))
+    }
+
     /// Resolves the dataset assigned to a namespace.
     async fn find_dataset(&self, namespace: &str) -> anyhow::Result<Option<Dataset>> {
         let name = Self::dataset_name(namespace);
@@ -253,22 +366,6 @@ impl CogneeDialect {
             .await?
             .into_iter()
             .find(|dataset| dataset.name == name))
-    }
-
-    /// Deletes a stored envelope using its composite remote identifier.
-    async fn delete_entry(&self, entry: &StoredEntry) -> anyhow::Result<()> {
-        let (dataset_id, data_id) = entry
-            .remote_id
-            .split_once(':')
-            .ok_or_else(|| anyhow!("Cognee record has no dataset id"))?;
-        self.client
-            .empty(
-                Method::DELETE,
-                &format!("api/v1/datasets/{dataset_id}/data/{data_id}"),
-                None,
-            )
-            .await?;
-        Ok(())
     }
 }
 
@@ -279,13 +376,40 @@ impl Dialect for CogneeDialect {
         COGNEE_DRIVER_ID
     }
 
+    /// One namespace = one dataset: entries scoped without the cross-dataset
+    /// walk (issue #69). Content lives in the envelopes, so this still pays
+    /// one raw per record — that is the documented floor, not a regression.
+    async fn namespace_entries(&self, namespace: &str) -> anyhow::Result<Vec<StoredEntry>> {
+        match self.find_dataset(namespace).await? {
+            Some(dataset) => self.dataset_entries(&dataset).await,
+            None => Ok(Vec::new()),
+        }
+    }
+
+    /// Keyed get in three requests — dataset resolve, one listing, one raw —
+    /// however large the store (issue #69: this replaced 1 + D + N serial
+    /// requests).
+    async fn entry(&self, namespace: &str, key: &str) -> anyhow::Result<Option<StoredEntry>> {
+        let Some(dataset) = self.find_dataset(namespace).await? else {
+            return Ok(None);
+        };
+        let Some(data_id) = self.find_data_id(&dataset, key).await? else {
+            return Ok(None);
+        };
+        self.fetch_entry(&dataset, &data_id, namespace, key).await
+    }
+
     /// Replaces an existing envelope and uploads the new exact record.
     async fn upsert(&self, entry: StoredEntry) -> anyhow::Result<()> {
-        let existing = self
-            .entries()
-            .await?
-            .into_iter()
-            .find(|item| item.namespace == entry.namespace && item.key == entry.key);
+        // Through the keyed seam: dataset + listing, no raw fan-out. The
+        // existing record's ids are all the replace path needs.
+        let existing = match self.find_dataset(&entry.namespace).await? {
+            Some(dataset) => self
+                .find_data_id(&dataset, &entry.key)
+                .await?
+                .map(|data_id| (dataset, data_id)),
+            None => None,
+        };
         let body = serde_json::to_vec(&entry)?;
         let form = multipart::Form::new().part(
             "data",
@@ -293,11 +417,8 @@ impl Dialect for CogneeDialect {
                 .file_name(Self::filename(&entry.key))
                 .mime_str("application/json")?,
         );
-        let (method, path, form) = if let Some(existing) = existing {
-            let (dataset_id, data_id) = existing
-                .remote_id
-                .split_once(':')
-                .ok_or_else(|| anyhow!("Cognee record has no dataset id"))?;
+        let (method, path, form) = if let Some((dataset, data_id)) = existing {
+            let dataset_id = dataset.id;
             (
                 Method::PATCH,
                 format!("api/v1/update?data_id={data_id}&dataset_id={dataset_id}"),
@@ -356,6 +477,7 @@ impl Dialect for CogneeDialect {
                     "only_context": true,
                     "session_id": opts.session_id
                 })),
+                Attempts::RetryTransient,
             )
             .await?;
         let mut entries = Vec::new();
@@ -387,24 +509,40 @@ impl Dialect for CogneeDialect {
 
     /// Finds and deletes an exact TinyMemory logical record.
     async fn delete(&self, namespace: &str, key: &str) -> anyhow::Result<bool> {
+        // Three requests, no raw fan-out (issue #69): the filename match
+        // resolves the id, and delete needs nothing from the envelope.
+        // Deliberately weaker than `fetch_entry`'s envelope check: the
+        // filename is the key's SHA-256 digest and the dataset scopes the
+        // namespace, so a wrong-record match would need a digest collision —
+        // and verifying the envelope would cost exactly the raw fetch this
+        // path exists to avoid.
         let Some(dataset) = self.find_dataset(namespace).await? else {
             return Ok(false);
         };
-        let Some(entry) = self
-            .dataset_entries(&dataset)
-            .await?
-            .into_iter()
-            .find(|item| item.key == key)
-        else {
+        let Some(data_id) = self.find_data_id(&dataset, key).await? else {
             return Ok(false);
         };
-        self.delete_entry(&entry).await?;
+        self.client
+            .empty(
+                Method::DELETE,
+                &format!("api/v1/datasets/{}/data/{data_id}", dataset.id),
+                None,
+            )
+            .await?;
         Ok(true)
     }
 
-    /// Checks Cognee's aggregate health endpoint.
-    async fn health(&self) -> bool {
-        self.client.healthy("health").await
+    /// Probes Cognee's aggregate health endpoint, typed.
+    async fn health(&self) -> anyhow::Result<()> {
+        self.client.probe("health").await
+    }
+
+    /// Context-only recall carries no score field — see the trait doc for
+    /// what this means for `min_score` (documented-inert, not everything-
+    /// dropping; the first cut's over-fetch pulled 3x the data and discarded
+    /// all of it).
+    fn scores_recall(&self) -> bool {
+        false
     }
 }
 

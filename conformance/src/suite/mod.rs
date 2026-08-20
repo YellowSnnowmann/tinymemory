@@ -24,6 +24,7 @@
 use std::sync::Arc;
 
 use tinymemory_api::capabilities::Capability;
+use tinymemory_api::error::MemoryError;
 use tinymemory_api::provider::{audit_provider, ExportRecord, MemoryProvider};
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::types::{MemoryCategory, MemoryTaint};
@@ -608,14 +609,12 @@ pub async fn assert_awkward_content_round_trips(provider: &dyn MemoryProvider) {
         // engine uses that to refuse empty content. What a driver may *not* do
         // is accept a value and hand back something else.
         //
-        // The refusal is not yet required to be `Invalid` specifically. The
-        // engine's own error is flattened through `anyhow` before the mandatory
-        // composition sees it, so a validation refusal currently arrives as
-        // `Other` and is indistinguishable from a backend failure. That is the
-        // gap §A4 closes; when it does, this should tighten to require
-        // `MemoryError::Invalid` so a genuine backend failure stops passing
-        // here.
-        if provider
+        // §A4 landed: a refusal must now be `Invalid` — the caller's input
+        // was rejected — never a transport/backend class wearing a refusal's
+        // clothes. A driver that answers `Unauthorized` or `Backend` here is
+        // not refusing the shape, it is failing, and failure must fail the
+        // suite instead of reading as a documented refusal.
+        match provider
             .store(
                 &ns,
                 key,
@@ -625,9 +624,12 @@ pub async fn assert_awkward_content_round_trips(provider: &dyn MemoryProvider) {
                 MemoryTaint::Internal,
             )
             .await
-            .is_err()
         {
-            continue;
+            Ok(()) => {}
+            Err(MemoryError::Invalid(_)) => continue,
+            Err(other) => panic!(
+                "{who}: refusing `{key}` must be Invalid (a validation refusal); got: {other}"
+            ),
         }
         accepted.push(key);
         if let Some(got) = provider

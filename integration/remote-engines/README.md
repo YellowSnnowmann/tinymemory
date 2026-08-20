@@ -33,11 +33,14 @@ cargo run -p tinymemory-remote --example conformance -- \
   supermemory https://api.supermemory.ai "$SUPERMEMORY_API_KEY"
 
 cargo run -p tinymemory-remote --example conformance -- \
-  cognee-api https://api.cognee.ai "$COGNEE_API_KEY"
+  cognee-api "https://tenant-<uuid>.aws.cognee.ai" "$COGNEE_API_KEY"
 ```
 
-For tenant-specific Cognee deployments, replace the shared endpoint with the
-tenant URL issued by Cognee. The command writes a unique conformance namespace,
+Cognee Cloud has **no shared endpoint** — `api.cognee.ai` resolves in DNS but
+nothing listens there (see the constructor note in
+`adapters/remote/src/cognee.rs`), which is why this crate exports no default
+Cognee endpoint constant. The tenant URL printed beside your API key on the
+Cognee dashboard is the only address that exists; substitute it above. The command writes a unique conformance namespace,
 verifies Core, Recall, and Portability, and deletes its test record before
 exiting.
 
