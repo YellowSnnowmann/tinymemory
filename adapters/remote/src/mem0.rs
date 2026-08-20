@@ -605,6 +605,19 @@ impl Dialect for Mem0Dialect {
                 entry.key
             );
         }
+        // A FULL page in which nothing even decodes is inconclusive, not
+        // absent: a server that dropped the filter answers with the whole
+        // account, and if page 1 is all foreign non-TinyMemory records the
+        // one asked for may sit past it. Only a short page proves absence —
+        // the server returned everything it had and ours was not among it.
+        anyhow::ensure!(
+            results.len() < CLOUD_PAGE_SIZE as usize,
+            "mem0's filtered lookup answered a full page of {} records none of which are \
+             TinyMemory's — the server did not honor the metadata filter, and the record \
+             asked for ({namespace}/{key}) may sit beyond this page; refusing to answer \
+             an untrustworthy `absent`",
+            results.len()
+        );
         Ok(None)
     }
 

@@ -285,7 +285,7 @@ impl CogneeDialect {
     /// key resolves by matching the name — the per-record raw-fetch loop the
     /// first cut ran existed only because it read the key out of each
     /// envelope body instead.
-    async fn data_index(&self, dataset: &Dataset) -> anyhow::Result<Vec<(String, String)>> {
+    async fn data_index(&self, dataset: &Dataset) -> anyhow::Result<Vec<(String, String, String)>> {
         let response: Value = self
             .client
             .json(
@@ -303,6 +303,18 @@ impl CogneeDialect {
                 Some((
                     data.get("id")?.as_str()?.to_owned(),
                     data.get("name")?.as_str()?.to_owned(),
+                    // The listing's write time, kept alongside the id: the
+                    // envelope this adapter uploads carries an empty
+                    // timestamp, so the listing is the ONLY source a keyed
+                    // fetch can backfill from (the enumeration path already
+                    // does — the keyed path must agree with it).
+                    data.get("updatedAt")
+                        .or_else(|| data.get("updated_at"))
+                        .or_else(|| data.get("createdAt"))
+                        .or_else(|| data.get("created_at"))
+                        .and_then(Value::as_str)
+                        .unwrap_or_default()
+                        .to_owned(),
                 ))
             })
             .collect())
@@ -313,16 +325,23 @@ impl CogneeDialect {
     /// On a duplicate name (possible only if a historical blind re-add ever
     /// raced), newest-listed wins deterministically — the listing is
     /// insertion-ordered — rather than an arbitrary pick.
-    async fn find_data_id(&self, dataset: &Dataset, key: &str) -> anyhow::Result<Option<String>> {
+    async fn find_data_id(
+        &self,
+        dataset: &Dataset,
+        key: &str,
+    ) -> anyhow::Result<Option<(String, String)>> {
         let uploaded = Self::filename(key);
-        let stripped = uploaded.trim_end_matches(".json").to_owned();
+        let stripped = uploaded
+            .strip_suffix(".json")
+            .unwrap_or(&uploaded)
+            .to_owned();
         Ok(self
             .data_index(dataset)
             .await?
             .into_iter()
             .rev()
-            .find(|(_, name)| *name == uploaded || *name == stripped)
-            .map(|(id, _)| id))
+            .find(|(_, name, _)| *name == uploaded || *name == stripped)
+            .map(|(id, _, timestamp)| (id, timestamp)))
     }
 
     /// Downloads and decodes ONE envelope by its ids, verifying it is the
@@ -333,6 +352,7 @@ impl CogneeDialect {
         &self,
         dataset: &Dataset,
         data_id: &str,
+        listing_timestamp: &str,
         namespace: &str,
         key: &str,
     ) -> anyhow::Result<Option<StoredEntry>> {
@@ -355,6 +375,13 @@ impl CogneeDialect {
             );
         }
         entry.remote_id = format!("{}:{data_id}", dataset.id);
+        // The uploaded envelope's timestamp is empty by construction
+        // (StoredEntry::new), so without this backfill every keyed get would
+        // answer an empty timestamp while the enumeration path answers the
+        // listing's — the same record disagreeing with itself.
+        if entry.timestamp.is_empty() {
+            entry.timestamp = listing_timestamp.to_owned();
+        }
         Ok(Some(entry))
     }
 
@@ -393,21 +420,29 @@ impl Dialect for CogneeDialect {
         let Some(dataset) = self.find_dataset(namespace).await? else {
             return Ok(None);
         };
-        let Some(data_id) = self.find_data_id(&dataset, key).await? else {
+        let Some((data_id, listing_timestamp)) = self.find_data_id(&dataset, key).await? else {
             return Ok(None);
         };
-        self.fetch_entry(&dataset, &data_id, namespace, key).await
+        self.fetch_entry(&dataset, &data_id, &listing_timestamp, namespace, key)
+            .await
     }
 
     /// Replaces an existing envelope and uploads the new exact record.
     async fn upsert(&self, entry: StoredEntry) -> anyhow::Result<()> {
         // Through the keyed seam: dataset + listing, no raw fan-out. The
-        // existing record's ids are all the replace path needs.
+        // existing record's ids are all the replace path needs. Like delete,
+        // the PATCH trusts the dataset-scoped filename match without an
+        // envelope read — the name is the key's SHA-256 digest, so a wrong
+        // target needs a digest collision, and what a collision would cost
+        // here is an overwrite of the colliding record's content with THIS
+        // key's envelope (recoverable by that record's next upsert, unlike
+        // delete's unrecoverable removal — which is the sharper case and got
+        // this same argument first).
         let existing = match self.find_dataset(&entry.namespace).await? {
             Some(dataset) => self
                 .find_data_id(&dataset, &entry.key)
                 .await?
-                .map(|data_id| (dataset, data_id)),
+                .map(|(data_id, _)| (dataset, data_id)),
             None => None,
         };
         let body = serde_json::to_vec(&entry)?;
@@ -519,7 +554,7 @@ impl Dialect for CogneeDialect {
         let Some(dataset) = self.find_dataset(namespace).await? else {
             return Ok(false);
         };
-        let Some(data_id) = self.find_data_id(&dataset, key).await? else {
+        let Some((data_id, _)) = self.find_data_id(&dataset, key).await? else {
             return Ok(false);
         };
         self.client
