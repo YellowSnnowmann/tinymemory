@@ -40,6 +40,21 @@ impl CogneeGraph {
         })
     }
 
+    /// Connect to a Cognee Cloud tenant using `X-Api-Key` authentication.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `endpoint` is invalid or `api_key` is blank.
+    pub fn api(endpoint: &str, api_key: &str) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            !api_key.trim().is_empty(),
+            "cognee API key must not be empty"
+        );
+        Ok(Self {
+            client: HttpClient::api_key(endpoint, Some(api_key))?,
+        })
+    }
+
     /// Matches [`crate::cognee`]'s private `CogneeDialect::dataset_name`
     /// exactly, so both halves resolve one TinyMemory namespace to the same
     /// Cognee dataset.

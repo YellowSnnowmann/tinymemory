@@ -16,7 +16,6 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
-use tower_http::cors::CorsLayer;
 use tower_http::services::ServeDir;
 
 use tinymemory_api::provider::types::SourceScope;
@@ -77,6 +76,8 @@ async fn current(state: &SharedState) -> Result<Arc<dyn MemoryProvider>, ApiErro
 struct ConnectRequest {
     engine: String,
     #[serde(default)]
+    deployment: Option<String>,
+    #[serde(default)]
     endpoint: Option<String>,
     #[serde(default)]
     api_key: Option<String>,
@@ -121,10 +122,18 @@ async fn connect(
                 .as_deref()
                 .filter(|s| !s.is_empty())
                 .ok_or_else(|| bad_request("mem0 requires an endpoint URL"))?;
-            let memory = tinymemory_remote::Mem0Memory::new(
-                endpoint,
-                req.api_key.as_deref().filter(|s| !s.is_empty()),
-            )
+            let api_key = req.api_key.as_deref().filter(|s| !s.is_empty());
+            let is_cloud = req.deployment.as_deref() == Some("cloud")
+                || (req.deployment.is_none()
+                    && endpoint == tinymemory_remote::MEM0_API_ENDPOINT);
+            let memory = if is_cloud {
+                tinymemory_remote::Mem0Memory::api(
+                    endpoint,
+                    api_key.ok_or_else(|| bad_request("Mem0 Cloud requires an API key"))?,
+                )
+            } else {
+                tinymemory_remote::Mem0Memory::new(endpoint, api_key)
+            }
             .map_err(|e| bad_request(&e.to_string()))?;
             // Also advertises Graph via `Mem0Graph` — a client-side heuristic
             // over the same stored entries, not Mem0's native Graph Memory
@@ -139,13 +148,29 @@ async fn connect(
                 .filter(|s| !s.is_empty())
                 .ok_or_else(|| bad_request("cognee requires an endpoint URL"))?;
             let api_key = req.api_key.as_deref().filter(|s| !s.is_empty());
-            let memory = tinymemory_remote::CogneeMemory::new(endpoint, api_key)
-                .map_err(|e| bad_request(&e.to_string()))?;
+            let is_cloud = req.deployment.as_deref() == Some("cloud");
+            let memory = if is_cloud {
+                tinymemory_remote::CogneeMemory::api(
+                    endpoint,
+                    api_key.ok_or_else(|| bad_request("Cognee Cloud requires an API key"))?,
+                )
+            } else {
+                tinymemory_remote::CogneeMemory::new(endpoint, api_key)
+            }
+            .map_err(|e| bad_request(&e.to_string()))?;
             // Cognee is graph-native, so its provider also advertises Graph
             // (relations only — see `CogneeGraph`'s docs for the exact split
             // between what's a real endpoint and what isn't).
-            let provider = tinymemory_remote::cognee_graph_provider(memory, endpoint, api_key)
-                .map_err(|e| bad_request(&e.to_string()))?;
+            let provider = if is_cloud {
+                tinymemory_remote::cognee_api_graph_provider(
+                    memory,
+                    endpoint,
+                    api_key.expect("cloud API key was checked above"),
+                )
+            } else {
+                tinymemory_remote::cognee_graph_provider(memory, endpoint, api_key)
+            }
+            .map_err(|e| bad_request(&e.to_string()))?;
             Arc::new(provider)
         }
         other => {
@@ -402,8 +427,7 @@ async fn main() {
 
     let app = Router::new()
         .nest("/api", api)
-        .fallback_service(ServeDir::new(web_dir))
-        .layer(CorsLayer::permissive());
+        .fallback_service(ServeDir::new(web_dir));
 
     let addr: SocketAddr = std::env::var("TINYMEMORY_TESTING_UI_ADDR")
         .ok()

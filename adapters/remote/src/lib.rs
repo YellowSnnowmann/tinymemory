@@ -64,6 +64,25 @@ pub fn cognee_graph_provider(
     ))
 }
 
+/// Wrap a Cognee Cloud backend as a bound TinyMemory provider that also
+/// advertises Graph, using the same `X-Api-Key` authentication for memory and
+/// graph requests.
+///
+/// # Errors
+///
+/// Returns an error when `endpoint` is invalid or `api_key` is blank.
+pub fn cognee_api_graph_provider(
+    memory: CogneeMemory,
+    endpoint: &str,
+    api_key: &str,
+) -> anyhow::Result<GraphMemoryProvider> {
+    let graph = CogneeGraph::api(endpoint, api_key)?;
+    Ok(GraphMemoryProvider::new(
+        cognee_provider(memory),
+        Arc::new(graph),
+    ))
+}
+
 /// Wrap a Mem0 HTTP backend as a bound TinyMemory provider that also
 /// advertises Graph, backed by [`Mem0Graph`] — a client-side heuristic over
 /// the same stored entries, not Mem0's native (platform-only) Graph Memory.
