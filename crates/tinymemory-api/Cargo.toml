@@ -44,6 +44,11 @@ description = "Stable public contracts for the TinyMemory memory system"
 # scope and prints the whole-workspace inverse tree, so it exits 0 and looks
 # clean even when this crate is the one pulling the dependency in.
 [dependencies]
+# The wire vocabulary. Every payload type this crate exposes is defined there
+# and re-exported here, so a host that only makes calls into the loadable module
+# can depend on that crate alone and compile none of the traits, the null
+# driver, or the `host::` config surface. See `src/lib.rs`.
+tinymemory-bus = { path = "../tinymemory-bus" }
 anyhow = "1"
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
