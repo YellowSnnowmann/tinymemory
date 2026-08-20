@@ -2038,6 +2038,7 @@ dependencies = [
  "serde_json",
  "tinymemory",
  "tinymemory-api",
+ "tinymemory-documents",
  "tinymemory-remote",
  "tinymemory-tinycortex",
  "tokio",
