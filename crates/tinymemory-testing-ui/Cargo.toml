@@ -22,9 +22,15 @@ tinymemory-api = { path = "../tinymemory-api" }
 tinymemory-tinycortex = { path = "../tinymemory-tinycortex" }
 # The Supermemory / Mem0 / Cognee adapters back the "remote" engine choices.
 tinymemory-remote = { path = "../tinymemory-remote" }
+# Document and URL intake, behind `/api/documents/upload` and
+# `/api/ingest/url`. `network` is on because fetching a URL by hand is half the
+# point of a harness.
+tinymemory-documents = { path = "../tinymemory-documents", features = ["network"] }
 
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
-axum = { version = "0.8" }
+# `multipart` for the document upload endpoint: a file upload is the one thing
+# a JSON body cannot carry without base64-ing it first.
+axum = { version = "0.8", features = ["multipart"] }
 tower-http = { version = "0.6", features = ["fs"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
