@@ -1964,6 +1964,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "tinymemory-documents"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tinymemory-api",
+ "tinymemory-sources",
+ "tokio",
+]
+
+[[package]]
 name = "tinymemory-remote"
 version = "0.1.0"
 dependencies = [
