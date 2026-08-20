@@ -13,7 +13,7 @@ use axum::{
 };
 use serde_json::{json, Value};
 use tinymemory_api::{
-    provider::{MemoryCore, MemoryProvider, MemoryRecall},
+    provider::{MemoryCore, MemoryGraph, MemoryProvider, MemoryRecall},
     recall::OwnedRecallOpts,
     traits::Memory,
     types::{MemoryCategory, MemoryTaint},
@@ -109,6 +109,21 @@ async fn capture_auth(State(state): State<Arc<Mutex<Value>>>, headers: HeaderMap
     StatusCode::OK
 }
 
+async fn capture_graph_auth(
+    State(state): State<Arc<Mutex<Value>>>,
+    headers: HeaderMap,
+) -> Json<Value> {
+    *state.lock().expect("state lock") = json!({
+        "authorization": headers
+            .get("authorization")
+            .and_then(|value| value.to_str().ok()),
+        "api_key": headers
+            .get("x-api-key")
+            .and_then(|value| value.to_str().ok()),
+    });
+    Json(Value::Array(Vec::new()))
+}
+
 #[tokio::test]
 async fn cognee_supports_cloud_api_keys_and_self_hosted_bearer_tokens() {
     let captured = Arc::new(Mutex::new(Value::Null));
@@ -139,6 +154,43 @@ async fn cognee_supports_cloud_api_keys_and_self_hosted_bearer_tokens() {
     let debug = format!("{api:?}");
     assert!(!debug.contains("cloud-secret"));
     assert!(super::CogneeMemory::api(&endpoint, "  ").is_err());
+}
+
+#[tokio::test]
+async fn cognee_graph_supports_cloud_api_keys_and_self_hosted_bearer_tokens() {
+    let captured = Arc::new(Mutex::new(Value::Null));
+    let app = Router::new()
+        .route("/api/v1/datasets/", get(capture_graph_auth))
+        .with_state(captured.clone());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let endpoint = format!("http://{}", listener.local_addr().expect("address"));
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("serve");
+    });
+
+    let api = crate::CogneeGraph::api(&endpoint, "cloud-secret").expect("api graph client");
+    assert!(api
+        .relations(Some("project"), None, None, 10)
+        .await
+        .expect("cloud relations")
+        .is_empty());
+    let api_headers = captured.lock().expect("state lock").clone();
+    assert_eq!(api_headers["api_key"], "cloud-secret");
+    assert!(api_headers["authorization"].is_null());
+
+    let hosted =
+        crate::CogneeGraph::new(&endpoint, Some("local-secret")).expect("self-hosted graph client");
+    assert!(hosted
+        .relations(Some("project"), None, None, 10)
+        .await
+        .expect("self-hosted relations")
+        .is_empty());
+    let hosted_headers = captured.lock().expect("state lock").clone();
+    assert_eq!(hosted_headers["authorization"], "Bearer local-secret");
+    assert!(hosted_headers["api_key"].is_null());
+    assert!(crate::CogneeGraph::api(&endpoint, "  ").is_err());
 }
 
 #[test]
