@@ -49,7 +49,7 @@ pub struct DocumentIntake<'a> {
 impl std::fmt::Debug for DocumentIntake<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DocumentIntake")
-            .field("provider", &self.provider.name())
+            .field("provider", &self.provider.driver_id())
             .field("converter", &self.converter.name())
             .finish()
     }
