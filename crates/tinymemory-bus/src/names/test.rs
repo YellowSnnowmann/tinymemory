@@ -4,6 +4,9 @@
 //! that only fails at runtime, in a host, as an `UnknownMethod` — so the value
 //! here is in catching a typo or a duplicate at `cargo test` time in this
 //! crate, before the module or a host ever sees it.
+// A failed assertion in a test is a panic either way; `expect` here says what
+// the invariant was. Same allowance the crate's other test modules take.
+#![allow(clippy::expect_used, clippy::panic)]
 
 use super::{methods, BUS_NAME, METHODS, OBJECT_PATH};
 

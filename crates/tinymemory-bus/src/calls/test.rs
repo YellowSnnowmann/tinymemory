@@ -7,6 +7,10 @@
 //! the table below is checked against `crate::names::METHODS` in both
 //! directions.
 
+// A failed assertion in a test is a panic either way; `expect` here says what
+// the invariant was. Same allowance the crate's other test modules take.
+#![allow(clippy::expect_used, clippy::panic)]
+
 use serde_json::json;
 
 use crate::calls::BusCall;

@@ -4,6 +4,9 @@
 //! that the re-export surfaces the whole of it — a name constant that failed to
 //! come across would leave a host unable to recognise that error class, and a
 //! missing `pub use` is invisible until someone reaches for it.
+// A failed assertion in a test is a panic either way; `expect` here says what
+// the invariant was. Same allowance the crate's other test modules take.
+#![allow(clippy::expect_used, clippy::panic)]
 
 use super::{from_wire, wire_name};
 use crate::types::MemoryError;

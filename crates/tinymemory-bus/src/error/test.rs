@@ -1,4 +1,7 @@
 //! Unit tests for the crate-wide error type.
+// A failed assertion in a test is a panic either way; `expect` here says what
+// the invariant was. Same allowance the crate's other test modules take.
+#![allow(clippy::expect_used, clippy::panic)]
 
 use super::{Error, Result};
 
