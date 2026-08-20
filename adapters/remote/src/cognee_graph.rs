@@ -19,7 +19,7 @@ use tinymemory_api::error::MemoryError;
 use tinymemory_api::provider::MemoryGraph;
 use tinymemory_api::types::{GraphRelationRecord, MemoryKvRecord};
 
-use crate::common::{stable_id, HttpClient};
+use crate::common::{stable_id, Attempts, HttpClient};
 
 /// Read-only relation queries over one Cognee dataset's knowledge graph.
 #[derive(Debug)]
@@ -66,7 +66,12 @@ impl CogneeGraph {
         let name = Self::dataset_name(namespace);
         let response: Value = self
             .client
-            .json(Method::GET, "api/v1/datasets/", None)
+            .json(
+                Method::GET,
+                "api/v1/datasets/",
+                None,
+                Attempts::RetryTransient,
+            )
             .await?;
         Ok(response
             .as_array()
@@ -143,6 +148,7 @@ impl MemoryGraph for CogneeGraph {
                 Method::GET,
                 &format!("api/v1/datasets/{dataset_id}/graph"),
                 None,
+                Attempts::RetryTransient,
             )
             .await?;
         let nodes = graph.get("nodes").and_then(Value::as_array);
