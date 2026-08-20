@@ -1,18 +1,22 @@
 //! Domain types for the **graph view**: a bounded, renderable slice of the
 //! relation graph.
 //!
-//! `MemoryGraph::relations` answers "which edges match this
-//! filter" and returns a flat list. That is the right shape for a query and the
-//! wrong shape for a *view*: a caller that wants to draw a graph, or hand one
-//! to an agent, needs the node set as well as the edge set, needs to know how
-//! far each node sits from where it started, and needs the answer to be bounded
-//! so an over-connected hub cannot return the whole store.
+//! The traits that produce these types live in `tinymemory-api`, which this
+//! crate sits underneath and therefore cannot name — the references to
+//! `MemoryGraph` and `MemoryTree` below are deliberately unlinked for that
+//! reason, not by oversight.
+//!
+//! `MemoryGraph::relations` answers "which edges match this filter" and returns
+//! a flat list. That is the right shape for a query and the wrong shape for a
+//! *view*: a caller that wants to draw a graph, or hand one to an agent, needs
+//! the node set as well as the edge set, needs to know how far each node sits
+//! from where it started, and needs the answer bounded so an over-connected hub
+//! cannot return the whole store.
 //!
 //! This module is the graph counterpart of [`crate::tree`], and
-//! `MemoryGraph::graph_view` is the counterpart of
-//! `MemoryTree::drill_down`: one call returns a node
-//! together with its surroundings, already assembled, so navigation is a
-//! sequence of view calls rather than a client-side join.
+//! `MemoryGraph::graph_view` is the counterpart of `MemoryTree::drill_down`:
+//! one call returns a node together with its surroundings, already assembled,
+//! so navigation is a sequence of view calls rather than a client-side join.
 //!
 //! ## What is a driver concern and what is not
 //!
