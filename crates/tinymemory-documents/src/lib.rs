@@ -20,7 +20,8 @@
 //! ```
 //! use tinymemory_documents::convert::{ConverterChain, DocumentConverter, RawDocument};
 //!
-//! # tokio_test_block(async {
+//! # let runtime = tokio::runtime::Builder::new_current_thread().build()?;
+//! # runtime.block_on(async {
 //! let chain = ConverterChain::default();
 //! let html = RawDocument::new("<h1>Notes</h1><p>A <b>point</b>.</p>")
 //!     .with_mime("text/html")
@@ -28,19 +29,10 @@
 //!
 //! let converted = chain.convert(&html).await?;
 //! assert_eq!(converted.markdown, "# Notes\n\nA **point**.");
+//! assert_eq!(converted.title, None);
 //! # Ok::<(), tinymemory_api::error::MemoryError>(())
-//! # });
-//! # fn tokio_test_block<F: std::future::Future>(f: F) -> F::Output {
-//! #     futures_lite_block_on(f)
-//! # }
-//! # fn futures_lite_block_on<F: std::future::Future>(mut f: F) -> F::Output {
-//! #     use std::task::{Context, Poll, Waker};
-//! #     let mut f = Box::pin(f);
-//! #     let mut cx = Context::from_waker(Waker::noop());
-//! #     loop {
-//! #         if let Poll::Ready(v) = f.as_mut().poll(&mut cx) { return v; }
-//! #     }
-//! # }
+//! # })?;
+//! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
 //! # Feature flags
