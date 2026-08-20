@@ -328,8 +328,13 @@ pub struct GraphView {
     /// Namespace the view was read from, or `None` for the global slice.
     #[serde(default)]
     pub namespace: Option<String>,
-    /// The seeds the traversal actually started from. May be shorter than the
-    /// requested seeds when some were not present in the store.
+    /// The seeds the traversal started from, echoed back verbatim.
+    ///
+    /// Echoed rather than filtered to the ones that exist: "this id has no
+    /// edges" and "this id is not in the store" are different facts, and a
+    /// traversal over an edge list cannot tell them apart. A seed that is
+    /// absent from the store still appears in [`Self::nodes`] with a degree of
+    /// zero, so a renderer draws the question the caller asked.
     #[serde(default)]
     pub seeds: Vec<String>,
     /// Every node reachable within the query's bounds.
