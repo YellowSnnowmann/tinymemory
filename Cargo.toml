@@ -7,6 +7,27 @@ resolver = "2"
 # a root package would make one crate structurally different from the rest for
 # no reason other than history.
 members = ["crates/*"]
+# `crates/tinymemory-testing-ui` is deliberately left out of `default-members`:
+# it is a manual testing harness, not part of the crate's build/release
+# surface, so the four contract commands (which omit `-p`/`--workspace`) never
+# touch it. Build or run it explicitly with `-p tinymemory-testing-ui`. Unlike
+# `crates/tinymemory-module` it is a normal member here, not its own workspace
+# root: it needs the root's `[patch.crates-io]` table to resolve `tinycortex`,
+# and it carries none of the tinybus-inheritance problem documented below.
+#
+# Spelled out rather than globbed, because that is the whole point: `members`
+# is a glob so a new crate joins the workspace by existing, and this list is
+# the one place a crate is deliberately held out of the default build.
+default-members = [
+    "crates/tinymemory",
+    "crates/tinymemory-api",
+    "crates/tinymemory-conformance",
+    "crates/tinymemory-core",
+    "crates/tinymemory-remote",
+    "crates/tinymemory-sources",
+    "crates/tinymemory-sync",
+    "crates/tinymemory-tinycortex",
+]
 # `vendor/` holds engine submodules (tinycortex, tinybus, tinyagents), each of
 # which is its own workspace with its own lockfile. Same exclusion
 # `vendor/tinycortex` uses for its own nested vendor directory.

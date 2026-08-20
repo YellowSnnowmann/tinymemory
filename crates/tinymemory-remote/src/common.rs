@@ -590,6 +590,34 @@ pub(crate) trait Dialect: Send + Sync + std::fmt::Debug {
     async fn upsert(&self, entry: StoredEntry) -> anyhow::Result<()>;
     /// Enumerates every record owned by this adapter.
     async fn entries(&self) -> anyhow::Result<Vec<StoredEntry>>;
+    /// One namespace's records (issue #69, the keyed-CRUD seam).
+    ///
+    /// The default enumerates and filters — exactly what every caller did
+    /// before the seam existed — so a dialect overrides only when its
+    /// backend can scope the fetch server-side (Supermemory's container
+    /// tags; Mem0's entity filters). Callers that genuinely need EVERY
+    /// record (`count`, `namespace_summaries`, export) stay on `entries`;
+    /// that full walk is the documented floor, not an accident.
+    async fn namespace_entries(&self, namespace: &str) -> anyhow::Result<Vec<StoredEntry>> {
+        Ok(self
+            .entries()
+            .await?
+            .into_iter()
+            .filter(|entry| entry.namespace == namespace)
+            .collect())
+    }
+    /// One record by its exact logical key (issue #69).
+    ///
+    /// Default: the namespace's records, filtered — which itself defaults to
+    /// the full walk. A dialect with a true server-side keyed lookup (Mem0
+    /// cloud metadata filters) overrides this directly.
+    async fn entry(&self, namespace: &str, key: &str) -> anyhow::Result<Option<StoredEntry>> {
+        Ok(self
+            .namespace_entries(namespace)
+            .await?
+            .into_iter()
+            .find(|entry| entry.key == key))
+    }
     /// Runs the backend's native recall operation.
     async fn search(
         &self,
@@ -710,25 +738,33 @@ impl<D: Dialect + 'static> Memory for RemoteMemory<D> {
             .collect())
     }
 
-    /// Locates one record by its exact logical namespace and key.
+    /// Locates one record by its exact logical namespace and key — through
+    /// the dialect's keyed seam, so a backend that can resolve a key
+    /// server-side does (issue #69); the default is the old full walk.
     async fn get(&self, namespace: &str, key: &str) -> anyhow::Result<Option<MemoryEntry>> {
         Ok(self
             .dialect
-            .entries()
+            .entry(namespace, key)
             .await?
-            .into_iter()
-            .find(|entry| entry.namespace == namespace && entry.key == key)
             .map(StoredEntry::into_memory_entry))
     }
 
     /// Enumerates records and applies exact category and session filters.
+    ///
+    /// A namespace-scoped list goes through the dialect's namespace seam
+    /// (issue #69): on a scoping backend that is one tag/entity fetch
+    /// instead of the whole account. The all-namespaces list has no scope to
+    /// exploit and stays on the full walk.
     async fn list(
         &self,
         namespace: Option<&str>,
         category: Option<&MemoryCategory>,
         session_id: Option<&str>,
     ) -> anyhow::Result<Vec<MemoryEntry>> {
-        let mut entries = self.dialect.entries().await?;
+        let mut entries = match namespace {
+            Some(value) => self.dialect.namespace_entries(value).await?,
+            None => self.dialect.entries().await?,
+        };
         entries.retain(|entry| {
             namespace.is_none_or(|value| entry.namespace == value)
                 && category.is_none_or(|value| &entry.category == value)

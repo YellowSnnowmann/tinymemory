@@ -383,7 +383,26 @@ impl Dialect for SupermemoryDialect {
         Ok(())
     }
 
-    /// Enumerates TinyMemory-owned Supermemory records.
+    /// Enumerates one namespace's TinyMemory-owned Supermemory records.
+    /// Issue #69: one tag's records instead of the whole account — the
+    /// scoped fetch `find_entry`/`delete` always used, now serving reads.
+    async fn namespace_entries(&self, namespace: &str) -> anyhow::Result<Vec<StoredEntry>> {
+        // Retained client-side even though the tag scopes it server-side: a
+        // server ignoring the tag filter must not leak sibling namespaces.
+        Ok(self
+            .memories_in_tag(&Self::container_tag(namespace))
+            .await?
+            .into_iter()
+            .filter(|entry| entry.namespace == namespace)
+            .collect())
+    }
+
+    /// One record by key — `find_entry` already pages only this namespace's
+    /// container tag, so the keyed seam has nothing to add.
+    async fn entry(&self, namespace: &str, key: &str) -> anyhow::Result<Option<StoredEntry>> {
+        self.find_entry(namespace, key).await
+    }
+
     async fn entries(&self) -> anyhow::Result<Vec<StoredEntry>> {
         self.memories().await
     }

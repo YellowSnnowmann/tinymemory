@@ -304,42 +304,48 @@ impl Mem0Dialect {
             // full page and a non-null `next` still can, so the walk is
             // bounded below and fails loudly at the bound rather than
             // collecting for ever.
-            Flavour::Cloud => {
-                let mut all = Vec::new();
-                let mut page = 1_u32;
-                loop {
-                    let response: Value = self
-                        .client
-                        .json(
-                            Method::POST,
-                            &format!("v3/memories/?page={page}&page_size={CLOUD_PAGE_SIZE}"),
-                            Some(&json!({"filters": {"agent_id": CLOUD_AGENT_ID}})),
-                            Attempts::RetryTransient,
-                        )
-                        .await?;
-                    let results = response
-                        .get("results")
-                        .and_then(Value::as_array)
-                        .cloned()
-                        .unwrap_or_default();
-                    let exhausted =
-                        results.is_empty() || response.get("next").is_none_or(Value::is_null);
-                    all.extend(results);
-                    if exhausted {
-                        break;
-                    }
-                    anyhow::ensure!(
-                        page < CLOUD_MAX_PAGES,
-                        "mem0's hosted platform still reported more memories after \
+            Flavour::Cloud => self.cloud_walk(json!({"agent_id": CLOUD_AGENT_ID})).await,
+        }
+    }
+
+    /// The hosted platform's paged POST listing, scoped by `filters` (issue
+    /// #69): the whole-account walk passes the agent filter alone; the
+    /// namespace-scoped walk ANDs the namespace's entity id in, which the
+    /// server applies before paging — so the page count scales with the
+    /// namespace, not the account.
+    async fn cloud_walk(&self, filters: Value) -> anyhow::Result<Vec<Value>> {
+        let mut all = Vec::new();
+        let mut page = 1_u32;
+        loop {
+            let response: Value = self
+                .client
+                .json(
+                    Method::POST,
+                    &format!("v3/memories/?page={page}&page_size={CLOUD_PAGE_SIZE}"),
+                    Some(&json!({"filters": filters})),
+                    Attempts::RetryTransient,
+                )
+                .await?;
+            let results = response
+                .get("results")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            let exhausted = results.is_empty() || response.get("next").is_none_or(Value::is_null);
+            all.extend(results);
+            if exhausted {
+                break;
+            }
+            anyhow::ensure!(
+                page < CLOUD_MAX_PAGES,
+                "mem0's hosted platform still reported more memories after \
                          {CLOUD_MAX_PAGES} pages of {CLOUD_PAGE_SIZE}. A cursor that never \
                          clears is a server fault, not a large account, and continuing \
                          would neither terminate nor answer correctly."
-                    );
-                    page = page.saturating_add(1);
-                }
-                Ok(all)
-            }
+            );
+            page = page.saturating_add(1);
         }
+        Ok(all)
     }
 
     /// The search body both flavours send.
@@ -423,6 +429,24 @@ impl Mem0Dialect {
     }
 }
 
+/// Percent-encodes a value for a query-string position (RFC 3986 unreserved
+/// set kept verbatim). Namespaces carry `/` and arbitrary user text; a raw
+/// interpolation would split the query. Hand-rolled because the crate has no
+/// direct `url`/`percent-encoding` dependency and eight lines do not justify
+/// one.
+fn percent_encode_query(value: &str) -> String {
+    let mut out = String::with_capacity(value.len());
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
 #[async_trait]
 impl Dialect for Mem0Dialect {
     /// Returns the stable Mem0 driver identifier.
@@ -432,11 +456,9 @@ impl Dialect for Mem0Dialect {
 
     /// Replaces an existing exact record or creates it with inference disabled.
     async fn upsert(&self, entry: StoredEntry) -> anyhow::Result<()> {
-        let existing = self
-            .entries()
-            .await?
-            .into_iter()
-            .find(|item| item.namespace == entry.namespace && item.key == entry.key);
+        // Through the keyed seam (issue #69): one filtered request on cloud,
+        // one namespace-scoped listing self-hosted — not the whole account.
+        let existing = self.entry(&entry.namespace, &entry.key).await?;
         let metadata = Self::metadata(&entry);
         if let Some(existing) = existing {
             // Both APIs take the same update body; only the path differs.
@@ -468,6 +490,122 @@ impl Dialect for Mem0Dialect {
             self.client.empty(Method::POST, path, Some(&body)).await?;
         }
         Ok(())
+    }
+
+    /// One namespace's records, server-scoped on both flavours (issue #69).
+    ///
+    /// Self-hosted: the GET listing filters by `user_id` — the one dimension
+    /// every vector store supports — so the 1000-row refusal ceiling becomes
+    /// per-NAMESPACE instead of a whole-store death sentence. Cloud: the
+    /// paged walk ANDs the namespace's entity id into its mandatory filter.
+    async fn namespace_entries(&self, namespace: &str) -> anyhow::Result<Vec<StoredEntry>> {
+        let values = match self.flavour {
+            Flavour::SelfHosted => {
+                let top_k = Self::LISTING_TOP_K;
+                let encoded = percent_encode_query(namespace);
+                let response: Value = self
+                    .client
+                    .json(
+                        Method::GET,
+                        &format!("memories?top_k={top_k}&user_id={encoded}"),
+                        None,
+                        Attempts::RetryTransient,
+                    )
+                    .await?;
+                let results = response
+                    .get("results")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                anyhow::ensure!(
+                    results.len() < top_k,
+                    "mem0 returned {} memories for one namespace, this adapter's unpaginated \
+                     listing ceiling — refusing rather than answering exact reads wrongly \
+                     (a record past the window would read as absent)",
+                    results.len()
+                );
+                results
+            }
+            Flavour::Cloud => {
+                self.cloud_walk(json!({"AND": [
+                    {"agent_id": CLOUD_AGENT_ID},
+                    {"user_id": namespace},
+                ]}))
+                .await?
+            }
+        };
+        // Retained client-side even though the server was ASKED to scope:
+        // a server that ignores an unrecognised filter (an old OSS build, a
+        // proxy) would otherwise leak sibling namespaces into keyed reads —
+        // the same verify-don't-trust rule as `entry`.
+        Ok(values
+            .iter()
+            .filter_map(Self::decode)
+            .filter(|entry| entry.namespace == namespace)
+            .collect())
+    }
+
+    /// One record by key. On the hosted platform this is a single filtered
+    /// request — the metadata keys this adapter has ALWAYS written (issue
+    /// #69: `tinymemory_key` is top-level and equality-filtered, inside the
+    /// platform's documented envelope). Self-hosted inherits the
+    /// namespace-scoped default: the OSS list route has no metadata param.
+    ///
+    /// Verify-after-resolve: the decoded record must actually BE the asked-
+    /// for one. A server that ignores an unrecognised filter clause would
+    /// answer with someone else's record, and trusting it silently is how a
+    /// filter-grammar drift becomes a cross-record read.
+    async fn entry(&self, namespace: &str, key: &str) -> anyhow::Result<Option<StoredEntry>> {
+        if self.flavour != Flavour::Cloud {
+            return Ok(self
+                .namespace_entries(namespace)
+                .await?
+                .into_iter()
+                .find(|entry| entry.key == key));
+        }
+        let response: Value = self
+            .client
+            .json(
+                Method::POST,
+                &format!("v3/memories/?page=1&page_size={CLOUD_PAGE_SIZE}"),
+                Some(&json!({"filters": {"AND": [
+                    {"agent_id": CLOUD_AGENT_ID},
+                    {"user_id": namespace},
+                    {"metadata": {"tinymemory_key": key}},
+                ]}})),
+                Attempts::RetryTransient,
+            )
+            .await?;
+        let results = response
+            .get("results")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default();
+        // Scan the whole page before judging it: a server that ignores the
+        // metadata clause answers with the namespace's records, and the one
+        // asked for may sit anywhere in that page. An exact match anywhere
+        // wins. Decoded records with no match can only mean the filter was
+        // not honored — an honored filter makes every result match — so
+        // refuse rather than serve someone else's memory.
+        let mut foreign: Option<StoredEntry> = None;
+        for value in &results {
+            if let Some(entry) = Self::decode(value) {
+                if entry.namespace == namespace && entry.key == key {
+                    return Ok(Some(entry));
+                }
+                foreign.get_or_insert(entry);
+            }
+        }
+        if let Some(entry) = foreign {
+            anyhow::bail!(
+                "mem0's filtered lookup answered a DIFFERENT record ({}/{}) than asked \
+                 ({namespace}/{key}) — the server did not honor the metadata filter; \
+                 refusing rather than serving someone else's memory",
+                entry.namespace,
+                entry.key
+            );
+        }
+        Ok(None)
     }
 
     /// Enumerates and decodes TinyMemory-owned Mem0 records.
