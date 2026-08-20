@@ -232,9 +232,11 @@ async fn depth_zero_returns_only_edges_between_the_seeds() {
     assert_eq!(ids(&view), vec!["ada", "charles"]);
     assert_eq!(view.edges.len(), 1);
     assert_eq!(view.edges[0].key(), ("ada", "works_with", "charles"));
-    // `notes` and `engine` were reachable but out of depth, so the view is
-    // honest about being partial.
-    assert!(view.truncated);
+    // `notes` and `engine` sit past the requested depth. That is the caller
+    // getting what they asked for, so the view is not truncated — but it does
+    // say the graph continues there.
+    assert!(!view.truncated);
+    assert_eq!(view.stats.frontier_remaining, 2);
 }
 
 #[tokio::test]

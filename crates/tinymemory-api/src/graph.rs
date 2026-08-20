@@ -196,8 +196,14 @@ pub struct GraphViewStats {
     pub edge_count: usize,
     /// Greatest [`GraphNode::depth`] present, or `0` for an empty view.
     pub max_depth: u32,
-    /// Nodes that were reached but left unexpanded because a bound was hit.
-    /// Non-zero implies [`GraphView::truncated`].
+    /// Distinct nodes that were reached but never expanded — either because
+    /// they sit one hop past [`GraphViewQuery::depth`] or because a bound was
+    /// hit.
+    ///
+    /// Non-zero does **not** imply [`GraphView::truncated`]: a traversal that
+    /// stops exactly where it was told to stop is complete, not truncated.
+    /// Read this as "the graph continues here" and `truncated` as "we could
+    /// not fit what you asked for".
     pub frontier_remaining: usize,
 }
 
