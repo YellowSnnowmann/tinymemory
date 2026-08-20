@@ -740,7 +740,16 @@ impl UnifiedMemory {
         hasher.update(namespace.as_bytes());
         hasher.update([0u8]);
         hasher.update(key.as_bytes());
-        format!("{:x}", hasher.finalize())[..32].to_string()
+        // sha2 0.11 returns a hybrid-array digest with no `LowerHex`, so hex is
+        // folded byte-by-byte; the id keeps the first 32 hex chars (16 bytes).
+        let hex = {
+            use std::fmt::Write;
+            hasher.finalize().iter().fold(String::with_capacity(64), |mut acc, b| {
+                let _ = write!(acc, "{b:02x}");
+                acc
+            })
+        };
+        hex[..32].to_string()
     }
 }
 
