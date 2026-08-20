@@ -10,7 +10,7 @@ rust-version = "1.96"
 license = "MIT"
 description = "The engine-neutral memory subsystem: store, summary tree, sync pipelines, ingestion and recall"
 repository = "https://github.com/tinyhumansai/tinymemory"
-readme = "../README.md"
+readme = "../../README.md"
 
 [dependencies]
 # The contract. `tinymemory-core` implements and consumes it; the host seam
