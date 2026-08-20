@@ -1,15 +1,32 @@
 //! Stable public contracts for the TinyMemory memory system.
 //!
-//! This crate holds the value types, error enum, capability vocabulary, and
-//! storage trait that memory engines and their embedding hosts compile
-//! against. It is engine-neutral on purpose: `tinycortex` is the default
-//! embedded engine, not the owner of the contract, and a second engine
-//! (`supermemory`, `mem0`, a self-hosted HTTP backend) implements the same
-//! traits without either engine learning about the other.
-//! It is deliberately dependency-light (serde / serde_json /
-//! chrono / sha2 / anyhow / thiserror / async-trait / uuid only) so depending on
-//! the contract never drags in SQLite, git2, reqwest, regex, or an async
-//! runtime.
+//! This crate holds the traits a memory engine implements, the host seam it is
+//! bound through, and — re-exported from [`tinymemory_bus`] — the value types,
+//! error enum and capability vocabulary they exchange. It is engine-neutral on
+//! purpose: `tinycortex` is the default embedded engine, not the owner of the
+//! contract, and a second engine (`supermemory`, `mem0`, a self-hosted HTTP
+//! backend) implements the same traits without either engine learning about the
+//! other. It is deliberately dependency-light (serde / serde_json / anyhow /
+//! async-trait / schemars / log, plus `tinymemory-bus`) so depending on the
+//! contract never drags in SQLite, git2, reqwest, regex, or an async runtime.
+//!
+//! ## The vocabulary lives one layer down
+//!
+//! Every payload type is defined in [`tinymemory_bus`] and re-exported here at
+//! its historical path, so `tinymemory_api::types::MemoryEntry` is the *same
+//! item* as `tinymemory_bus::types::MemoryEntry`, not a structural twin.
+//!
+//! The split follows what a consumer actually needs. A **driver author**
+//! implements [`provider::MemoryProvider`] and wants this crate: traits, the
+//! null driver, the mandatory composition, the [`host`] seam. A **host** loads
+//! `tinymemory-module` over `TinyBus` and only makes calls — it names
+//! `MemoryEntry` and `MemoryCategory` and implements nothing — so it depends on
+//! `tinymemory-bus` alone and compiles none of this.
+//!
+//! Defining a second set of payload types for that host was the alternative,
+//! and it is the failure the root manifest's `[patch]` table exists to prevent:
+//! `MemoryCategory` from the module would not be `MemoryCategory` in the host,
+//! with a conversion at every call site that nothing type-checks.
 //!
 //! ## Self-contained by design
 //!
