@@ -106,6 +106,11 @@
     border-bottom: 1px solid var(--border);
   }
   .tab {
+    width: auto;
+    margin: 0;
+    background: transparent;
+    border: none;
+    border-radius: 0;
     padding: 8px 14px;
     cursor: pointer;
     color: var(--muted);
@@ -150,11 +155,18 @@
     <label for="engine">Memory engine</label>
     <select id="engine">
       <option value="local">Local (in-process, no network)</option>
-      <option value="supermemory">Supermemory (self-hosted API)</option>
-      <option value="mem0">Mem0 (self-hosted API)</option>
-      <option value="cognee">Cognee (self-hosted API)</option>
+      <option value="supermemory">Supermemory</option>
+      <option value="mem0">Mem0</option>
+      <option value="cognee">Cognee</option>
     </select>
 
+    <div id="field-deployment" class="field-group">
+      <label for="deployment">Deployment</label>
+      <select id="deployment">
+        <option value="self_hosted">Self-hosted</option>
+        <option value="cloud">Cloud</option>
+      </select>
+    </div>
     <div id="field-endpoint" class="field-group">
       <label for="endpoint">Endpoint URL</label>
       <input id="endpoint" placeholder="http://localhost:6767">
@@ -173,26 +185,26 @@
   <section class="panel">
     <h2>Operations</h2>
     <div class="tabs">
-      <div class="tab active" data-op="store">Store</div>
-      <div class="tab" data-op="upload">Upload</div>
-      <div class="tab" data-op="get">Get</div>
-      <div class="tab" data-op="recall">Recall</div>
-      <div class="tab" data-op="list">List</div>
-      <div class="tab" data-op="namespaces">Namespaces</div>
-      <div class="tab" data-op="forget">Forget</div>
-      <div class="tab" data-op="export">Export</div>
-      <div class="tab" data-op="graph" id="tab-graph" style="display:none;">Graph</div>
+      <button type="button" class="tab active" data-op="store">Store</button>
+      <button type="button" class="tab" data-op="upload">Upload</button>
+      <button type="button" class="tab" data-op="get">Get</button>
+      <button type="button" class="tab" data-op="recall">Recall</button>
+      <button type="button" class="tab" data-op="list">List</button>
+      <button type="button" class="tab" data-op="namespaces">Namespaces</button>
+      <button type="button" class="tab" data-op="forget">Forget</button>
+      <button type="button" class="tab" data-op="export">Export</button>
+      <button type="button" class="tab" data-op="graph" id="tab-graph" style="display:none;">Graph</button>
     </div>
 
     <div class="op active" id="op-store">
       <div class="row">
-        <div><label>Namespace</label><input id="store-namespace" value="default"></div>
-        <div><label>Key</label><input id="store-key" value="note-1"></div>
+        <div><label for="store-namespace">Namespace</label><input id="store-namespace" value="default"></div>
+        <div><label for="store-key">Key</label><input id="store-key" value="note-1"></div>
       </div>
-      <label>Content</label>
+      <label for="store-content">Content</label>
       <textarea id="store-content">The user prefers dark mode.</textarea>
       <div class="row">
-        <div><label>Category</label>
+        <div><label for="store-category">Category</label>
           <select id="store-category">
             <option value="core">core</option>
             <option value="daily">daily</option>
@@ -200,14 +212,14 @@
             <option value="custom:example">custom:example</option>
           </select>
         </div>
-        <div><label>Taint</label>
+        <div><label for="store-taint">Taint</label>
           <select id="store-taint">
             <option value="internal">internal</option>
             <option value="external_sync">external_sync</option>
           </select>
         </div>
       </div>
-      <label>Session ID (optional)</label>
+      <label for="store-session">Session ID (optional)</label>
       <input id="store-session">
       <button id="store-btn">Store</button>
     </div>
@@ -218,8 +230,8 @@
         harness has no chunking/embedding pipeline, it stores whatever text
         the file decodes to.</p>
       <div class="row">
-        <div><label>Namespace</label><input id="upload-namespace" value="documents"></div>
-        <div><label>Category</label>
+        <div><label for="upload-namespace">Namespace</label><input id="upload-namespace" value="documents"></div>
+        <div><label for="upload-category">Category</label>
           <select id="upload-category">
             <option value="core">core</option>
             <option value="daily">daily</option>
@@ -229,39 +241,39 @@
         </div>
       </div>
       <div class="row">
-        <div><label>Taint</label>
+        <div><label for="upload-taint">Taint</label>
           <select id="upload-taint">
             <option value="internal">internal</option>
             <option value="external_sync" selected>external_sync</option>
           </select>
         </div>
-        <div><label>Session ID (optional)</label><input id="upload-session"></div>
+        <div><label for="upload-session">Session ID (optional)</label><input id="upload-session"></div>
       </div>
-      <label>Files</label>
+      <label for="upload-files">Files</label>
       <input id="upload-files" type="file" multiple>
       <button id="upload-btn">Upload</button>
     </div>
 
     <div class="op" id="op-get">
       <div class="row">
-        <div><label>Namespace</label><input id="get-namespace" value="default"></div>
-        <div><label>Key</label><input id="get-key" value="note-1"></div>
+        <div><label for="get-namespace">Namespace</label><input id="get-namespace" value="default"></div>
+        <div><label for="get-key">Key</label><input id="get-key" value="note-1"></div>
       </div>
       <button id="get-btn">Get</button>
     </div>
 
     <div class="op" id="op-recall">
-      <label>Query</label>
+      <label for="recall-query">Query</label>
       <input id="recall-query" value="dark mode">
       <div class="row">
-        <div><label>Limit</label><input id="recall-limit" type="number" value="10"></div>
-        <div><label>Min score</label><input id="recall-min-score" type="number" step="0.01"></div>
+        <div><label for="recall-limit">Limit</label><input id="recall-limit" type="number" value="10"></div>
+        <div><label for="recall-min-score">Min score</label><input id="recall-min-score" type="number" step="0.01"></div>
       </div>
       <div class="row">
-        <div><label>Namespace (optional)</label><input id="recall-namespace"></div>
-        <div><label>Category (optional)</label><input id="recall-category"></div>
+        <div><label for="recall-namespace">Namespace (optional)</label><input id="recall-namespace"></div>
+        <div><label for="recall-category">Category (optional)</label><input id="recall-category"></div>
       </div>
-      <label>Session ID (optional)</label>
+      <label for="recall-session">Session ID (optional)</label>
       <input id="recall-session">
       <label><input type="checkbox" id="recall-cross-session" style="width:auto;display:inline-block;margin-right:6px;">Cross-session</label>
       <button id="recall-btn">Recall</button>
@@ -269,10 +281,10 @@
 
     <div class="op" id="op-list">
       <div class="row">
-        <div><label>Namespace (optional)</label><input id="list-namespace"></div>
-        <div><label>Category (optional)</label><input id="list-category"></div>
+        <div><label for="list-namespace">Namespace (optional)</label><input id="list-namespace"></div>
+        <div><label for="list-category">Category (optional)</label><input id="list-category"></div>
       </div>
-      <label>Session ID (optional)</label>
+      <label for="list-session">Session ID (optional)</label>
       <input id="list-session">
       <button id="list-btn">List</button>
     </div>
@@ -284,37 +296,36 @@
 
     <div class="op" id="op-forget">
       <div class="row">
-        <div><label>Namespace</label><input id="forget-namespace" value="default"></div>
-        <div><label>Key</label><input id="forget-key" value="note-1"></div>
+        <div><label for="forget-namespace">Namespace</label><input id="forget-namespace" value="default"></div>
+        <div><label for="forget-key">Key</label><input id="forget-key" value="note-1"></div>
       </div>
       <button id="forget-btn">Forget</button>
     </div>
 
     <div class="op" id="op-export">
       <div class="row">
-        <div><label>Cursor (optional)</label><input id="export-cursor"></div>
-        <div><label>Limit</label><input id="export-limit" type="number" value="50"></div>
+        <div><label for="export-cursor">Cursor (optional)</label><input id="export-cursor"></div>
+        <div><label for="export-limit">Limit</label><input id="export-limit" type="number" value="50"></div>
       </div>
       <button id="export-btn">Export page</button>
     </div>
 
     <div class="op" id="op-graph">
       <p class="hint" id="graph-hint">Reads relations through the engine's <code>MemoryGraph</code>
-        accessor. Shown only when the connected engine advertises Graph (currently: Cognee, backed
-        by its knowledge graph — see this crate's README for exactly which methods are real vs.
-        unsupported per engine).</p>
+        accessor. Cognee provides dataset graph relations; Mem0 provides heuristic relations derived
+        from stored content. See this crate's README for exactly which methods are real vs. unsupported.</p>
       <div class="row">
-        <div><label>Namespace</label><input id="graph-namespace" value="documents"></div>
-        <div><label>Limit</label><input id="graph-limit" type="number" value="100"></div>
+        <div><label for="graph-namespace">Namespace</label><input id="graph-namespace" value="documents"></div>
+        <div><label for="graph-limit">Limit</label><input id="graph-limit" type="number" value="100"></div>
       </div>
       <div class="row">
-        <div><label>Subject (optional)</label><input id="graph-subject"></div>
-        <div><label>Predicate (optional)</label><input id="graph-predicate"></div>
+        <div><label for="graph-subject">Subject (optional)</label><input id="graph-subject"></div>
+        <div><label for="graph-predicate">Predicate (optional)</label><input id="graph-predicate"></div>
       </div>
       <button id="graph-btn">List relations</button>
     </div>
 
-    <label style="margin-top:16px;">Response</label>
+    <label for="output" style="margin-top:16px;">Response</label>
     <pre id="output">nothing yet</pre>
   </section>
 </main>
