@@ -68,6 +68,26 @@ pub struct Mem0Memory {
 }
 
 impl Mem0Memory {
+    /// Rebuilds the HTTP transport with a different per-request deadline
+    /// (issue #18 follow-up U5). The default is 60s with a 10s connect
+    /// deadline — right for interactive calls; a bulk migration or a tight
+    /// liveness probe may want its own budget.
+    ///
+    /// # Errors
+    ///
+    /// Fails only if the underlying HTTP client cannot be rebuilt — a
+    /// configuration-time failure, before any request is made.
+    pub fn with_request_timeout(mut self, timeout: std::time::Duration) -> anyhow::Result<Self> {
+        let client = self
+            .inner
+            .dialect_mut()
+            .client
+            .clone()
+            .with_timeout(timeout)?;
+        self.inner.dialect_mut().client = client;
+        Ok(self)
+    }
+
     /// Connect to a Mem0 REST server.
     ///
     /// `api_key` is sent as `X-API-Key`. Pass `None` only when the server is
@@ -518,9 +538,19 @@ impl Dialect for Mem0Dialect {
         Ok(true)
     }
 
-    /// Accepts either Mem0's health endpoint or its redirected root page.
-    async fn health(&self) -> bool {
-        self.client.healthy("api/health").await || self.client.healthy("").await
+    /// Probes Mem0's health endpoint, falling back to its redirected root
+    /// page — and unlike the old boolean `||`, a double failure reports BOTH
+    /// answers, so "the health route 404s but the root is throttled" stops
+    /// reading as a bare false.
+    async fn health(&self) -> anyhow::Result<()> {
+        let primary = match self.client.probe("api/health").await {
+            Ok(()) => return Ok(()),
+            Err(error) => error,
+        };
+        self.client
+            .probe("")
+            .await
+            .map_err(|root| root.context(format!("health endpoint also failed: {primary}")))
     }
 }
 

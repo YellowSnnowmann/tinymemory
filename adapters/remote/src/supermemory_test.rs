@@ -108,8 +108,11 @@ async fn capture_auth(State(state): State<Arc<Mutex<Value>>>, headers: HeaderMap
 #[tokio::test]
 async fn supermemory_supports_provided_and_self_hosted_apis() {
     let captured = Arc::new(Mutex::new(Value::Null));
+    // The health probe now proves auth + data plane via the container-tags
+    // list (§U4), so that is where the capture sits — a bare root `/` no
+    // longer receives the probe.
     let app = Router::new()
-        .route("/", get(capture_auth))
+        .route("/v3/container-tags/list", get(capture_auth))
         .with_state(captured.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await

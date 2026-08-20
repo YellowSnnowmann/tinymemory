@@ -20,6 +20,26 @@ pub struct CogneeMemory {
 }
 
 impl CogneeMemory {
+    /// Rebuilds the HTTP transport with a different per-request deadline
+    /// (issue #18 follow-up U5). The default is 60s with a 10s connect
+    /// deadline — right for interactive calls; a bulk migration or a tight
+    /// liveness probe may want its own budget.
+    ///
+    /// # Errors
+    ///
+    /// Fails only if the underlying HTTP client cannot be rebuilt — a
+    /// configuration-time failure, before any request is made.
+    pub fn with_request_timeout(mut self, timeout: std::time::Duration) -> anyhow::Result<Self> {
+        let client = self
+            .inner
+            .dialect_mut()
+            .client
+            .clone()
+            .with_timeout(timeout)?;
+        self.inner.dialect_mut().client = client;
+        Ok(self)
+    }
+
     /// Connect to a self-hosted Cognee server.
     ///
     /// `access_token` is sent as a bearer token. Local deployments with
@@ -343,6 +363,17 @@ impl Dialect for CogneeDialect {
         opts: RecallOpts<'_>,
     ) -> anyhow::Result<Vec<StoredEntry>> {
         let datasets = opts.namespace.map(Self::dataset_name);
+        // Cognee's recall API takes no score threshold, so `min_score` is
+        // enforced client-side by the shared pass in `common.rs` (issue #18
+        // §U6). Over-fetch when a threshold is set — with `top_k == limit`,
+        // every hit the filter drops is a slot the caller asked for and
+        // cannot be backfilled. Capped: an aggressive threshold is not a
+        // license to pull the whole store.
+        let top_k = if opts.min_score.is_some() {
+            limit.saturating_mul(3).min(limit.saturating_add(50))
+        } else {
+            limit
+        };
         let response: Value = self
             .client
             .json(
@@ -352,7 +383,7 @@ impl Dialect for CogneeDialect {
                     "query": query,
                     "search_type": "CHUNKS",
                     "datasets": datasets.map(|name| vec![name]),
-                    "top_k": limit,
+                    "top_k": top_k,
                     "only_context": true,
                     "session_id": opts.session_id
                 })),
@@ -402,9 +433,9 @@ impl Dialect for CogneeDialect {
         Ok(true)
     }
 
-    /// Checks Cognee's aggregate health endpoint.
-    async fn health(&self) -> bool {
-        self.client.healthy("health").await
+    /// Probes Cognee's aggregate health endpoint, typed.
+    async fn health(&self) -> anyhow::Result<()> {
+        self.client.probe("health").await
     }
 }
 

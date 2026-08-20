@@ -22,6 +22,26 @@ pub struct SupermemoryMemory {
 }
 
 impl SupermemoryMemory {
+    /// Rebuilds the HTTP transport with a different per-request deadline
+    /// (issue #18 follow-up U5). The default is 60s with a 10s connect
+    /// deadline — right for interactive calls; a bulk migration or a tight
+    /// liveness probe may want its own budget.
+    ///
+    /// # Errors
+    ///
+    /// Fails only if the underlying HTTP client cannot be rebuilt — a
+    /// configuration-time failure, before any request is made.
+    pub fn with_request_timeout(mut self, timeout: std::time::Duration) -> anyhow::Result<Self> {
+        let client = self
+            .inner
+            .dialect_mut()
+            .client
+            .clone()
+            .with_timeout(timeout)?;
+        self.inner.dialect_mut().client = client;
+        Ok(self)
+    }
+
     /// Connect to a Supermemory server using its bearer API key.
     ///
     /// # Errors
@@ -398,9 +418,14 @@ impl Dialect for SupermemoryDialect {
         Ok(true)
     }
 
-    /// Checks the local server root, its stable availability endpoint.
-    async fn health(&self) -> bool {
-        self.client.healthy("").await
+    /// Probes `v3/container-tags/list` — the cheapest endpoint that proves
+    /// BOTH the credential and the data plane (issue #18 §U4). The old
+    /// root-page probe answered 200 to an unauthenticated client against a
+    /// live server, so a wrong key looked healthy until the first real call.
+    async fn health(&self) -> anyhow::Result<()> {
+        // Status-only: a 200 from this authenticated route is the proof; the
+        // body's shape is the data path's concern, not the probe's.
+        self.client.probe("v3/container-tags/list").await
     }
 }
 
