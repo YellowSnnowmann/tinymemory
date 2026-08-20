@@ -171,25 +171,22 @@ async fn cognee_graph_supports_cloud_api_keys_and_self_hosted_bearer_tokens() {
     });
 
     let api = crate::CogneeGraph::api(&endpoint, "cloud-secret").expect("api graph client");
-    assert!(
-        api.relations(Some("project"), None, None, 10)
-            .await
-            .expect("cloud relations")
-            .is_empty()
-    );
+    assert!(api
+        .relations(Some("project"), None, None, 10)
+        .await
+        .expect("cloud relations")
+        .is_empty());
     let api_headers = captured.lock().expect("state lock").clone();
     assert_eq!(api_headers["api_key"], "cloud-secret");
     assert!(api_headers["authorization"].is_null());
 
-    let hosted = crate::CogneeGraph::new(&endpoint, Some("local-secret"))
-        .expect("self-hosted graph client");
-    assert!(
-        hosted
-            .relations(Some("project"), None, None, 10)
-            .await
-            .expect("self-hosted relations")
-            .is_empty()
-    );
+    let hosted =
+        crate::CogneeGraph::new(&endpoint, Some("local-secret")).expect("self-hosted graph client");
+    assert!(hosted
+        .relations(Some("project"), None, None, 10)
+        .await
+        .expect("self-hosted relations")
+        .is_empty());
     let hosted_headers = captured.lock().expect("state lock").clone();
     assert_eq!(hosted_headers["authorization"], "Bearer local-secret");
     assert!(hosted_headers["api_key"].is_null());
