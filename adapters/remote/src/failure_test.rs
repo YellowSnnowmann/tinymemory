@@ -5,10 +5,10 @@
 //! drive a backend that answers correctly, which is the half that was never in
 //! doubt.
 //!
-//! The assertion that matters is not which error comes back — the contract's
-//! error type is still `anyhow` under `MemoryError::Other` here, and §A4 is what
-//! makes "unsupported" distinguishable from "failed". It is that a failure comes
-//! back **at all**.
+//! Since §A4 landed, the assertion is two-fold: a failure comes back **at
+//! all**, and — where the class is knowable — it comes back **typed**: a 401
+//! downcasts to `Unauthorized`, a 500 to `Backend`, a dead port to
+//! `Unreachable`, so a caller can act on the class instead of parsing prose.
 //!
 //! A read that answers `Ok(None)` when the backend returned 500 is saying "this
 //! memory does not exist" when the truth is "I could not ask". A caller cannot
@@ -26,6 +26,7 @@
 use axum::http::StatusCode;
 use axum::routing::{any, get};
 use axum::Router;
+use tinymemory_api::error::MemoryError;
 use tinymemory_api::provider::MemoryProvider;
 use tinymemory_api::recall::RecallOpts;
 use tinymemory_api::traits::Memory;
@@ -94,10 +95,13 @@ async fn a_backend_failure_on_write_is_reported_rather_than_swallowed() {
                 MemoryTaint::Internal,
             )
             .await;
+        let error = result.expect_err("a 500 on write must surface");
         assert!(
-            result.is_err(),
-            "{name}: a 500 on write must not report success — a caller that \
-             believes the write landed has no reason to retry it"
+            matches!(
+                error.downcast_ref::<MemoryError>(),
+                Some(MemoryError::Backend(_))
+            ),
+            "{name}: a 500 must arrive typed as Backend, got: {error}"
         );
     }
 }
@@ -133,9 +137,13 @@ async fn an_unauthorized_backend_is_not_reported_as_an_empty_store() {
     let endpoint = failing(StatusCode::UNAUTHORIZED).await;
     for (name, memory) in adapters(&endpoint) {
         let listed = memory.list(None, None, None).await;
+        let error = listed.expect_err("a 401 must not present as an empty result set");
         assert!(
-            listed.is_err(),
-            "{name}: a 401 must not present as an empty result set"
+            matches!(
+                error.downcast_ref::<MemoryError>(),
+                Some(MemoryError::Unauthorized(_))
+            ),
+            "{name}: a 401 must arrive typed as Unauthorized, got: {error}"
         );
 
         let recalled = memory.recall("anything", 10, RecallOpts::default()).await;

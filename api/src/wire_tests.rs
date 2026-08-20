@@ -102,3 +102,31 @@ fn an_unknown_capability_name_off_the_wire_survives() {
         other => panic!("expected Unsupported, got {other:?}"),
     }
 }
+
+/// §A4: the five typed classes round-trip the wire with their messages, and
+/// an OLD host that has never heard the new names degrades them to `Other`
+/// (the `_ =>` fallback) rather than mislabeling them.
+#[test]
+fn a4_variants_round_trip_and_degrade_gracefully() {
+    let cases = [
+        MemoryError::Unauthorized("401 from host".into()),
+        MemoryError::Unreachable("dns failed".into()),
+        MemoryError::Timeout("deadline".into()),
+        MemoryError::Unavailable("503".into()),
+        MemoryError::Backend("500 detail".into()),
+    ];
+    for error in cases {
+        let name = wire_name(&error);
+        let message = wire_message(&error);
+        let rebuilt = from_wire(name, &message);
+        assert_eq!(wire_name(&rebuilt), name, "round trip changed the class");
+        assert_eq!(
+            wire_message(&rebuilt),
+            message,
+            "round trip changed the message"
+        );
+    }
+    // The unknown-name fallback IS the compatibility story.
+    let degraded = from_wire("ai.tinyhumans.tinymemory.Error.SomethingNewer", "detail");
+    assert!(matches!(degraded, MemoryError::Other(_)));
+}

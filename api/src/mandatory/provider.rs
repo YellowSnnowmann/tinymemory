@@ -188,6 +188,12 @@ impl MemoryProvider for MemoryTraitProvider {
     }
 
     async fn health(&self) -> MemoryHealth {
+        // A backend that can say more than a boolean does (issue #18 §U4):
+        // the remote adapters report the typed probe outcome — credential
+        // rejected, unreachable, throttled — instead of one frozen string.
+        if let Some(health) = self.memory.health_probe().await {
+            return health;
+        }
         if self.memory.health_check().await {
             MemoryHealth::Ready
         } else {

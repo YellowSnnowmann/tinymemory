@@ -22,7 +22,14 @@ use thiserror::Error;
 use crate::capabilities::Capability;
 
 /// Errors surfaced by the memory engine.
+///
+/// `#[non_exhaustive]` (issue #18 §A4): downstream hosts must keep a wildcard
+/// arm, so the *next* class this enum learns to name is an upgrade for them,
+/// not a breakage. Inside this workspace `wire::wire_name` still matches
+/// exhaustively — a new variant is a compile error there, never a silent
+/// fallthrough onto `OTHER`.
 #[derive(Debug, Error)]
+#[non_exhaustive]
 pub enum MemoryError {
     /// A requested record / source / node was not found.
     #[error("not found: {0}")]
@@ -73,6 +80,31 @@ pub enum MemoryError {
         /// driver reported.
         capability: String,
     },
+    /// The backend rejected the configured credential, or required one that
+    /// was never configured (HTTP 401 / 403). Retrying cannot help; fixing
+    /// the key can. The message names the host and the auth scheme's hint,
+    /// never the credential itself.
+    #[error("unauthorized: {0}")]
+    Unauthorized(String),
+    /// The backend could not be reached at all — connection refused, DNS
+    /// resolution failed, or the TLS handshake broke. The request never
+    /// arrived, so nothing was applied.
+    #[error("unreachable: {0}")]
+    Unreachable(String),
+    /// The call exceeded its deadline. Whether the backend applied the work
+    /// is unknown — which is why write paths must never blindly retry this.
+    #[error("timed out: {0}")]
+    Timeout(String),
+    /// The backend answered that it cannot serve right now (HTTP 429, 502,
+    /// 503, 504): the retryable class, distinct from [`MemoryError::Backend`]
+    /// so a retry policy can key on it without parsing prose.
+    #[error("unavailable: {0}")]
+    Unavailable(String),
+    /// The backend answered, and the answer was a failure this contract has
+    /// no more specific name for (an unexpected 4xx/5xx with its status and
+    /// bounded body in the message).
+    #[error("backend failed: {0}")]
+    Backend(String),
     /// Catch-all wrapping an opaque lower-level error.
     #[error(transparent)]
     Other(#[from] anyhow::Error),

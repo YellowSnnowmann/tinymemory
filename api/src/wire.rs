@@ -66,6 +66,16 @@ pub const SERDE: &str = "ai.tinyhumans.tinymemory.Error.Serde";
 pub const UNSUPPORTED: &str = "ai.tinyhumans.tinymemory.Error.Unsupported";
 /// An opaque lower-level failure.
 pub const OTHER: &str = "ai.tinyhumans.tinymemory.Error.Other";
+/// The backend rejected or required a credential (§A4).
+pub const UNAUTHORIZED: &str = "ai.tinyhumans.tinymemory.Error.Unauthorized";
+/// The backend could not be reached (connect / DNS / TLS) (§A4).
+pub const UNREACHABLE: &str = "ai.tinyhumans.tinymemory.Error.Unreachable";
+/// The call exceeded its deadline (§A4).
+pub const TIMEOUT: &str = "ai.tinyhumans.tinymemory.Error.Timeout";
+/// The backend answered that it cannot serve right now (§A4).
+pub const UNAVAILABLE: &str = "ai.tinyhumans.tinymemory.Error.Unavailable";
+/// The backend answered with an otherwise-unclassified failure (§A4).
+pub const BACKEND: &str = "ai.tinyhumans.tinymemory.Error.Backend";
 
 /// The wire name for `error`.
 ///
@@ -82,6 +92,11 @@ pub fn wire_name(error: &MemoryError) -> &'static str {
         MemoryError::Io(_) => IO,
         MemoryError::Serde(_) => SERDE,
         MemoryError::Unsupported { .. } => UNSUPPORTED,
+        MemoryError::Unauthorized(_) => UNAUTHORIZED,
+        MemoryError::Unreachable(_) => UNREACHABLE,
+        MemoryError::Timeout(_) => TIMEOUT,
+        MemoryError::Unavailable(_) => UNAVAILABLE,
+        MemoryError::Backend(_) => BACKEND,
         MemoryError::Other(_) => OTHER,
     }
 }
@@ -97,7 +112,12 @@ pub fn wire_message(error: &MemoryError) -> String {
         MemoryError::NotFound(message)
         | MemoryError::Invalid(message)
         | MemoryError::BudgetExceeded(message)
-        | MemoryError::PathEscape(message) => message.clone(),
+        | MemoryError::PathEscape(message)
+        | MemoryError::Unauthorized(message)
+        | MemoryError::Unreachable(message)
+        | MemoryError::Timeout(message)
+        | MemoryError::Unavailable(message)
+        | MemoryError::Backend(message) => message.clone(),
         MemoryError::Unsupported { capability } => capability.clone(),
         // No inner string to lift: these carry a foreign error type, so the
         // rendered form is all there is.
@@ -124,6 +144,11 @@ pub fn from_wire(name: &str, message: &str) -> MemoryError {
         IO => MemoryError::Other(anyhow::anyhow!("io error: {message}")),
         SERDE => MemoryError::Other(anyhow::anyhow!("serde error: {message}")),
         UNSUPPORTED => MemoryError::unsupported_raw(message),
+        UNAUTHORIZED => MemoryError::Unauthorized(message.to_string()),
+        UNREACHABLE => MemoryError::Unreachable(message.to_string()),
+        TIMEOUT => MemoryError::Timeout(message.to_string()),
+        UNAVAILABLE => MemoryError::Unavailable(message.to_string()),
+        BACKEND => MemoryError::Backend(message.to_string()),
         _ => MemoryError::Other(anyhow::anyhow!("{message}")),
     }
 }
