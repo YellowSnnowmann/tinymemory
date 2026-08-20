@@ -344,11 +344,8 @@ fn push_view_edge(
     }
     // The unseeded overview derives its node set from the edges it found; the
     // seeded traversal has already placed both endpoints.
-    for (id, present) in [(&triple.0, ()), (&triple.2, ())]
-        .into_iter()
-        .map(|(id, ())| (id.clone(), view.nodes.iter().any(|n| &n.id == id)))
-    {
-        if present {
+    for id in [triple.0.clone(), triple.2.clone()] {
+        if view.nodes.iter().any(|n| n.id == id) {
             continue;
         }
         if view.nodes.len() >= query.max_nodes {
