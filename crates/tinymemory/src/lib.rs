@@ -19,8 +19,12 @@
 //!   rather than re-deriving the same four subtleties.
 //! - **[`registry`]** — driver admission. Which driver ids exist, what class
 //!   each binds as, and the fail-closed rule for out-of-process drivers.
-//! - **Engine adapters** — one crate per engine under `adapters/`, each
-//!   implementing [`provider::MemoryProvider`] over a concrete engine.
+//! - **Engine adapters** — one crate per engine under `crates/`, each
+//!   implementing [`provider::MemoryProvider`] over a concrete engine, and
+//!   each selected by the feature named after it.
+//! - **Subsystems** — [`core`], [`sync`], [`sources`] and [`conformance`],
+//!   re-exported behind features of the same name so a host takes one
+//!   dependency on this crate and states what it wants.
 //!
 //! ## What is deliberately *not* here
 //!
@@ -88,6 +92,40 @@ pub use tinymemory_tinycortex as tinycortex;
 /// happen without changing how hosts ask for them.
 #[cfg(any(feature = "supermemory", feature = "mem0", feature = "cognee"))]
 pub use tinymemory_remote as remote;
+
+/// The engine-neutral memory subsystem, when the `core` feature is on.
+///
+/// The store, summary tree, sync pipelines, ingestion and recall. This is the
+/// heaviest thing the workspace offers — it links a bundled SQLite and the
+/// embedded engine — which is why it is a feature rather than a dependency
+/// every consumer of the contract pays for.
+#[cfg(feature = "core")]
+pub use tinymemory_core as core;
+
+/// The Composio payload normalisers, when the `sync` feature is on.
+///
+/// Pure `Value -> Value` transforms with no engine behind them, which is the
+/// point of the crate: a host binding a driver that is not TinyCortex can still
+/// run them.
+#[cfg(feature = "sync")]
+pub use tinymemory_sync as sync;
+
+/// The memory-source contracts and readers, when the `sources` feature is on.
+///
+/// The readers that fetch over the network — GitHub, RSS, web pages — sit
+/// behind `sources-network` on top of this, so a host that only reads local
+/// folders links no HTTP stack.
+#[cfg(feature = "sources")]
+pub use tinymemory_sources as sources;
+
+/// The behavioural conformance suite, when the `conformance` feature is on.
+///
+/// Every driver admitted by [`registry`] must pass it. Exposed here so a host
+/// can hold a `MemoryProvider` of its own to the same contract the bundled
+/// adapters are held to, without taking a second dependency.
+#[cfg(feature = "conformance")]
+pub use tinymemory_conformance as conformance;
+
 pub mod registry;
 
 // The contract, re-exported wholesale. Listed module by module rather than as a
