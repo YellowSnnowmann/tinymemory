@@ -10,7 +10,7 @@ repository = "https://github.com/tinyhumansai/tinymemory"
 
 [dependencies]
 # The engine-neutral contract and mandatory-family composition.
-tinymemory-api = { path = "../../api" }
+tinymemory-api = { path = "../tinymemory-api" }
 # Memory is an object-safe async trait and each native HTTP dialect is async.
 async-trait = "0.1"
 # The storage trait deliberately uses opaque backend errors.
@@ -34,7 +34,7 @@ sha2 = "0.11"
 [dev-dependencies]
 # The behavioural contract suite, run against these adapters over their own
 # native doubles (issue #18 §E1, acceptance criterion 5).
-tinymemory-conformance = { path = "../../conformance" }
+tinymemory-conformance = { path = "../tinymemory-conformance" }
 # Adapter tests run lightweight native-API doubles over a real TCP transport.
 axum = { version = "0.8", features = ["multipart"] }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net"] }
