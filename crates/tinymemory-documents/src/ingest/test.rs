@@ -6,11 +6,11 @@ use async_trait::async_trait;
 
 use tinymemory_api::capabilities::{Capabilities, Capability};
 use tinymemory_api::health::MemoryHealth;
-use tinymemory_api::provider::types::{ExportPage, ImportOutcome, IngestOutcome};
+use tinymemory_api::provider::types::{ExportPage, ImportOutcome, IngestOutcome, SourceScope};
 use tinymemory_api::provider::{
     MemoryCore, MemoryDocuments, MemoryIngest, MemoryPortability, MemoryRecall,
 };
-use tinymemory_api::recall::RecallOpts;
+use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::types::{
     MemoryCategory, MemoryEntry, MemoryTaint, NamespaceRetrievalContext, NamespaceSummary,
     StoredMemoryDocument,
@@ -18,6 +18,7 @@ use tinymemory_api::types::{
 
 use super::*;
 use crate::convert::{ConverterChain, NativeConverter};
+use crate::format::DocumentFormat;
 
 /// What a fake provider recorded, whichever family took the write.
 #[derive(Debug, Default)]
@@ -95,7 +96,12 @@ impl MemoryCore for FakeProvider {
         Ok(false)
     }
 
-    async fn list(&self, _namespace: &str, _limit: usize) -> Result<Vec<MemoryEntry>> {
+    async fn list(
+        &self,
+        _namespace: Option<&str>,
+        _category: Option<&MemoryCategory>,
+        _session_id: Option<&str>,
+    ) -> Result<Vec<MemoryEntry>> {
         Ok(Vec::new())
     }
 
@@ -106,7 +112,13 @@ impl MemoryCore for FakeProvider {
 
 #[async_trait]
 impl MemoryRecall for FakeProvider {
-    async fn recall(&self, _query: &str, _opts: RecallOpts<'_>) -> Result<Vec<MemoryEntry>> {
+    async fn recall(
+        &self,
+        _query: &str,
+        _limit: usize,
+        _opts: &OwnedRecallOpts,
+        _scope: Option<&SourceScope>,
+    ) -> Result<Vec<MemoryEntry>> {
         Ok(Vec::new())
     }
 }
@@ -188,7 +200,7 @@ impl MemoryDocuments for FakeProvider {
         Ok(NamespaceRetrievalContext {
             namespace: namespace.to_string(),
             query: None,
-            context: String::new(),
+            context_text: String::new(),
             hits: Vec::new(),
         })
     }
