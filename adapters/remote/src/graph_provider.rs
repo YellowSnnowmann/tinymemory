@@ -15,10 +15,10 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tinymemory_api::mandatory::MemoryTraitProvider;
 use tinymemory_api::capabilities::{Capabilities, Capability};
 use tinymemory_api::error::MemoryError;
 use tinymemory_api::health::MemoryHealth;
+use tinymemory_api::mandatory::MemoryTraitProvider;
 use tinymemory_api::provider::types::{ExportPage, ExportRecord, ImportOutcome, SourceScope};
 use tinymemory_api::provider::{
     MemoryCore, MemoryGraph, MemoryPortability, MemoryProvider, MemoryRecall,
