@@ -31,7 +31,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::error::MemoryError;
 use crate::evidence::EvidenceRef;
 
 /// What kind of claim a facet makes.

@@ -33,8 +33,6 @@
 use serde::{Deserialize, Serialize};
 
 use crate::chunks::{Chunk, SourceKind};
-use crate::error::MemoryError;
-use crate::provider::types::SourceScope;
 
 /// Filters for [`MemoryChunks::list_chunks`].
 ///

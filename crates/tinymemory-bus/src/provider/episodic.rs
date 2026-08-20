@@ -42,7 +42,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::MemoryError;
 
 /// One recorded turn.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

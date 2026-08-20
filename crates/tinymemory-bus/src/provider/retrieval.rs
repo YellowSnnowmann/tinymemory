@@ -38,9 +38,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::chunks::SourceKind;
-use crate::error::MemoryError;
-use crate::provider::types::SourceScope;
-use crate::types::NamespaceMemoryHit;
 
 /// Whether a hit is a raw leaf or a sealed summary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

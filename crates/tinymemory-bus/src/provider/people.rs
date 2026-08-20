@@ -33,7 +33,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::error::MemoryError;
 
 /// Opaque identity of one person, as the driver issued it.
 ///
