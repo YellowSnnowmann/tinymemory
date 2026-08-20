@@ -36,13 +36,15 @@ The page's left panel picks which engine `POST /api/connect` binds:
   persists past a server restart. This is the default and the fastest way to
   poke at the contract.
 - **Supermemory / Mem0 / Cognee** — the `tinymemory-remote` native HTTP
-  adapters. Each needs the base URL of a **self-hosted** instance and,
-  optionally, an API key/access token for it. These are real network calls to
+  adapters. Mem0 and Cognee offer an explicit Cloud/self-hosted choice so the
+  correct authentication scheme is used. These are real network calls to
   whatever endpoint you provide; nothing is mocked.
 
 Only one engine is connected at a time — connecting again swaps the active
-provider; disconnecting clears it. Credentials live only in server memory for
-the lifetime of the process; they are never written to disk or logged.
+provider; disconnecting clears it. The server keeps credentials only in memory
+and never logs them. The browser saves entered API keys in plain text in its
+`localStorage`, where they can remain after the server exits; clear this site's
+browser data to remove them.
 
 ## API surface
 
@@ -84,8 +86,8 @@ docker compose -f integration/remote-engines/docker-compose.yml --profile cognee
 ```
 
 Then connect the UI to `http://localhost:6767` (Supermemory, with its key),
-`http://localhost:8888` (Mem0), or `http://localhost:8001` (Cognee) instead of
-a hosted URL — see the caveat below on why hosted URLs are unverified.
+`http://localhost:8888` (Mem0), or `http://localhost:8001` (Cognee), selecting
+the self-hosted deployment for Mem0 and Cognee.
 
 ### Graph support per engine
 
@@ -128,14 +130,11 @@ a hosted URL — see the caveat below on why hosted URLs are unverified.
   on the local lite server by probing its API; nothing to wire up without
   documentation for one.
 
-## A caveat on hosted API defaults
+## A caveat on hosted APIs
 
-The web UI's default endpoints for Supermemory/Mem0 point at each vendor's
-*hosted* API (`api.supermemory.ai`, `api.mem0.ai`). `tinymemory-remote`'s
-adapters were built and conformance-tested against each engine's
-**self-hosted** API dialect (see `integration/remote-engines/README.md`), not
-the hosted APIs — if a hosted API has diverged from that dialect, requests may
-fail (this is what happened when this was first tried against
-`api.supermemory.ai`: a bare `HTTP 400` with no detail, since fixed to surface
-the response body in `adapters/remote/src/common.rs`). The self-hosted Docker
-instances above are the ones actually verified end to end.
+Mem0 Cloud and Cognee Cloud use dedicated adapter modes with their respective
+authentication schemes. Cognee requires the tenant-specific URL shown on its
+API-key dashboard. Supermemory still uses the adapter's self-hosted dialect
+against its hosted default, so requests can fail if that hosted API has
+diverged. The self-hosted Docker instances above are the deployments verified
+end to end by this harness.
