@@ -85,7 +85,7 @@ impl SourceScope {
     /// rule.
     ///
     /// ```
-    /// use tinymemory_api::provider::types::SourceScope;
+    /// use tinymemory_bus::provider::types::SourceScope;
     ///
     /// let scope = SourceScope::new(["src-abc"]);
     /// assert!(scope.allows_source_id("src-abc"));

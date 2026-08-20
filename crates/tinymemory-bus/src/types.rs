@@ -79,7 +79,7 @@ impl MemoryTaint {
     /// # Examples
     ///
     /// ```
-    /// use tinymemory_api::types::MemoryTaint;
+    /// use tinymemory_bus::types::MemoryTaint;
     ///
     /// assert_eq!(MemoryTaint::Internal.as_db_str(), "internal");
     /// assert_eq!(MemoryTaint::ExternalSync.as_db_str(), "external_sync");
@@ -103,7 +103,7 @@ impl MemoryTaint {
     /// # Examples
     ///
     /// ```
-    /// use tinymemory_api::types::MemoryTaint;
+    /// use tinymemory_bus::types::MemoryTaint;
     ///
     /// assert_eq!(MemoryTaint::from_db_str("internal"), MemoryTaint::Internal);
     /// assert_eq!(MemoryTaint::from_db_str("external_sync"), MemoryTaint::ExternalSync);
