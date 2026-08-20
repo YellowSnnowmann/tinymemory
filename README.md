@@ -23,6 +23,10 @@ crates/
 ├── tinymemory-api/     the contract. Dependency-light on purpose: depending on
 │                       it never drags in SQLite, git2, reqwest, or an async
 │                       runtime
+├── tinymemory-bus/     the wire contract for the loadable module: member names,
+│                       the payload types, and one typed call per member. What a
+│                       *host* links to talk to `tinymemory-module`, which ships
+│                       as a `cdylib` and exports no Rust surface of its own
 ├── tinymemory-core/    the substance: ingestion, the summary tree, chunk
 │                       storage, entities, the graph, the diff ledger, goals,
 │                       tool-memory, and the Composio sync layer. The largest
