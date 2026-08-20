@@ -53,6 +53,9 @@
 //! - [`traits`]: the [`traits::Memory`] storage-backend trait.
 //! - [`chunks`]: the persisted chunk model ([`chunks::Chunk`], [`chunks::Metadata`],
 //!   [`chunks::SourceRef`], …) and the deterministic [`chunks::chunk_id`].
+//! - [`graph`]: the bounded graph-view model ([`graph::GraphView`],
+//!   [`graph::GraphViewQuery`], [`graph::GraphNode`], [`graph::GraphEdge`]) —
+//!   the graph counterpart of [`tree`].
 //! - [`tree`]: the markdown summary-tree node model ([`tree::TreeNode`],
 //!   [`tree::NodeLevel`], [`tree::TreeStatus`], …).
 //! - [`tool_memory`]: tool-scoped rule contracts ([`tool_memory::ToolMemoryRule`], …).
@@ -69,6 +72,7 @@ pub mod chunks;
 pub mod drivers;
 pub mod error;
 pub mod goals;
+pub mod graph;
 pub mod health;
 pub mod host;
 /// The mandatory-family composition: wrap any [`traits::Memory`] backend as a
