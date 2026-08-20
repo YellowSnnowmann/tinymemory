@@ -8,7 +8,7 @@
 //! fine encoding and a bad thing to write by hand:
 //!
 //! ```json
-//! ["work", "standup", "…", "Fact", null, "Untrusted"]
+//! ["work", "standup", "…", "core", null, "internal"]
 //! ```
 //!
 //! Two of those six are `Option`s, two are enums that serialize as strings, and
@@ -27,9 +27,9 @@
 //!     namespace: "work".to_string(),
 //!     key: "standup".to_string(),
 //!     content: "shipped the loader".to_string(),
-//!     category: MemoryCategory::Fact,
+//!     category: MemoryCategory::Core,
 //!     session_id: None,
-//!     taint: MemoryTaint::Trusted,
+//!     taint: MemoryTaint::Internal,
 //! }
 //! .into_args()?;
 //!
