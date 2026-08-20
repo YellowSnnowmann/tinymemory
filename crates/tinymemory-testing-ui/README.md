@@ -64,6 +64,10 @@ Every route lives under `/api` and maps directly onto
 | `/api/recall` | POST | `MemoryRecall::recall` |
 | `/api/export` | GET | `MemoryPortability::export_page` |
 | `/api/graph/relations` | GET | `MemoryGraph::relations` — 501 if the connected engine doesn't advertise Graph |
+| `/api/graph/view` | POST | `MemoryGraph::graph_view` — a bounded node + edge set, same 501 rule |
+| `/api/documents/formats` | GET | what this build converts, and which family an upload would land in |
+| `/api/documents/upload` | POST | multipart file upload → markdown → whichever ingest family the engine has |
+| `/api/ingest/url` | POST | fetch a URL → markdown → the same intake path |
 
 `MemoryCategory` is passed as its display string (`core`, `daily`,
 `conversation`, or `custom:<name>`); `MemoryTaint` as `internal` or
@@ -71,6 +75,49 @@ Every route lives under `/api` and maps directly onto
 
 The web UI's Graph tab only appears once `/api/connect` reports
 `has_graph: true` for the bound engine.
+
+### Graph view
+
+`POST /api/graph/view` takes a `tinymemory_api::graph::GraphViewQuery` as its
+body and returns a `GraphView` — the nodes, the edges between them, how far
+each node sits from the seeds, and whether a bound was hit. Every field has a
+default, so the smallest useful call is:
+
+```sh
+curl -X POST localhost:4180/api/graph/view \
+  -H 'content-type: application/json' \
+  -d '{"seeds":["ada"],"depth":2}'
+```
+
+Omit `seeds` for an unseeded overview of a namespace. `truncated` means a
+bound was hit and there is more in the store; `stats.frontier_remaining` counts
+nodes the traversal reached but did not expand, which includes the ones sitting
+one hop past `depth`.
+
+### Document and URL intake
+
+```sh
+curl -X POST localhost:4180/api/documents/upload \
+  -F 'file=@notes.html' \
+  -F 'namespace=document:handbook' \
+  -F 'tags=onboarding,draft'
+
+curl -X POST localhost:4180/api/ingest/url \
+  -H 'content-type: application/json' \
+  -d '{"url":"https://example.com/page","namespace":"document:web"}'
+```
+
+Both convert to markdown first and then write through the best family the
+bound engine actually implements — chunked `MemoryIngest` where it exists,
+the document tier otherwise, and `MemoryCore::store` as the floor. The receipt
+names the route that was taken, so a document that did *not* get chunked says
+so rather than looking like it did.
+
+This harness carries only the native converter — text, markdown, HTML — so a
+PDF or `.docx` upload is refused with an error naming the format.
+`GET /api/documents/formats` reports that list without a write. URL fetches go
+through the same SSRF guard the source readers use: private, loopback and
+link-local targets are refused.
 
 ## Testing against real local engines
 
