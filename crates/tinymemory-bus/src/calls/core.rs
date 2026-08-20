@@ -5,11 +5,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tinymemory_api::types::{MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary};
-
 use crate::calls::BusCall;
 use crate::error::Error;
 use crate::names::methods;
+use crate::types;
 
 /// Arguments for `Store`.
 ///
@@ -28,11 +27,11 @@ pub struct Store {
     /// The `content` argument — wire position 2.
     pub content: String,
     /// The `category` argument — wire position 3.
-    pub category: MemoryCategory,
+    pub category: types::MemoryCategory,
     /// The `session_id` argument — wire position 4.
     pub session_id: Option<String>,
     /// The `taint` argument — wire position 5.
-    pub taint: MemoryTaint,
+    pub taint: types::MemoryTaint,
 }
 
 impl BusCall for Store {
@@ -59,7 +58,7 @@ pub struct Get {
 impl BusCall for Get {
     const METHOD: &'static str = methods::GET;
 
-    type Response = Option<MemoryEntry>;
+    type Response = Option<types::MemoryEntry>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.namespace, self.key)).map_err(Error::Encode)
@@ -100,7 +99,7 @@ pub struct List {
     /// The `namespace` argument — wire position 0.
     pub namespace: Option<String>,
     /// The `category` argument — wire position 1.
-    pub category: Option<MemoryCategory>,
+    pub category: Option<types::MemoryCategory>,
     /// The `session_id` argument — wire position 2.
     pub session_id: Option<String>,
 }
@@ -108,7 +107,7 @@ pub struct List {
 impl BusCall for List {
     const METHOD: &'static str = methods::LIST;
 
-    type Response = Vec<MemoryEntry>;
+    type Response = Vec<types::MemoryEntry>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.namespace, self.category, self.session_id)).map_err(Error::Encode)
@@ -126,7 +125,7 @@ pub struct Namespaces;
 impl BusCall for Namespaces {
     const METHOD: &'static str = methods::NAMESPACES;
 
-    type Response = Vec<NamespaceSummary>;
+    type Response = Vec<types::NamespaceSummary>;
 
     fn into_args(self) -> crate::Result<Value> {
         Ok(Value::Array(Vec::new()))

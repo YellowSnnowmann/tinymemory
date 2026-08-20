@@ -5,19 +5,16 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tinymemory_api::chunks::Chunk;
-use tinymemory_api::provider::types::SourceScope;
-use tinymemory_api::tree::{IngestRequest, QueryResult, TreeStatus};
-
 use crate::calls::BusCall;
 use crate::error::Error;
 use crate::names::methods;
+use crate::types;
 
 /// Arguments for `Append`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Append {
     /// The `request` argument — wire position 0.
-    pub request: IngestRequest,
+    pub request: types::IngestRequest,
 }
 
 impl BusCall for Append {
@@ -40,13 +37,13 @@ pub struct QuerySource {
     /// The `limit` argument — wire position 2.
     pub limit: usize,
     /// The `scope` argument — wire position 3.
-    pub scope: Option<SourceScope>,
+    pub scope: Option<types::SourceScope>,
 }
 
 impl BusCall for QuerySource {
     const METHOD: &'static str = methods::QUERY_SOURCE;
 
-    type Response = Vec<Chunk>;
+    type Response = Vec<types::Chunk>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.namespace, self.source_id, self.limit, self.scope)).map_err(Error::Encode)
@@ -65,7 +62,7 @@ pub struct DrillDown {
 impl BusCall for DrillDown {
     const METHOD: &'static str = methods::DRILL_DOWN;
 
-    type Response = QueryResult;
+    type Response = types::QueryResult;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.namespace, self.node_id)).map_err(Error::Encode)
@@ -82,7 +79,7 @@ pub struct Seal {
 impl BusCall for Seal {
     const METHOD: &'static str = methods::SEAL;
 
-    type Response = TreeStatus;
+    type Response = types::TreeStatus;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.namespace,)).map_err(Error::Encode)
@@ -99,7 +96,7 @@ pub struct Cascade {
 impl BusCall for Cascade {
     const METHOD: &'static str = methods::CASCADE;
 
-    type Response = TreeStatus;
+    type Response = types::TreeStatus;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.namespace,)).map_err(Error::Encode)

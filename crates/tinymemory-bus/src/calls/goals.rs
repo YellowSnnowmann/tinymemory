@@ -5,11 +5,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tinymemory_api::goals::GoalsDoc;
-
 use crate::calls::BusCall;
 use crate::error::Error;
 use crate::names::methods;
+use crate::types;
 
 /// Arguments for `Goals`.
 ///
@@ -20,7 +19,7 @@ pub struct Goals;
 impl BusCall for Goals {
     const METHOD: &'static str = methods::GOALS;
 
-    type Response = GoalsDoc;
+    type Response = types::GoalsDoc;
 
     fn into_args(self) -> crate::Result<Value> {
         Ok(Value::Array(Vec::new()))
@@ -31,7 +30,7 @@ impl BusCall for Goals {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SetGoals {
     /// The `goals` argument — wire position 0.
-    pub goals: GoalsDoc,
+    pub goals: types::GoalsDoc,
 }
 
 impl BusCall for SetGoals {

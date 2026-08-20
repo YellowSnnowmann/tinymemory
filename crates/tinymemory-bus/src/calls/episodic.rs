@@ -5,11 +5,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tinymemory_api::provider::episodic::{ConversationSegment, EpisodicTurn};
-
 use crate::calls::BusCall;
 use crate::error::Error;
 use crate::names::methods;
+use crate::types;
 
 /// Arguments for `InsertTurn`.
 ///
@@ -17,7 +16,7 @@ use crate::names::methods;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InsertTurn {
     /// The `turn` argument — wire position 0.
-    pub turn: EpisodicTurn,
+    pub turn: types::EpisodicTurn,
 }
 
 impl BusCall for InsertTurn {
@@ -42,7 +41,7 @@ pub struct SessionTurns {
 impl BusCall for SessionTurns {
     const METHOD: &'static str = methods::SESSION_TURNS;
 
-    type Response = Vec<EpisodicTurn>;
+    type Response = Vec<types::EpisodicTurn>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.session_id,)).map_err(Error::Encode)
@@ -61,7 +60,7 @@ pub struct OpenSegment {
 impl BusCall for OpenSegment {
     const METHOD: &'static str = methods::OPEN_SEGMENT;
 
-    type Response = Option<ConversationSegment>;
+    type Response = Option<types::ConversationSegment>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.session_id,)).map_err(Error::Encode)

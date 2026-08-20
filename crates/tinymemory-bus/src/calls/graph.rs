@@ -5,13 +5,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tinymemory_api::provider::retrieval::EntityMatch;
-use tinymemory_api::provider::types::EntityHit;
-use tinymemory_api::types::{GraphRelationRecord, MemoryKvRecord};
-
 use crate::calls::BusCall;
 use crate::error::Error;
 use crate::names::methods;
+use crate::types;
 
 /// Arguments for `Entities`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,7 +24,7 @@ pub struct Entities {
 impl BusCall for Entities {
     const METHOD: &'static str = methods::ENTITIES;
 
-    type Response = Vec<EntityHit>;
+    type Response = Vec<types::EntityHit>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.namespace, self.query, self.limit)).map_err(Error::Encode)
@@ -48,7 +45,7 @@ pub struct EntityEdges {
 impl BusCall for EntityEdges {
     const METHOD: &'static str = methods::ENTITY_EDGES;
 
-    type Response = Vec<GraphRelationRecord>;
+    type Response = Vec<types::GraphRelationRecord>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.namespace, self.entity_id, self.limit)).map_err(Error::Encode)
@@ -88,7 +85,7 @@ pub struct SearchEntities {
 impl BusCall for SearchEntities {
     const METHOD: &'static str = methods::SEARCH_ENTITIES;
 
-    type Response = Vec<EntityMatch>;
+    type Response = Vec<types::EntityMatch>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.query, self.kinds, self.limit)).map_err(Error::Encode)
@@ -111,7 +108,7 @@ pub struct Relations {
 impl BusCall for Relations {
     const METHOD: &'static str = methods::RELATIONS;
 
-    type Response = Vec<GraphRelationRecord>;
+    type Response = Vec<types::GraphRelationRecord>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.namespace, self.subject, self.predicate, self.limit)).map_err(Error::Encode)
@@ -122,7 +119,7 @@ impl BusCall for Relations {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PutRelation {
     /// The `relation` argument — wire position 0.
-    pub relation: GraphRelationRecord,
+    pub relation: types::GraphRelationRecord,
 }
 
 impl BusCall for PutRelation {
@@ -147,7 +144,7 @@ pub struct KvGet {
 impl BusCall for KvGet {
     const METHOD: &'static str = methods::KV_GET;
 
-    type Response = Option<MemoryKvRecord>;
+    type Response = Option<types::MemoryKvRecord>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.namespace, self.key)).map_err(Error::Encode)
@@ -208,7 +205,7 @@ pub struct KvList {
 impl BusCall for KvList {
     const METHOD: &'static str = methods::KV_LIST;
 
-    type Response = Vec<MemoryKvRecord>;
+    type Response = Vec<types::MemoryKvRecord>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.namespace, self.prefix, self.limit)).map_err(Error::Encode)

@@ -5,13 +5,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tinymemory_api::chunks::Chunk;
-use tinymemory_api::provider::chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery};
-use tinymemory_api::provider::types::SourceScope;
-
 use crate::calls::BusCall;
 use crate::error::Error;
 use crate::names::methods;
+use crate::types;
 
 /// Arguments for `ListChunks`.
 ///
@@ -22,15 +19,15 @@ use crate::names::methods;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ListChunks {
     /// The `query` argument — wire position 0.
-    pub query: ChunkQuery,
+    pub query: types::ChunkQuery,
     /// The `scope` argument — wire position 1.
-    pub scope: Option<SourceScope>,
+    pub scope: Option<types::SourceScope>,
 }
 
 impl BusCall for ListChunks {
     const METHOD: &'static str = methods::LIST_CHUNKS;
 
-    type Response = Vec<Chunk>;
+    type Response = Vec<types::Chunk>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.query, self.scope)).map_err(Error::Encode)
@@ -55,7 +52,7 @@ pub struct GetChunk {
 impl BusCall for GetChunk {
     const METHOD: &'static str = methods::GET_CHUNK;
 
-    type Response = Option<Chunk>;
+    type Response = Option<types::Chunk>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.chunk_id,)).map_err(Error::Encode)
@@ -74,7 +71,7 @@ pub struct ChunkDetail {
 impl BusCall for ChunkDetail {
     const METHOD: &'static str = methods::CHUNK_DETAIL;
 
-    type Response = Option<ChunkDetail>;
+    type Response = Option<types::ChunkDetail>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.chunk_id,)).map_err(Error::Encode)
@@ -116,7 +113,7 @@ pub struct ChunkEmbeddings {
 impl BusCall for ChunkEmbeddings {
     const METHOD: &'static str = methods::CHUNK_EMBEDDINGS;
 
-    type Response = Vec<ChunkEmbedding>;
+    type Response = Vec<types::ChunkEmbedding>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.chunk_ids, self.model_signature)).map_err(Error::Encode)

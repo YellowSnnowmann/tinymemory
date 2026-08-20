@@ -5,17 +5,16 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tinymemory_api::types::{NamespaceDocumentInput, NamespaceRetrievalContext, StoredMemoryDocument};
-
 use crate::calls::BusCall;
 use crate::error::Error;
 use crate::names::methods;
+use crate::types;
 
 /// Arguments for `PutDocument`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PutDocument {
     /// The `input` argument — wire position 0.
-    pub input: NamespaceDocumentInput,
+    pub input: types::NamespaceDocumentInput,
 }
 
 impl BusCall for PutDocument {
@@ -40,7 +39,7 @@ pub struct GetDocument {
 impl BusCall for GetDocument {
     const METHOD: &'static str = methods::GET_DOCUMENT;
 
-    type Response = Option<StoredMemoryDocument>;
+    type Response = Option<types::StoredMemoryDocument>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.namespace, self.key)).map_err(Error::Encode)
@@ -130,7 +129,7 @@ pub struct QueryDocuments {
 impl BusCall for QueryDocuments {
     const METHOD: &'static str = methods::QUERY_DOCUMENTS;
 
-    type Response = NamespaceRetrievalContext;
+    type Response = types::NamespaceRetrievalContext;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.namespace, self.query, self.limit)).map_err(Error::Encode)
@@ -149,7 +148,7 @@ pub struct RecallDocuments {
 impl BusCall for RecallDocuments {
     const METHOD: &'static str = methods::RECALL_DOCUMENTS;
 
-    type Response = NamespaceRetrievalContext;
+    type Response = types::NamespaceRetrievalContext;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.namespace, self.limit)).map_err(Error::Encode)

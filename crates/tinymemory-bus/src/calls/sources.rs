@@ -5,12 +5,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tinymemory_api::provider::types::{DiffReport, IngestOutcome, SnapshotRef, SourceItem};
-use tinymemory_api::types::MemoryTaint;
-
 use crate::calls::BusCall;
 use crate::error::Error;
 use crate::names::methods;
+use crate::types;
 
 /// Arguments for `CaptureSnapshot`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -22,7 +20,7 @@ pub struct CaptureSnapshot {
 impl BusCall for CaptureSnapshot {
     const METHOD: &'static str = methods::CAPTURE_SNAPSHOT;
 
-    type Response = SnapshotRef;
+    type Response = types::SnapshotRef;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.source_id,)).map_err(Error::Encode)
@@ -41,7 +39,7 @@ pub struct Snapshots {
 impl BusCall for Snapshots {
     const METHOD: &'static str = methods::SNAPSHOTS;
 
-    type Response = Vec<SnapshotRef>;
+    type Response = Vec<types::SnapshotRef>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.source_id, self.limit)).map_err(Error::Encode)
@@ -62,7 +60,7 @@ pub struct Diff {
 impl BusCall for Diff {
     const METHOD: &'static str = methods::DIFF;
 
-    type Response = DiffReport;
+    type Response = types::DiffReport;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.source_id, self.from, self.to)).map_err(Error::Encode)
@@ -77,15 +75,15 @@ pub struct AcceptSourceItems {
     /// The `source_kind` argument — wire position 1.
     pub source_kind: String,
     /// The `items` argument — wire position 2.
-    pub items: Vec<SourceItem>,
+    pub items: Vec<types::SourceItem>,
     /// The `taint` argument — wire position 3.
-    pub taint: MemoryTaint,
+    pub taint: types::MemoryTaint,
 }
 
 impl BusCall for AcceptSourceItems {
     const METHOD: &'static str = methods::ACCEPT_SOURCE_ITEMS;
 
-    type Response = IngestOutcome;
+    type Response = types::IngestOutcome;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.source_id, self.source_kind, self.items, self.taint)).map_err(Error::Encode)

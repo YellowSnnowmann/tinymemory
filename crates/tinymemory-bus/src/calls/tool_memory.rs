@@ -5,11 +5,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tinymemory_api::tool_memory::ToolMemoryRule;
-
 use crate::calls::BusCall;
 use crate::error::Error;
 use crate::names::methods;
+use crate::types;
 
 /// Arguments for `ToolRules`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,7 +20,7 @@ pub struct ToolRules {
 impl BusCall for ToolRules {
     const METHOD: &'static str = methods::TOOL_RULES;
 
-    type Response = Vec<ToolMemoryRule>;
+    type Response = Vec<types::ToolMemoryRule>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.tool_name,)).map_err(Error::Encode)
@@ -32,7 +31,7 @@ impl BusCall for ToolRules {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PutToolRule {
     /// The `rule` argument — wire position 0.
-    pub rule: ToolMemoryRule,
+    pub rule: types::ToolMemoryRule,
 }
 
 impl BusCall for PutToolRule {

@@ -5,11 +5,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tinymemory_api::provider::types::{ExportPage, ExportRecord, ImportOutcome};
-
 use crate::calls::BusCall;
 use crate::error::Error;
 use crate::names::methods;
+use crate::types;
 
 /// Arguments for `ExportPage`.
 ///
@@ -25,7 +24,7 @@ pub struct ExportPage {
 impl BusCall for ExportPage {
     const METHOD: &'static str = methods::EXPORT_PAGE;
 
-    type Response = ExportPage;
+    type Response = types::ExportPage;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.cursor, self.limit)).map_err(Error::Encode)
@@ -41,13 +40,13 @@ impl BusCall for ExportPage {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImportRecords {
     /// The `records` argument — wire position 0.
-    pub records: Vec<ExportRecord>,
+    pub records: Vec<types::ExportRecord>,
 }
 
 impl BusCall for ImportRecords {
     const METHOD: &'static str = methods::IMPORT_RECORDS;
 
-    type Response = ImportOutcome;
+    type Response = types::ImportOutcome;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.records,)).map_err(Error::Encode)

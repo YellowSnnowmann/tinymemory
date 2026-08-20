@@ -5,11 +5,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tinymemory_api::provider::people::{AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonScore, RankedPerson, ResolvedPerson};
-
 use crate::calls::BusCall;
 use crate::error::Error;
 use crate::names::methods;
+use crate::types;
 
 /// Arguments for `ListPeople`.
 ///
@@ -28,7 +27,7 @@ pub struct ListPeople {
 impl BusCall for ListPeople {
     const METHOD: &'static str = methods::LIST_PEOPLE;
 
-    type Response = Vec<RankedPerson>;
+    type Response = Vec<types::RankedPerson>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.limit,)).map_err(Error::Encode)
@@ -45,7 +44,7 @@ pub struct GetPerson {
 impl BusCall for GetPerson {
     const METHOD: &'static str = methods::GET_PERSON;
 
-    type Response = Option<PersonRecord>;
+    type Response = Option<types::PersonRecord>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.person_id,)).map_err(Error::Encode)
@@ -56,7 +55,7 @@ impl BusCall for GetPerson {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolveHandle {
     /// The `handle` argument — wire position 0.
-    pub handle: PersonHandle,
+    pub handle: types::PersonHandle,
     /// The `create_if_missing` argument — wire position 1.
     pub create_if_missing: bool,
 }
@@ -64,7 +63,7 @@ pub struct ResolveHandle {
 impl BusCall for ResolveHandle {
     const METHOD: &'static str = methods::RESOLVE_HANDLE;
 
-    type Response = Option<ResolvedPerson>;
+    type Response = Option<types::ResolvedPerson>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.handle, self.create_if_missing)).map_err(Error::Encode)
@@ -77,7 +76,7 @@ pub struct AddHandleAlias {
     /// The `person_id` argument — wire position 0.
     pub person_id: String,
     /// The `handle` argument — wire position 1.
-    pub handle: PersonHandle,
+    pub handle: types::PersonHandle,
 }
 
 impl BusCall for AddHandleAlias {
@@ -100,7 +99,7 @@ pub struct ScorePerson {
 impl BusCall for ScorePerson {
     const METHOD: &'static str = methods::SCORE_PERSON;
 
-    type Response = Option<PersonScore>;
+    type Response = Option<types::PersonScore>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.person_id,)).map_err(Error::Encode)
@@ -111,7 +110,7 @@ impl BusCall for ScorePerson {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecordInteraction {
     /// The `interaction` argument — wire position 0.
-    pub interaction: PersonInteraction,
+    pub interaction: types::PersonInteraction,
 }
 
 impl BusCall for RecordInteraction {
@@ -133,7 +132,7 @@ pub struct SeedFromAddressBook;
 impl BusCall for SeedFromAddressBook {
     const METHOD: &'static str = methods::SEED_FROM_ADDRESS_BOOK;
 
-    type Response = AddressBookSeedOutcome;
+    type Response = types::AddressBookSeedOutcome;
 
     fn into_args(self) -> crate::Result<Value> {
         Ok(Value::Array(Vec::new()))

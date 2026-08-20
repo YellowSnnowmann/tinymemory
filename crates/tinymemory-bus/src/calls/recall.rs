@@ -5,13 +5,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tinymemory_api::provider::types::SourceScope;
-use tinymemory_api::recall::OwnedRecallOpts;
-use tinymemory_api::types::{MemoryEntry, NamespaceMemoryHit};
-
 use crate::calls::BusCall;
 use crate::error::Error;
 use crate::names::methods;
+use crate::types;
 
 /// Arguments for `Recall`.
 ///
@@ -28,15 +25,15 @@ pub struct Recall {
     /// The `limit` argument — wire position 1.
     pub limit: usize,
     /// The `opts` argument — wire position 2.
-    pub opts: OwnedRecallOpts,
+    pub opts: types::OwnedRecallOpts,
     /// The `scope` argument — wire position 3.
-    pub scope: Option<SourceScope>,
+    pub scope: Option<types::SourceScope>,
 }
 
 impl BusCall for Recall {
     const METHOD: &'static str = methods::RECALL;
 
-    type Response = Vec<MemoryEntry>;
+    type Response = Vec<types::MemoryEntry>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.query, self.limit, self.opts, self.scope)).map_err(Error::Encode)
@@ -59,7 +56,7 @@ pub struct RecallNamespaceScored {
 impl BusCall for RecallNamespaceScored {
     const METHOD: &'static str = methods::RECALL_NAMESPACE_SCORED;
 
-    type Response = Vec<NamespaceMemoryHit>;
+    type Response = Vec<types::NamespaceMemoryHit>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.namespace, self.query, self.limit, self.exclude_session_id)).map_err(Error::Encode)

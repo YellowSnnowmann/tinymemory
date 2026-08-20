@@ -5,12 +5,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tinymemory_api::capabilities::Capabilities;
-use tinymemory_api::health::MemoryHealth;
-
 use crate::calls::BusCall;
 use crate::error::Error;
 use crate::names::methods;
+use crate::types;
 
 /// Arguments for `DriverId`.
 ///
@@ -37,7 +35,7 @@ pub struct Capabilities;
 impl BusCall for Capabilities {
     const METHOD: &'static str = methods::CAPABILITIES;
 
-    type Response = Capabilities;
+    type Response = types::Capabilities;
 
     fn into_args(self) -> crate::Result<Value> {
         Ok(Value::Array(Vec::new()))
@@ -55,7 +53,7 @@ pub struct Health;
 impl BusCall for Health {
     const METHOD: &'static str = methods::HEALTH;
 
-    type Response = MemoryHealth;
+    type Response = types::MemoryHealth;
 
     fn into_args(self) -> crate::Result<Value> {
         Ok(Value::Array(Vec::new()))

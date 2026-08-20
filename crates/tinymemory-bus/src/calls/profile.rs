@@ -5,11 +5,10 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tinymemory_api::provider::profile::{FacetType, ProfileFacet, UserState};
-
 use crate::calls::BusCall;
 use crate::error::Error;
 use crate::names::methods;
+use crate::types;
 
 /// Arguments for `ListActiveFacets`.
 ///
@@ -20,7 +19,7 @@ pub struct ListActiveFacets;
 impl BusCall for ListActiveFacets {
     const METHOD: &'static str = methods::LIST_ACTIVE_FACETS;
 
-    type Response = Vec<ProfileFacet>;
+    type Response = Vec<types::ProfileFacet>;
 
     fn into_args(self) -> crate::Result<Value> {
         Ok(Value::Array(Vec::new()))
@@ -36,7 +35,7 @@ pub struct ListAllFacets;
 impl BusCall for ListAllFacets {
     const METHOD: &'static str = methods::LIST_ALL_FACETS;
 
-    type Response = Vec<ProfileFacet>;
+    type Response = Vec<types::ProfileFacet>;
 
     fn into_args(self) -> crate::Result<Value> {
         Ok(Value::Array(Vec::new()))
@@ -53,7 +52,7 @@ pub struct GetFacet {
 impl BusCall for GetFacet {
     const METHOD: &'static str = methods::GET_FACET;
 
-    type Response = Option<ProfileFacet>;
+    type Response = Option<types::ProfileFacet>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.key,)).map_err(Error::Encode)
@@ -64,13 +63,13 @@ impl BusCall for GetFacet {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FacetsByType {
     /// The `facet_type` argument — wire position 0.
-    pub facet_type: FacetType,
+    pub facet_type: types::FacetType,
 }
 
 impl BusCall for FacetsByType {
     const METHOD: &'static str = methods::FACETS_BY_TYPE;
 
-    type Response = Vec<ProfileFacet>;
+    type Response = Vec<types::ProfileFacet>;
 
     fn into_args(self) -> crate::Result<Value> {
         serde_json::to_value((self.facet_type,)).map_err(Error::Encode)
@@ -81,7 +80,7 @@ impl BusCall for FacetsByType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpsertFacet {
     /// The `facet` argument — wire position 0.
-    pub facet: ProfileFacet,
+    pub facet: types::ProfileFacet,
 }
 
 impl BusCall for UpsertFacet {
@@ -100,7 +99,7 @@ pub struct UpsertProviderFacet {
     /// The `facet_id` argument — wire position 0.
     pub facet_id: String,
     /// The `facet_type` argument — wire position 1.
-    pub facet_type: FacetType,
+    pub facet_type: types::FacetType,
     /// The `key` argument — wire position 2.
     pub key: String,
     /// The `value` argument — wire position 3.
@@ -129,7 +128,7 @@ pub struct SetFacetUserState {
     /// The `key` argument — wire position 0.
     pub key: String,
     /// The `user_state` argument — wire position 1.
-    pub user_state: UserState,
+    pub user_state: types::UserState,
 }
 
 impl BusCall for SetFacetUserState {

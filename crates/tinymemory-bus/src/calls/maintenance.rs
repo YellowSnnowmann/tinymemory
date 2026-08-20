@@ -5,10 +5,9 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use tinymemory_api::provider::types::MaintenanceReport;
-
 use crate::calls::BusCall;
 use crate::names::methods;
+use crate::types;
 
 /// Arguments for `Reembed`.
 ///
@@ -19,7 +18,7 @@ pub struct Reembed;
 impl BusCall for Reembed {
     const METHOD: &'static str = methods::REEMBED;
 
-    type Response = MaintenanceReport;
+    type Response = types::MaintenanceReport;
 
     fn into_args(self) -> crate::Result<Value> {
         Ok(Value::Array(Vec::new()))
@@ -35,7 +34,7 @@ pub struct Compact;
 impl BusCall for Compact {
     const METHOD: &'static str = methods::COMPACT;
 
-    type Response = MaintenanceReport;
+    type Response = types::MaintenanceReport;
 
     fn into_args(self) -> crate::Result<Value> {
         Ok(Value::Array(Vec::new()))
@@ -51,7 +50,7 @@ pub struct Consolidate;
 impl BusCall for Consolidate {
     const METHOD: &'static str = methods::CONSOLIDATE;
 
-    type Response = MaintenanceReport;
+    type Response = types::MaintenanceReport;
 
     fn into_args(self) -> crate::Result<Value> {
         Ok(Value::Array(Vec::new()))
@@ -67,7 +66,7 @@ pub struct Doctor;
 impl BusCall for Doctor {
     const METHOD: &'static str = methods::DOCTOR;
 
-    type Response = MaintenanceReport;
+    type Response = types::MaintenanceReport;
 
     fn into_args(self) -> crate::Result<Value> {
         Ok(Value::Array(Vec::new()))
