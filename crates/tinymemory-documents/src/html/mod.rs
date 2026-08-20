@@ -290,11 +290,7 @@ impl Renderer {
                     self.open_link(body);
                 }
             }
-            "td" | "th" => {
-                if !closing && self.ends_with_word() {
-                    self.push_raw(" | ");
-                }
-            }
+            "td" | "th" if !closing && self.ends_with_word() => self.push_raw(" | "),
             _ => {}
         }
     }
