@@ -1,7 +1,7 @@
 //! Domain types for the **graph view**: a bounded, renderable slice of the
 //! relation graph.
 //!
-//! [`crate::provider::MemoryGraph::relations`] answers "which edges match this
+//! `MemoryGraph::relations` answers "which edges match this
 //! filter" and returns a flat list. That is the right shape for a query and the
 //! wrong shape for a *view*: a caller that wants to draw a graph, or hand one
 //! to an agent, needs the node set as well as the edge set, needs to know how
@@ -9,8 +9,8 @@
 //! so an over-connected hub cannot return the whole store.
 //!
 //! This module is the graph counterpart of [`crate::tree`], and
-//! [`crate::provider::MemoryGraph::graph_view`] is the counterpart of
-//! [`crate::provider::MemoryTree::drill_down`]: one call returns a node
+//! `MemoryGraph::graph_view` is the counterpart of
+//! `MemoryTree::drill_down`: one call returns a node
 //! together with its surroundings, already assembled, so navigation is a
 //! sequence of view calls rather than a client-side join.
 //!
@@ -167,7 +167,7 @@ impl From<GraphRelationRecord> for GraphEdge {
 impl GraphEdge {
     /// The `(subject, predicate, object)` triple that identifies this edge.
     ///
-    /// The same key [`crate::provider::MemoryGraph::put_relation`] upserts by,
+    /// The same key `MemoryGraph::put_relation` upserts by,
     /// so deduplicating a view by it cannot merge two edges the store holds
     /// separately.
     pub fn key(&self) -> (&str, &str, &str) {
@@ -207,7 +207,7 @@ pub struct GraphViewStats {
     pub frontier_remaining: usize,
 }
 
-/// What a [`crate::provider::MemoryGraph::graph_view`] call asks for.
+/// What a `MemoryGraph::graph_view` call asks for.
 ///
 /// Every bound has a default, so the cheapest useful call is
 /// `GraphViewQuery::around("ada")` — the one-hop neighbourhood, capped.
