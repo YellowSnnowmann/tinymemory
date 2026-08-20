@@ -32,7 +32,7 @@
 
 use async_trait::async_trait;
 
-use crate::chunks::{Chunk, SourceKind};
+use crate::chunks::Chunk;
 use crate::error::MemoryError;
 use crate::provider::types::SourceScope;
 
