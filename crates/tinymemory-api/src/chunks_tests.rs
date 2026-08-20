@@ -102,7 +102,7 @@ fn data_source_kind_mapping() {
     for ds in [Gmail, OtherEmail] {
         assert_eq!(ds.kind(), SourceKind::Email);
     }
-    for ds in [Notion, MeetingNotes, DriveDocs] {
+    for ds in [Notion, MeetingNotes, DriveDocs, Upload, WebPage] {
         assert_eq!(ds.kind(), SourceKind::Document);
     }
 }
