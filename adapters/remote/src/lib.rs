@@ -45,6 +45,36 @@ pub fn cognee_provider(memory: CogneeMemory) -> MemoryTraitProvider {
     MemoryTraitProvider::new(Arc::new(memory), COGNEE_DRIVER_ID)
 }
 
+/// Wrap a Cognee HTTP backend as a bound TinyMemory provider that also
+/// advertises Graph, backed by [`CogneeGraph`] — see its docs for exactly
+/// which `MemoryGraph` methods have a real Cognee counterpart.
+///
+/// # Errors
+///
+/// Returns an error when `endpoint` is not an HTTP(S) URL.
+pub fn cognee_graph_provider(
+    memory: CogneeMemory,
+    endpoint: &str,
+    access_token: Option<&str>,
+) -> anyhow::Result<GraphMemoryProvider> {
+    let graph = CogneeGraph::new(endpoint, access_token)?;
+    Ok(GraphMemoryProvider::new(
+        cognee_provider(memory),
+        Arc::new(graph),
+    ))
+}
+
+/// Wrap a Mem0 HTTP backend as a bound TinyMemory provider that also
+/// advertises Graph, backed by [`Mem0Graph`] — a client-side heuristic over
+/// the same stored entries, not Mem0's native (platform-only) Graph Memory.
+/// See [`Mem0Graph`]'s docs for exactly what that means and why.
+#[must_use]
+pub fn mem0_graph_provider(memory: Mem0Memory) -> GraphMemoryProvider {
+    let memory: Arc<dyn tinymemory_api::traits::Memory> = Arc::new(memory);
+    let mandatory = MemoryTraitProvider::new(Arc::clone(&memory), MEM0_DRIVER_ID);
+    GraphMemoryProvider::new(mandatory, Arc::new(Mem0Graph::new(memory)))
+}
+
 #[cfg(test)]
 mod failure_test;
 
