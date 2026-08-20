@@ -878,6 +878,8 @@ mod credential_header_tests {
 
 #[cfg(test)]
 mod transport_tests {
+    #![allow(clippy::expect_used, clippy::panic)]
+
     use super::{classify_transport, TransportClass};
 
     /// The verbatim chain a rustls handshake abort produces. Cognee's hosted
