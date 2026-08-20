@@ -1,87 +1,85 @@
-//! The `TinyBus` wire contract for the TinyMemory module.
+//! Every type that crosses the TinyMemory `TinyBus` boundary, and the names of
+//! the members that carry them.
 //!
-//! TinyMemory ships as a loadable `TinyBus` module so a host does not compile
-//! the engine: `crates/tinymemory-module` exports one object,
-//! `/ai/tinyhumans/tinymemory/Memory`, with 89 members on it. A host that loads
-//! that binary needs three things to talk to it — the member names, the types
-//! on either side of each call, and the error-name table — and none of those
-//! are in the module binary, which is a `cdylib`.
+//! TinyMemory ships as a loadable `TinyBus` module: `crates/tinymemory-module`
+//! exports one object with 89 members on it, built as a `cdylib`. A host that
+//! loads it — OpenHuman — can call into it but cannot `use` anything out of it,
+//! so the payload vocabulary has to be published as an ordinary library. This
+//! is that library.
 //!
-//! This crate is those three things, as a library a host links:
+//! ## What is here
 //!
 //! - [`names`] — the bus name, the object path, and one constant per member.
-//! - [`types`] — every value type that crosses a frame.
-//! - [`calls`] — one struct per member, carrying its arguments in wire order
-//!   and its reply type.
-//! - [`wire`] — the error names, and the mapping back to `MemoryError`.
+//! - [`types`], [`chunks`], [`recall`], [`tree`], [`goals`], [`tool_memory`],
+//!   [`health`], [`capabilities`], [`evidence`] — the value vocabulary.
+//! - [`provider`] — the value types the capability families exchange.
+//! - [`error`] and [`wire`] — [`error::MemoryError`] and the name table it
+//!   round-trips through when a driver is reached over a wire.
+//! - [`version`] — [`CONTRACT_VERSION`] and the [`is_compatible`] bind rule.
 //!
-//! ```
-//! use tinymemory_bus::calls::{core::Get, BusCall};
-//! use tinymemory_bus::names::{BUS_NAME, OBJECT_PATH};
+//! ## What is deliberately not here
 //!
-//! let args = Get { namespace: "work".to_string(), key: "standup".to_string() }.into_args()?;
+//! **No traits.** `MemoryProvider` and the eighteen capability-family traits
+//! are driver obligations: they describe what an engine must implement, not
+//! what a frame carries. They stay in `tinymemory-api`, which depends on this
+//! crate.
 //!
-//! // Everything a `Connection::call` needs, with nothing spelled by hand.
-//! assert_eq!((BUS_NAME, OBJECT_PATH, Get::METHOD), (
-//!     "ai.tinyhumans.tinymemory.Memory",
-//!     "/ai/tinyhumans/tinymemory/Memory",
-//!     "Get",
-//! ));
-//! assert_eq!(args.to_string(), r#"["work","standup"]"#);
-//! # Ok::<(), tinymemory_bus::Error>(())
-//! ```
+//! **No transport.** This crate does not depend on `tinybus` and holds no
+//! connection, client, or codec. A host already owns its connection — its
+//! reconnect policy, its timeouts, its tracing — and the useful part is the
+//! vocabulary, not another wrapper around it.
 //!
-//! # There is no transport here, on purpose
+//! That is also a structural necessity, not only a preference: `tinybus` is
+//! vendored as a submodule whose manifest inherits fields from its own nested
+//! `[workspace.package]`, so a member of this workspace that depends on it
+//! makes cargo resolve that inheritance against the wrong root and fail. It is
+//! why `crates/tinymemory-module` is its own workspace root — see the note on
+//! `exclude` in the root `Cargo.toml`. A crate every workspace member can
+//! depend on has to stay transport-free.
 //!
-//! This crate does not depend on `tinybus`, and holds no connection, no client
-//! and no `call()` that sends anything. Two reasons, and the second is the
-//! blunt one.
+//! **No host configuration, no null driver, no composition helpers.** Those are
+//! `tinymemory-api`'s, and none of them cross a frame.
 //!
-//! A host already owns its connection. It has its own reconnect policy, its own
-//! timeouts, its own tracing, and its own idea of what a memory call costs it. A
-//! client here would either duplicate that or fight it, and the useful part —
-//! *what to send and what comes back* — is exactly what is in this crate.
-//! Wiring it up is a dozen lines over a `Connection`; `README.md` has the shape.
+//! ## This crate is underneath the contract, not beside it
 //!
-//! And structurally it could not work anyway. `tinybus` is vendored as a git
-//! submodule whose manifest inherits fields from its own nested
-//! `[workspace.package]`; a member of *this* workspace that depends on it makes
-//! cargo resolve that inheritance against the wrong root and fail. That is why
-//! `crates/tinymemory-module` is its own workspace root — see the root
-//! manifest's note on `exclude`. A contract crate a host links has no business
-//! being a separate workspace, so it stays transport-free and every member of
-//! this workspace can depend on it.
+//! `tinymemory-api` **depends on this crate and re-exports all of it**, so
+//! every historical path — `tinymemory_api::types::MemoryEntry`,
+//! `tinymemory::MemoryCategory`, `tinycortex::memory::types::*` — keeps
+//! resolving unchanged, and the types are the *same types*, not structural
+//! twins.
 //!
-//! # Why this is not just `tinymemory-api`
+//! That direction is the whole point. Defining a parallel set of payload types
+//! for hosts would mean `MemoryCategory` from the module was not
+//! `MemoryCategory` in the host, with a conversion at every call site that
+//! nothing checks — the exact failure the root manifest's `[patch]` table
+//! exists to prevent, reintroduced deliberately. One definition, here, at the
+//! bottom.
 //!
-//! `tinymemory-api` is the **driver** contract: what an engine implements. It
-//! carries `MemoryProvider` and its eighteen capability traits, the
-//! mandatory-family composition, the null driver, and the `host::` config
-//! sections a host persists in `config.toml`.
+//! A host that only makes calls therefore depends on this crate alone and
+//! compiles no traits, no engine seam and no config surface. A driver author
+//! depends on `tinymemory-api` and gets both.
 //!
-//! A host that loads the module implements none of that. It makes calls. This
-//! crate is the subset that crosses a frame, so what a host compiles against is
-//! what it can actually send and receive — and a member that exists in the
-//! trait but is not exported on the bus is absent here rather than tempting.
+//! ## Staying in step with the module
 //!
-//! The types themselves are **re-exported** from `tinymemory-api`, never
-//! redefined. [`types`] explains why at length; the short version is that a
-//! second definition would make `MemoryCategory` from the module a different
-//! type from `MemoryCategory` in the host, which is a failure this repository
-//! has already had once.
-//!
-//! # Staying in step with the module
-//!
-//! [`names::METHODS`] lists every member. `crates/tinymemory-module` asserts its
-//! served members against that list, so a method added to the interface without
-//! a constant and a call struct here fails that crate's tests rather than
-//! turning up as an `UnknownMethod` at runtime in a host.
+//! [`names::METHODS`] lists every member. `crates/tinymemory-module` asserts
+//! its served members against that list, in order, so a method added to the
+//! interface without an entry here fails that crate's tests rather than
+//! surfacing as an `UnknownMethod` in a host at runtime.
 
-pub mod calls;
+pub mod capabilities;
+pub mod chunks;
 pub mod error;
+pub mod evidence;
+pub mod goals;
+pub mod health;
 pub mod names;
+pub mod provider;
+pub mod recall;
+pub mod tool_memory;
+pub mod tree;
 pub mod types;
+pub mod version;
 pub mod wire;
 
-pub use error::{Error, Result};
 pub use names::{BUS_NAME, METHODS, OBJECT_PATH};
+pub use version::{is_compatible, CONTRACT_VERSION};
