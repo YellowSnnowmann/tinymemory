@@ -1797,6 +1797,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tinymemory-bus"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tinymemory-api",
+]
+
+[[package]]
 name = "tinymemory-core"
 version = "0.1.0"
 dependencies = [
@@ -1845,6 +1855,7 @@ dependencies = [
  "tinycortex",
  "tinymemory",
  "tinymemory-api",
+ "tinymemory-bus",
  "tinymemory-core",
  "tinymemory-tinycortex",
  "tokio",

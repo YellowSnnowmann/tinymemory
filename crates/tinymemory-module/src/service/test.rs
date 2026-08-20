@@ -288,3 +288,50 @@ fn every_served_method_is_declared_in_the_manifest() {
         "these methods are declared in the manifest but not served: {unserved:?}"
     );
 }
+
+/// The members served here are exactly the ones `tinymemory-bus` publishes, in
+/// the same order.
+///
+/// `tinymemory-bus` is what a host compiles against: it carries one constant
+/// and one typed call struct per member. Nothing links the two — this crate
+/// derives its members from the `#[tinybus::interface]` block, that one lists
+/// them by hand — so a method added here without a matching entry there is a
+/// capability no host can reach, and an entry there with no method here is a
+/// call that fails at runtime with `UnknownMethod`.
+///
+/// Neither failure has a compile error anywhere, which is why it is asserted.
+/// The comparison is on sequences rather than sets on purpose: `members()`
+/// returns declaration order, `METHODS` is written in declaration order, and
+/// pinning the order too means the two lists stay readable side by side.
+#[test]
+fn the_served_members_are_exactly_the_published_contract() {
+    let service = super::MemoryService::new(std::sync::Arc::new(
+        tinymemory_api::null::NullMemoryProvider,
+    ));
+    let served: Vec<String> = tinybus::service::Interface::members(&service)
+        .iter()
+        .map(|member| member.as_str().to_string())
+        .collect();
+    let published: Vec<String> = tinymemory_bus::METHODS
+        .iter()
+        .map(|member| (*member).to_string())
+        .collect();
+
+    // Reported as differences rather than as a 89-element inequality, so the
+    // failure names the method that moved instead of printing both lists.
+    let missing: Vec<&String> = served.iter().filter(|m| !published.contains(m)).collect();
+    assert!(
+        missing.is_empty(),
+        "served here but absent from tinymemory-bus, so no host can call them: {missing:?}"
+    );
+    let extra: Vec<&String> = published.iter().filter(|m| !served.contains(m)).collect();
+    assert!(
+        extra.is_empty(),
+        "published by tinymemory-bus but not served here, so a host calling them gets \
+         UnknownMethod: {extra:?}"
+    );
+    assert_eq!(
+        served, published,
+        "the two lists hold the same members in different orders"
+    );
+}
