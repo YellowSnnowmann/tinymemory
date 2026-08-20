@@ -1890,6 +1890,7 @@ dependencies = [
  "tinymemory-api",
  "tinymemory-conformance",
  "tinymemory-core",
+ "tinymemory-documents",
  "tinymemory-remote",
  "tinymemory-sources",
  "tinymemory-sync",

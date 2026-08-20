@@ -41,6 +41,7 @@ tinymemory-remote = { path = "../tinymemory-remote", optional = true }
 tinymemory-core = { path = "../tinymemory-core", optional = true }
 tinymemory-sync = { path = "../tinymemory-sync", optional = true }
 tinymemory-sources = { path = "../tinymemory-sources", optional = true }
+tinymemory-documents = { path = "../tinymemory-documents", optional = true }
 tinymemory-conformance = { path = "../tinymemory-conformance", optional = true }
 # The mandatory capability families are `async fn`s on object-safe traits.
 async-trait = "0.1"
@@ -104,6 +105,10 @@ engines = ["tinycortex", "supermemory", "mem0", "cognee"]
 core = ["dep:tinymemory-core"]
 sync = ["dep:tinymemory-sync"]
 sources = ["dep:tinymemory-sources"]
+# Document and URL intake: sniff a format, convert it to markdown, and write it
+# into whichever engine is bound. Contract-only in its dependencies until
+# `documents-network` adds the fetch path.
+documents = ["dep:tinymemory-documents"]
 # The behavioural suite every driver must pass, for a host that wants to hold
 # its *own* `MemoryProvider` to the contract. Contract-only in its dependencies,
 # so it is cheap; still opt-in, because a test harness has no business in a
@@ -113,6 +118,9 @@ conformance = ["dep:tinymemory-conformance"]
 # the crate that holds them, so asking for the readers cannot produce a build
 # where they are absent.
 sources-network = ["sources", "tinymemory-sources/network"]
+# The URL intake path in `tinymemory-documents`. Implies the crate that holds
+# it, for the same reason `sources-network` implies `sources`.
+documents-network = ["documents", "tinymemory-documents/network"]
 
 # --- Capability add-ons ----------------------------------------------------
 # Each requires the engine that serves it, so asking for a capability cannot
@@ -140,6 +148,7 @@ full = [
     "core",
     "sync",
     "sources-network",
+    "documents-network",
     "conformance",
     "memory-git",
 ]

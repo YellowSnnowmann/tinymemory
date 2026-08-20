@@ -118,6 +118,16 @@ pub use tinymemory_sync as sync;
 #[cfg(feature = "sources")]
 pub use tinymemory_sources as sources;
 
+/// Document and URL intake — [`documents::DocumentIntake`]: sniff a format,
+/// convert it to markdown, and write it into whichever engine is bound.
+///
+/// Behind the `documents` feature; the URL half needs `documents-network`,
+/// which links an HTTP stack. Deliberately *not* part of the mandatory
+/// composition: a host that stores only what its agent produces converts
+/// nothing and should link none of this.
+#[cfg(feature = "documents")]
+pub use tinymemory_documents as documents;
+
 /// The behavioural conformance suite, when the `conformance` feature is on.
 ///
 /// Every driver admitted by [`registry`] must pass it. Exposed here so a host
