@@ -66,6 +66,11 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+# The host-side contract. A dev-dependency, not a normal one: the module serves
+# `tinymemory-api` types directly and needs nothing from this crate to run. What
+# it needs is the assertion — that the members it serves are exactly the ones
+# `tinymemory-bus` tells a host to expect — and that belongs in tests.
+tinymemory-bus = { path = "../tinymemory-bus" }
 # The loader E2E and the store tests need a throwaway workspace directory.
 tempfile = "3"
 
