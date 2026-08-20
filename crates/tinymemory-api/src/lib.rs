@@ -64,13 +64,36 @@
 //!   round-trips [`error::MemoryError`] through. Shared by both ends of every
 //!   such transport, so the names cannot drift apart.
 
-pub mod capabilities;
-pub mod chunks;
 pub mod drivers;
-pub mod error;
-pub mod goals;
-pub mod health;
 pub mod host;
+
+// The wire vocabulary, re-exported from `tinymemory-bus`.
+//
+// These modules used to be defined here. They moved down a layer because a
+// *host* needs them and needs nothing else in this crate: it loads
+// `tinymemory-module` and makes calls, so it names `MemoryEntry` and
+// `MemoryCategory` but implements no trait, binds no driver and parses no
+// config. Making it depend on the whole driver contract to spell a payload type
+// was the wrong shape.
+//
+// Re-exported rather than merely available, so every historical path still
+// resolves — `tinymemory_api::types::MemoryEntry` is the same item as
+// `tinymemory_bus::types::MemoryEntry`, not a twin of it. That identity is the
+// point: a second definition would need a conversion at the module seam that
+// nothing type-checks.
+pub use tinymemory_bus::{
+    capabilities,
+    chunks,
+    error,
+    goals,
+    health,
+    recall,
+    tool_memory,
+    tree,
+    types,
+    version,
+    wire,
+};
 /// The mandatory-family composition: wrap any [`traits::Memory`] backend as a
 /// complete [`provider::MemoryProvider`].
 ///
@@ -84,12 +107,6 @@ pub mod host;
 pub mod mandatory;
 pub mod null;
 pub mod provider;
-pub mod recall;
-pub mod tool_memory;
 pub mod traits;
-pub mod tree;
-pub mod types;
-pub mod version;
-pub mod wire;
 
-pub use version::{is_compatible, CONTRACT_VERSION};
+pub use tinymemory_bus::{is_compatible, CONTRACT_VERSION};
