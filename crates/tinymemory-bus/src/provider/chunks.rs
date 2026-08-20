@@ -6,7 +6,7 @@
 //!
 //! # Why a caller would want this rather than recall
 //!
-//! [`MemoryRecall`](super::MemoryRecall) answers "what is relevant to this
+//! `MemoryRecall` answers "what is relevant to this
 //! query" and owns its own ranking. This family answers "give me the rows
 //! matching these filters", which is what a host-side search tool needs when it
 //! is doing the ranking itself — cosine similarity with its own MMR
@@ -23,7 +23,7 @@
 //!
 //! # Embeddings are keyed by signature, and the signature must match exactly
 //!
-//! [`MemoryChunks::chunk_embeddings`] takes a `model_signature` and returns
+//! `MemoryChunks::chunk_embeddings` takes a `model_signature` and returns
 //! only vectors stored under it. A caller that computes that string differently
 //! from the driver gets an empty result rather than an error — the vectors are
 //! there, just filed under a name the caller did not ask for. That is a real
@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::chunks::{Chunk, SourceKind};
 
-/// Filters for [`MemoryChunks::list_chunks`].
+/// Filters for `MemoryChunks::list_chunks`.
 ///
 /// Every field is optional and they compose with AND. The default matches
 /// everything the scope allows, bounded by the driver's own safety cap.
@@ -109,6 +109,6 @@ pub struct ChunkDetail {
     ///
     /// Not scoped to a signature on purpose: this answers "has this been
     /// embedded at all", which is what an inspection view wants. Asking whether
-    /// a *particular* space has it is [`MemoryChunks::chunk_embeddings`].
+    /// a *particular* space has it is `MemoryChunks::chunk_embeddings`.
     pub has_embedding: bool,
 }

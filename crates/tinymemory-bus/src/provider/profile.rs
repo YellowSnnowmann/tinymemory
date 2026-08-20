@@ -23,7 +23,7 @@
 //! says "forget that" must not have it re-learned.
 //!
 //! The two are **not** symmetric under
-//! [`MemoryProfile::drop_facets_below`], and the asymmetry is deliberate: only
+//! `MemoryProfile::drop_facets_below`, and the asymmetry is deliberate: only
 //! `Pinned` is protected from the sweep. A `Forgotten` facet is already in
 //! [`FacetState::Dropped`] and is *meant* to be collected — protecting it would
 //! keep the thing the user asked to forget on disk indefinitely.

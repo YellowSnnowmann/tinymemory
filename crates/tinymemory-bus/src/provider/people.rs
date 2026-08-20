@@ -8,14 +8,13 @@
 //!
 //! People is storage the engine owns, and it does not fit any family already
 //! defined: a person is not a memory entry, not a document, and not a graph
-//! entity. Adding these methods to, say, [`MemoryEntities`] would also have
+//! entity. Adding these methods to, say, `MemoryEntities` would also have
 //! been a **major** contract bump — the version rule treats a new method on a
 //! family a driver may already advertise as breaking, because negotiation
 //! cannot save a caller from a method an older driver does not implement. A new
 //! family is a minor bump instead, and an older driver simply does not
 //! advertise it.
 //!
-//! [`MemoryEntities`]: crate::provider::MemoryEntities
 //!
 //! # The types here are the contract's own
 //!

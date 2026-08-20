@@ -102,7 +102,7 @@ impl SourceScope {
     }
 }
 
-/// One unit of content handed to [`crate::provider::MemoryIngest`].
+/// One unit of content handed to `MemoryIngest`.
 ///
 /// The driver owns chunking, embedding, and persistence — this type carries
 /// only what the driver cannot know: where the content came from, when, who it
@@ -194,7 +194,7 @@ pub struct ExportRecord {
 
 /// One page of an export, plus the cursor that continues it.
 ///
-/// Paging (rather than a stream) keeps [`crate::provider::MemoryPortability`]
+/// Paging (rather than a stream) keeps `MemoryPortability`
 /// object-safe and runtime-agnostic while still bounding memory: the caller
 /// decides the page size and drives the loop.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -340,7 +340,7 @@ pub struct DiffReport {
     pub changes: Vec<SourceChange>,
 }
 
-/// One item handed to [`crate::provider::MemorySourceSink`] by the host's sync
+/// One item handed to `MemorySourceSink` by the host's sync
 /// machinery.
 ///
 /// The host owns credentials, scheduling, and fetching; the driver owns storage

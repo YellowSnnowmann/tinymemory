@@ -4,7 +4,7 @@
 //! exposes graph-walk retrieval, time-window coverage, and entity-index search
 //! — the LLM-free primitives a host composes an answer from.
 //!
-//! # Separate from [`MemoryTree`](super::MemoryTree), on purpose
+//! # Separate from `MemoryTree`, on purpose
 //!
 //! The tree family navigates a known node: query one source, drill into
 //! children, seal, cascade. These three answer questions about the store as a
@@ -30,8 +30,8 @@
 //! `datetime`, `technology`, `artifact`, `quantity`, `misc`, `topic`.
 //!
 //! Requests are the opposite case and are validated: an unknown kind in
-//! [`MemoryRetrieval::search_entities`]'s filter is a caller mistake the driver
-//! reports as [`MemoryError::Invalid`], because silently matching nothing would
+//! `MemoryRetrieval::search_entities`'s filter is a caller mistake the driver
+//! reports as [`MemoryError::Invalid`](crate::error::MemoryError::Invalid), because silently matching nothing would
 //! look identical to a genuine empty result.
 
 use chrono::{DateTime, Utc};
@@ -105,7 +105,7 @@ pub struct RetrievalResponse {
     pub truncated: bool,
 }
 
-/// Options for [`MemoryRetrieval::fast_retrieve`].
+/// Options for `MemoryRetrieval::fast_retrieve`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FastRetrieveQuery {
     /// Maximum hits to return.
@@ -135,7 +135,7 @@ pub struct CoverWindowQuery {
     pub limit: Option<usize>,
 }
 
-/// Filters for [`MemoryRetrieval::retrieve_source`].
+/// Filters for `MemoryRetrieval::retrieve_source`.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceRetrievalQuery {
     /// Restrict to one logical source (the engine's "scope", e.g. `slack:#eng`).
