@@ -10,33 +10,36 @@ license = "MIT"
 repository = "https://github.com/tinyhumansai/tinymemory"
 description = "The TinyBus wire contract for the TinyMemory module: member names, payload types, and typed calls"
 
-# Three dependencies, and the ceiling is low on purpose.
+# Deliberately dependency-light: this is the crate a host links to talk to the
+# loadable module, so it must cost that host almost nothing. Nothing here may
+# pull in `rusqlite`, `git2`, `reqwest`, `regex`, an async runtime, or
+# `tinybus` — see `src/lib.rs` for why the transport in particular is absent.
 #
-# This crate is what a *host* compiles against to talk to the loaded module, so
-# it must cost that host almost nothing: no engine, no storage, no async
-# runtime, and — importantly — no `tinybus`. See `src/lib.rs` for why the
-# transport is deliberately absent, and the root manifest's note on
-# `crates/tinymemory-module` for what depending on the vendored `tinybus` from a
-# workspace member would do to this workspace.
+# The set is the same one the payload types carried when they lived in
+# `tinymemory-api`, minus everything only the traits and the host config needed:
 #
-# Nothing here may pull in `rusqlite`, `git2`, `reqwest`, `regex`, an async
-# runtime, or `tinybus`. Guard with the FORWARD form, which is scoped to this
-# package — `cargo tree -i` discards the `-p` scope and exits clean even when
-# this crate is the one pulling the dependency in:
+# - `chrono`   — timestamps on chunk, tree and retrieval nodes; the `serde`
+#                feature backs `chunks::Metadata`'s `chrono::serde::ts_milliseconds`.
+# - `sha2`     — the deterministic `chunks::chunk_id`.
+# - `uuid`     — `tool_memory::ToolMemoryRule::generate_id` (v4 bytes, nibble
+#                encoded).
+# - `anyhow`   — `error::MemoryError::Other`, which carries an opaque cause.
+# - `thiserror`— the `MemoryError` and `CapabilityError` enums.
+#
+# Guard with the FORWARD form, which is scoped to this package — `cargo tree -i`
+# discards the `-p` scope and exits clean even when this crate is the one
+# pulling the dependency in:
 #
 #   cargo tree -p tinymemory-bus -e normal,build --prefix none \
 #     | grep -Ei 'rusqlite|libsqlite|git2|reqwest|regex|tokio|tinybus'   # expect no match
 [dependencies]
-# The single definition of every type on the wire. Re-exported, never
-# redefined — see `src/types/mod.rs`.
-tinymemory-api = { path = "../tinymemory-api" }
-# The call structs derive both halves: `Serialize` to build an argument array,
-# `Deserialize` so a module-side test can decode one back.
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
 serde = { version = "1", features = ["derive"] }
-# A tinybus frame body is JSON, so an encoded argument list is a
-# `serde_json::Value` and nothing here needs a different representation.
 serde_json = "1"
+sha2 = "0.11"
 thiserror = "2"
+uuid = { version = "1", features = ["v4"] }
 
 [lints.rust]
 unsafe_code = "forbid"
