@@ -4,7 +4,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use tinymemory_api::chunks::{DataSource, SourceRef};
-use tinymemory_api::error::MemoryError;
 use tinymemory_api::namespace::Namespace;
 use tinymemory_api::types::{MemoryCategory, MemoryTaint};
 
@@ -160,8 +159,8 @@ impl IntakeRequest {
     ///
     /// # Errors
     ///
-    /// [`MemoryError::Invalid`] when the namespace fails
-    /// [`Namespace::parse`].
+    /// [`tinymemory_api::error::MemoryError::Invalid`] when the namespace
+    /// fails [`Namespace::parse`].
     pub fn validate(&self) -> Result<()> {
         Namespace::parse(&self.namespace)?;
         Ok(())
@@ -274,10 +273,4 @@ fn slugify(raw: &str) -> String {
     // Keys share the namespace character rules and the same practical length
     // ceiling; a key longer than this is a URL with a session token in it.
     trimmed.chars().take(120).collect()
-}
-
-impl From<MemoryError> for Box<dyn std::error::Error + Send + Sync> {
-    fn from(_: MemoryError) -> Self {
-        unreachable!("placeholder")
-    }
 }
