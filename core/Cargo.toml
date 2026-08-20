@@ -59,7 +59,7 @@ log = "0.4"
 parking_lot = "0.12"
 # `tree/tree/registry.rs` salts a tree id; the sync readers talk HTTP to the
 # provider APIs; the pipelines are `tracing`-instrumented.
-rand = "0.8"
+rand = "0.10"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 tracing = "0.1"
 rusqlite = { version = "=0.40.2", features = ["bundled"] }
