@@ -11,6 +11,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use tinymemory_api::error::MemoryError;
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::traits::Memory;
 use tinymemory_api::types::{
@@ -60,6 +61,18 @@ impl Memory for TinycortexMemory {
         category: MemoryCategory,
         session_id: Option<&str>,
     ) -> anyhow::Result<()> {
+        // §A4: the engine refuses empty content with an opaque anyhow
+        // (vendor/tinycortex, outside this repo's reach), which the mandatory
+        // composition can only flatten to `Other` — indistinguishable from a
+        // backend failure. Enforce the same documented rule HERE, typed, so
+        // the refusal arrives as the `Invalid` the conformance suite now
+        // requires. Not message-sniffing: this mirrors the engine's stated
+        // contract, it does not parse its prose.
+        if content.trim().is_empty() {
+            return Err(anyhow::Error::new(MemoryError::Invalid(
+                "memory content cannot be empty".to_string(),
+            )));
+        }
         self.inner
             .store(namespace, key, content, category, session_id)
             .await
@@ -79,6 +92,12 @@ impl Memory for TinycortexMemory {
         session_id: Option<&str>,
         taint: MemoryTaint,
     ) -> anyhow::Result<()> {
+        // Same typed refusal as `store` — see the comment there.
+        if content.trim().is_empty() {
+            return Err(anyhow::Error::new(MemoryError::Invalid(
+                "memory content cannot be empty".to_string(),
+            )));
+        }
         self.inner
             .store_with_taint(namespace, key, content, category, session_id, taint)
             .await

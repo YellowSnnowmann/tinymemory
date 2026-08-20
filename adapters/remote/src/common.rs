@@ -8,6 +8,7 @@ use reqwest::header::{HeaderValue, AUTHORIZATION};
 use reqwest::{Method, RequestBuilder, StatusCode, Url};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tinymemory_api::error::MemoryError;
 use tinymemory_api::traits::Memory;
 use tinymemory_api::types::{
     MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary, RecallOpts,
@@ -119,6 +120,29 @@ fn credential_header(value: &str) -> anyhow::Result<HeaderValue> {
     Ok(header)
 }
 
+/// The caller's statement of a request's idempotence — every `json`/`text`
+/// call site must choose, which is what makes the read/write retry split
+/// CHECKABLE instead of conventional (#68 review, Major 4: the first cut's
+/// split lived only in a comment, and wrapping the write helper in the retry
+/// path failed nothing).
+///
+/// `RetryTransient` is only sound when repeating the request cannot double-
+/// apply anything: reads, searches, list walks — POST included when the POST
+/// is a query. `Once` is for everything whose repetition has a cost.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Attempts {
+    /// Retry up to three times on the typed transient classes.
+    RetryTransient,
+    /// One attempt, whatever the failure.
+    //
+    // No current caller: the audit behind #68 found every existing
+    // `json`/`text` call is a read, which is exactly why the marker exists —
+    // the FIRST write-shaped caller must pick this variant instead of
+    // silently inheriting retry. Deliberately present before its first use.
+    #[allow(dead_code)]
+    Once,
+}
+
 impl HttpClient {
     /// Builds a client that optionally authenticates with a bearer token.
     pub(crate) fn bearer(endpoint: &str, credential: Option<&str>) -> anyhow::Result<Self> {
@@ -155,12 +179,33 @@ impl HttpClient {
             endpoint.set_path(&path);
         }
         Ok(Self {
-            inner: reqwest::Client::builder()
-                .timeout(std::time::Duration::from_secs(60))
-                .build()?,
+            inner: Self::build_inner(std::time::Duration::from_secs(60))?,
             endpoint,
             auth,
         })
+    }
+
+    /// One place builds the reqwest client, so the two timeouts stay paired:
+    /// the per-request deadline, and a connect deadline that keeps a
+    /// black-holed endpoint from consuming the whole request budget before
+    /// the first byte.
+    fn build_inner(timeout: std::time::Duration) -> anyhow::Result<reqwest::Client> {
+        Ok(reqwest::Client::builder()
+            .timeout(timeout)
+            .connect_timeout(std::time::Duration::from_secs(10).min(timeout))
+            .build()?)
+    }
+
+    /// Rebuilds this client with a different per-request deadline (issue #18
+    /// follow-up U5). The 60s default suits interactive calls; a bulk
+    /// migration or a health probe may want its own budget.
+    ///
+    /// Note the effective worst-case wall time of a retrying READ is ~3x
+    /// this value plus 750ms of backoff — the transient-retry policy runs up
+    /// to three attempts, each with its own deadline.
+    pub(crate) fn with_timeout(mut self, timeout: std::time::Duration) -> anyhow::Result<Self> {
+        self.inner = Self::build_inner(timeout)?;
+        Ok(self)
     }
 
     /// Resolves a relative API path and attaches the configured authentication.
@@ -208,11 +253,22 @@ impl HttpClient {
             parts.join(": ")
         };
         let class = classify_transport(error.is_timeout(), error.is_connect(), &chain);
-        if chain.is_empty() {
-            anyhow::anyhow!("memory API request to {host}: {class}")
+        let described = class.describe();
+        let message = if chain.is_empty() {
+            format!("memory API request to {host}: {described}")
         } else {
-            anyhow::anyhow!("memory API request to {host}: {class} ({chain})")
-        }
+            format!("memory API request to {host}: {described} ({chain})")
+        };
+        // §A4: the typed error rides as the anyhow payload, so
+        // `tinymemory_api::mandatory::engine_error` can downcast it back out
+        // at the contract boundary instead of flattening it into `Other`.
+        anyhow::Error::new(match class {
+            TransportClass::Timeout => MemoryError::Timeout(message),
+            TransportClass::Dns | TransportClass::Tls | TransportClass::Connect => {
+                MemoryError::Unreachable(message)
+            }
+            TransportClass::Other => return anyhow::anyhow!("{message}"),
+        })
     }
 
     /// The error for a non-success status, written for the operator reading a
@@ -238,7 +294,9 @@ impl HttpClient {
             }
             format!(" — {shown}")
         };
-        match status.as_u16() {
+        // §A4: every bucket mints a typed [`MemoryError`] carried as the
+        // anyhow payload — same prose as before, now matchable downstream.
+        anyhow::Error::new(match status.as_u16() {
             401 | 403 => {
                 let hint = match &self.auth {
                     Auth::ApiKey(_) | Auth::Token(_) => "check the API key",
@@ -247,16 +305,95 @@ impl HttpClient {
                         "the endpoint requires credentials this client was not configured with"
                     }
                 };
-                anyhow::anyhow!(
+                MemoryError::Unauthorized(format!(
                     "memory API {path} on {host}: the configured credential was rejected \
                      (HTTP {status}) — {hint}{detail}"
-                )
+                ))
             }
-            _ => anyhow::anyhow!("memory API {path} on {host} returned HTTP {status}{detail}"),
+            404 => MemoryError::NotFound(format!(
+                "memory API {path} on {host} returned HTTP 404{detail}"
+            )),
+            // A validation refusal: the backend understood the request and
+            // rejected its CONTENT. Without this arm a real validating
+            // backend (all three vendors validate; only the in-tree doubles
+            // accept everything) could never produce the `Invalid` the
+            // tightened conformance refusal-assertion demands (#68 review,
+            // Major 5).
+            400 | 422 => MemoryError::Invalid(format!(
+                "memory API {path} on {host} returned HTTP {status}{detail}"
+            )),
+            // The answered-but-cannot-serve class: rate limiting and the
+            // gateway trio. Distinct from `Backend` so a retry policy can key
+            // on it without parsing prose.
+            429 | 502 | 503 | 504 => MemoryError::Unavailable(format!(
+                "memory API {path} on {host} returned HTTP {status}{detail}"
+            )),
+            _ => MemoryError::Backend(format!(
+                "memory API {path} on {host} returned HTTP {status}{detail}"
+            )),
+        })
+    }
+
+    /// Whether an error is worth one more attempt on a READ path: the typed
+    /// transient classes only (issue #18 follow-up U5). Keyed on the §A4
+    /// variants rather than message substrings — the fragility the
+    /// composio sync client's needle-matching retry shows the cost of.
+    /// `Unauthorized`, `Invalid`, `NotFound`, `Backend` never retry: the
+    /// answer will not change.
+    fn retryable(error: &anyhow::Error) -> bool {
+        matches!(
+            error.downcast_ref::<MemoryError>(),
+            Some(
+                MemoryError::Timeout(_) | MemoryError::Unreachable(_) | MemoryError::Unavailable(_)
+            )
+        )
+    }
+
+    /// Runs a read-path attempt up to three times with 250ms·2ⁿ backoff.
+    ///
+    /// READ paths only — `json` and `text` below, whose calls are all list,
+    /// search and raw-fetch operations across the three adapters. The write
+    /// paths (`empty`, `multipart`) are deliberately not routed through
+    /// here: a `Timeout` on a write leaves whether the backend applied it
+    /// unknown, and Cognee's multipart upsert and Mem0's add are not
+    /// idempotent.
+    async fn with_read_retry<T, F, Fut>(&self, attempt: F) -> anyhow::Result<T>
+    where
+        F: Fn() -> Fut,
+        Fut: std::future::Future<Output = anyhow::Result<T>>,
+    {
+        const MAX_ATTEMPTS: u32 = 3;
+        let mut tried = 0;
+        loop {
+            tried += 1;
+            match attempt().await {
+                Ok(value) => return Ok(value),
+                Err(error) if tried < MAX_ATTEMPTS && Self::retryable(&error) => {
+                    let backoff = std::time::Duration::from_millis(250) * 2_u32.pow(tried - 1);
+                    tokio::time::sleep(backoff).await;
+                }
+                Err(error) => return Err(error),
+            }
         }
     }
 
     pub(crate) async fn json<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&serde_json::Value>,
+        attempts: Attempts,
+    ) -> anyhow::Result<T> {
+        if matches!(attempts, Attempts::Once) {
+            return self.json_attempt(method, path, body).await;
+        }
+        self.with_read_retry(|| self.json_attempt(method.clone(), path, body))
+            .await
+    }
+
+    /// One send of a JSON request — the body `json` retries (or not, per its
+    /// `Attempts` marker).
+    async fn json_attempt<T: DeserializeOwned>(
         &self,
         method: Method,
         path: &str,
@@ -281,19 +418,30 @@ impl HttpClient {
     }
 
     /// Sends a request and returns a successful response body as text.
-    pub(crate) async fn text(&self, method: Method, path: &str) -> anyhow::Result<String> {
-        let response = self
-            .request(method, path)?
-            .send()
-            .await
-            .map_err(|error| self.transport_error(error))?;
-        let status = response.status();
-        if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
-            return Err(self.status_error(path, status, &body));
+    pub(crate) async fn text(
+        &self,
+        method: Method,
+        path: &str,
+        attempts: Attempts,
+    ) -> anyhow::Result<String> {
+        let attempt = || async {
+            let response = self
+                .request(method.clone(), path)?
+                .send()
+                .await
+                .map_err(|error| self.transport_error(error))?;
+            let status = response.status();
+            if !status.is_success() {
+                let body = response.text().await.unwrap_or_default();
+                return Err(self.status_error(path, status, &body));
+            }
+            let body = read_capped(response, path).await?;
+            String::from_utf8(body).context("memory API response was not valid UTF-8")
+        };
+        if matches!(attempts, Attempts::Once) {
+            return attempt().await;
         }
-        let body = read_capped(response, path).await?;
-        String::from_utf8(body).context("memory API response was not valid UTF-8")
+        self.with_read_retry(attempt).await
     }
 
     /// Sends a request whose successful response body is not needed.
@@ -324,15 +472,22 @@ impl HttpClient {
         self.request(method, path)
     }
 
-    /// Reports whether a GET endpoint responds successfully.
-    pub(crate) async fn healthy(&self, path: &str) -> bool {
-        let Ok(request) = self.request(Method::GET, path) else {
-            return false;
-        };
-        request
+    /// Probes a GET endpoint and reports WHY it failed, typed (issue #18
+    /// follow-up U4). The boolean `healthy` below discards status, body and
+    /// transport class; this keeps them, so a health surface can distinguish
+    /// "credential rejected" from "unreachable" from "answered 500".
+    pub(crate) async fn probe(&self, path: &str) -> anyhow::Result<()> {
+        let response = self
+            .request(Method::GET, path)?
             .send()
             .await
-            .is_ok_and(|response| response.status().is_success())
+            .map_err(|error| self.transport_error(error))?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(self.status_error(path, status, &body));
+        }
+        Ok(())
     }
 }
 
@@ -444,8 +599,21 @@ pub(crate) trait Dialect: Send + Sync + std::fmt::Debug {
     ) -> anyhow::Result<Vec<StoredEntry>>;
     /// Deletes one exact logical record and reports whether it existed.
     async fn delete(&self, namespace: &str, key: &str) -> anyhow::Result<bool>;
-    /// Checks whether the backend is available for requests.
-    async fn health(&self) -> bool;
+    /// Probes whether the backend is available, reporting WHY not, typed
+    /// (`Ok(())` = serving; the error carries a §A4 `MemoryError` payload).
+    async fn health(&self) -> anyhow::Result<()>;
+    /// Whether this backend's recall responses carry a similarity score.
+    ///
+    /// Decides the `min_score` tier in [`RemoteMemory::recall`]: a scoring
+    /// backend gets the strict filter (an unscored hit cannot clear a
+    /// threshold), while a backend that STRUCTURALLY cannot score — Cognee's
+    /// context-only recall has no score field at all — keeps its hits, because
+    /// dropping 100% of every result is not honesty, it is a different lie
+    /// (the #68 review's Major 2). The inertness on scoreless backends is
+    /// deliberate and documented rather than silent: this flag is where.
+    fn scores_recall(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug)]
@@ -455,6 +623,12 @@ pub(crate) struct RemoteMemory<D> {
 }
 
 impl<D> RemoteMemory<D> {
+    /// Mutable access for the adapters' builder-style configuration
+    /// (`with_request_timeout` on each public type).
+    pub(crate) fn dialect_mut(&mut self) -> &mut D {
+        &mut self.dialect
+    }
+
     /// Wraps a backend dialect with shared filtering and conversion behavior.
     pub(crate) fn new(dialect: D) -> Self {
         Self { dialect }
@@ -522,7 +696,12 @@ impl<D: Dialect + 'static> Memory for RemoteMemory<D> {
         let mut entries = self.dialect.search(query, limit, opts.clone()).await?;
         entries.retain(|entry| matches_filters(entry, &opts));
         if let Some(minimum) = min_score {
-            entries.retain(|entry| entry.score.is_none_or(|score| score >= minimum));
+            if self.dialect.scores_recall() {
+                entries.retain(|entry| clears_min_score(entry.score, minimum));
+            }
+            // else: the backend cannot score (see `Dialect::scores_recall`) —
+            // the threshold is documented-inert rather than silently
+            // everything-dropping.
         }
         entries.truncate(limit);
         Ok(entries
@@ -598,8 +777,63 @@ impl<D: Dialect + 'static> Memory for RemoteMemory<D> {
 
     /// Delegates availability checking to the backend dialect.
     async fn health_check(&self) -> bool {
-        self.dialect.health().await
+        self.dialect.health().await.is_ok()
     }
+
+    /// The typed answer behind `health_check` (issue #18 §U4): the probe's
+    /// §A4 class decides the health state. `Unavailable` — the backend
+    /// answered that it cannot serve right now (429 / gateway trio) — maps to
+    /// `Degraded`: alive, impaired, worth saying so instead of "down".
+    /// Everything else that fails maps to `Down` with the probe's own reason
+    /// (which names host and class, never a credential).
+    async fn health_probe(&self) -> Option<tinymemory_api::health::MemoryHealth> {
+        use tinymemory_api::health::MemoryHealth;
+        Some(match self.dialect.health().await {
+            Ok(()) => MemoryHealth::Ready,
+            Err(error) => {
+                let reason = health_reason(&error);
+                match error.downcast_ref::<MemoryError>() {
+                    Some(MemoryError::Unavailable(_)) => MemoryHealth::degraded(reason),
+                    _ => MemoryHealth::down(reason),
+                }
+            }
+        })
+    }
+}
+
+/// A health `reason` from a probe failure, REDACTED for the status surface.
+///
+/// `MemoryHealth`'s contract: the reason is logged and rendered in operator
+/// status and must never carry credentials or content. `status_error`
+/// interpolates up to 300 chars of the backend's OWN error body — which a
+/// vendor is free to fill with the rejected key (#68 review). Every message
+/// this crate builds puts that detail after a spaced em-dash, so the reason
+/// keeps each chain segment's head and drops the tails. The full untruncated
+/// error still flows to the CALLER of the failing operation; only the
+/// standing status string is trimmed. Walking `chain()` (not just the top)
+/// keeps Mem0's both-probes-failed context instead of losing it to a
+/// consuming downcast.
+fn health_reason(error: &anyhow::Error) -> String {
+    error
+        .chain()
+        .map(|cause| {
+            let text = cause.to_string();
+            match text.split_once(" — ") {
+                Some((head, _)) => format!("{head} — detail withheld from status; see logs"),
+                None => text,
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// Honesty over leniency (issue #18 §U6): an entry with NO score cannot be
+/// shown to clear a threshold the caller asked for, so it drops. The old
+/// `is_none_or` let unscored hits pass, which made `min_score` silently inert
+/// against any backend that omits score numbers — a caller asking for ≥0.8
+/// got unranked everything and never learned the filter did nothing.
+fn clears_min_score(score: Option<f64>, minimum: f64) -> bool {
+    score.is_some_and(|value| value >= minimum)
 }
 
 /// Applies TinyMemory recall filters that a backend may not support natively.
@@ -614,6 +848,39 @@ fn matches_filters(entry: &StoredEntry, opts: &RecallOpts<'_>) -> bool {
             .is_none_or(|value| entry.session_id.as_deref() == Some(value))
 }
 
+/// The class of a transport failure — a real enum rather than a prose string
+/// (issue #18 §A4), so [`HttpClient::transport_error`] can mint a typed
+/// [`MemoryError`] and a retry policy can key on the class instead of
+/// substring-matching a rendered message.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TransportClass {
+    Timeout,
+    Dns,
+    Tls,
+    Connect,
+    /// The request did not complete for a reason the chain does not name —
+    /// deliberately NOT mapped onto a typed variant, because claiming
+    /// "unreachable" for (say) a mid-body disconnect would be a guess.
+    Other,
+}
+
+impl TransportClass {
+    /// The operator-facing prose for this class — exactly the strings the
+    /// pre-§A4 version returned, so log lines do not change spelling.
+    fn describe(self) -> &'static str {
+        match self {
+            Self::Timeout => "timed out",
+            Self::Dns => "the host could not be resolved — check the URL",
+            Self::Tls => {
+                "TLS failed — the endpoint answered on the port but could not establish a \
+                 secure connection; check that the URL is the engine's real API host"
+            }
+            Self::Connect => "could not connect — check the URL and that the service is reachable",
+            Self::Other => "the request did not complete",
+        }
+    }
+}
+
 /// Name the class of a transport failure from what the error chain says.
 ///
 /// Pure so the ORDER is testable, which is the whole reason it exists as its
@@ -621,15 +888,15 @@ fn matches_filters(entry: &StoredEntry, opts: &RecallOpts<'_>) -> bool {
 /// naive `if is_connect()` first collapses every class into "could not
 /// connect". That is exactly what the first version of this did, and it took
 /// a live run against a real broken endpoint to notice.
-fn classify_transport(is_timeout: bool, is_connect: bool, chain: &str) -> &'static str {
+fn classify_transport(is_timeout: bool, is_connect: bool, chain: &str) -> TransportClass {
     let lower = chain.to_ascii_lowercase();
     if is_timeout {
-        "timed out"
+        TransportClass::Timeout
     } else if lower.contains("dns")
         || lower.contains("name or service")
         || lower.contains("failed to lookup")
     {
-        "the host could not be resolved — check the URL"
+        TransportClass::Dns
     } else if lower.contains("tls")
         || lower.contains("handshake")
         || lower.contains("certificate")
@@ -637,12 +904,11 @@ fn classify_transport(is_timeout: bool, is_connect: bool, chain: &str) -> &'stat
         || lower.contains("invalid peer")
         || lower.contains("unknown issuer")
     {
-        "TLS failed — the endpoint answered on the port but could not establish a \
-         secure connection; check that the URL is the engine's real API host"
+        TransportClass::Tls
     } else if is_connect {
-        "could not connect — check the URL and that the service is reachable"
+        TransportClass::Connect
     } else {
-        "the request did not complete"
+        TransportClass::Other
     }
 }
 
@@ -714,7 +980,9 @@ mod credential_header_tests {
 
 #[cfg(test)]
 mod transport_tests {
-    use super::classify_transport;
+    #![allow(clippy::expect_used, clippy::panic)]
+
+    use super::{classify_transport, TransportClass};
 
     /// The verbatim chain a rustls handshake abort produces. Cognee's hosted
     /// endpoint answered TCP and then sent this; `reqwest` reports it as a
@@ -728,7 +996,8 @@ mod transport_tests {
             true, // reqwest really does set is_connect for this
             "client error (Connect): received fatal alert: InternalError",
         );
-        assert!(class.starts_with("TLS failed"), "got: {class}");
+        assert_eq!(class, TransportClass::Tls);
+        assert!(class.describe().starts_with("TLS failed"));
     }
 
     /// DNS failures are also CONNECT errors; the specific class must win.
@@ -739,7 +1008,8 @@ mod transport_tests {
             true,
             "client error (Connect): dns error: failed to lookup address information",
         );
-        assert!(class.contains("could not be resolved"), "got: {class}");
+        assert_eq!(class, TransportClass::Dns);
+        assert!(class.describe().contains("could not be resolved"));
     }
 
     #[test]
@@ -749,7 +1019,8 @@ mod transport_tests {
             true,
             "client error (Connect): tcp connect error: Connection refused (os error 61)",
         );
-        assert!(class.starts_with("could not connect"), "got: {class}");
+        assert_eq!(class, TransportClass::Connect);
+        assert!(class.describe().starts_with("could not connect"));
     }
 
     /// A timeout outranks everything: it is the one class reqwest states
@@ -757,12 +1028,64 @@ mod transport_tests {
     #[test]
     fn a_timeout_wins_over_every_chain_hint() {
         let class = classify_transport(true, true, "dns error: something tls certificate");
-        assert_eq!(class, "timed out");
+        assert_eq!(class, TransportClass::Timeout);
+        assert_eq!(class.describe(), "timed out");
     }
 
     #[test]
     fn an_unrecognised_chain_degrades_without_claiming_a_cause() {
         let class = classify_transport(false, false, "body error: incomplete message");
-        assert_eq!(class, "the request did not complete");
+        assert_eq!(class, TransportClass::Other);
+        assert_eq!(class.describe(), "the request did not complete");
+    }
+
+    /// §A4: the typed payload rides the anyhow error and downcasts back out —
+    /// the property `engine_error` relies on at the contract boundary.
+    #[test]
+    fn typed_variants_survive_the_anyhow_round_trip() {
+        use tinymemory_api::error::MemoryError;
+        let carried = anyhow::Error::new(MemoryError::Unauthorized("key rejected".into()));
+        match carried.downcast::<MemoryError>() {
+            Ok(MemoryError::Unauthorized(msg)) => assert_eq!(msg, "key rejected"),
+            other => panic!("lost the typed payload: {other:?}"),
+        }
+    }
+
+    /// §U6: a threshold means a threshold. An unscored hit does not clear
+    /// one, an exactly-equal score does, and no-threshold callers see the
+    /// old behavior untouched (the filter never runs).
+    #[test]
+    fn min_score_is_honest_about_unscored_hits() {
+        use super::clears_min_score;
+        assert!(!clears_min_score(None, 0.1));
+        assert!(clears_min_score(Some(0.8), 0.8));
+        assert!(!clears_min_score(Some(0.79), 0.8));
+    }
+
+    /// The retry gate keys on the §A4 class, never the prose: transient
+    /// classes retry, deterministic answers do not.
+    #[test]
+    fn retry_gate_is_typed_and_conservative() {
+        use super::HttpClient;
+        use tinymemory_api::error::MemoryError;
+        let transient = [
+            MemoryError::Timeout("t".into()),
+            MemoryError::Unreachable("u".into()),
+            MemoryError::Unavailable("503".into()),
+        ];
+        for error in transient {
+            assert!(HttpClient::retryable(&anyhow::Error::new(error)));
+        }
+        let settled = [
+            MemoryError::Unauthorized("401".into()),
+            MemoryError::Invalid("bad".into()),
+            MemoryError::NotFound("gone".into()),
+            MemoryError::Backend("500".into()),
+        ];
+        for error in settled {
+            assert!(!HttpClient::retryable(&anyhow::Error::new(error)));
+        }
+        // Opaque errors never retry: without a class, a retry is a guess.
+        assert!(!HttpClient::retryable(&anyhow::anyhow!("mystery")));
     }
 }

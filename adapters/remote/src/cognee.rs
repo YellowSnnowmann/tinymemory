@@ -8,7 +8,7 @@ use tinymemory_api::recall::RecallOpts;
 use tinymemory_api::traits::Memory;
 use tinymemory_api::types::MemoryTaint;
 
-use crate::common::{stable_id, Dialect, HttpClient, RemoteMemory, StoredEntry};
+use crate::common::{stable_id, Attempts, Dialect, HttpClient, RemoteMemory, StoredEntry};
 
 /// Stable driver id used by configuration and status output.
 pub use tinymemory_api::drivers::COGNEE_DRIVER_ID;
@@ -20,6 +20,26 @@ pub struct CogneeMemory {
 }
 
 impl CogneeMemory {
+    /// Rebuilds the HTTP transport with a different per-request deadline
+    /// (issue #18 follow-up U5). The default is 60s with a 10s connect
+    /// deadline — right for interactive calls; a bulk migration or a tight
+    /// liveness probe may want its own budget.
+    ///
+    /// # Errors
+    ///
+    /// Fails only if the underlying HTTP client cannot be rebuilt — a
+    /// configuration-time failure, before any request is made.
+    pub fn with_request_timeout(mut self, timeout: std::time::Duration) -> anyhow::Result<Self> {
+        let client = self
+            .inner
+            .dialect_mut()
+            .client
+            .clone()
+            .with_timeout(timeout)?;
+        self.inner.dialect_mut().client = client;
+        Ok(self)
+    }
+
     /// Connect to a self-hosted Cognee server.
     ///
     /// `access_token` is sent as a bearer token. Local deployments with
@@ -152,6 +172,13 @@ impl Memory for CogneeMemory {
     async fn health_check(&self) -> bool {
         self.inner.health_check().await
     }
+    /// Forwarded explicitly: this wrapper delegates method-by-method, so the
+    /// defaulted `None` would otherwise shadow `RemoteMemory`'s typed probe —
+    /// which is exactly what the first cut shipped, making §U4's deep health
+    /// unreachable through every public type (the #68 review's Major 1).
+    async fn health_probe(&self) -> Option<tinymemory_api::health::MemoryHealth> {
+        self.inner.health_probe().await
+    }
 }
 
 #[derive(Debug)]
@@ -181,7 +208,12 @@ impl CogneeDialect {
     async fn datasets(&self) -> anyhow::Result<Vec<Dataset>> {
         let response: Value = self
             .client
-            .json(Method::GET, "api/v1/datasets/", None)
+            .json(
+                Method::GET,
+                "api/v1/datasets/",
+                None,
+                Attempts::RetryTransient,
+            )
             .await?;
         Ok(response
             .as_array()
@@ -205,6 +237,7 @@ impl CogneeDialect {
                 Method::GET,
                 &format!("api/v1/datasets/{}/data", dataset.id),
                 None,
+                Attempts::RetryTransient,
             )
             .await?;
         let mut entries = Vec::new();
@@ -225,6 +258,7 @@ impl CogneeDialect {
                 .text(
                     Method::GET,
                     &format!("api/v1/datasets/{}/data/{id}/raw", dataset.id),
+                    Attempts::RetryTransient,
                 )
                 .await?;
             let mut entry: StoredEntry =
@@ -356,6 +390,7 @@ impl Dialect for CogneeDialect {
                     "only_context": true,
                     "session_id": opts.session_id
                 })),
+                Attempts::RetryTransient,
             )
             .await?;
         let mut entries = Vec::new();
@@ -402,9 +437,17 @@ impl Dialect for CogneeDialect {
         Ok(true)
     }
 
-    /// Checks Cognee's aggregate health endpoint.
-    async fn health(&self) -> bool {
-        self.client.healthy("health").await
+    /// Probes Cognee's aggregate health endpoint, typed.
+    async fn health(&self) -> anyhow::Result<()> {
+        self.client.probe("health").await
+    }
+
+    /// Context-only recall carries no score field — see the trait doc for
+    /// what this means for `min_score` (documented-inert, not everything-
+    /// dropping; the first cut's over-fetch pulled 3x the data and discarded
+    /// all of it).
+    fn scores_recall(&self) -> bool {
+        false
     }
 }
 

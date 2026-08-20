@@ -13,7 +13,7 @@ use tinymemory_api::recall::RecallOpts;
 use tinymemory_api::traits::Memory;
 use tinymemory_api::types::MemoryTaint;
 
-use crate::common::{category, Dialect, HttpClient, RemoteMemory, StoredEntry};
+use crate::common::{category, Attempts, Dialect, HttpClient, RemoteMemory, StoredEntry};
 
 /// Stable driver id used by configuration and status output.
 pub use tinymemory_api::drivers::MEM0_DRIVER_ID;
@@ -68,6 +68,26 @@ pub struct Mem0Memory {
 }
 
 impl Mem0Memory {
+    /// Rebuilds the HTTP transport with a different per-request deadline
+    /// (issue #18 follow-up U5). The default is 60s with a 10s connect
+    /// deadline — right for interactive calls; a bulk migration or a tight
+    /// liveness probe may want its own budget.
+    ///
+    /// # Errors
+    ///
+    /// Fails only if the underlying HTTP client cannot be rebuilt — a
+    /// configuration-time failure, before any request is made.
+    pub fn with_request_timeout(mut self, timeout: std::time::Duration) -> anyhow::Result<Self> {
+        let client = self
+            .inner
+            .dialect_mut()
+            .client
+            .clone()
+            .with_timeout(timeout)?;
+        self.inner.dialect_mut().client = client;
+        Ok(self)
+    }
+
     /// Connect to a Mem0 REST server.
     ///
     /// `api_key` is sent as `X-API-Key`. Pass `None` only when the server is
@@ -199,6 +219,13 @@ impl Memory for Mem0Memory {
     async fn health_check(&self) -> bool {
         self.inner.health_check().await
     }
+    /// Forwarded explicitly: this wrapper delegates method-by-method, so the
+    /// defaulted `None` would otherwise shadow `RemoteMemory`'s typed probe —
+    /// which is exactly what the first cut shipped, making §U4's deep health
+    /// unreachable through every public type (the #68 review's Major 1).
+    async fn health_probe(&self) -> Option<tinymemory_api::health::MemoryHealth> {
+        self.inner.health_probe().await
+    }
 }
 
 #[derive(Debug)]
@@ -242,7 +269,12 @@ impl Mem0Dialect {
                 let top_k = Self::LISTING_TOP_K;
                 let response: Value = self
                     .client
-                    .json(Method::GET, &format!("memories?top_k={top_k}"), None)
+                    .json(
+                        Method::GET,
+                        &format!("memories?top_k={top_k}"),
+                        None,
+                        Attempts::RetryTransient,
+                    )
                     .await?;
                 let results = response
                     .get("results")
@@ -282,6 +314,7 @@ impl Mem0Dialect {
                             Method::POST,
                             &format!("v3/memories/?page={page}&page_size={CLOUD_PAGE_SIZE}"),
                             Some(&json!({"filters": {"agent_id": CLOUD_AGENT_ID}})),
+                            Attempts::RetryTransient,
                         )
                         .await?;
                     let results = response
@@ -470,6 +503,7 @@ impl Dialect for Mem0Dialect {
                             Value::Object(filters),
                             opts.min_score,
                         )),
+                        Attempts::RetryTransient,
                     )
                     .await?
             }
@@ -489,6 +523,7 @@ impl Dialect for Mem0Dialect {
                         Method::POST,
                         "v3/memories/search/",
                         Some(&Self::search_body(query, limit, filters, opts.min_score)),
+                        Attempts::RetryTransient,
                     )
                     .await?
             }
@@ -518,9 +553,19 @@ impl Dialect for Mem0Dialect {
         Ok(true)
     }
 
-    /// Accepts either Mem0's health endpoint or its redirected root page.
-    async fn health(&self) -> bool {
-        self.client.healthy("api/health").await || self.client.healthy("").await
+    /// Probes Mem0's health endpoint, falling back to its redirected root
+    /// page — and unlike the old boolean `||`, a double failure reports BOTH
+    /// answers, so "the health route 404s but the root is throttled" stops
+    /// reading as a bare false.
+    async fn health(&self) -> anyhow::Result<()> {
+        let primary = match self.client.probe("api/health").await {
+            Ok(()) => return Ok(()),
+            Err(error) => error,
+        };
+        self.client
+            .probe("")
+            .await
+            .map_err(|root| root.context(format!("health endpoint also failed: {primary}")))
     }
 }
 

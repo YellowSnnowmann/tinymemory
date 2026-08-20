@@ -108,8 +108,11 @@ async fn capture_auth(State(state): State<Arc<Mutex<Value>>>, headers: HeaderMap
 #[tokio::test]
 async fn supermemory_supports_provided_and_self_hosted_apis() {
     let captured = Arc::new(Mutex::new(Value::Null));
+    // The health probe now proves auth + data plane via the container-tags
+    // list (§U4), so that is where the capture sits — a bare root `/` no
+    // longer receives the probe.
     let app = Router::new()
-        .route("/", get(capture_auth))
+        .route("/v3/container-tags/list", get(capture_auth))
         .with_state(captured.clone());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
@@ -220,6 +223,40 @@ async fn native_supermemory_round_trips_the_tinymemory_contract() {
     assert_eq!(
         state.0.lock().expect("state lock").last_search_tag,
         Some(expected_tag)
+    );
+    // #68 review Major 2: min_score connected to the double's OWN response
+    // shape — the first cut's strictness was only ever tested against
+    // synthetic Option values, which is how a decode/emit field mismatch
+    // dropped every hit. Below the double's similarity (0.95): survives.
+    // Above it: drops. Semantics AND the decode, in one pair.
+    let scored = |min: f64| {
+        let driver = &driver;
+        async move {
+            driver
+                .recall(
+                    "Rust",
+                    1,
+                    &OwnedRecallOpts {
+                        namespace: Some("project".into()),
+                        min_score: Some(min),
+                        ..OwnedRecallOpts::default()
+                    },
+                    None,
+                )
+                .await
+                .expect("recall")
+                .len()
+        }
+    };
+    assert_eq!(
+        scored(0.1).await,
+        1,
+        "a scored hit above the threshold survives"
+    );
+    assert_eq!(
+        scored(0.99).await,
+        0,
+        "a scored hit below the threshold drops"
     );
     assert!(driver.forget("project", "decision").await.expect("forget"));
     assert!(driver.health().await.is_usable());

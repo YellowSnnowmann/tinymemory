@@ -154,4 +154,17 @@ pub trait Memory: Send + Sync {
     /// rather than `Err`, so it is safe to call from a liveness probe without
     /// error-handling boilerplate.
     async fn health_check(&self) -> bool;
+
+    /// Rich health, when the backend can say more than a boolean (issue #18
+    /// follow-up U4).
+    ///
+    /// `None` — the default every existing implementation inherits — means
+    /// "this backend only knows the boolean"; callers fall back to
+    /// [`Memory::health_check`]. `Some(health)` carries the typed answer:
+    /// `Down`/`Degraded` with a reason naming the failure class (credential
+    /// rejected, unreachable, throttled), never a credential or a payload —
+    /// the reason string reaches operator-facing status surfaces.
+    async fn health_probe(&self) -> Option<crate::health::MemoryHealth> {
+        None
+    }
 }

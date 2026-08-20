@@ -20,6 +20,9 @@ anyhow = "1"
 # cap rather than buffered whole, because the endpoint is operator-supplied
 # and a broken or hostile one must not be able to OOM the host.
 reqwest = { version = "0.12", default-features = false, features = ["json", "multipart", "rustls-tls", "stream"] }
+# Only the timer, for the read-retry backoff (issue #18 §U5) — reqwest already
+# requires a tokio runtime, so this adds no new runtime assumption.
+tokio = { version = "1", default-features = false, features = ["time"] }
 # Remote records are translated through a private, lossless envelope.
 serde = { version = "1", features = ["derive"] }
 # Streaming a capped body needs a Stream combinator.
