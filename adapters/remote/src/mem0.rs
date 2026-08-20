@@ -13,7 +13,7 @@ use tinymemory_api::recall::RecallOpts;
 use tinymemory_api::traits::Memory;
 use tinymemory_api::types::MemoryTaint;
 
-use crate::common::{category, Dialect, HttpClient, RemoteMemory, StoredEntry};
+use crate::common::{category, Attempts, Dialect, HttpClient, RemoteMemory, StoredEntry};
 
 /// Stable driver id used by configuration and status output.
 pub use tinymemory_api::drivers::MEM0_DRIVER_ID;
@@ -219,6 +219,13 @@ impl Memory for Mem0Memory {
     async fn health_check(&self) -> bool {
         self.inner.health_check().await
     }
+    /// Forwarded explicitly: this wrapper delegates method-by-method, so the
+    /// defaulted `None` would otherwise shadow `RemoteMemory`'s typed probe —
+    /// which is exactly what the first cut shipped, making §U4's deep health
+    /// unreachable through every public type (the #68 review's Major 1).
+    async fn health_probe(&self) -> Option<tinymemory_api::health::MemoryHealth> {
+        self.inner.health_probe().await
+    }
 }
 
 #[derive(Debug)]
@@ -262,7 +269,12 @@ impl Mem0Dialect {
                 let top_k = Self::LISTING_TOP_K;
                 let response: Value = self
                     .client
-                    .json(Method::GET, &format!("memories?top_k={top_k}"), None)
+                    .json(
+                        Method::GET,
+                        &format!("memories?top_k={top_k}"),
+                        None,
+                        Attempts::RetryTransient,
+                    )
                     .await?;
                 let results = response
                     .get("results")
@@ -302,6 +314,7 @@ impl Mem0Dialect {
                             Method::POST,
                             &format!("v3/memories/?page={page}&page_size={CLOUD_PAGE_SIZE}"),
                             Some(&json!({"filters": {"agent_id": CLOUD_AGENT_ID}})),
+                            Attempts::RetryTransient,
                         )
                         .await?;
                     let results = response
@@ -490,6 +503,7 @@ impl Dialect for Mem0Dialect {
                             Value::Object(filters),
                             opts.min_score,
                         )),
+                        Attempts::RetryTransient,
                     )
                     .await?
             }
@@ -509,6 +523,7 @@ impl Dialect for Mem0Dialect {
                         Method::POST,
                         "v3/memories/search/",
                         Some(&Self::search_body(query, limit, filters, opts.min_score)),
+                        Attempts::RetryTransient,
                     )
                     .await?
             }

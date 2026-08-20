@@ -7,7 +7,9 @@ use tinymemory_api::recall::RecallOpts;
 use tinymemory_api::traits::Memory;
 use tinymemory_api::types::MemoryTaint;
 
-use crate::common::{category, stable_id, Dialect, HttpClient, RemoteMemory, StoredEntry};
+use crate::common::{
+    category, stable_id, Attempts, Dialect, HttpClient, RemoteMemory, StoredEntry,
+};
 
 /// Stable driver id used by configuration and status output.
 pub use tinymemory_api::drivers::SUPERMEMORY_DRIVER_ID;
@@ -163,6 +165,13 @@ impl Memory for SupermemoryMemory {
     async fn health_check(&self) -> bool {
         self.inner.health_check().await
     }
+    /// Forwarded explicitly: this wrapper delegates method-by-method, so the
+    /// defaulted `None` would otherwise shadow `RemoteMemory`'s typed probe —
+    /// which is exactly what the first cut shipped, making §U4's deep health
+    /// unreachable through every public type (the #68 review's Major 1).
+    async fn health_probe(&self) -> Option<tinymemory_api::health::MemoryHealth> {
+        self.inner.health_probe().await
+    }
 }
 
 #[derive(Debug)]
@@ -218,7 +227,14 @@ impl SupermemoryDialect {
                 .get("tinymemory_session_id")
                 .and_then(Value::as_str)
                 .map(str::to_owned),
-            score: value.get("similarity").and_then(Value::as_f64),
+            // Both spellings: the adapter's own double and this crate's
+            // upstream-mirrored conformance double disagree ("similarity" vs
+            // "score"), and losing the number silently turns min_score into a
+            // drop-everything filter (#68 review, Major 2).
+            score: value
+                .get("similarity")
+                .or_else(|| value.get("score"))
+                .and_then(Value::as_f64),
             taint: metadata
                 .get("tinymemory_taint")
                 .and_then(Value::as_str)
@@ -231,7 +247,12 @@ impl SupermemoryDialect {
     async fn memories(&self) -> anyhow::Result<Vec<StoredEntry>> {
         let tags: Value = self
             .client
-            .json(Method::GET, "v3/container-tags/list", None)
+            .json(
+                Method::GET,
+                "v3/container-tags/list",
+                None,
+                Attempts::RetryTransient,
+            )
             .await?;
         let container_tags = tags
             .as_array()
@@ -272,6 +293,7 @@ impl SupermemoryDialect {
                             "order": "desc",
                             "containerTags": [container_tag]
                         })),
+                        Attempts::RetryTransient,
                     )
                     .await?;
                 let memories = response
@@ -388,7 +410,12 @@ impl Dialect for SupermemoryDialect {
         }
         let response: Value = self
             .client
-            .json(Method::POST, "v4/search", Some(&body))
+            .json(
+                Method::POST,
+                "v4/search",
+                Some(&body),
+                Attempts::RetryTransient,
+            )
             .await?;
         Ok(response
             .get("results")

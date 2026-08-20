@@ -224,6 +224,40 @@ async fn native_supermemory_round_trips_the_tinymemory_contract() {
         state.0.lock().expect("state lock").last_search_tag,
         Some(expected_tag)
     );
+    // #68 review Major 2: min_score connected to the double's OWN response
+    // shape — the first cut's strictness was only ever tested against
+    // synthetic Option values, which is how a decode/emit field mismatch
+    // dropped every hit. Below the double's similarity (0.95): survives.
+    // Above it: drops. Semantics AND the decode, in one pair.
+    let scored = |min: f64| {
+        let driver = &driver;
+        async move {
+            driver
+                .recall(
+                    "Rust",
+                    1,
+                    &OwnedRecallOpts {
+                        namespace: Some("project".into()),
+                        min_score: Some(min),
+                        ..OwnedRecallOpts::default()
+                    },
+                    None,
+                )
+                .await
+                .expect("recall")
+                .len()
+        }
+    };
+    assert_eq!(
+        scored(0.1).await,
+        1,
+        "a scored hit above the threshold survives"
+    );
+    assert_eq!(
+        scored(0.99).await,
+        0,
+        "a scored hit below the threshold drops"
+    );
     assert!(driver.forget("project", "decision").await.expect("forget"));
     assert!(driver.health().await.is_usable());
 }

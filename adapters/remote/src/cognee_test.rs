@@ -207,6 +207,27 @@ async fn native_cognee_round_trips_the_tinymemory_contract() {
             .len(),
         1
     );
+    // #68 review Major 2: Cognee's context-only recall is scoreless, so the
+    // strict filter would have dropped 100% of every thresholded result.
+    // The dialect declares scores_recall() = false and min_score is
+    // documented-inert: the hit survives.
+    assert_eq!(
+        driver
+            .recall(
+                "graph",
+                3,
+                &OwnedRecallOpts {
+                    namespace: Some("project".into()),
+                    min_score: Some(0.5),
+                    ..OwnedRecallOpts::default()
+                },
+                None
+            )
+            .await
+            .expect("recall with a threshold the backend cannot score")
+            .len(),
+        1
+    );
     assert!(driver.forget("project", "key").await.expect("forget"));
     assert!(!driver.forget("project", "key").await.expect("forget again"));
     assert!(driver.health().await.is_usable());

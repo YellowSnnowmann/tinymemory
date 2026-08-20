@@ -120,6 +120,29 @@ fn credential_header(value: &str) -> anyhow::Result<HeaderValue> {
     Ok(header)
 }
 
+/// The caller's statement of a request's idempotence — every `json`/`text`
+/// call site must choose, which is what makes the read/write retry split
+/// CHECKABLE instead of conventional (#68 review, Major 4: the first cut's
+/// split lived only in a comment, and wrapping the write helper in the retry
+/// path failed nothing).
+///
+/// `RetryTransient` is only sound when repeating the request cannot double-
+/// apply anything: reads, searches, list walks — POST included when the POST
+/// is a query. `Once` is for everything whose repetition has a cost.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Attempts {
+    /// Retry up to three times on the typed transient classes.
+    RetryTransient,
+    /// One attempt, whatever the failure.
+    //
+    // No current caller: the audit behind #68 found every existing
+    // `json`/`text` call is a read, which is exactly why the marker exists —
+    // the FIRST write-shaped caller must pick this variant instead of
+    // silently inheriting retry. Deliberately present before its first use.
+    #[allow(dead_code)]
+    Once,
+}
+
 impl HttpClient {
     /// Builds a client that optionally authenticates with a bearer token.
     pub(crate) fn bearer(endpoint: &str, credential: Option<&str>) -> anyhow::Result<Self> {
@@ -176,6 +199,10 @@ impl HttpClient {
     /// Rebuilds this client with a different per-request deadline (issue #18
     /// follow-up U5). The 60s default suits interactive calls; a bulk
     /// migration or a health probe may want its own budget.
+    ///
+    /// Note the effective worst-case wall time of a retrying READ is ~3x
+    /// this value plus 750ms of backoff — the transient-retry policy runs up
+    /// to three attempts, each with its own deadline.
     pub(crate) fn with_timeout(mut self, timeout: std::time::Duration) -> anyhow::Result<Self> {
         self.inner = Self::build_inner(timeout)?;
         Ok(self)
@@ -286,6 +313,15 @@ impl HttpClient {
             404 => MemoryError::NotFound(format!(
                 "memory API {path} on {host} returned HTTP 404{detail}"
             )),
+            // A validation refusal: the backend understood the request and
+            // rejected its CONTENT. Without this arm a real validating
+            // backend (all three vendors validate; only the in-tree doubles
+            // accept everything) could never produce the `Invalid` the
+            // tightened conformance refusal-assertion demands (#68 review,
+            // Major 5).
+            400 | 422 => MemoryError::Invalid(format!(
+                "memory API {path} on {host} returned HTTP {status}{detail}"
+            )),
             // The answered-but-cannot-serve class: rate limiting and the
             // gateway trio. Distinct from `Backend` so a retry policy can key
             // on it without parsing prose.
@@ -346,31 +382,49 @@ impl HttpClient {
         method: Method,
         path: &str,
         body: Option<&serde_json::Value>,
+        attempts: Attempts,
     ) -> anyhow::Result<T> {
-        self.with_read_retry(|| async {
-            let mut request = self.request(method.clone(), path)?;
-            if let Some(body) = body {
-                request = request.json(body);
-            }
-            let response = request
-                .send()
-                .await
-                .map_err(|error| self.transport_error(error))?;
-            let status = response.status();
-            if !status.is_success() {
-                let body = response.text().await.unwrap_or_default();
-                return Err(self.status_error(path, status, &body));
-            }
-            let body = read_capped(response, path).await?;
-            serde_json::from_slice(&body)
-                .with_context(|| format!("memory API {path} returned invalid JSON"))
-        })
-        .await
+        if matches!(attempts, Attempts::Once) {
+            return self.json_attempt(method, path, body).await;
+        }
+        self.with_read_retry(|| self.json_attempt(method.clone(), path, body))
+            .await
+    }
+
+    /// One send of a JSON request — the body `json` retries (or not, per its
+    /// `Attempts` marker).
+    async fn json_attempt<T: DeserializeOwned>(
+        &self,
+        method: Method,
+        path: &str,
+        body: Option<&serde_json::Value>,
+    ) -> anyhow::Result<T> {
+        let mut request = self.request(method, path)?;
+        if let Some(body) = body {
+            request = request.json(body);
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|error| self.transport_error(error))?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = response.text().await.unwrap_or_default();
+            return Err(self.status_error(path, status, &body));
+        }
+        let body = read_capped(response, path).await?;
+        serde_json::from_slice(&body)
+            .with_context(|| format!("memory API {path} returned invalid JSON"))
     }
 
     /// Sends a request and returns a successful response body as text.
-    pub(crate) async fn text(&self, method: Method, path: &str) -> anyhow::Result<String> {
-        self.with_read_retry(|| async {
+    pub(crate) async fn text(
+        &self,
+        method: Method,
+        path: &str,
+        attempts: Attempts,
+    ) -> anyhow::Result<String> {
+        let attempt = || async {
             let response = self
                 .request(method.clone(), path)?
                 .send()
@@ -383,8 +437,11 @@ impl HttpClient {
             }
             let body = read_capped(response, path).await?;
             String::from_utf8(body).context("memory API response was not valid UTF-8")
-        })
-        .await
+        };
+        if matches!(attempts, Attempts::Once) {
+            return attempt().await;
+        }
+        self.with_read_retry(attempt).await
     }
 
     /// Sends a request whose successful response body is not needed.
@@ -545,6 +602,18 @@ pub(crate) trait Dialect: Send + Sync + std::fmt::Debug {
     /// Probes whether the backend is available, reporting WHY not, typed
     /// (`Ok(())` = serving; the error carries a §A4 `MemoryError` payload).
     async fn health(&self) -> anyhow::Result<()>;
+    /// Whether this backend's recall responses carry a similarity score.
+    ///
+    /// Decides the `min_score` tier in [`RemoteMemory::recall`]: a scoring
+    /// backend gets the strict filter (an unscored hit cannot clear a
+    /// threshold), while a backend that STRUCTURALLY cannot score — Cognee's
+    /// context-only recall has no score field at all — keeps its hits, because
+    /// dropping 100% of every result is not honesty, it is a different lie
+    /// (the #68 review's Major 2). The inertness on scoreless backends is
+    /// deliberate and documented rather than silent: this flag is where.
+    fn scores_recall(&self) -> bool {
+        true
+    }
 }
 
 #[derive(Debug)]
@@ -627,7 +696,12 @@ impl<D: Dialect + 'static> Memory for RemoteMemory<D> {
         let mut entries = self.dialect.search(query, limit, opts.clone()).await?;
         entries.retain(|entry| matches_filters(entry, &opts));
         if let Some(minimum) = min_score {
-            entries.retain(|entry| clears_min_score(entry.score, minimum));
+            if self.dialect.scores_recall() {
+                entries.retain(|entry| clears_min_score(entry.score, minimum));
+            }
+            // else: the backend cannot score (see `Dialect::scores_recall`) —
+            // the threshold is documented-inert rather than silently
+            // everything-dropping.
         }
         entries.truncate(limit);
         Ok(entries
@@ -716,13 +790,41 @@ impl<D: Dialect + 'static> Memory for RemoteMemory<D> {
         use tinymemory_api::health::MemoryHealth;
         Some(match self.dialect.health().await {
             Ok(()) => MemoryHealth::Ready,
-            Err(error) => match error.downcast::<MemoryError>() {
-                Ok(MemoryError::Unavailable(reason)) => MemoryHealth::degraded(reason),
-                Ok(typed) => MemoryHealth::down(typed.to_string()),
-                Err(opaque) => MemoryHealth::down(opaque.to_string()),
-            },
+            Err(error) => {
+                let reason = health_reason(&error);
+                match error.downcast_ref::<MemoryError>() {
+                    Some(MemoryError::Unavailable(_)) => MemoryHealth::degraded(reason),
+                    _ => MemoryHealth::down(reason),
+                }
+            }
         })
     }
+}
+
+/// A health `reason` from a probe failure, REDACTED for the status surface.
+///
+/// `MemoryHealth`'s contract: the reason is logged and rendered in operator
+/// status and must never carry credentials or content. `status_error`
+/// interpolates up to 300 chars of the backend's OWN error body — which a
+/// vendor is free to fill with the rejected key (#68 review). Every message
+/// this crate builds puts that detail after a spaced em-dash, so the reason
+/// keeps each chain segment's head and drops the tails. The full untruncated
+/// error still flows to the CALLER of the failing operation; only the
+/// standing status string is trimmed. Walking `chain()` (not just the top)
+/// keeps Mem0's both-probes-failed context instead of losing it to a
+/// consuming downcast.
+fn health_reason(error: &anyhow::Error) -> String {
+    error
+        .chain()
+        .map(|cause| {
+            let text = cause.to_string();
+            match text.split_once(" — ") {
+                Some((head, _)) => format!("{head} — detail withheld from status; see logs"),
+                None => text,
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// Honesty over leniency (issue #18 §U6): an entry with NO score cannot be

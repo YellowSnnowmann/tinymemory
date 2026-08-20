@@ -51,6 +51,26 @@ async fn failing(status: StatusCode) -> String {
     serve(Router::new().fallback(any(move || async move { status }))).await
 }
 
+/// A backend that fails every route with `status` and a body carrying a
+/// fake secret, counting requests — for the redaction and retry-count
+/// assertions.
+async fn failing_with_body(
+    status: StatusCode,
+    body: &'static str,
+) -> (String, std::sync::Arc<std::sync::atomic::AtomicU32>) {
+    let hits = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let counter = hits.clone();
+    let endpoint = serve(Router::new().fallback(any(move || {
+        let counter = counter.clone();
+        async move {
+            counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            (status, body)
+        }
+    })))
+    .await;
+    (endpoint, hits)
+}
+
 /// A backend that answers every route with `200 OK` and a body that is not the
 /// JSON the adapter expects.
 ///
@@ -289,4 +309,143 @@ async fn a_paginated_export_terminates_instead_of_looping() {
             "{name}: export_page never terminated — an exporter would spin here"
         );
     }
+}
+
+/// #68 review Major 1: deep health must be reachable through the PUBLIC
+/// adapter types — the first cut implemented it on the inner composition and
+/// every hand-delegating wrapper shadowed it with the trait default's `None`.
+/// A 401 is `Down` naming the credential class; a 503 is `Degraded` (answered,
+/// cannot serve). And per the review's redaction minor: the backend's error
+/// body — which a vendor is free to fill with the rejected key — must NOT
+/// reach the standing status reason.
+#[tokio::test]
+async fn public_adapters_probe_typed_health_with_redacted_reasons() {
+    let (unauthorized, _) = failing_with_body(
+        StatusCode::UNAUTHORIZED,
+        r#"{"detail":"bad key sk-SECRET123"}"#,
+    )
+    .await;
+    for (name, memory) in adapters(&unauthorized) {
+        let health = memory
+            .health_probe()
+            .await
+            .unwrap_or_else(|| panic!("{name}: the public type must forward health_probe"));
+        assert_eq!(health.as_str(), "down", "{name}: a 401 is Down");
+        let reason = health.reason().unwrap_or_default();
+        assert!(
+            reason.contains("credential"),
+            "{name}: the reason names the class: {reason}"
+        );
+        assert!(
+            !reason.contains("sk-SECRET123"),
+            "{name}: the backend's body must not reach the status surface: {reason}"
+        );
+    }
+
+    let (throttled, _) = failing_with_body(StatusCode::SERVICE_UNAVAILABLE, "busy").await;
+    for (name, memory) in adapters(&throttled) {
+        let health = memory
+            .health_probe()
+            .await
+            .unwrap_or_else(|| panic!("{name}: the public type must forward health_probe"));
+        assert_eq!(
+            health.as_str(),
+            "degraded",
+            "{name}: answered-but-cannot-serve is Degraded, not Down"
+        );
+    }
+}
+
+/// #68 review Major 5: a backend-side validation refusal (HTTP 400) must
+/// arrive as `Invalid` — the class the tightened conformance refusal
+/// assertion demands — never as `Backend`.
+#[tokio::test]
+async fn a_400_refusal_is_invalid_not_backend() {
+    let (endpoint, _) = failing_with_body(
+        StatusCode::BAD_REQUEST,
+        r#"{"error":"content must not be empty"}"#,
+    )
+    .await;
+    for (name, memory) in adapters(&endpoint) {
+        let error = memory
+            .store_with_taint(
+                "ns",
+                "k",
+                "content",
+                MemoryCategory::Core,
+                None,
+                MemoryTaint::Internal,
+            )
+            .await
+            .expect_err("a 400 must surface");
+        assert!(
+            matches!(
+                error.downcast_ref::<MemoryError>(),
+                Some(MemoryError::Invalid(_))
+            ),
+            "{name}: a 400 must be Invalid, got: {error}"
+        );
+    }
+}
+
+/// #68 review Major 4: the retry split is now a per-call statement. A 503 on
+/// a retrying READ is attempted three times; the same 503 on a WRITE path
+/// (`empty` — no marker, no retry machinery at all) is attempted once. The
+/// counter is the proof, not a comment.
+#[tokio::test]
+async fn transient_failures_retry_reads_three_times_and_writes_once() {
+    // Reads: every route 503s; the read path retries to its cap.
+    let (endpoint, hits) = failing_with_body(StatusCode::SERVICE_UNAVAILABLE, "busy").await;
+    let memory = SupermemoryMemory::api(&endpoint, "key").expect("client");
+    let _ = memory.list(None, None, None).await;
+    assert_eq!(
+        hits.load(std::sync::atomic::Ordering::SeqCst),
+        3,
+        "a transient read failure retries to the cap"
+    );
+
+    // Writes: the LIST half of upsert succeeds (empty page — nothing to
+    // update), so the create POST is the only thing that can fail. It must
+    // reach the backend exactly once: the write path has no retry machinery
+    // at all, and this counter — not a comment — is what pins the split
+    // (#68 review, Major 4).
+    let writes = std::sync::Arc::new(std::sync::atomic::AtomicU32::new(0));
+    let counter = writes.clone();
+    let app = Router::new()
+        .route(
+            "/v4/memories/list",
+            axum::routing::post(|| async { axum::Json(serde_json::json!({"memories": []})) }),
+        )
+        .fallback(any(move || {
+            let counter = counter.clone();
+            async move {
+                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                StatusCode::SERVICE_UNAVAILABLE
+            }
+        }));
+    let write_endpoint = serve(app).await;
+    let memory = SupermemoryMemory::api(&write_endpoint, "key").expect("client");
+    let error = memory
+        .store_with_taint(
+            "ns",
+            "k",
+            "v",
+            MemoryCategory::Core,
+            None,
+            MemoryTaint::Internal,
+        )
+        .await
+        .expect_err("the 503 write must surface");
+    assert!(
+        matches!(
+            error.downcast_ref::<MemoryError>(),
+            Some(MemoryError::Unavailable(_))
+        ),
+        "and typed: {error}"
+    );
+    assert_eq!(
+        writes.load(std::sync::atomic::Ordering::SeqCst),
+        1,
+        "a transient WRITE failure is attempted exactly once"
+    );
 }

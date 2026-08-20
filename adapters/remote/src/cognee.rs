@@ -8,7 +8,7 @@ use tinymemory_api::recall::RecallOpts;
 use tinymemory_api::traits::Memory;
 use tinymemory_api::types::MemoryTaint;
 
-use crate::common::{stable_id, Dialect, HttpClient, RemoteMemory, StoredEntry};
+use crate::common::{stable_id, Attempts, Dialect, HttpClient, RemoteMemory, StoredEntry};
 
 /// Stable driver id used by configuration and status output.
 pub use tinymemory_api::drivers::COGNEE_DRIVER_ID;
@@ -172,6 +172,13 @@ impl Memory for CogneeMemory {
     async fn health_check(&self) -> bool {
         self.inner.health_check().await
     }
+    /// Forwarded explicitly: this wrapper delegates method-by-method, so the
+    /// defaulted `None` would otherwise shadow `RemoteMemory`'s typed probe —
+    /// which is exactly what the first cut shipped, making §U4's deep health
+    /// unreachable through every public type (the #68 review's Major 1).
+    async fn health_probe(&self) -> Option<tinymemory_api::health::MemoryHealth> {
+        self.inner.health_probe().await
+    }
 }
 
 #[derive(Debug)]
@@ -201,7 +208,12 @@ impl CogneeDialect {
     async fn datasets(&self) -> anyhow::Result<Vec<Dataset>> {
         let response: Value = self
             .client
-            .json(Method::GET, "api/v1/datasets/", None)
+            .json(
+                Method::GET,
+                "api/v1/datasets/",
+                None,
+                Attempts::RetryTransient,
+            )
             .await?;
         Ok(response
             .as_array()
@@ -225,6 +237,7 @@ impl CogneeDialect {
                 Method::GET,
                 &format!("api/v1/datasets/{}/data", dataset.id),
                 None,
+                Attempts::RetryTransient,
             )
             .await?;
         let mut entries = Vec::new();
@@ -245,6 +258,7 @@ impl CogneeDialect {
                 .text(
                     Method::GET,
                     &format!("api/v1/datasets/{}/data/{id}/raw", dataset.id),
+                    Attempts::RetryTransient,
                 )
                 .await?;
             let mut entry: StoredEntry =
@@ -363,17 +377,6 @@ impl Dialect for CogneeDialect {
         opts: RecallOpts<'_>,
     ) -> anyhow::Result<Vec<StoredEntry>> {
         let datasets = opts.namespace.map(Self::dataset_name);
-        // Cognee's recall API takes no score threshold, so `min_score` is
-        // enforced client-side by the shared pass in `common.rs` (issue #18
-        // §U6). Over-fetch when a threshold is set — with `top_k == limit`,
-        // every hit the filter drops is a slot the caller asked for and
-        // cannot be backfilled. Capped: an aggressive threshold is not a
-        // license to pull the whole store.
-        let top_k = if opts.min_score.is_some() {
-            limit.saturating_mul(3).min(limit.saturating_add(50))
-        } else {
-            limit
-        };
         let response: Value = self
             .client
             .json(
@@ -383,10 +386,11 @@ impl Dialect for CogneeDialect {
                     "query": query,
                     "search_type": "CHUNKS",
                     "datasets": datasets.map(|name| vec![name]),
-                    "top_k": top_k,
+                    "top_k": limit,
                     "only_context": true,
                     "session_id": opts.session_id
                 })),
+                Attempts::RetryTransient,
             )
             .await?;
         let mut entries = Vec::new();
@@ -436,6 +440,14 @@ impl Dialect for CogneeDialect {
     /// Probes Cognee's aggregate health endpoint, typed.
     async fn health(&self) -> anyhow::Result<()> {
         self.client.probe("health").await
+    }
+
+    /// Context-only recall carries no score field — see the trait doc for
+    /// what this means for `min_score` (documented-inert, not everything-
+    /// dropping; the first cut's over-fetch pulled 3x the data and discarded
+    /// all of it).
+    fn scores_recall(&self) -> bool {
+        false
     }
 }
 
