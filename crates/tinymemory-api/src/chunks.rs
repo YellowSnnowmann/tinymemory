@@ -89,6 +89,16 @@ pub enum DataSource {
     MeetingNotes,
     /// Google Drive document. Feeds [`SourceKind::Document`].
     DriveDocs,
+    /// A file a user handed to the memory layer directly — a PDF, a `.docx`,
+    /// an HTML export. Feeds [`SourceKind::Document`].
+    ///
+    /// Distinct from the connector variants above because there is no upstream
+    /// provider to re-read it from: the bytes arrived once and the memory layer
+    /// is now the only copy, which is exactly what a re-sync path must not
+    /// assume it can refetch.
+    Upload,
+    /// A page fetched from a URL. Feeds [`SourceKind::Document`].
+    WebPage,
 }
 
 impl DataSource {
@@ -99,7 +109,11 @@ impl DataSource {
                 SourceKind::Chat
             }
             Self::Gmail | Self::OtherEmail => SourceKind::Email,
-            Self::Notion | Self::MeetingNotes | Self::DriveDocs => SourceKind::Document,
+            Self::Notion
+            | Self::MeetingNotes
+            | Self::DriveDocs
+            | Self::Upload
+            | Self::WebPage => SourceKind::Document,
         }
     }
 
@@ -115,6 +129,8 @@ impl DataSource {
             Self::Notion => "notion",
             Self::MeetingNotes => "meeting_notes",
             Self::DriveDocs => "drive_docs",
+            Self::Upload => "upload",
+            Self::WebPage => "web_page",
         }
     }
 
@@ -134,6 +150,8 @@ impl DataSource {
             "notion" => Ok(Self::Notion),
             "meeting_notes" => Ok(Self::MeetingNotes),
             "drive_docs" => Ok(Self::DriveDocs),
+            "upload" => Ok(Self::Upload),
+            "web_page" => Ok(Self::WebPage),
             other => Err(format!("unknown data source: {other}")),
         }
     }
@@ -151,6 +169,8 @@ impl DataSource {
             Self::Notion,
             Self::MeetingNotes,
             Self::DriveDocs,
+            Self::Upload,
+            Self::WebPage,
         ]
     }
 }
