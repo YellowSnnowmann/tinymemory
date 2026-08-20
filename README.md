@@ -85,9 +85,9 @@ request as "give me the test doubles".
 
 Run `git submodule update --init --recursive` after cloning. Nothing in the
 workspace builds without it — `tinymemory-core` names `tinyagents` and
-`tinycortex` by
-path through `vendor/`, so an uninitialized checkout fails at manifest
-resolution rather than at compile time, which reads as a confusing error.
+`tinycortex` by path through `vendor/`, so an uninitialized checkout fails at
+manifest resolution rather than at compile time, which reads as a confusing
+error.
 
 ## Using from your project
 
