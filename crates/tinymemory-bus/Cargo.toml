@@ -18,6 +18,14 @@ description = "The TinyBus wire contract for the TinyMemory module: member names
 # transport is deliberately absent, and the root manifest's note on
 # `crates/tinymemory-module` for what depending on the vendored `tinybus` from a
 # workspace member would do to this workspace.
+#
+# Nothing here may pull in `rusqlite`, `git2`, `reqwest`, `regex`, an async
+# runtime, or `tinybus`. Guard with the FORWARD form, which is scoped to this
+# package — `cargo tree -i` discards the `-p` scope and exits clean even when
+# this crate is the one pulling the dependency in:
+#
+#   cargo tree -p tinymemory-bus -e normal,build --prefix none \
+#     | grep -Ei 'rusqlite|libsqlite|git2|reqwest|regex|tokio|tinybus'   # expect no match
 [dependencies]
 # The single definition of every type on the wire. Re-exported, never
 # redefined — see `src/types/mod.rs`.
