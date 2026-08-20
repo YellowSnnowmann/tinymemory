@@ -10,6 +10,8 @@
 //! extraction models, hotness decay curves, and snapshot retention are driver
 //! concerns and appear in none of these signatures.
 
+use std::collections::BTreeSet;
+
 use async_trait::async_trait;
 
 use crate::error::MemoryError;
@@ -204,20 +206,32 @@ pub trait MemoryGraph: Send + Sync {
             query.predicates.iter().map(|p| Some(p.as_str())).collect()
         };
 
+        // Nodes reached but never expanded, either because a bound was hit or
+        // because they sit one hop past the requested depth. A set, not a
+        // counter: the same boundary node is commonly reached from several
+        // directions, and counting it twice would overstate what is left.
+        let mut unexpanded: BTreeSet<String> = BTreeSet::new();
+
         // Unseeded: an overview, not a traversal. One bounded scan of the
         // slice, and the node set is whatever the returned edges touch.
         if query.seeds.is_empty() {
             for predicate in &predicates {
+                // One past the ceiling: a call that asked for exactly
+                // `max_edges` and got them cannot tell a full slice from a
+                // truncated one.
                 let records = self
-                    .relations(namespace, None, *predicate, query.max_edges)
+                    .relations(
+                        namespace,
+                        None,
+                        *predicate,
+                        query.max_edges.saturating_add(1),
+                    )
                     .await?;
-                if records.len() >= query.max_edges {
-                    view.truncated = true;
-                }
                 for record in records {
-                    push_view_edge(&mut view, record, &mut 0, query, 0);
+                    push_view_edge(&mut view, record, &mut unexpanded, query, 0);
                 }
             }
+            view.stats.frontier_remaining = unexpanded.len();
             view.recompute_stats();
             return Ok(view);
         }
@@ -247,7 +261,6 @@ pub trait MemoryGraph: Send + Sync {
             frontier.push(seed.clone());
         }
 
-        let mut deferred = 0usize;
         for hop in 0..=query.depth {
             if frontier.is_empty() {
                 break;
@@ -258,8 +271,13 @@ pub trait MemoryGraph: Send + Sync {
                 if query.direction.follows_out() {
                     for predicate in &predicates {
                         incident.extend(
-                            self.relations(namespace, Some(node_id), *predicate, query.max_edges)
-                                .await?,
+                            self.relations(
+                                namespace,
+                                Some(node_id),
+                                *predicate,
+                                query.max_edges.saturating_add(1),
+                            )
+                            .await?,
                         );
                     }
                 }
@@ -283,27 +301,33 @@ pub trait MemoryGraph: Send + Sync {
                     };
                     let known = view.nodes.iter().any(|n| n.id == other);
                     if !known {
-                        // At the outermost hop, and once the node ceiling is
-                        // reached, an edge to an unknown node would dangle.
-                        // Drop it and record that the view is partial.
-                        if hop >= query.depth || view.nodes.len() >= query.max_nodes {
-                            deferred += 1;
+                        // An edge to a node the view will not hold would
+                        // dangle, so it is dropped either way — but *why* it
+                        // was dropped matters. Reaching the requested depth is
+                        // the caller getting what they asked for; hitting the
+                        // node ceiling is not, and only the second makes the
+                        // view truncated. Conflating them would set the flag on
+                        // every finite traversal of a connected graph and leave
+                        // it saying nothing.
+                        if hop >= query.depth {
+                            unexpanded.insert(other);
+                            continue;
+                        }
+                        if view.nodes.len() >= query.max_nodes {
+                            unexpanded.insert(other);
                             view.truncated = true;
                             continue;
                         }
                         view.nodes.push(GraphNode::bare(other.clone(), hop + 1));
                         next.push(other);
                     }
-                    push_view_edge(&mut view, record, &mut deferred, query, hop);
+                    push_view_edge(&mut view, record, &mut unexpanded, query, hop);
                 }
             }
             frontier = next;
         }
 
-        view.stats.frontier_remaining = deferred + frontier.len();
-        if !frontier.is_empty() {
-            view.truncated = true;
-        }
+        view.stats.frontier_remaining = unexpanded.len();
         view.recompute_stats();
         Ok(view)
     }
@@ -318,7 +342,7 @@ pub trait MemoryGraph: Send + Sync {
 fn push_view_edge(
     view: &mut GraphView,
     record: GraphRelationRecord,
-    deferred: &mut usize,
+    unexpanded: &mut BTreeSet<String>,
     query: &GraphViewQuery,
     depth: u32,
 ) {
@@ -338,7 +362,8 @@ fn push_view_edge(
         return;
     }
     if view.edges.len() >= query.max_edges {
-        *deferred += 1;
+        unexpanded.insert(triple.0);
+        unexpanded.insert(triple.2);
         view.truncated = true;
         return;
     }
@@ -349,7 +374,7 @@ fn push_view_edge(
             continue;
         }
         if view.nodes.len() >= query.max_nodes {
-            *deferred += 1;
+            unexpanded.insert(id);
             view.truncated = true;
             return;
         }
