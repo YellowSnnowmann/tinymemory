@@ -12,8 +12,6 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-mod test;
-
 /// A document format intake can recognise.
 ///
 /// Deliberately short. This is the set that has a defined conversion, not a
@@ -188,3 +186,6 @@ fn looks_like_html(bytes: &[u8]) -> bool {
 fn is_probably_text(bytes: &[u8]) -> bool {
     !bytes.is_empty() && !bytes.contains(&0) && std::str::from_utf8(bytes).is_ok()
 }
+
+#[cfg(test)]
+mod test;
