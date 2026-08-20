@@ -83,9 +83,17 @@ jobs:
         run: |
           set -euo pipefail
 
+          # The root manifest is a virtual workspace — every crate lives under
+          # `crates/`, and there is no root package. So name the facade rather
+          # than taking `.packages[0]`, which is whichever member cargo happened
+          # to list first and would silently start releasing a different crate's
+          # version the day that order changes.
           metadata="$(cargo metadata --format-version 1 --no-deps)"
-          crate_name="$(jq -r '.packages[0].name' <<< "$metadata")"
-          current_version="$(jq -r '.packages[0].version' <<< "$metadata")"
+          crate_name="tinymemory"
+          current_version="$(
+            jq -r --arg name "$crate_name" \
+              '.packages[] | select(.name == $name) | .version' <<< "$metadata"
+          )"
           if [[ -z "$current_version" || "$current_version" == "null" ]]; then
             echo "Could not resolve the current crate version" >&2
             exit 1
@@ -127,7 +135,7 @@ jobs:
             echo "tag=${tag}"
           } >> "$GITHUB_OUTPUT"
 
-      # Bumps the root `[package]` version only. That is sufficient *because* no
+      # Bumps the facade's `[package]` version only. That is sufficient *because* no
       # intra-workspace path dependency carries a `version = "…"` requirement —
       # a `minor` bump to 0.2.0 against a sibling asking for `^0.1.0` fails
       # resolution here with "failed to select a version", which is exactly how
@@ -152,19 +160,20 @@ jobs:
             echo "An intra-workspace path dependency carries a version requirement:" >&2
             echo "$offenders" >&2
             echo >&2
-            echo "Bumping the root package will fail to resolve against it. Nothing here" >&2
+            echo "Bumping the facade will fail to resolve against it. Nothing here" >&2
             echo "is published to crates.io, so drop the 'version' key and keep 'path'." >&2
             exit 1
           fi
 
-          perl -0pi -e 's/(\[package\][\s\S]*?\nversion = ")[^"]+(")/$1$ENV{NEXT_VERSION}$2/' Cargo.toml
+          perl -0pi -e 's/(\[package\][\s\S]*?\nversion = ")[^"]+(")/$1$ENV{NEXT_VERSION}$2/' \
+            crates/tinymemory/Cargo.toml
           cargo update -p "$CRATE_NAME" --precise "$NEXT_VERSION"
 
           # There are TWO Cargo worlds here, and the module's is the one the
           # release actually builds. `crates/tinymemory-module` is its own
           # workspace root with its own `Cargo.lock` (see the root Cargo.toml
-          # comment for why), and it depends on the root crate by path — so
-          # bumping the root version leaves that lockfile recording the old one.
+          # comment for why), and it depends on the facade by path — so bumping
+          # the facade's version leaves that lockfile recording the old one.
           #
           # `native-bundles` then builds with `--locked` and every one of the
           # eleven jobs fails with "cannot update the lock file … because
@@ -188,7 +197,8 @@ jobs:
           # Both lockfiles: the module's own workspace lock is what the bundle
           # jobs build against with `--locked`, so a tag that omits it cannot be
           # built at all.
-          git add Cargo.toml Cargo.lock crates/tinymemory-module/Cargo.lock
+          git add crates/tinymemory/Cargo.toml Cargo.lock \
+            crates/tinymemory-module/Cargo.lock
           git commit -m "Release ${RELEASE_TAG}"
           git tag -a "${RELEASE_TAG}" -m "Release ${RELEASE_TAG}"
 
