@@ -50,7 +50,13 @@ rust_2018_idioms = { level = "warn", priority = -1 }
 
 [lints.clippy]
 all = { level = "warn", priority = -1 }
-pedantic = { level = "warn", priority = -1 }
+# `pedantic` is deliberately not enabled, matching `tinymemory-tinycortex` and
+# `tinymemory-remote`. These modules moved here verbatim from
+# `tinymemory-api`, which carries no `[lints]` table at all; switching pedantic
+# on over the move would bury a mechanical relocation under several hundred
+# unrelated `#[must_use]` and backtick edits. Turning it on is worth doing — as
+# its own commit, over `tinymemory-api` too, so the contract and the vocabulary
+# stay lint-compatible.
 unwrap_used = "warn"
 expect_used = "warn"
 panic = "warn"
