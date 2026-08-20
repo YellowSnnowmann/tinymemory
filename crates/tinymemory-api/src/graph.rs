@@ -402,4 +402,4 @@ impl GraphView {
 
 #[cfg(test)]
 #[path = "graph_tests.rs"]
-mod graph_tests;
+mod tests;
