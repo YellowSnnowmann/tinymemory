@@ -41,7 +41,7 @@ tokio = { version = "1", features = ["macros", "rt", "rt-multi-thread"] }
 # Nothing by default: uploads and conversion need no network.
 default = []
 # The URL intake path, and with it the SSRF guard and an HTTP client.
-network = ["dep:tinymemory-sources", "dep:reqwest"]
+network = ["dep:tinymemory-sources", "tinymemory-sources/network", "dep:reqwest"]
 
 [lints.rust]
 unsafe_code = "forbid"
