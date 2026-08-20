@@ -1,15 +1,32 @@
 //! Stable public contracts for the TinyMemory memory system.
 //!
-//! This crate holds the value types, error enum, capability vocabulary, and
-//! storage trait that memory engines and their embedding hosts compile
-//! against. It is engine-neutral on purpose: `tinycortex` is the default
-//! embedded engine, not the owner of the contract, and a second engine
-//! (`supermemory`, `mem0`, a self-hosted HTTP backend) implements the same
-//! traits without either engine learning about the other.
-//! It is deliberately dependency-light (serde / serde_json /
-//! chrono / sha2 / anyhow / thiserror / async-trait / uuid only) so depending on
-//! the contract never drags in SQLite, git2, reqwest, regex, or an async
-//! runtime.
+//! This crate holds the traits a memory engine implements, the host seam it is
+//! bound through, and — re-exported from [`tinymemory_bus`] — the value types,
+//! error enum and capability vocabulary they exchange. It is engine-neutral on
+//! purpose: `tinycortex` is the default embedded engine, not the owner of the
+//! contract, and a second engine (`supermemory`, `mem0`, a self-hosted HTTP
+//! backend) implements the same traits without either engine learning about the
+//! other. It is deliberately dependency-light (serde / serde_json / anyhow /
+//! async-trait / schemars / log, plus `tinymemory-bus`) so depending on the
+//! contract never drags in SQLite, git2, reqwest, regex, or an async runtime.
+//!
+//! ## The vocabulary lives one layer down
+//!
+//! Every payload type is defined in [`tinymemory_bus`] and re-exported here at
+//! its historical path, so `tinymemory_api::types::MemoryEntry` is the *same
+//! item* as `tinymemory_bus::types::MemoryEntry`, not a structural twin.
+//!
+//! The split follows what a consumer actually needs. A **driver author**
+//! implements [`provider::MemoryProvider`] and wants this crate: traits, the
+//! null driver, the mandatory composition, the [`host`] seam. A **host** loads
+//! `tinymemory-module` over `TinyBus` and only makes calls — it names
+//! `MemoryEntry` and `MemoryCategory` and implements nothing — so it depends on
+//! `tinymemory-bus` alone and compiles none of this.
+//!
+//! Defining a second set of payload types for that host was the alternative,
+//! and it is the failure the root manifest's `[patch]` table exists to prevent:
+//! `MemoryCategory` from the module would not be `MemoryCategory` in the host,
+//! with a conversion at every call site that nothing type-checks.
 //!
 //! ## Self-contained by design
 //!
@@ -64,13 +81,26 @@
 //!   round-trips [`error::MemoryError`] through. Shared by both ends of every
 //!   such transport, so the names cannot drift apart.
 
-pub mod capabilities;
-pub mod chunks;
 pub mod drivers;
-pub mod error;
-pub mod goals;
-pub mod health;
 pub mod host;
+
+// The wire vocabulary, re-exported from `tinymemory-bus`.
+//
+// These modules used to be defined here. They moved down a layer because a
+// *host* needs them and needs nothing else in this crate: it loads
+// `tinymemory-module` and makes calls, so it names `MemoryEntry` and
+// `MemoryCategory` but implements no trait, binds no driver and parses no
+// config. Making it depend on the whole driver contract to spell a payload type
+// was the wrong shape.
+//
+// Re-exported rather than merely available, so every historical path still
+// resolves — `tinymemory_api::types::MemoryEntry` is the same item as
+// `tinymemory_bus::types::MemoryEntry`, not a twin of it. That identity is the
+// point: a second definition would need a conversion at the module seam that
+// nothing type-checks.
+pub use tinymemory_bus::{
+    capabilities, chunks, error, goals, health, recall, tool_memory, tree, types, version, wire,
+};
 /// The mandatory-family composition: wrap any [`traits::Memory`] backend as a
 /// complete [`provider::MemoryProvider`].
 ///
@@ -84,12 +114,6 @@ pub mod host;
 pub mod mandatory;
 pub mod null;
 pub mod provider;
-pub mod recall;
-pub mod tool_memory;
 pub mod traits;
-pub mod tree;
-pub mod types;
-pub mod version;
-pub mod wire;
 
-pub use version::{is_compatible, CONTRACT_VERSION};
+pub use tinymemory_bus::{is_compatible, CONTRACT_VERSION};

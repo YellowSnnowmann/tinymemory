@@ -243,7 +243,8 @@ impl Metadata {
 /// nodes on top of these leaves; here they live standalone.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Chunk {
-    /// Deterministic id derived from (source_kind, source_id, seq_in_source, content).
+    /// Deterministic id derived from (`source_kind`, `source_id`, `seq_in_source`,
+    /// `content`).
     pub id: String,
     /// Canonical Markdown content.
     pub content: String,
@@ -386,7 +387,9 @@ mod time_range_serde {
     }
 
     /// Serialize a `(start, end)` UTC timestamp pair as `{start_ms, end_ms}`.
-    pub fn serialize<S: Serializer>(
+    // `pub(crate)`, not `pub`: the enclosing module is private, so a bare `pub`
+    // is a surface nothing outside this crate can reach anyway.
+    pub(crate) fn serialize<S: Serializer>(
         value: &(DateTime<Utc>, DateTime<Utc>),
         serializer: S,
     ) -> Result<S::Ok, S::Error> {
@@ -403,7 +406,7 @@ mod time_range_serde {
     /// Returns a `serde` custom error if either millisecond value does not
     /// map to a valid `DateTime<Utc>` (chrono's `timestamp_millis_opt` fails,
     /// e.g. out-of-range values).
-    pub fn deserialize<'de, D: Deserializer<'de>>(
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(
         deserializer: D,
     ) -> Result<(DateTime<Utc>, DateTime<Utc>), D::Error> {
         let wire = Wire::deserialize(deserializer)?;

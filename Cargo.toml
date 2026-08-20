@@ -21,6 +21,7 @@ members = ["crates/*"]
 default-members = [
     "crates/tinymemory",
     "crates/tinymemory-api",
+    "crates/tinymemory-bus",
     "crates/tinymemory-conformance",
     "crates/tinymemory-core",
     "crates/tinymemory-remote",

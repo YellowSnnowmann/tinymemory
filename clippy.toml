@@ -2,4 +2,15 @@
 # a code item that forgot its backticks. These are product and technology names
 # written as prose on purpose; backticking them would imply they name a Rust
 # item. `..` keeps clippy's own default list rather than replacing it.
-doc-valid-idents = ["..", "TinyMemory", "TinyCortex", "OpenHuman", "SQLite", "snake_case"]
+doc-valid-idents = [
+    "..",
+    "TinyMemory",
+    "TinyCortex",
+    "OpenHuman",
+    "TinyBus",
+    "SQLite",
+    "snake_case",
+    # Product names in `chunks::SourceKind`'s prose, not Rust items.
+    "WhatsApp",
+    "FastMail",
+]

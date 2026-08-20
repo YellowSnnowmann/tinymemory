@@ -5,6 +5,12 @@
 //! kernel's generic `DriverHealth`, and the wire form carries a stable
 //! `status` discriminant plus a `reason`.
 
+// A failed assertion in a test is a panic either way; `unwrap`/`expect` here say
+// what the invariant was. Same allowance the repository's other test modules
+// take, and the reason these files carried none before is that
+// `tinymemory-api` opts into no lints at all.
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use super::*;
 use serde_json::json;
 

@@ -70,7 +70,7 @@ pub const CONTRACT_VERSION: (u16, u16) = (2, 2);
 /// # Examples
 ///
 /// ```
-/// use tinymemory_api::{is_compatible, CONTRACT_VERSION};
+/// use tinymemory_bus::{is_compatible, CONTRACT_VERSION};
 ///
 /// // The version this build speaks is always compatible with itself.
 /// assert!(is_compatible(CONTRACT_VERSION));

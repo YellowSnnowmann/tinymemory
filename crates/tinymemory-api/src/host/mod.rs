@@ -52,7 +52,6 @@ mod embedding_host;
 mod embeddings;
 mod error_reporter;
 mod events;
-mod evidence;
 mod nlp;
 mod routes;
 mod usage;
@@ -72,7 +71,6 @@ pub use events::{
     EmbeddingHealthReason, MemoryEvent, MemoryEventSink, NoopEventSink, SyncTrigger,
     LOCAL_MODEL_UNAVAILABLE_KIND, MEMORY_USER_ERROR_SOURCE,
 };
-pub use evidence::EvidenceRef;
 pub use local_ai::{LocalAiConfig, LocalAiUsage};
 pub use nlp::{SpacyEntity, SpacyResponse};
 pub use routes::EmbeddingRouteConfig;
@@ -84,6 +82,7 @@ pub use storage_memory::{
 pub use subsystems::{
     MemoryDriverConfig, MemoryHooksConfig, MemorySubsystemConfig, SubsystemsConfig,
 };
+pub use tinymemory_bus::evidence::EvidenceRef;
 pub use usage::UsageInfo;
 
 /// Effective default global memory-sync cadence (seconds) used when
