@@ -119,12 +119,12 @@ struct HostChat;
 
 #[tinybus::interface(name = "ai.tinyhumans.tinymemory.ChatHost")]
 impl HostChat {
-    #[allow(clippy::unused_async, reason = "the interface macro requires async")]
     async fn complete(
         &self,
         _role: String,
         _request: tinyagents::harness::model::ModelRequest,
     ) -> BusResult<tinyagents::harness::model::ModelResponse> {
+        std::future::ready(()).await;
         use tinyagents::harness::message::{AssistantMessage, ContentBlock};
         use tinyagents::harness::usage::Usage;
 
@@ -147,13 +147,13 @@ impl HostChat {
 
 #[tinybus::interface(name = "ai.tinyhumans.tinymemory.EmbeddingHost")]
 impl HostEmbedder {
-    #[allow(clippy::unused_async, reason = "the interface macro requires async")]
     async fn embed(
         &self,
         _model: String,
         _dimensions: usize,
         texts: Vec<String>,
     ) -> BusResult<Vec<Vec<f32>>> {
+        std::future::ready(()).await;
         EMBED_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         // A crude content-derived vector: enough that identical text embeds
         // identically and different text does not, which is all recall needs
