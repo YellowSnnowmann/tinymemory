@@ -14,18 +14,18 @@ use std::collections::HashSet;
 
 use crate::types::{ContentType, SourceContent, SourceItem};
 
-use super::parse_iso_ts;
 use super::types::GhCommit;
+use super::{parse_iso_ts, GH_CLI_TIMEOUT};
 
-#[path = "api/transport.rs"]
-mod selected_transport;
+#[cfg(not(test))]
+#[path = "api/transport_override.rs"]
+mod response_override;
 #[cfg(test)]
 #[path = "api/transport_test.rs"]
-mod transport_test_support;
+mod response_override;
 
-pub(super) use selected_transport::fetch_github;
 #[cfg(test)]
-pub(super) use transport_test_support::with_test_responses;
+pub(super) use response_override::with_test_responses;
 
 /// GitHub REST API maximum page size (`per_page`).
 pub(super) const GH_PAGE_SIZE: u32 = 100;
@@ -33,6 +33,70 @@ pub(super) const GH_PAGE_SIZE: u32 = 100;
 /// Hard ceiling on pagination loops so a misbehaving API (always returning a
 /// full page) can never spin forever even if `max` is enormous.
 pub(super) const GH_MAX_PAGES: u32 = 1000;
+
+/// Run `gh <args>` and return stdout as UTF-8.
+pub(super) async fn gh_json(args: &[&str]) -> Result<String, String> {
+    let output = tokio::time::timeout(
+        GH_CLI_TIMEOUT,
+        tokio::process::Command::new("gh").args(args).output(),
+    )
+    .await
+    .map_err(|_| format!("gh command timed out after {}s", GH_CLI_TIMEOUT.as_secs()))?
+    .map_err(|e| format!("gh command failed: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("gh exited {}: {stderr}", output.status));
+    }
+
+    String::from_utf8(output.stdout).map_err(|e| format!("gh output not utf8: {e}"))
+}
+
+/// Unauthenticated GET against the GitHub REST API.
+pub(super) async fn api_get(path: &str) -> Result<String, String> {
+    let url = format!("https://api.github.com{path}");
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(20))
+        .build()
+        .map_err(|e| format!("failed to build GitHub client: {e}"))?;
+    let resp = client
+        .get(&url)
+        .header("User-Agent", "openhuman")
+        .header("Accept", "application/vnd.github.v3+json")
+        .send()
+        .await
+        .map_err(|e| format!("GitHub API request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("GitHub API returned {status}: {body}"));
+    }
+
+    resp.text()
+        .await
+        .map_err(|e| format!("failed to read response: {e}"))
+}
+
+/// Try `gh api` first, fall back to unauthenticated REST API.
+pub(super) async fn fetch_github(api_path: &str, use_gh: bool) -> Result<String, String> {
+    if let Some(response) = response_override::take_response(api_path) {
+        return response;
+    }
+    if use_gh {
+        match gh_json(&["api", api_path]).await {
+            Ok(s) => return Ok(s),
+            Err(e) => {
+                tracing::debug!(
+                    error = %e,
+                    path = %api_path,
+                    "[memory_sources:github] gh failed, falling back to API"
+                );
+            }
+        }
+    }
+    api_get(&format!("/{api_path}")).await
+}
 
 /// Fetch up to `max` rows from a paginated GitHub list endpoint.
 ///
