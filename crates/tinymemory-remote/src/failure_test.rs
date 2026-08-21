@@ -244,6 +244,77 @@ async fn a_cursor_that_never_clears_is_refused_rather_than_walked_for_ever() {
     );
 }
 
+/// Supermemory's twin of the guard above (issue #75): its per-tag pager
+/// loops on server-supplied `totalPages`, which is exactly as
+/// server-controlled as mem0's cursor — a value that never lets the walk
+/// finish must be refused, not walked for ever.
+#[tokio::test]
+async fn a_total_pages_that_never_lets_the_walk_finish_is_refused() {
+    use axum::routing::{get, post};
+    let app = Router::new()
+        .route(
+            "/v3/container-tags/list",
+            get(|| async { axum::Json(serde_json::json!([{"containerTag": "tinymemory:tm_x"}])) }),
+        )
+        .route(
+            "/v4/memories/list",
+            post(|| async {
+                axum::Json(serde_json::json!({
+                    "memoryEntries": [{"id": "sm-1", "memory": "x", "metadata": {}}],
+                    "pagination": {"totalPages": 1_000_000}
+                }))
+            }),
+        );
+    let endpoint = serve(app).await;
+    let memory = SupermemoryMemory::api(&endpoint, "sm-test-key").expect("client");
+
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(60), memory.count()).await;
+    let Ok(result) = outcome else {
+        panic!("the per-tag walk never terminated against a lying totalPages");
+    };
+    let error = result.expect_err("a totalPages that never clears cannot be answered correctly");
+    assert!(
+        format!("{error:#}").contains("pages"),
+        "the refusal must name the page ceiling it hit, got: {error:#}"
+    );
+}
+
+/// Issue #75: non-2xx bodies are read through the 64 KiB error-body cap, not
+/// `Response::text()`'s unbounded buffer. A hostile endpoint answering every
+/// request with a 500 and a body that never ends must cost a bounded read and
+/// a prompt typed error — not a buffer that grows until the process dies.
+#[tokio::test]
+async fn an_endless_error_body_is_capped_rather_than_buffered() {
+    use axum::body::Body;
+    use axum::http::Response;
+    use futures::stream;
+
+    let app = Router::new().fallback(any(|| async {
+        let endless = stream::repeat_with(|| {
+            Ok::<_, std::convert::Infallible>(axum::body::Bytes::from_static(&[b'x'; 8192]))
+        });
+        Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from_stream(endless))
+            .expect("response")
+    }));
+    let endpoint = serve(app).await;
+    let memory = Mem0Memory::self_hosted(&endpoint, None).expect("client");
+
+    // Bounded: with the cap, the read stops at 64 KiB and the typed error
+    // surfaces immediately; reverting to `text()` hangs here accumulating
+    // the stream until timeout or OOM.
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(30), memory.count()).await;
+    let Ok(result) = outcome else {
+        panic!("an endless error body was buffered instead of capped");
+    };
+    let error = result.expect_err("a 500 must surface as an error");
+    assert!(
+        format!("{error:#}").contains("500"),
+        "the status error surfaces despite the endless body: {error:#}"
+    );
+}
+
 #[tokio::test]
 async fn a_paginated_export_terminates_instead_of_looping() {
     // The partial-page leg of §E6. A backend that keeps answering with a page
@@ -387,6 +458,51 @@ async fn a_400_refusal_is_invalid_not_backend() {
             "{name}: a 400 must be Invalid, got: {error}"
         );
     }
+}
+
+/// Issue #75: the multipart UPLOAD leg speaks the same taxonomy. The generic
+/// 400 test above never reaches it — cognee's preceding dataset GET fails
+/// first against a fail-everything double — so this double lets the resolve
+/// succeed and fails only the upload, pinning the one write path that used
+/// to answer an untyped string.
+#[tokio::test]
+async fn a_400_on_the_multipart_upload_leg_is_invalid_not_other() {
+    use axum::routing::{get, post};
+    let app = Router::new()
+        .route(
+            "/api/v1/datasets/",
+            get(|| async { axum::Json(serde_json::json!([])) }),
+        )
+        .route(
+            "/api/v1/remember",
+            post(|| async {
+                (
+                    StatusCode::BAD_REQUEST,
+                    r#"{"error":"file rejected"}"#.to_owned(),
+                )
+            }),
+        );
+    let endpoint = serve(app).await;
+    let memory = CogneeMemory::self_hosted(&endpoint, None).expect("client");
+
+    let error = memory
+        .store_with_taint(
+            "ns",
+            "k",
+            "content",
+            MemoryCategory::Core,
+            None,
+            MemoryTaint::Internal,
+        )
+        .await
+        .expect_err("the upload 400 must surface");
+    assert!(
+        matches!(
+            error.downcast_ref::<MemoryError>(),
+            Some(MemoryError::Invalid(_))
+        ),
+        "a multipart 400 must be Invalid, got: {error}"
+    );
 }
 
 /// #68 review Major 4: the retry split is now a per-call statement. A 503 on

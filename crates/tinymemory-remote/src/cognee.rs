@@ -1,6 +1,6 @@
 //! Self-hosted Cognee REST adapter.
 
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use async_trait::async_trait;
 use reqwest::{multipart, Method};
 use serde_json::{json, Value};
@@ -265,14 +265,7 @@ impl CogneeDialect {
                 serde_json::from_str(&raw).context("Cognee record envelope is invalid")?;
             entry.remote_id = format!("{}:{id}", dataset.id);
             if entry.timestamp.is_empty() {
-                entry.timestamp = data
-                    .get("updatedAt")
-                    .or_else(|| data.get("updated_at"))
-                    .or_else(|| data.get("createdAt"))
-                    .or_else(|| data.get("created_at"))
-                    .and_then(Value::as_str)
-                    .unwrap_or_default()
-                    .to_owned();
+                entry.timestamp = Self::listing_timestamp(data);
             }
             entries.push(entry);
         }
@@ -285,7 +278,21 @@ impl CogneeDialect {
     /// key resolves by matching the name — the per-record raw-fetch loop the
     /// first cut ran existed only because it read the key out of each
     /// envelope body instead.
-    async fn data_index(&self, dataset: &Dataset) -> anyhow::Result<Vec<(String, String)>> {
+    /// The listing row's write time. Checked per candidate with `find_map`,
+    /// NOT an `or_else` chain over `Value::get`: real Cognee serializes
+    /// `"updatedAt": null` for every never-updated record, and `get` on a
+    /// present-but-null key answers `Some(Null)` — an `or_else` chain commits
+    /// to it and never reaches `createdAt`, emptying every timestamp
+    /// (issue #75).
+    fn listing_timestamp(data: &Value) -> String {
+        ["updatedAt", "updated_at", "createdAt", "created_at"]
+            .iter()
+            .find_map(|key| data.get(key).and_then(Value::as_str))
+            .unwrap_or_default()
+            .to_owned()
+    }
+
+    async fn data_index(&self, dataset: &Dataset) -> anyhow::Result<Vec<(String, String, String)>> {
         let response: Value = self
             .client
             .json(
@@ -303,6 +310,12 @@ impl CogneeDialect {
                 Some((
                     data.get("id")?.as_str()?.to_owned(),
                     data.get("name")?.as_str()?.to_owned(),
+                    // Kept alongside the id: the envelope this adapter
+                    // uploads carries an empty timestamp, so the listing is
+                    // the ONLY source a keyed fetch can backfill from (the
+                    // enumeration path already does — the keyed path must
+                    // agree with it).
+                    Self::listing_timestamp(data),
                 ))
             })
             .collect())
@@ -313,16 +326,23 @@ impl CogneeDialect {
     /// On a duplicate name (possible only if a historical blind re-add ever
     /// raced), newest-listed wins deterministically — the listing is
     /// insertion-ordered — rather than an arbitrary pick.
-    async fn find_data_id(&self, dataset: &Dataset, key: &str) -> anyhow::Result<Option<String>> {
+    async fn find_data_id(
+        &self,
+        dataset: &Dataset,
+        key: &str,
+    ) -> anyhow::Result<Option<(String, String)>> {
         let uploaded = Self::filename(key);
-        let stripped = uploaded.trim_end_matches(".json").to_owned();
+        let stripped = uploaded
+            .strip_suffix(".json")
+            .unwrap_or(&uploaded)
+            .to_owned();
         Ok(self
             .data_index(dataset)
             .await?
             .into_iter()
             .rev()
-            .find(|(_, name)| *name == uploaded || *name == stripped)
-            .map(|(id, _)| id))
+            .find(|(_, name, _)| *name == uploaded || *name == stripped)
+            .map(|(id, _, timestamp)| (id, timestamp)))
     }
 
     /// Downloads and decodes ONE envelope by its ids, verifying it is the
@@ -333,6 +353,7 @@ impl CogneeDialect {
         &self,
         dataset: &Dataset,
         data_id: &str,
+        listing_timestamp: &str,
         namespace: &str,
         key: &str,
     ) -> anyhow::Result<Option<StoredEntry>> {
@@ -355,6 +376,13 @@ impl CogneeDialect {
             );
         }
         entry.remote_id = format!("{}:{data_id}", dataset.id);
+        // The uploaded envelope's timestamp is empty by construction
+        // (StoredEntry::new), so without this backfill every keyed get would
+        // answer an empty timestamp while the enumeration path answers the
+        // listing's — the same record disagreeing with itself.
+        if entry.timestamp.is_empty() {
+            entry.timestamp = listing_timestamp.to_owned();
+        }
         Ok(Some(entry))
     }
 
@@ -393,21 +421,29 @@ impl Dialect for CogneeDialect {
         let Some(dataset) = self.find_dataset(namespace).await? else {
             return Ok(None);
         };
-        let Some(data_id) = self.find_data_id(&dataset, key).await? else {
+        let Some((data_id, listing_timestamp)) = self.find_data_id(&dataset, key).await? else {
             return Ok(None);
         };
-        self.fetch_entry(&dataset, &data_id, namespace, key).await
+        self.fetch_entry(&dataset, &data_id, &listing_timestamp, namespace, key)
+            .await
     }
 
     /// Replaces an existing envelope and uploads the new exact record.
     async fn upsert(&self, entry: StoredEntry) -> anyhow::Result<()> {
         // Through the keyed seam: dataset + listing, no raw fan-out. The
-        // existing record's ids are all the replace path needs.
+        // existing record's ids are all the replace path needs. Like delete,
+        // the PATCH trusts the dataset-scoped filename match without an
+        // envelope read — the name is the key's SHA-256 digest, so a wrong
+        // target needs a digest collision, and what a collision would cost
+        // here is an overwrite of the colliding record's content with THIS
+        // key's envelope (recoverable by that record's next upsert, unlike
+        // delete's unrecoverable removal — which is the sharper case and got
+        // this same argument first).
         let existing = match self.find_dataset(&entry.namespace).await? {
             Some(dataset) => self
                 .find_data_id(&dataset, &entry.key)
                 .await?
-                .map(|data_id| (dataset, data_id)),
+                .map(|(data_id, _)| (dataset, data_id)),
             None => None,
         };
         let body = serde_json::to_vec(&entry)?;
@@ -432,19 +468,7 @@ impl Dialect for CogneeDialect {
                     .text("run_in_background", "false"),
             )
         };
-        let response = self
-            .client
-            .multipart(method, &path)?
-            .multipart(form)
-            .send()
-            .await?;
-        if !response.status().is_success() {
-            return Err(anyhow!(
-                "memory API {path} returned HTTP {}",
-                response.status()
-            ));
-        }
-        Ok(())
+        self.client.send_multipart(method, &path, form).await
     }
 
     /// Enumerates records across all TinyMemory-owned Cognee datasets.
@@ -463,7 +487,18 @@ impl Dialect for CogneeDialect {
         limit: usize,
         opts: RecallOpts<'_>,
     ) -> anyhow::Result<Vec<StoredEntry>> {
-        let datasets = opts.namespace.map(Self::dataset_name);
+        // Resolve the dataset BEFORE asking recall (issue #75): real Cognee
+        // 404s ("No datasets found") when a named dataset resolves to
+        // nothing, so the first recall in a fresh namespace — before its
+        // first store — errored where every sibling op answers empty. One
+        // extra listing request, the same price entry()/delete() pay.
+        let datasets = match opts.namespace {
+            Some(namespace) => match self.find_dataset(namespace).await? {
+                Some(dataset) => Some(vec![dataset.name]),
+                None => return Ok(Vec::new()),
+            },
+            None => None,
+        };
         let response: Value = self
             .client
             .json(
@@ -472,7 +507,7 @@ impl Dialect for CogneeDialect {
                 Some(&json!({
                     "query": query,
                     "search_type": "CHUNKS",
-                    "datasets": datasets.map(|name| vec![name]),
+                    "datasets": datasets,
                     "top_k": limit,
                     "only_context": true,
                     "session_id": opts.session_id
@@ -519,7 +554,7 @@ impl Dialect for CogneeDialect {
         let Some(dataset) = self.find_dataset(namespace).await? else {
             return Ok(false);
         };
-        let Some(data_id) = self.find_data_id(&dataset, key).await? else {
+        let Some((data_id, _)) = self.find_data_id(&dataset, key).await? else {
             return Ok(false);
         };
         self.client

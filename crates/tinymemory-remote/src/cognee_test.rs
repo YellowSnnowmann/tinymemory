@@ -54,7 +54,15 @@ async fn data(State(state): State<AppState>) -> Json<Value> {
     let name = state.2.lock().expect("name lock").clone();
     let values = if state.0.lock().expect("state lock").is_some() {
         let name = name.unwrap_or_else(|| "6b6579.tinymemory".to_owned());
-        vec![json!({"id": "data-1", "name": name, "created_at": "2026-08-12T00:00:00Z"})]
+        // `updatedAt` present-but-null is what real Cognee serializes for a
+        // never-updated record: the backfill must fall through to
+        // `created_at` instead of committing to the null (issue #75).
+        vec![json!({
+            "id": "data-1",
+            "name": name,
+            "updatedAt": null,
+            "created_at": "2026-08-12T00:00:00Z"
+        })]
     } else {
         vec![]
     };
@@ -266,6 +274,23 @@ async fn native_cognee_round_trips_the_tinymemory_contract() {
         .expect("entry");
     assert_eq!(entry.content, "updated knowledge graph");
     assert_eq!(entry.taint, MemoryTaint::ExternalSync);
+    // The uploaded envelope's timestamp is empty by construction, so the
+    // keyed fetch must backfill from the listing the way the enumeration
+    // path always did — get and list answering different timestamps for the
+    // same record was the #71-review regression, and a null `updatedAt`
+    // halting the fallback chain was issue #75's.
+    assert_eq!(
+        entry.timestamp, "2026-08-12T00:00:00Z",
+        "keyed get backfills the listing timestamp past the null updatedAt"
+    );
+    let listed = driver
+        .list(Some("project"), None, None)
+        .await
+        .expect("list");
+    assert_eq!(
+        listed[0].timestamp, entry.timestamp,
+        "keyed get and namespace list agree on the timestamp"
+    );
     assert_eq!(
         driver
             .recall(
@@ -365,4 +390,104 @@ async fn keyed_ops_never_fan_out_over_raw_fetches() {
     assert!(driver.forget("project", "key").await.expect("forget"));
     let counts = *state.1.lock().expect("counts");
     assert_eq!(counts.raws, 0, "a keyed delete reads no envelopes");
+}
+
+/// The envelope-over-filename trust boundary, pinned the way its mem0 twin
+/// is. A file whose deterministic name matches the asked key but whose
+/// envelope names a DIFFERENT record (hash collision, foreign file wearing
+/// our extension) must refuse — never serve someone else's memory.
+#[tokio::test]
+async fn a_filename_match_with_a_foreign_envelope_is_refused() {
+    use crate::common::StoredEntry;
+
+    let foreign = serde_json::to_vec(&StoredEntry::new(
+        "someone-elses-ns",
+        "decision",
+        "not yours",
+        MemoryCategory::Conversation,
+        None,
+        MemoryTaint::Internal,
+    ))
+    .expect("envelope");
+    let name = super::CogneeDialect::filename("decision");
+    let app = Router::new()
+        .route(
+            "/api/v1/datasets/",
+            get(|| async {
+                Json(json!([{
+                    "id": "dataset-1",
+                    "name": super::CogneeDialect::dataset_name("project")
+                }]))
+            }),
+        )
+        .route(
+            "/api/v1/datasets/{dataset}/data",
+            get(move || {
+                let name = name.clone();
+                async move {
+                    Json(json!([{
+                        "id": "data-1",
+                        "name": name,
+                        "created_at": "2026-08-12T00:00:00Z"
+                    }]))
+                }
+            }),
+        )
+        .route(
+            "/api/v1/datasets/{dataset}/data/{data}/raw",
+            get(move || {
+                let body = foreign.clone();
+                async move { (StatusCode::OK, body) }
+            }),
+        );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let endpoint = format!("http://{}", listener.local_addr().expect("address"));
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("serve");
+    });
+
+    let driver =
+        crate::cognee_provider(super::CogneeMemory::self_hosted(&endpoint, None).expect("client"));
+    let err = driver.get("project", "decision").await;
+    let message = format!("{:?}", err.expect_err("mismatched envelope must refuse"));
+    assert!(
+        message.contains("envelope names"),
+        "the refusal names the mismatch: {message}"
+    );
+}
+
+/// Issue #75: recall in a namespace that has never stored anything answers
+/// EMPTY, like every sibling op — real Cognee 404s a recall naming a dataset
+/// that resolves to nothing. The double serves no /api/v1/recall route at
+/// all, so this also proves the guard short-circuits before asking.
+#[tokio::test]
+async fn recall_in_a_fresh_namespace_is_empty_not_an_error() {
+    use tinymemory_api::recall::OwnedRecallOpts;
+
+    let app = Router::new().route("/api/v1/datasets/", get(|| async { Json(json!([])) }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind");
+    let endpoint = format!("http://{}", listener.local_addr().expect("address"));
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.expect("serve");
+    });
+
+    let driver =
+        crate::cognee_provider(super::CogneeMemory::self_hosted(&endpoint, None).expect("client"));
+    let hits = driver
+        .recall(
+            "anything",
+            3,
+            &OwnedRecallOpts {
+                namespace: Some("never-stored".into()),
+                ..OwnedRecallOpts::default()
+            },
+            None,
+        )
+        .await
+        .expect("a fresh namespace recalls empty, not an error");
+    assert!(hits.is_empty());
 }

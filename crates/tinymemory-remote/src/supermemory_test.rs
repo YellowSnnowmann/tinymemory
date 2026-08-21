@@ -62,6 +62,7 @@ async fn add(State(state): State<AppState>, Json(body): Json<Value>) -> Json<Val
         "id": id,
         "memory": body["memories"][0]["content"],
         "metadata": body["memories"][0]["metadata"],
+        "containerTag": container_tag,
         "createdAt": "2026-08-12T00:00:00Z",
         "isLatest": true,
         "isForgotten": false
@@ -69,6 +70,15 @@ async fn add(State(state): State<AppState>, Json(body): Json<Value>) -> Json<Val
     Json(json!({"memories": [{"id": id}]}))
 }
 async fn update(State(state): State<AppState>, Json(body): Json<Value>) -> StatusCode {
+    // The real PATCH /v4/memories requires `containerTag` ("Required to scope
+    // the operation") and 400s without it — a double that accepted a tagless
+    // PATCH hid exactly the adapter regression issue #75 found. And the VALUE
+    // matters as much as the presence: the tag scopes the operation, so a
+    // PATCH carrying another container's tag is a lost update or a
+    // cross-container write — refuse a mismatch instead of filing it.
+    let Some(sent_tag) = body["containerTag"].as_str().filter(|tag| !tag.is_empty()) else {
+        return StatusCode::BAD_REQUEST;
+    };
     let id = body["id"].as_str().unwrap_or_default();
     if let Some(record) = state
         .0
@@ -78,6 +88,9 @@ async fn update(State(state): State<AppState>, Json(body): Json<Value>) -> Statu
         .iter_mut()
         .find(|r| r["id"] == id)
     {
+        if record["containerTag"] != sent_tag {
+            return StatusCode::BAD_REQUEST;
+        }
         record["memory"] = body["newContent"].clone();
         record["metadata"] = body["metadata"].clone();
     }
