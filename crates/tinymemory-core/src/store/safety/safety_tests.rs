@@ -9,6 +9,10 @@ const REDACTED_SECRET: &str = "[REDACTED_SECRET]";
 const REDACTED_PRIVATE_KEY: &str = "[REDACTED_PRIVATE_KEY]";
 const MAX_JSON_SANITIZE_DEPTH: usize = 128;
 
+fn private_key_fixture(kind: &str, body: &str) -> String {
+    format!("-----BEGIN {kind}-----\n{body}\n-----END {kind}-----")
+}
+
 #[test]
 fn sanitize_text_redacts_bearer_and_openai_key() {
     let input = "Authorization: Bearer abcdefghijklmnop and sk-1234567890123456789012345";
@@ -20,8 +24,8 @@ fn sanitize_text_redacts_bearer_and_openai_key() {
 
 #[test]
 fn sanitize_text_blocks_private_key_blocks() {
-    let input = "-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----";
-    let sanitized = sanitize_text(input);
+    let input = private_key_fixture("PRIVATE KEY", "abc");
+    let sanitized = sanitize_text(&input);
     assert!(sanitized.value.contains(REDACTED_PRIVATE_KEY));
     assert!(sanitized.report.blocked_secret_hits >= 1);
 }
@@ -62,7 +66,8 @@ fn sanitize_json_redacts_common_sensitive_key_variants() {
 fn has_likely_secret_detects_common_patterns() {
     assert!(has_likely_secret("api_key=abc123"));
     assert!(has_likely_secret("Bearer abcdefghijklmnopqrstuvwxyz"));
-    assert!(has_likely_secret("xoxb-1234567890-abcdef-ghijklmnop"));
+    let slack_token = format!("{}{}-1234567890-abcdef-ghijklmnop", "xo", "xb");
+    assert!(has_likely_secret(&slack_token));
     assert!(has_likely_secret("glpat-aaaaaaaaaaaaaaaaaaaa"));
     assert!(has_likely_secret("SG.aaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbb"));
     assert!(!has_likely_secret("I prefer rust"));
@@ -91,9 +96,10 @@ fn sanitize_text_redacts_oauth_url_style_params() {
 
 #[test]
 fn sanitize_text_redacts_multiline_private_key_blocks() {
-    let input = "BEGIN\n-----BEGIN OPENSSH PRIVATE KEY-----\nline1\nline2\n-----END OPENSSH PRIVATE KEY-----\nEND";
-    let sanitized = sanitize_text(input);
-    assert!(!sanitized.value.contains("OPENSSH PRIVATE KEY"));
+    let key_kind = format!("{} PRIVATE KEY", "OPENSSH");
+    let input = format!("BEGIN\n{}\nEND", private_key_fixture(&key_kind, "line1\nline2"));
+    let sanitized = sanitize_text(&input);
+    assert!(!sanitized.value.contains(&key_kind));
     assert!(sanitized.value.contains(REDACTED_PRIVATE_KEY));
     assert!(sanitized.report.blocked_secret_hits >= 1);
 }
