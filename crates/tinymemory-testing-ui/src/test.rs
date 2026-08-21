@@ -747,7 +747,28 @@ struct RecordingProvider {
     document: Mutex<Option<NamespaceDocumentInput>>,
     relations: Vec<GraphRelationRecord>,
     failure: Mutex<Option<MemoryError>>,
+    store_call: Mutex<Option<StoreCall>>,
+    recall_call: Mutex<Option<RecallCall>>,
+    export_call: Mutex<Option<(Option<String>, usize)>>,
+    relations_call: Mutex<Option<RelationsCall>>,
 }
+
+struct StoreCall {
+    namespace: String,
+    key: String,
+    content: String,
+    category: MemoryCategory,
+    session_id: Option<String>,
+    taint: MemoryTaint,
+}
+
+struct RecallCall {
+    query: String,
+    limit: usize,
+    opts: OwnedRecallOpts,
+}
+
+type RelationsCall = (Option<String>, Option<String>, Option<String>, usize);
 
 impl RecordingProvider {
     fn failing(error: MemoryError) -> Self {
@@ -769,14 +790,22 @@ impl RecordingProvider {
 impl MemoryCore for RecordingProvider {
     async fn store(
         &self,
-        _namespace: &str,
-        _key: &str,
-        _content: &str,
-        _category: MemoryCategory,
-        _session_id: Option<&str>,
-        _taint: MemoryTaint,
+        namespace: &str,
+        key: &str,
+        content: &str,
+        category: MemoryCategory,
+        session_id: Option<&str>,
+        taint: MemoryTaint,
     ) -> Result<(), MemoryError> {
         self.take_failure()?;
+        *self.store_call.lock().unwrap() = Some(StoreCall {
+            namespace: namespace.to_string(),
+            key: key.to_string(),
+            content: content.to_string(),
+            category,
+            session_id: session_id.map(str::to_string),
+            taint,
+        });
         Ok(())
     }
 
@@ -810,12 +839,17 @@ impl MemoryCore for RecordingProvider {
 impl MemoryRecall for RecordingProvider {
     async fn recall(
         &self,
-        _query: &str,
-        _limit: usize,
-        _opts: &OwnedRecallOpts,
+        query: &str,
+        limit: usize,
+        opts: &OwnedRecallOpts,
         _scope: Option<&SourceScope>,
     ) -> Result<Vec<MemoryEntry>, MemoryError> {
         self.take_failure()?;
+        *self.recall_call.lock().unwrap() = Some(RecallCall {
+            query: query.to_string(),
+            limit,
+            opts: opts.clone(),
+        });
         Ok(Vec::new())
     }
 }
@@ -824,10 +858,11 @@ impl MemoryRecall for RecordingProvider {
 impl MemoryPortability for RecordingProvider {
     async fn export_page(
         &self,
-        _cursor: Option<&str>,
-        _limit: usize,
+        cursor: Option<&str>,
+        limit: usize,
     ) -> Result<ExportPage, MemoryError> {
         self.take_failure()?;
+        *self.export_call.lock().unwrap() = Some((cursor.map(str::to_string), limit));
         Ok(ExportPage::default())
     }
 
@@ -930,6 +965,12 @@ impl MemoryGraph for RecordingProvider {
         limit: usize,
     ) -> Result<Vec<GraphRelationRecord>, MemoryError> {
         self.take_failure()?;
+        *self.relations_call.lock().unwrap() = Some((
+            namespace.map(str::to_string),
+            subject.map(str::to_string),
+            predicate.map(str::to_string),
+            limit,
+        ));
         Ok(self
             .relations
             .iter()
@@ -1502,6 +1543,144 @@ async fn arbitrary_document_categories_are_preserved_as_custom_values() {
             .unwrap()
             .category,
         "custom:web-clipping"
+    );
+}
+
+#[tokio::test]
+async fn core_filter_cursor_and_graph_queries_reach_the_provider_unchanged() {
+    let provider = Arc::new(RecordingProvider::default());
+    let state = empty_state();
+    *state.active.write().await = Some(provider.clone());
+    let router = test_app(state);
+
+    let stored = router
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/store",
+            json!({
+                "namespace": "projects",
+                "key": "alpha",
+                "content": "project context",
+                "category": "project-memory",
+                "session_id": "session-9",
+                "taint": "unrecognised-client-value"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(stored.status(), StatusCode::NO_CONTENT);
+    {
+        let store = provider.store_call.lock().unwrap();
+        let store = store.as_ref().unwrap();
+        assert_eq!(store.namespace, "projects");
+        assert_eq!(store.key, "alpha");
+        assert_eq!(store.content, "project context");
+        assert_eq!(
+            store.category,
+            MemoryCategory::Custom("project-memory".into())
+        );
+        assert_eq!(store.session_id.as_deref(), Some("session-9"));
+        assert_eq!(store.taint, MemoryTaint::Internal);
+    }
+
+    let recalled = router
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/recall",
+            json!({
+                "query": "project",
+                "limit": 37,
+                "namespace": "projects",
+                "category": "conversation",
+                "session_id": "session-9",
+                "min_score": 0.625,
+                "cross_session": true
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(recalled.status(), StatusCode::OK);
+    {
+        let recall = provider.recall_call.lock().unwrap();
+        let recall = recall.as_ref().unwrap();
+        assert_eq!(recall.query, "project");
+        assert_eq!(recall.limit, 37);
+        assert_eq!(recall.opts.namespace.as_deref(), Some("projects"));
+        assert_eq!(recall.opts.category, Some(MemoryCategory::Conversation));
+        assert_eq!(recall.opts.session_id.as_deref(), Some("session-9"));
+        assert_eq!(recall.opts.min_score, Some(0.625));
+        assert!(recall.opts.cross_session);
+    }
+
+    let exported = router
+        .clone()
+        .oneshot(
+            Request::get("/api/export?cursor=page%3A2&limit=73")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(exported.status(), StatusCode::OK);
+    assert_eq!(
+        provider.export_call.lock().unwrap().as_ref(),
+        Some(&(Some("page:2".to_string()), 73))
+    );
+
+    let relations = router
+        .clone()
+        .oneshot(
+            Request::get(
+                "/api/graph/relations?namespace=projects&subject=alpha&predicate=depends_on&limit=29",
+            )
+            .body(Body::empty())
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(relations.status(), StatusCode::OK);
+    assert_eq!(
+        provider.relations_call.lock().unwrap().as_ref(),
+        Some(&(
+            Some("projects".to_string()),
+            Some("alpha".to_string()),
+            Some("depends_on".to_string()),
+            29,
+        ))
+    );
+
+    let defaults = [
+        (Method::POST, "/api/recall", Some(json!({ "query": "all" }))),
+        (Method::GET, "/api/export", None),
+        (Method::GET, "/api/graph/relations", None),
+    ];
+    for (method, uri, body) in defaults {
+        let request = match body {
+            Some(body) => json_request(method, uri, body),
+            None => Request::builder()
+                .method(method)
+                .uri(uri)
+                .body(Body::empty())
+                .unwrap(),
+        };
+        assert_eq!(
+            router.clone().oneshot(request).await.unwrap().status(),
+            StatusCode::OK
+        );
+    }
+    assert_eq!(
+        provider.recall_call.lock().unwrap().as_ref().unwrap().limit,
+        10
+    );
+    assert_eq!(
+        provider.export_call.lock().unwrap().as_ref(),
+        Some(&(None, 50))
+    );
+    assert_eq!(
+        provider.relations_call.lock().unwrap().as_ref(),
+        Some(&(None, None, None, 100))
     );
 }
 
