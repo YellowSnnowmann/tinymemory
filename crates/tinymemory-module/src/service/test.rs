@@ -47,14 +47,43 @@ fn test_config(workspace: &std::path::Path) -> crate::config::ModuleConfig {
     }
 }
 
+/// Holds the embedding-host test mutex while a temporary host is installed.
+///
+/// Restoring in `Drop` keeps the process global correct even when an assertion
+/// panics. The mutex guard is deliberately retained for the whole scope: the
+/// factory reads the host during each `OpenStore`, not just during setup.
+struct EmbeddingHostRestore {
+    _lock: std::sync::MutexGuard<'static, ()>,
+    previous: Option<std::sync::Arc<dyn tinymemory_core::embedding_host::EmbeddingHost>>,
+}
+
+impl EmbeddingHostRestore {
+    fn install(connection: tinybus::Connection, config: &crate::config::ModuleConfig) -> Self {
+        let lock = tinymemory_core::embedding_host::embedding_test_guard();
+        let previous = tinymemory_core::embedding_host::embedding_host();
+        tinymemory_core::embedding_host::set_embedding_host(std::sync::Arc::new(
+            crate::embedding::BusEmbeddingHost::new(connection, config),
+        ));
+        Self {
+            _lock: lock,
+            previous,
+        }
+    }
+}
+
+impl Drop for EmbeddingHostRestore {
+    fn drop(&mut self) {
+        match self.previous.take() {
+            Some(previous) => tinymemory_core::embedding_host::set_embedding_host(previous),
+            None => tinymemory_core::embedding_host::clear_embedding_host(),
+        }
+    }
+}
+
 fn test_opener(
     connection: tinybus::Connection,
-    workspace: &std::path::Path,
+    config: crate::config::ModuleConfig,
 ) -> std::sync::Arc<super::StoreOpener> {
-    let config = test_config(workspace);
-    tinymemory_core::embedding_host::set_embedding_host(std::sync::Arc::new(
-        crate::embedding::BusEmbeddingHost::new(connection.clone(), &config),
-    ));
     std::sync::Arc::new(super::StoreOpener::new(connection, config))
 }
 
@@ -325,7 +354,9 @@ async fn repeated_and_concurrent_opens_reuse_the_registered_object_path() {
 
     let workspace = tempfile::tempdir().expect("tempdir");
     let connection = test_connection().await;
-    let opener = test_opener(connection.clone(), workspace.path());
+    let config = test_config(workspace.path());
+    let _embedding_host = EmbeddingHostRestore::install(connection.clone(), &config);
+    let opener = test_opener(connection.clone(), config);
     let expected = format!("{}/stores/profile_2d1", super::OBJECT_PATH);
     let service = Arc::new(super::MemoryService::root(
         test_provider(),
@@ -361,7 +392,10 @@ async fn a_failed_registration_is_retried_and_only_success_counts_toward_the_cap
     use std::sync::Arc;
 
     let workspace = tempfile::tempdir().expect("tempdir");
-    let opener = test_opener(test_connection().await, workspace.path());
+    let connection = test_connection().await;
+    let config = test_config(workspace.path());
+    let _embedding_host = EmbeddingHostRestore::install(connection.clone(), &config);
+    let opener = test_opener(connection, config);
     opener.fail_registrations(1);
     let service = super::MemoryService::root(test_provider(), Arc::clone(&opener));
     service
@@ -386,7 +420,10 @@ async fn the_open_store_cap_is_reached_through_successful_opens() {
     use std::sync::Arc;
 
     let workspace = tempfile::tempdir().expect("tempdir");
-    let opener = test_opener(test_connection().await, workspace.path());
+    let connection = test_connection().await;
+    let config = test_config(workspace.path());
+    let _embedding_host = EmbeddingHostRestore::install(connection.clone(), &config);
+    let opener = test_opener(connection, config);
     let service = super::MemoryService::root(test_provider(), Arc::clone(&opener));
 
     for index in 0..super::MAX_OPEN_STORES {
