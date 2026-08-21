@@ -276,6 +276,25 @@ async fn document_source_graph_goals_and_tool_rule_state_transitions_round_trip(
         .await
         .expect("namespaces")
         .contains(&"project".into()));
+    let listed = documents
+        .list_documents(Some("project"))
+        .await
+        .expect("list documents");
+    let listed = listed["documents"].as_array().expect("document list");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0]["documentId"], document_id);
+    assert_eq!(listed[0]["key"], "brief");
+    let queried = documents
+        .query_documents("project", "deterministic", 4)
+        .await
+        .expect("query documents");
+    assert_eq!(queried.namespace, "project");
+    assert!(queried.context_text.contains("deterministic"));
+    let recalled = documents
+        .recall_documents("project", 4)
+        .await
+        .expect("recall documents");
+    assert_eq!(recalled.namespace, "project");
     documents
         .delete_document("project", &document_id)
         .await
@@ -285,6 +304,10 @@ async fn document_source_graph_goals_and_tool_rule_state_transitions_round_trip(
         .await
         .expect("get after delete")
         .is_none());
+    documents
+        .clear_namespace("project")
+        .await
+        .expect("clear empty namespace");
 
     let source = provider.as_sources().expect("SourceSink");
     let outcome = source
@@ -432,6 +455,32 @@ async fn people_profile_and_episodic_lifecycles_are_real_and_typed() {
             .interaction_count,
         1
     );
+    let people_list = people.list_people(Some(10)).await.expect("list people");
+    assert_eq!(people_list.len(), 1);
+    assert_eq!(people_list[0].person.id, resolved.id);
+    assert_eq!(
+        people
+            .get_person(&resolved.id)
+            .await
+            .expect("get person")
+            .expect("person present")
+            .id,
+        resolved.id
+    );
+    let alias = PersonHandle::IMessage("+15551234567".into());
+    people
+        .add_handle_alias(&resolved.id, &alias)
+        .await
+        .expect("add alias");
+    assert_eq!(
+        people
+            .resolve_handle(&alias, false)
+            .await
+            .expect("resolve alias")
+            .expect("alias present")
+            .id,
+        resolved.id
+    );
 
     let profile = provider.as_profile().expect("Profile");
     profile
@@ -452,6 +501,24 @@ async fn people_profile_and_episodic_lifecycles_are_real_and_typed() {
         .expect("get facet")
         .expect("facet present");
     assert_eq!(facet.value, "concise");
+    assert_eq!(profile.list_active_facets().await.expect("active").len(), 1);
+    assert_eq!(
+        profile.list_all_facets().await.expect("all facets").len(),
+        1
+    );
+    assert_eq!(
+        profile
+            .facets_by_type(FacetType::Preference)
+            .await
+            .expect("facets by type")
+            .len(),
+        1
+    );
+    assert!(
+        !profile
+            .workflow_identity_matches("identity/*", "missing")
+            .await
+    );
     assert!(profile
         .set_facet_user_state("style/verbosity", UserState::Pinned)
         .await
@@ -469,6 +536,35 @@ async fn people_profile_and_episodic_lifecycles_are_real_and_typed() {
         .delete_facet("style/verbosity")
         .await
         .expect("delete facet"));
+    profile
+        .upsert_provider_facet(
+            "facet-low",
+            FacetType::Preference,
+            "style/tone",
+            "plain",
+            0.1,
+            None,
+            101.0,
+        )
+        .await
+        .expect("upsert low-confidence facet");
+    assert!(profile.drop_facets_below(0.2).await.expect("drop weak") <= 1);
+    profile
+        .upsert_provider_facet(
+            "facet-delete-id",
+            FacetType::Preference,
+            "style/format",
+            "markdown",
+            0.8,
+            None,
+            102.0,
+        )
+        .await
+        .expect("upsert deletable facet");
+    assert!(profile
+        .delete_facet_by_id("facet-delete-id")
+        .await
+        .expect("delete facet id"));
 
     let episodic = provider.as_episodic().expect("Episodic");
     let turn_id = episodic
@@ -513,6 +609,10 @@ async fn people_profile_and_episodic_lifecycles_are_real_and_typed() {
         .set_segment_summary("seg-1", "one remembered turn", 14.0)
         .await
         .expect("set summary");
+    episodic
+        .upsert_segment_embedding("seg-1", "noop:8", &[0.0; 8], 15.0)
+        .await
+        .expect("upsert segment embedding");
     assert!(episodic
         .open_segment("session-1")
         .await
@@ -604,6 +704,11 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
         .await
         .expect("storage kinds")
         .is_empty());
+    assert!(chunks
+        .chunk_embeddings(&outcome.ids, "missing-signature")
+        .await
+        .expect("missing embeddings are empty")
+        .is_empty());
 
     let retrieval = provider.as_retrieval().expect("Retrieval");
     assert!(matches!(
@@ -632,6 +737,47 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
         .expect("retrieve ingested leaves");
     assert!(!leaves.is_empty());
     assert!(leaves.iter().any(|hit| hit.content.contains("TinyMemory")));
+    let source = retrieval
+        .retrieve_source(
+            &tinymemory_api::provider::SourceRetrievalQuery {
+                source_id: Some("successful-upload".into()),
+                source_kind: None,
+                time_window_days: None,
+                query: Some("TinyMemory".into()),
+                limit: 5,
+            },
+            None,
+        )
+        .await
+        .expect("retrieve source");
+    assert!(source.hits.len() <= 5);
+    let cover = retrieval
+        .cover_window(
+            &tinymemory_api::provider::CoverWindowQuery {
+                since_ms: 1_699_999_000_000,
+                until_ms: 1_700_001_000_000,
+                source_id: Some("successful-upload".into()),
+                source_kind: None,
+                limit: Some(5),
+            },
+            None,
+        )
+        .await
+        .expect("cover window");
+    assert!(cover.hits.len() <= 5);
+    assert!(retrieval
+        .retrieve_children("missing-node", 2, Some("TinyMemory"), Some(5), None)
+        .await
+        .expect("missing node children")
+        .is_empty());
+    assert!(
+        retrieval
+            .recall_namespace_scored("global", "TinyMemory", 5, None)
+            .await
+            .expect("namespace recall")
+            .len()
+            <= 5
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -665,6 +811,12 @@ async fn tree_entities_and_maintenance_execute_real_workspace_transitions() {
     assert_eq!(cascaded.namespace, empty_status.namespace);
     assert_eq!(cascaded.total_nodes, empty_status.total_nodes);
     assert_eq!(cascaded.depth, empty_status.depth);
+    assert!(tree
+        .query_source("project", "missing-source", 5, None)
+        .await
+        .expect("query missing source")
+        .is_empty());
+    assert!(tree.drill_down("project", "missing-node").await.is_err());
 
     use tinymemory_core::engine::backend::store::entity_index::{CanonicalEntity, EntityKind};
     let indexed = [

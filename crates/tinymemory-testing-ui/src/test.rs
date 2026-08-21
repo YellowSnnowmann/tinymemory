@@ -88,6 +88,12 @@ async fn operations_require_a_connected_engine() {
 #[tokio::test]
 async fn local_connect_status_and_disconnect_are_consistent() {
     let router = test_app(empty_state());
+    let initial = router
+        .clone()
+        .oneshot(Request::get("/api/status").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(json_body(initial).await["connected"], false);
     connect_local(&router).await;
 
     let status = router
@@ -117,6 +123,59 @@ async fn local_connect_status_and_disconnect_are_consistent() {
             "has_graph": false
         })
     );
+}
+
+#[tokio::test]
+async fn defaulted_core_queries_and_static_fallback_are_callable() {
+    let router = test_app(empty_state());
+    connect_local(&router).await;
+
+    let stored = router
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/store",
+            json!({ "namespace": "defaults", "key": "one", "content": "plain body" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(stored.status(), StatusCode::NO_CONTENT);
+
+    for uri in ["/api/list", "/api/namespaces", "/api/export"] {
+        let response = router
+            .clone()
+            .oneshot(Request::get(uri).body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "{uri}");
+    }
+    let recalled = router
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/recall",
+            json!({ "query": "plain" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(recalled.status(), StatusCode::OK);
+
+    let index = router
+        .oneshot(Request::get("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(index.status(), StatusCode::OK);
+    assert!(String::from_utf8(
+        index
+            .into_body()
+            .collect()
+            .await
+            .unwrap()
+            .to_bytes()
+            .to_vec()
+    )
+    .unwrap()
+    .contains("TinyMemory"));
 }
 
 #[tokio::test]
@@ -228,6 +287,10 @@ async fn invalid_engine_deployment_and_cloud_credentials_are_rejected() {
             json!({ "engine": "cognee", "endpoint": "https://example.invalid", "deployment": "cloud" }),
             "Cognee Cloud requires an API key",
         ),
+        (
+            json!({ "engine": "cognee", "endpoint": "https://example.invalid", "deployment": "other" }),
+            "unknown Cognee deployment: other",
+        ),
     ];
 
     for (request, message) in cases {
@@ -237,6 +300,67 @@ async fn invalid_engine_deployment_and_cloud_credentials_are_rejected() {
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
         assert_eq!(json_body(response).await["error"], message);
+    }
+}
+
+#[tokio::test]
+async fn malformed_remote_endpoints_are_rejected_at_connection_time() {
+    for request in [
+        json!({ "engine": "supermemory", "endpoint": "://bad" }),
+        json!({ "engine": "mem0", "endpoint": "://bad", "deployment": "self_hosted" }),
+        json!({ "engine": "cognee", "endpoint": "://bad", "deployment": "self_hosted" }),
+    ] {
+        let response = test_app(empty_state())
+            .oneshot(json_request(Method::POST, "/api/connect", request))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert!(!json_body(response).await["error"]
+            .as_str()
+            .unwrap()
+            .is_empty());
+    }
+}
+
+#[tokio::test]
+async fn every_remote_connection_mode_builds_without_contacting_its_endpoint() {
+    let cases = [
+        (
+            json!({ "engine": "supermemory", "endpoint": "http://127.0.0.1:9" }),
+            "supermemory",
+            false,
+        ),
+        (
+            json!({ "engine": "mem0", "endpoint": "http://127.0.0.1:9", "deployment": "self_hosted" }),
+            "mem0",
+            true,
+        ),
+        (
+            json!({ "engine": "mem0", "endpoint": "https://api.mem0.ai", "deployment": "cloud", "api_key": "test-key" }),
+            "mem0",
+            true,
+        ),
+        (
+            json!({ "engine": "cognee", "endpoint": "http://127.0.0.1:9", "deployment": "self_hosted" }),
+            "cognee",
+            true,
+        ),
+        (
+            json!({ "engine": "cognee", "endpoint": "https://example.invalid", "deployment": "cloud", "api_key": "test-key" }),
+            "cognee",
+            true,
+        ),
+    ];
+
+    for (request, driver_id, has_graph) in cases {
+        let response = test_app(empty_state())
+            .oneshot(json_request(Method::POST, "/api/connect", request))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = json_body(response).await;
+        assert_eq!(body["driver_id"], driver_id);
+        assert_eq!(body["has_graph"], has_graph);
     }
 }
 
@@ -385,6 +509,32 @@ async fn document_upload_validates_required_parts_and_supported_formats() {
         .await
         .unwrap();
     assert_eq!(unsupported.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn minimal_upload_uses_safe_external_defaults_and_ignores_unknown_parts() {
+    let provider = Arc::new(RecordingProvider::default());
+    let state = empty_state();
+    *state.active.write().await = Some(provider.clone());
+
+    let response = test_app(state)
+        .oneshot(multipart_request(&[
+            ("namespace", None, None, b"documents"),
+            ("key", None, None, b""),
+            ("tags", None, None, b" first, , second "),
+            ("unknown", None, None, b"ignored"),
+            ("file", None, None, b"minimal text"),
+        ]))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let recorded = provider.document.lock().unwrap();
+    let document = recorded.as_ref().unwrap();
+    assert_eq!(document.namespace, "documents");
+    assert_eq!(document.tags, ["first", "second"]);
+    assert_eq!(document.taint, MemoryTaint::ExternalSync);
+    assert_eq!(document.category, MemoryCategory::Core.to_string());
+    assert_eq!(document.content, "minimal text");
 }
 
 #[derive(Default)]
@@ -669,6 +819,86 @@ async fn graph_view_http_route_returns_a_bounded_renderable_view() {
     assert_eq!(body["edges"][0]["predicate"], "wrote");
 }
 
+#[tokio::test]
+async fn graph_view_reports_an_unadvertised_graph_family() {
+    let router = test_app(empty_state());
+    connect_local(&router).await;
+    let response = router
+        .oneshot(json_request(
+            Method::POST,
+            "/api/graph/view",
+            json!({ "seeds": ["missing"] }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(
+        json_body(response).await["error"],
+        "the connected engine does not advertise a graph"
+    );
+}
+
+#[tokio::test]
+async fn graph_relations_filters_and_non_graph_engines_are_exposed_over_http() {
+    let local = test_app(empty_state());
+    connect_local(&local).await;
+    let unsupported = local
+        .oneshot(
+            Request::get("/api/graph/relations")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(unsupported.status(), StatusCode::NOT_IMPLEMENTED);
+
+    let provider = Arc::new(RecordingProvider {
+        relations: vec![
+            GraphRelationRecord {
+                namespace: Some("people".into()),
+                subject: "ada".into(),
+                predicate: "wrote".into(),
+                object: "notes".into(),
+                attrs: Value::Null,
+                updated_at: 0.0,
+                evidence_count: 1,
+                order_index: None,
+                document_ids: Vec::new(),
+                chunk_ids: Vec::new(),
+            },
+            GraphRelationRecord {
+                namespace: Some("other".into()),
+                subject: "ada".into(),
+                predicate: "read".into(),
+                object: "book".into(),
+                attrs: Value::Null,
+                updated_at: 0.0,
+                evidence_count: 1,
+                order_index: None,
+                document_ids: Vec::new(),
+                chunk_ids: Vec::new(),
+            },
+        ],
+        ..RecordingProvider::default()
+    });
+    let state = empty_state();
+    *state.active.write().await = Some(provider);
+    let response = test_app(state)
+        .oneshot(
+            Request::get(
+                "/api/graph/relations?namespace=people&subject=ada&predicate=wrote&limit=1",
+            )
+            .body(Body::empty())
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body.as_array().unwrap().len(), 1);
+    assert_eq!(body[0]["object"], "notes");
+}
+
 fn state_with_fetch_error(error: MemoryError) -> SharedState {
     let error = Arc::new(Mutex::new(Some(error)));
     Arc::new(AppState {
@@ -682,6 +912,49 @@ fn state_with_fetch_error(error: MemoryError) -> SharedState {
             Box::pin(async move { Err(error) })
         }),
     })
+}
+
+fn state_with_document(provider: Arc<RecordingProvider>) -> SharedState {
+    Arc::new(AppState {
+        active: RwLock::new(Some(provider)),
+        url_fetcher: Arc::new(|url| {
+            Box::pin(async move {
+                Ok(RawDocument::new("fetched text")
+                    .with_origin(url)
+                    .with_mime("text/plain"))
+            })
+        }),
+    })
+}
+
+#[tokio::test]
+async fn successful_url_ingest_preserves_origin_and_optional_intake_fields() {
+    let provider = Arc::new(RecordingProvider::default());
+    let response = test_app(state_with_document(provider.clone()))
+        .oneshot(json_request(
+            Method::POST,
+            "/api/ingest/url",
+            json!({
+                "url": "https://example.com/note.txt",
+                "namespace": "web",
+                "key": "note",
+                "tags": ["remote", "text"],
+                "taint": "internal",
+                "category": "daily"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let recorded = provider.document.lock().unwrap();
+    let document = recorded.as_ref().unwrap();
+    assert_eq!(document.namespace, "web");
+    assert_eq!(document.key, "note");
+    assert_eq!(document.content, "fetched text");
+    assert_eq!(document.tags, ["remote", "text"]);
+    assert_eq!(document.taint, MemoryTaint::Internal);
+    assert_eq!(document.category, MemoryCategory::Daily.to_string());
+    assert_eq!(document.metadata["origin"], "https://example.com/note.txt");
 }
 
 #[tokio::test]

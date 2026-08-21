@@ -3,7 +3,7 @@
 use super::{
     builtin_cloud_supports_responses_api, endpoint_host, endpoint_host_is_chat_completions_only,
     host_is_builtin_cloud_provider, is_builtin_cloud_slug, is_slug_reserved, migrate_legacy_fields,
-    AuthStyle, CloudProviderCreds, BUILTIN_CLOUD_PROVIDERS,
+    AuthStyle, CloudProviderCreds, CloudProviderType, BUILTIN_CLOUD_PROVIDERS,
 };
 
 #[test]
@@ -260,4 +260,112 @@ fn host_gate_agrees_with_slug_capability_for_every_builtin() {
             provider.slug
         );
     }
+}
+
+#[test]
+fn auth_styles_and_legacy_provider_types_expose_stable_wire_properties() {
+    let styles = [
+        (AuthStyle::Bearer, "bearer"),
+        (AuthStyle::Anthropic, "anthropic"),
+        (AuthStyle::OpenhumanJwt, "openhuman_jwt"),
+        (AuthStyle::None, "none"),
+    ];
+    for (style, expected) in styles {
+        assert_eq!(style.as_str(), expected);
+    }
+
+    let types = [
+        (
+            CloudProviderType::Openhuman,
+            "https://api.openhuman.ai/v1",
+            "OpenHuman",
+            "openhuman",
+            AuthStyle::OpenhumanJwt,
+        ),
+        (
+            CloudProviderType::Openai,
+            "https://api.openai.com/v1",
+            "OpenAI",
+            "openai",
+            AuthStyle::Bearer,
+        ),
+        (
+            CloudProviderType::Anthropic,
+            "https://api.anthropic.com/v1",
+            "Anthropic",
+            "anthropic",
+            AuthStyle::Anthropic,
+        ),
+        (
+            CloudProviderType::Openrouter,
+            "https://openrouter.ai/api/v1",
+            "OpenRouter",
+            "openrouter",
+            AuthStyle::Bearer,
+        ),
+        (
+            CloudProviderType::Orcarouter,
+            "https://api.orcarouter.ai/v1",
+            "OrcaRouter",
+            "orcarouter",
+            AuthStyle::Bearer,
+        ),
+        (
+            CloudProviderType::Custom,
+            "",
+            "Custom",
+            "custom",
+            AuthStyle::Bearer,
+        ),
+    ];
+    for (provider, endpoint, label, slug, auth) in types {
+        assert_eq!(provider.default_endpoint(), endpoint);
+        assert_eq!(provider.label(), label);
+        assert_eq!(provider.as_str(), slug);
+        assert_eq!(provider.auth_style(), auth);
+    }
+}
+
+#[test]
+fn migration_is_idempotent_and_unknown_types_remain_custom() {
+    let mut custom = CloudProviderCreds {
+        id: "custom-id".into(),
+        legacy_type: Some("my-provider".into()),
+        ..Default::default()
+    };
+    migrate_legacy_fields(&mut custom);
+    assert_eq!(custom.slug, "my-provider");
+    assert_eq!(custom.label, "Custom");
+    assert!(custom.endpoint.is_empty());
+    assert_eq!(custom.auth_style, AuthStyle::Bearer);
+
+    let once = custom.clone();
+    migrate_legacy_fields(&mut custom);
+    assert_eq!(custom, once);
+
+    let mut preserved = CloudProviderCreds {
+        id: "preserved".into(),
+        slug: "chosen".into(),
+        label: "Chosen Label".into(),
+        endpoint: "https://proxy.example/v1".into(),
+        auth_style: AuthStyle::None,
+        legacy_type: Some("openai".into()),
+        default_model: Some("legacy-model".into()),
+    };
+    migrate_legacy_fields(&mut preserved);
+    assert_eq!(preserved.slug, "chosen");
+    assert_eq!(preserved.label, "Chosen Label");
+    assert_eq!(preserved.endpoint, "https://proxy.example/v1");
+    assert_eq!(preserved.auth_style, AuthStyle::None);
+}
+
+#[test]
+fn generated_provider_ids_sanitize_and_bound_the_slug_prefix() {
+    let id = super::generate_provider_id("provider with spaces/and_symbols!");
+    assert!(id.starts_with("p_provider_with_spaces_"));
+    let suffix = id.rsplit('_').next().expect("suffix");
+    assert_eq!(suffix.len(), 5);
+    assert!(suffix
+        .chars()
+        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()));
 }
