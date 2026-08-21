@@ -605,17 +605,21 @@ impl Dialect for Mem0Dialect {
                 entry.key
             );
         }
-        // A FULL page in which nothing even decodes is inconclusive, not
-        // absent: a server that dropped the filter answers with the whole
-        // account, and if page 1 is all foreign non-TinyMemory records the
-        // one asked for may sit past it. Only a short page proves absence —
-        // the server returned everything it had and ours was not among it.
+        // An answer in which nothing even decodes is inconclusive, not
+        // absent, whenever the server admits more pages exist: a server that
+        // dropped the filter answers with the whole account, and the record
+        // asked for may sit past page 1. "More exists" shows up two ways —
+        // a full page, or a non-null `next` cursor on a short one (a server
+        // paginating below the requested page size) — so absence is proven
+        // only by a short page with a terminal cursor: the server returned
+        // everything it had and ours was not among it.
+        let page_exhausted = response.get("next").is_none_or(Value::is_null);
         anyhow::ensure!(
-            results.len() < CLOUD_PAGE_SIZE as usize,
-            "mem0's filtered lookup answered a full page of {} records none of which are \
-             TinyMemory's — the server did not honor the metadata filter, and the record \
-             asked for ({namespace}/{key}) may sit beyond this page; refusing to answer \
-             an untrustworthy `absent`",
+            results.len() < CLOUD_PAGE_SIZE as usize && page_exhausted,
+            "mem0's filtered lookup answered {} records none of which are TinyMemory's, \
+             with more pages remaining — the server did not honor the metadata filter, \
+             and the record asked for ({namespace}/{key}) may sit beyond this page; \
+             refusing to answer an untrustworthy `absent`",
             results.len()
         );
         Ok(None)
