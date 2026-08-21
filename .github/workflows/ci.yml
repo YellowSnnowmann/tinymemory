@@ -175,6 +175,27 @@ jobs:
             --ignore-filename-regex '(^|/)(tests|vendor)/|(^|/)(test|tests|test_helpers|test_support|test_seams)\.rs$|(_test|_tests)\.rs$|/crates/tinymemory-core/src/(engine/parity|tree/retrieval/benchmarks)\.rs$' \
             --fail-under-lines 80 --summary-only \
             | tee "$GITHUB_STEP_SUMMARY"
+          cargo llvm-cov report \
+            --ignore-filename-regex '(^|/)(tests|vendor)/|(^|/)(test|tests|test_helpers|test_support|test_seams)\.rs$|(_test|_tests)\.rs$|/crates/tinymemory-core/src/(engine/parity|tree/retrieval/benchmarks)\.rs$' \
+            --json --output-path target/production-coverage.json
+          test_decl_line="$(grep -n '#\[cfg(test)\]' \
+            crates/tinymemory-api/src/host/local_ai.rs | tail -1 | cut -d: -f1)"
+          active_line="$(grep -n 'pub fn is_active' \
+            crates/tinymemory-api/src/host/local_ai.rs | cut -d: -f1)"
+          jq -e --argjson test_decl_line "$test_decl_line" \
+            --argjson active_line "$active_line" '
+            .data as $data
+            | [$data[].files[]
+                | select(.filename | endswith("/crates/tinymemory-api/src/host/local_ai.rs"))]
+              as $local_ai
+            | ($local_ai | length == 1)
+              and ([$local_ai[].segments[]
+                | select(.[0] >= $test_decl_line and .[3] == true)] | length == 0)
+              and ([$local_ai[].segments[]
+                | select(.[0] == $active_line and .[2] > 0 and .[3] == true)] | length > 0)
+              and ([$data[].files[]
+                | select(.filename | endswith("/local_ai_tests.rs"))] | length == 0)
+          ' target/production-coverage.json
 
   # §E2's first half: build **and test** each engine configuration on its own.
   #
