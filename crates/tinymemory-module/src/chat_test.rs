@@ -14,8 +14,8 @@ struct FakeChatHost;
 
 #[tinybus::interface(name = "ai.tinyhumans.tinymemory.ChatHost")]
 impl FakeChatHost {
-    #[allow(clippy::unused_async, reason = "the interface macro requires async")]
     async fn complete(&self, role: String, request: ModelRequest) -> BusResult<ModelResponse> {
+        std::future::ready(()).await;
         Ok(ModelResponse {
             message: AssistantMessage {
                 id: None,

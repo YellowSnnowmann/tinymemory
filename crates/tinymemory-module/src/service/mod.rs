@@ -279,12 +279,8 @@ macro_rules! require_family {
 #[tinybus::interface(name = "ai.tinyhumans.tinymemory.Memory")]
 impl MemoryService {
     /// The bound driver's stable identifier.
-    #[allow(
-        clippy::unused_async,
-        reason = "tinybus::interface requires every method to be `async fn`"
-    )]
     async fn driver_id(&self) -> BusResult<String> {
-        Ok(self.provider.driver_id().to_string())
+        std::future::ready(Ok(self.provider.driver_id().to_string())).await
     }
 
     /// The families this driver implements.
@@ -292,12 +288,8 @@ impl MemoryService {
     /// The host caches this at bind time, exactly as it would for an in-process
     /// driver — the trait documents that the set is asked once and must not
     /// change afterwards.
-    #[allow(
-        clippy::unused_async,
-        reason = "tinybus::interface requires every method to be `async fn`"
-    )]
     async fn capabilities(&self) -> BusResult<Capabilities> {
-        Ok(self.provider.capabilities())
+        std::future::ready(Ok(self.provider.capabilities())).await
     }
 
     /// Current liveness, as the driver reports it.

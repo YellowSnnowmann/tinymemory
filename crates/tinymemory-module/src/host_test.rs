@@ -58,17 +58,13 @@ struct FakeRuntimeHost {
 
 #[tinybus::interface(name = "ai.tinyhumans.tinymemory.RuntimeHost")]
 impl FakeRuntimeHost {
-    #[allow(clippy::unused_async, reason = "the interface macro requires async")]
     async fn publish_event(&self, event: MemoryEvent) -> BusResult<()> {
+        std::future::ready(()).await;
         let _ = self.callbacks.send(Callback::Published(event));
         Ok(())
     }
 
-    #[allow(
-        clippy::too_many_arguments,
-        clippy::unused_async,
-        reason = "wire contract"
-    )]
+    #[allow(clippy::too_many_arguments, reason = "wire contract")]
     async fn report_error(
         &self,
         expected: bool,
@@ -77,6 +73,7 @@ impl FakeRuntimeHost {
         operation: String,
         tags: Vec<(String, String)>,
     ) -> BusResult<()> {
+        std::future::ready(()).await;
         let _ = self.callbacks.send(Callback::Error {
             expected,
             rendered,
@@ -87,8 +84,8 @@ impl FakeRuntimeHost {
         Ok(())
     }
 
-    #[allow(clippy::unused_async, reason = "the interface macro requires async")]
     async fn extract_spacy(&self, text: String) -> BusResult<SpacyResponse> {
+        std::future::ready(()).await;
         Ok(SpacyResponse {
             entities: vec![SpacyEntity {
                 text,
