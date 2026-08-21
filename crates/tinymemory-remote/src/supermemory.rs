@@ -278,54 +278,62 @@ impl SupermemoryDialect {
     /// over HTTP.
     async fn memories_in_tag(&self, container_tag: &str) -> anyhow::Result<Vec<StoredEntry>> {
         let mut entries = Vec::new();
-        {
-            let mut page = 1_u64;
-            loop {
-                let response: Value = self
-                    .client
-                    .json(
-                        Method::POST,
-                        "v4/memories/list",
-                        Some(&json!({
-                            "limit": 200,
-                            "page": page,
-                            "sort": "createdAt",
-                            "order": "desc",
-                            "containerTags": [container_tag]
-                        })),
-                        Attempts::RetryTransient,
-                    )
-                    .await?;
-                let memories = response
-                    .get("memoryEntries")
-                    .and_then(Value::as_array)
-                    .cloned()
-                    .unwrap_or_default();
-                for memory in memories {
-                    let is_latest = memory
-                        .get("isLatest")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(true);
-                    let is_forgotten = memory
-                        .get("isForgotten")
-                        .and_then(Value::as_bool)
-                        .unwrap_or(false);
-                    if is_latest && !is_forgotten {
-                        let Some(entry) = Self::decode(&memory) else {
-                            continue;
-                        };
-                        entries.push(entry);
-                    }
+        // Bounded like mem0's CLOUD_MAX_PAGES (issue #75): totalPages is
+        // server-supplied, and a lying or looping value must fail loudly
+        // instead of spinning the walk and growing the buffer forever.
+        const MAX_PAGES: u64 = 500;
+        let mut page = 1_u64;
+        loop {
+            let response: Value = self
+                .client
+                .json(
+                    Method::POST,
+                    "v4/memories/list",
+                    Some(&json!({
+                        "limit": 200,
+                        "page": page,
+                        "sort": "createdAt",
+                        "order": "desc",
+                        "containerTags": [container_tag]
+                    })),
+                    Attempts::RetryTransient,
+                )
+                .await?;
+            let memories = response
+                .get("memoryEntries")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            for memory in memories {
+                let is_latest = memory
+                    .get("isLatest")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(true);
+                let is_forgotten = memory
+                    .get("isForgotten")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false);
+                if is_latest && !is_forgotten {
+                    let Some(entry) = Self::decode(&memory) else {
+                        continue;
+                    };
+                    entries.push(entry);
                 }
-                let total_pages = response
-                    .pointer("/pagination/totalPages")
-                    .and_then(Value::as_u64)
-                    .unwrap_or(1);
-                if page >= total_pages {
-                    break;
-                }
-                page += 1;
             }
+            let total_pages = response
+                .pointer("/pagination/totalPages")
+                .and_then(Value::as_u64)
+                .unwrap_or(1);
+            if page >= total_pages {
+                break;
+            }
+            anyhow::ensure!(
+                page < MAX_PAGES,
+                "supermemory kept answering more pages after {MAX_PAGES} — a \
+                     totalPages that never lets the walk finish is a server fault; \
+                     refusing rather than walking forever"
+            );
+            page += 1;
         }
         Ok(entries)
     }
@@ -360,7 +368,13 @@ impl Dialect for SupermemoryDialect {
                     Some(&json!({
                         "id": existing.remote_id,
                         "newContent": entry.content,
-                        "metadata": metadata
+                        "metadata": metadata,
+                        // Required by PATCH /v4/memories ("Required to scope
+                        // the operation"; 400 without it) — the POST and
+                        // DELETE bodies always carried it, PATCH alone
+                        // didn't, so the FIRST store of a key worked and
+                        // every re-store failed (issue #75).
+                        "containerTag": Self::container_tag(&entry.namespace),
                     })),
                 )
                 .await?;

@@ -605,6 +605,26 @@ impl Dialect for Mem0Dialect {
                 entry.key
             );
         }
+        // A NON-EMPTY answer in which nothing decodes is inconclusive, not
+        // absent, whenever the server admits more pages exist: a server that
+        // dropped the filter answers with the whole account, and the record
+        // asked for may sit past page 1. "More exists" shows up two ways —
+        // a full page, or a non-null `next` cursor on a short one (a server
+        // paginating below the requested page size). An EMPTY page is
+        // exhaustion regardless of the cursor, exactly as `cloud_walk` rules
+        // (an empty page cannot progress a walk): a filter-honoring server
+        // with the record would have put it on this first filtered page, so
+        // zero results IS the trustworthy absent — and the same verdict keeps
+        // `get`/`forget` agreeing with `list` about one response shape.
+        let page_exhausted = response.get("next").is_none_or(Value::is_null);
+        anyhow::ensure!(
+            results.is_empty() || (results.len() < CLOUD_PAGE_SIZE as usize && page_exhausted),
+            "mem0's filtered lookup answered {} records none of which are TinyMemory's, \
+             with more pages remaining — the server did not honor the metadata filter, \
+             and the record asked for ({namespace}/{key}) may sit beyond this page; \
+             refusing to answer an untrustworthy `absent`",
+            results.len()
+        );
         Ok(None)
     }
 
@@ -675,13 +695,13 @@ impl Dialect for Mem0Dialect {
     }
 
     /// Finds and deletes an exact TinyMemory logical record.
+    ///
+    /// Through the keyed seam (issue #75): one filtered request on cloud, one
+    /// namespace-scoped listing self-hosted — the whole-account walk this
+    /// used to run died at the OSS ≥1000-record ceiling and paged the entire
+    /// hosted account to delete one record.
     async fn delete(&self, namespace: &str, key: &str) -> anyhow::Result<bool> {
-        let Some(entry) = self
-            .entries()
-            .await?
-            .into_iter()
-            .find(|item| item.namespace == namespace && item.key == key)
-        else {
+        let Some(entry) = self.entry(namespace, key).await? else {
             return Ok(false);
         };
         self.client

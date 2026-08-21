@@ -63,6 +63,7 @@ pub async fn assert_provider(provider: Arc<dyn MemoryProvider>) {
     assert_recall_respects_limit_and_namespace(p).await;
     assert_export_import_round_trip(p).await;
     assert_awkward_content_round_trips(p).await;
+    assert_kv_round_trip(p).await;
 }
 
 /// Whether this driver reads back what it stores.
@@ -654,6 +655,98 @@ pub async fn assert_awkward_content_round_trips(provider: &dyn MemoryProvider) {
     );
     let keys: Vec<&str> = cases.iter().map(|(k, _)| *k).collect();
     cleanup(provider, &ns, &keys).await;
+}
+
+/// The key/value family round-trips: put → get → list-by-prefix → delete.
+///
+/// As wired in [`assert_provider`], also skipped for a driver that fails the
+/// `retains_writes` probe (the early return precedes every assert): a
+/// non-retaining driver would fail the put→get leg for retention reasons,
+/// which is not the asymmetry this case exists to catch.
+///
+/// Skipped when the driver does not serve the optional `Graph` family — the
+/// `as_graph()` accessor is the negotiated surface, and
+/// [`assert_capability_audit`] already pins that it agrees with the advertised
+/// [`Capability`] set, so probing the accessor *is* the capability check.
+///
+/// One leg uses a formatted national-ID key on purpose. A driver may
+/// canonicalize identifiers on write (PII scrubbing rewrites the stored key),
+/// and the contract this asserts is *symmetry*: whatever transform the write
+/// path applies, every read path must apply too. A driver whose `kv_get` /
+/// `kv_list` compare the raw caller key misses every rewritten key — put→get
+/// answers `None` forever — while its canonicalizing `kv_delete` still
+/// reports `true`, which is exactly the asymmetry that stays invisible
+/// without this case. The read-back key is deliberately *not* asserted to
+/// equal the caller's: it is the stored (possibly canonical) form.
+///
+/// # Panics
+///
+/// Panics when a just-put key cannot be read, listed under its own prefix, or
+/// deleted, or when it is still readable after a `true` delete.
+pub async fn assert_kv_round_trip(provider: &dyn MemoryProvider) {
+    let who = provider.driver_id();
+    let Some(graph) = provider.as_graph() else {
+        return;
+    };
+    let ns = ns(provider, "kv");
+    // A plain key, and one shaped like a formatted national ID — the shape
+    // identifier-canonicalizing drivers rewrite on write. (Not an email and
+    // not a bare digit run: both are deliberately outside the strict PII
+    // boundary gates such drivers use, so neither would exercise a rewrite.)
+    // The value carries no PII or secret shapes — drivers may scrub *content*
+    // more aggressively than identifiers, and this case asserts key symmetry,
+    // not content fidelity (that is `assert_awkward_content_round_trips`'s
+    // job for the document tier).
+    for (marker, key) in [("plain", "plain-key"), ("rewritten", "ssn-123-45-6789")] {
+        let value = serde_json::json!({ "leg": marker });
+        graph
+            .kv_put(Some(&ns), key, value.clone())
+            .await
+            .unwrap_or_else(|e| panic!("{who}: kv_put of `{key}` failed: {e}"));
+
+        let got = graph
+            .kv_get(Some(&ns), key)
+            .await
+            .unwrap_or_else(|e| panic!("{who}: kv_get of `{key}` failed: {e}"))
+            .unwrap_or_else(|| {
+                panic!(
+                    "{who}: kv_get did not find `{key}` right after kv_put — the read \
+                     path does not apply the write path's key transform"
+                )
+            });
+        assert_eq!(
+            got.value, value,
+            "{who}: kv_get of `{key}` surfaced another record's value"
+        );
+
+        // The caller's key must work as a prefix of its own record: prefix
+        // matching is over stored keys, so a driver that rewrites the key on
+        // write has to rewrite the prefix on read the same way.
+        let listed = graph
+            .kv_list(Some(&ns), Some(key), 16)
+            .await
+            .unwrap_or_else(|e| panic!("{who}: kv_list under `{key}` failed: {e}"));
+        assert!(
+            listed.iter().any(|record| record.value == value),
+            "{who}: kv_list under the `{key}` prefix did not surface the record"
+        );
+
+        assert!(
+            graph
+                .kv_delete(Some(&ns), key)
+                .await
+                .unwrap_or_else(|e| panic!("{who}: kv_delete of `{key}` failed: {e}")),
+            "{who}: kv_delete did not find `{key}`"
+        );
+        let gone = graph
+            .kv_get(Some(&ns), key)
+            .await
+            .unwrap_or_else(|e| panic!("{who}: kv_get after delete failed: {e}"));
+        assert!(
+            gone.is_none(),
+            "{who}: `{key}` is still readable after kv_delete reported true"
+        );
+    }
 }
 
 /// A namespace unique to this driver and assertion.

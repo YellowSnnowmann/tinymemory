@@ -219,19 +219,37 @@ async fn cloud_keyed_lookup_filters_by_metadata_and_verifies() {
     use axum::routing::post;
     let bodies: Arc<Mutex<Vec<Value>>> = Arc::default();
     let answer: Arc<Mutex<Value>> = Arc::default();
+    let next_cursor: Arc<Mutex<Value>> = Arc::new(Mutex::new(Value::Null));
     let captured = bodies.clone();
     let served = answer.clone();
-    let app = Router::new().route(
-        "/v3/memories/",
-        post(move |Json(body): Json<Value>| {
-            let captured = captured.clone();
-            let served = served.clone();
-            async move {
-                captured.lock().expect("bodies").push(body);
-                Json(json!({"results": served.lock().expect("answer").clone(), "next": null}))
-            }
-        }),
-    );
+    let cursor = next_cursor.clone();
+    let deletes: Arc<Mutex<Vec<String>>> = Arc::default();
+    let removed = deletes.clone();
+    let app = Router::new()
+        .route(
+            "/v3/memories/",
+            post(move |Json(body): Json<Value>| {
+                let captured = captured.clone();
+                let served = served.clone();
+                async move {
+                    captured.lock().expect("bodies").push(body);
+                    Json(json!({
+                        "results": served.lock().expect("answer").clone(),
+                        "next": cursor.lock().expect("cursor").clone(),
+                    }))
+                }
+            }),
+        )
+        .route(
+            "/v1/memories/{id}/",
+            axum::routing::delete(move |Path(id): Path<String>| {
+                let removed = removed.clone();
+                async move {
+                    removed.lock().expect("deletes").push(id);
+                    StatusCode::NO_CONTENT
+                }
+            }),
+        );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("bind");
@@ -282,5 +300,86 @@ async fn cloud_keyed_lookup_filters_by_metadata_and_verifies() {
     assert!(
         err.is_err(),
         "a mismatched filtered answer must refuse, not serve another record"
+    );
+
+    // Issue #75 (re-landing the #71 review's M2, dropped by the crates-layout
+    // merge): a FULL page of records none of which even decode is
+    // inconclusive, not absent — the record may sit past page 1 of a
+    // filter-dropping server's account.
+    let junk: Vec<Value> = (0..200)
+        .map(|n| json!({"id": format!("foreign-{n}"), "memory": "not ours", "metadata": {}}))
+        .collect();
+    *answer.lock().expect("answer") = json!(junk);
+    let err = driver.get("project", "decision").await;
+    assert!(
+        err.is_err(),
+        "a full undecodable page must refuse, not report absent"
+    );
+
+    // A SHORT page of undecodable records IS a trustworthy absent — but only
+    // under a terminal cursor: the server returned everything it had and
+    // ours was not among it.
+    *answer.lock().expect("answer") =
+        json!([{"id": "foreign-1", "memory": "not ours", "metadata": {}}]);
+    let got = driver
+        .get("project", "decision")
+        .await
+        .expect("short undecodable page");
+    assert!(got.is_none(), "a short terminal page proves absence");
+
+    // The same short undecodable page with a NON-NULL `next` admits more
+    // pages exist (a server paginating below the requested size): absence is
+    // not proven, refuse.
+    *next_cursor.lock().expect("cursor") = json!("https://api.mem0.ai/v3/memories/?page=2");
+    let err = driver.get("project", "decision").await;
+    assert!(
+        err.is_err(),
+        "a short undecodable page with a live cursor must refuse, not report absent"
+    );
+    *next_cursor.lock().expect("cursor") = Value::Null;
+
+    // An EMPTY page is exhaustion regardless of the cursor — `cloud_walk`'s
+    // own rule, mirrored so get/forget agree with list about one response
+    // shape: a filter-honoring server with the record would have put it on
+    // this first filtered page, so zero results is the trustworthy absent.
+    *answer.lock().expect("answer") = json!([]);
+    *next_cursor.lock().expect("cursor") = json!("https://api.mem0.ai/v3/memories/?page=2");
+    let got = driver
+        .get("project", "decision")
+        .await
+        .expect("empty page with a live cursor is still absence, not an error");
+    assert!(got.is_none());
+    assert!(
+        !driver
+            .forget("project", "decision")
+            .await
+            .expect("forget of an absent key answers false, not an error"),
+        "forget must report false for an absent key"
+    );
+    *next_cursor.lock().expect("cursor") = Value::Null;
+
+    // Issue #75: delete rides the SAME keyed seam — one filtered resolve
+    // carrying the metadata key, then one DELETE by id. No account walk.
+    *answer.lock().expect("answer") = json!([record("project", "decision")]);
+    let before = bodies.lock().expect("bodies").len();
+    let removed_ok = driver.forget("project", "decision").await.expect("forget");
+    assert!(removed_ok);
+    let sent = bodies.lock().expect("bodies").clone();
+    assert_eq!(
+        sent.len(),
+        before + 1,
+        "delete resolves with exactly one filtered request"
+    );
+    let clauses = sent[before]["filters"]["AND"].as_array().expect("AND");
+    assert!(
+        clauses
+            .iter()
+            .any(|c| c["metadata"]["tinymemory_key"] == json!("decision")),
+        "the delete's resolve carries the key filter: {sent:?}"
+    );
+    assert_eq!(
+        deletes.lock().expect("deletes").as_slice(),
+        ["mem-1".to_owned()],
+        "one DELETE by resolved id"
     );
 }
