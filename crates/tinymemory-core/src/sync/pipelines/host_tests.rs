@@ -302,3 +302,153 @@ async fn a_held_connection_short_circuits_the_run() {
     assert_eq!(outcome.records_ingested, 7);
     assert!(ticked.load(std::sync::atomic::Ordering::SeqCst));
 }
+
+#[test]
+fn pipeline_failure_and_source_caps_preserve_operational_details() {
+    let failure = PipelineFailure::without_usage("offline");
+    assert_eq!(failure.to_string(), "offline");
+    assert!(std::error::Error::source(&failure).is_none());
+    assert_eq!(failure.actions_called, 0);
+    assert_eq!(failure.provider_cost_usd, 0.0);
+
+    let source: tinymemory_sources::MemorySourceEntry = serde_json::from_value(serde_json::json!({
+        "id": "source-1",
+        "kind": "composio",
+        "label": "Mail",
+        "enabled": true,
+        "max_items": 11,
+        "sync_depth_days": 4,
+        "max_tokens_per_sync": 500,
+        "max_cost_per_sync_usd": 0.25
+    }))
+    .unwrap();
+    let caps = SourceCaps::from_source(&source);
+    assert_eq!(caps.max_items, Some(11));
+    assert_eq!(caps.sync_depth_days, Some(4));
+    assert_eq!(caps.max_tokens_per_sync, Some(500));
+    assert_eq!(caps.max_cost_per_sync_usd, Some(0.25));
+}
+
+#[test]
+fn composio_config_covers_direct_proxied_and_missing_credentials() {
+    let mut direct = tinymemory_api::host::test_support::TestHostConfig::default();
+    direct.composio.mode = "direct".into();
+    direct.composio.entity_id = "entity-1".into();
+    assert!(composio_config(&direct).is_err());
+    direct.composio.api_key = Some("direct-secret".into());
+    let config = composio_config(&direct).unwrap();
+    assert_eq!(config.mode, ComposioMode::Direct);
+    assert_eq!(config.api_key.as_ref().unwrap().expose(), "direct-secret");
+    assert_eq!(config.entity_id.as_deref(), Some("entity-1"));
+
+    let mut proxied = tinymemory_api::host::test_support::TestHostConfig::default();
+    assert!(composio_config(&proxied).is_err());
+    proxied.session_token = Some("session-secret".into());
+    proxied.api_url = Some("https://backend.example".into());
+    let config = composio_config(&proxied).unwrap();
+    assert_eq!(config.mode, ComposioMode::Proxied);
+    assert_eq!(
+        config.bearer_token.as_ref().unwrap().expose(),
+        "session-secret"
+    );
+    assert!(config.api_key.is_none());
+}
+
+struct FailingPipeline {
+    usage: bool,
+}
+
+#[async_trait]
+impl SyncPipeline for FailingPipeline {
+    fn id(&self) -> &str {
+        if self.usage {
+            "test:usage"
+        } else {
+            "test:plain"
+        }
+    }
+
+    fn kind(&self) -> crate::sync::pipelines::traits::SyncPipelineKind {
+        crate::sync::pipelines::traits::SyncPipelineKind::Composio
+    }
+
+    async fn init(&self, _: &PipelineConfig, _: &SyncContext) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    async fn tick(&self, _: &PipelineConfig, _: &SyncContext) -> anyhow::Result<SyncOutcome> {
+        if self.usage {
+            Err(anyhow::Error::new(SyncRunError::new(
+                "spent failure",
+                3,
+                0.75,
+            )))
+        } else {
+            anyhow::bail!("plain failure")
+        }
+    }
+}
+
+#[tokio::test]
+async fn run_pipeline_preserves_typed_usage_and_defaults_plain_errors() {
+    crate::test_seams::init();
+    let workspace = tempfile::tempdir().unwrap();
+    let memory: MemoryClientRef = Arc::new(
+        crate::store::MemoryClient::from_workspace_dir(workspace.path().join("store")).unwrap(),
+    );
+    let host = Arc::new(PipelineHost::without_tree_ingest(memory));
+    let typed = run_pipeline(
+        Arc::new(FailingPipeline { usage: true }),
+        "gmail",
+        "failure-usage",
+        &PipelineConfig::default(),
+        &host.context(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(typed.message, "spent failure");
+    assert_eq!(typed.actions_called, 3);
+    assert_eq!(typed.provider_cost_usd, 0.75);
+
+    let plain = run_pipeline(
+        Arc::new(FailingPipeline { usage: false }),
+        "gmail",
+        "failure-plain",
+        &PipelineConfig::default(),
+        &host.context(),
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(plain.message, "plain failure");
+    assert_eq!(plain.actions_called, 0);
+    assert_eq!(plain.provider_cost_usd, 0.0);
+}
+
+#[tokio::test]
+async fn pipeline_host_state_event_and_delete_capabilities_round_trip() {
+    crate::test_seams::init();
+    let workspace = tempfile::tempdir().unwrap();
+    let memory: MemoryClientRef = Arc::new(
+        crate::store::MemoryClient::from_workspace_dir(workspace.path().join("store")).unwrap(),
+    );
+    let host = Arc::new(PipelineHost::without_tree_ingest(memory.clone()));
+    SyncStateStore::set(&*host, "sync", "cursor", &serde_json::json!({"page": 2}))
+        .await
+        .unwrap();
+    assert_eq!(
+        SyncStateStore::get(&*host, "sync", "cursor").await.unwrap(),
+        Some(serde_json::json!({"page": 2}))
+    );
+    let sink = crate::events::RecordingSink::install();
+    host.emit(SyncEvent {
+        source_id: "source-1".into(),
+        toolkit: "gmail".into(),
+        connection_id: Some("connection-1".into()),
+        stage: crate::sync::pipelines::traits::SyncStage::Completed,
+        message: Some("done".into()),
+    })
+    .await
+    .unwrap();
+    assert!(!sink.drain().is_empty());
+    host.delete("gmail", "missing-document").await.unwrap();
+}

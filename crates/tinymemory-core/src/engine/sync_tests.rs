@@ -1,6 +1,9 @@
 //! Tests for the surrounding module.
 
-use super::build_pipeline;
+use super::{
+    build_pipeline, run_composio_connection, run_composio_connection_with_budgets,
+    run_gmail_backfill, run_slack_search_backfill, run_source_pipeline,
+};
 use crate::sources::MemorySourceEntry;
 use crate::sync::composio::{get_composio_sync_provider, init_default_composio_sync_providers};
 use crate::sync::pipelines::host::{is_composio_toolkit_syncable, syncable_composio_toolkits};
@@ -10,6 +13,7 @@ fn memory_fixture() -> (
     tinymemory_api::host::test_support::TestHostConfig,
     crate::store::MemoryClientRef,
 ) {
+    crate::test_seams::init();
     let workspace = tempfile::tempdir().expect("workspace");
     let mut config = tinymemory_api::host::test_support::TestHostConfig::default();
     config.workspace_dir = workspace.path().join("memory");
@@ -339,6 +343,46 @@ async fn raw_archive_and_stage_helpers_cover_empty_local_state() {
             "failed",
         ]
     );
+}
+
+#[tokio::test]
+async fn public_composio_wrappers_fail_before_transport_and_preserve_zero_usage() {
+    let (_tmp, config, _memory) = memory_fixture();
+    for result in [
+        run_composio_connection("gmail", "connection-missing-auth", &config).await,
+        run_composio_connection_with_budgets(
+            "slack",
+            "connection-missing-auth",
+            &config,
+            Some(7),
+            Some(2),
+        )
+        .await,
+        run_slack_search_backfill("connection-missing-auth", 14, &config).await,
+        run_gmail_backfill(
+            "connection-missing-auth",
+            "after:2024/01/01",
+            2,
+            25,
+            &config,
+        )
+        .await,
+    ] {
+        let failure = result.unwrap_err();
+        assert_eq!(failure.actions_called, 0);
+        assert_eq!(failure.provider_cost_usd, 0.0);
+        assert!(!failure.message.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn source_pipeline_invalid_local_input_fails_without_provider_usage() {
+    let (_tmp, config, _memory) = memory_fixture();
+    let invalid = source("web_page", serde_json::json!({}));
+    let failure = run_source_pipeline(&invalid, &config).await.unwrap_err();
+    assert_eq!(failure.actions_called, 0);
+    assert_eq!(failure.provider_cost_usd, 0.0);
+    assert!(!failure.message.is_empty());
 }
 
 /// The advertised set (`memory_sources.supported_toolkits`, sourced from the

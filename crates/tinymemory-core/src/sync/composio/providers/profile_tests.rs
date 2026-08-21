@@ -291,6 +291,74 @@ fn render_empty_list_returns_empty_string() {
     assert_eq!(render_connected_identities_section(&[]), "");
 }
 
+#[test]
+fn render_sanitizes_untrusted_fields_and_skips_empty_identities() {
+    let rendered = render_connected_identities_section(&[
+        ConnectedIdentity {
+            source: "linear".into(),
+            identifier: " conn\n42 ".into(),
+            display_name: Some(" Alice\tExample ".into()),
+            email: Some("alice|example.com".into()),
+            handle: Some("\r alice ".into()),
+            phone: None,
+            user_id: None,
+            avatar_url: None,
+            profile_url: Some(" https://example.com/a|b ".into()),
+        },
+        ConnectedIdentity {
+            source: "slack".into(),
+            identifier: "unused".into(),
+            display_name: Some(" \n\t ".into()),
+            ..Default::default()
+        },
+    ]);
+
+    assert_eq!(
+        rendered,
+        "## Connected Identities\n\n- Linear (conn 42): Alice Example | alice/example.com | @alice | https://example.com/a/b\n"
+    );
+}
+
+#[test]
+fn render_returns_empty_when_every_identity_has_only_non_rendered_fields() {
+    let rendered = render_connected_identities_section(&[ConnectedIdentity {
+        source: "slack".into(),
+        identifier: "conn".into(),
+        phone: Some("+15551234567".into()),
+        user_id: Some("U123".into()),
+        avatar_url: Some("https://example.com/avatar".into()),
+        ..Default::default()
+    }]);
+
+    assert!(rendered.is_empty());
+}
+
+#[test]
+fn helper_parsing_and_normalization_cover_malformed_inputs() {
+    for key in ["", "skill", "skill:slack", "skill:slack:conn"] {
+        assert_eq!(parse_skill_identity_key(key), None);
+    }
+    assert_eq!(
+        normalize_connection_identifier("  Team.Name/@Me  "),
+        "team_name__me"
+    );
+    assert_eq!(normalize_connection_identifier("___"), "");
+    assert_eq!(title_case(""), "");
+    assert_eq!(title_case("slack"), "Slack");
+}
+
+#[test]
+fn canonicalize_preserves_urls_and_removes_empty_phone_noise() {
+    assert_eq!(
+        canonicalize(IdentityKind::ProfileUrl, " https://example.com/Me "),
+        Some("https://example.com/Me".into())
+    );
+    assert_eq!(
+        canonicalize(IdentityKind::Phone, "extension only"),
+        Some(String::new())
+    );
+}
+
 // ── now_secs sanity ───────────────────────────────────────────
 
 #[test]

@@ -1,6 +1,19 @@
 //! Tests for the surrounding module.
 
 use super::*;
+use std::sync::Arc;
+
+fn context(connection_id: Option<&str>) -> ProviderContext {
+    ProviderContext {
+        config: Arc::new(tinymemory_api::host::test_support::TestHostConfig::default())
+            as Arc<crate::Config>,
+        toolkit: "slack".into(),
+        connection_id: connection_id.map(str::to_string),
+        usage: crate::sync::composio::providers::ComposioUsageHandle::default(),
+        max_items: None,
+        sync_depth_days: None,
+    }
+}
 
 #[test]
 fn toolkit_slug_is_stable() {
@@ -36,4 +49,33 @@ fn post_process_action_result_delegates_to_post_process_module() {
         data.get("channels").is_some(),
         "no-op slug must not mutate data"
     );
+}
+
+#[tokio::test]
+async fn profile_and_backfill_failures_name_the_missing_boundary() {
+    let provider = SlackProvider::new();
+    let profile = provider
+        .fetch_user_profile(&context(None))
+        .await
+        .unwrap_err();
+    assert!(profile.contains(ACTION_AUTH_TEST));
+    let backfill = run_backfill_via_search(&context(None), BACKFILL_DAYS)
+        .await
+        .unwrap_err();
+    assert!(backfill.contains("missing connection_id"));
+}
+
+#[tokio::test]
+async fn trigger_filters_non_messages_and_requires_connection_for_messages() {
+    let provider = SlackProvider::new();
+    provider
+        .on_trigger(&context(None), "CHANNEL_CREATED", &serde_json::json!({}))
+        .await
+        .unwrap();
+    let error = provider
+        .on_trigger(&context(None), "MESSAGE_CREATED", &serde_json::json!({}))
+        .await
+        .unwrap_err();
+    assert!(error.contains("missing connection_id"));
+    assert!(now_ms() > 0);
 }
