@@ -197,11 +197,11 @@ jobs:
                 | select(.filename | endswith("/local_ai_tests.rs"))] | length == 0)
           ' target/production-coverage.json
           inline_test_code="$(
-            rg -l '^[[:space:]]*#\[cfg\((test|any\(test,)' crates \
-              --glob '*.rs' --glob '!**/test.rs' --glob '!**/tests.rs' \
-              --glob '!**/*_test.rs' --glob '!**/*_tests.rs' \
-              --glob '!**/*_test_support.rs' --glob '!**/test_support.rs' \
-              --glob '!**/test_helpers.rs' --glob '!**/test_seams.rs' \
+            grep -R -l -E '^[[:space:]]*#\[cfg\((test|any\(test,)' crates \
+              --include='*.rs' --exclude='test.rs' --exclude='tests.rs' \
+              --exclude='*_test.rs' --exclude='*_tests.rs' \
+              --exclude='*_test_support.rs' --exclude='test_support.rs' \
+              --exclude='test_helpers.rs' --exclude='test_seams.rs' \
             | xargs -r awk '
               /^[[:space:]]*#\[cfg\((test|any\(test,)/ { cfgline=FNR; pending=1; next }
               pending && (/^[[:space:]]*$/ || /^[[:space:]]*#/ || /^[[:space:]]*\/\//) { next }
