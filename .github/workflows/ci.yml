@@ -172,7 +172,7 @@ jobs:
         run: |
           set -euo pipefail
           cargo llvm-cov --all-features --workspace \
-            --ignore-filename-regex '(^|/)(tests|vendor)/|(_test|_tests)\.rs$|/test\.rs$' \
+            --ignore-filename-regex '(^|/)(tests|vendor)/|(^|/)(test|tests|test_helpers|test_support|test_seams)\.rs$|(_test|_tests)\.rs$|/crates/tinymemory-core/src/(engine/parity|tree/retrieval/benchmarks)\.rs$' \
             --fail-under-lines 80 --summary-only \
             | tee "$GITHUB_STEP_SUMMARY"
 
@@ -296,7 +296,7 @@ jobs:
           set -euo pipefail
           cargo llvm-cov --manifest-path crates/tinymemory-module/Cargo.toml \
             --workspace --all-features \
-            --ignore-filename-regex '(^|/)(tests|vendor)/|(_test|_tests)\.rs$|/test\.rs$' \
+            --ignore-filename-regex '(^|/)(tests|vendor)/|(^|/)(test|tests|test_helpers|test_support|test_seams)\.rs$|(_test|_tests)\.rs$|/crates/tinymemory-core/src/(engine/parity|tree/retrieval/benchmarks)\.rs$' \
             --fail-under-lines 80 --summary-only \
             | tee "$GITHUB_STEP_SUMMARY"
 

@@ -278,14 +278,5 @@ pub fn current_degraded_state() -> DegradedState {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn storage_unavailable_discriminant_round_trips() {
-        assert_eq!(
-            u8_to_code(code_to_u8(FailureCode::StorageUnavailable)),
-            Some(FailureCode::StorageUnavailable)
-        );
-    }
-}
+#[path = "health_tests.rs"]
+mod tests;
