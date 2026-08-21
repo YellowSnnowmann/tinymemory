@@ -88,6 +88,17 @@ fn strip_raw_text_elements(html: &str) -> String {
         for name in ["script", "style", "template", "svg", "noscript", "title"] {
             let head = lower(&tail[..tail.len().min(name.len() + 1)]);
             if head == format!("<{name}") {
+                // `<scripture>` and `<script-x>` share this prefix but are not
+                // the element being matched; only `>`, `/`, or whitespace
+                // after the name is a real tag-name boundary.
+                let after_name = &tail[(name.len() + 1).min(tail.len())..];
+                let is_boundary = after_name
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c == '>' || c == '/' || c.is_ascii_whitespace());
+                if !is_boundary {
+                    continue;
+                }
                 let closing = format!("</{name}");
                 let lowered = lower(tail);
                 match lowered[1..].find(&closing) {
