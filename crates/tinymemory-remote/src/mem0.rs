@@ -605,17 +605,20 @@ impl Dialect for Mem0Dialect {
                 entry.key
             );
         }
-        // An answer in which nothing even decodes is inconclusive, not
+        // A NON-EMPTY answer in which nothing decodes is inconclusive, not
         // absent, whenever the server admits more pages exist: a server that
         // dropped the filter answers with the whole account, and the record
         // asked for may sit past page 1. "More exists" shows up two ways —
         // a full page, or a non-null `next` cursor on a short one (a server
-        // paginating below the requested page size) — so absence is proven
-        // only by a short page with a terminal cursor: the server returned
-        // everything it had and ours was not among it.
+        // paginating below the requested page size). An EMPTY page is
+        // exhaustion regardless of the cursor, exactly as `cloud_walk` rules
+        // (an empty page cannot progress a walk): a filter-honoring server
+        // with the record would have put it on this first filtered page, so
+        // zero results IS the trustworthy absent — and the same verdict keeps
+        // `get`/`forget` agreeing with `list` about one response shape.
         let page_exhausted = response.get("next").is_none_or(Value::is_null);
         anyhow::ensure!(
-            results.len() < CLOUD_PAGE_SIZE as usize && page_exhausted,
+            results.is_empty() || (results.len() < CLOUD_PAGE_SIZE as usize && page_exhausted),
             "mem0's filtered lookup answered {} records none of which are TinyMemory's, \
              with more pages remaining — the server did not honor the metadata filter, \
              and the record asked for ({namespace}/{key}) may sit beyond this page; \

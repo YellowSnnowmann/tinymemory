@@ -338,6 +338,26 @@ async fn cloud_keyed_lookup_filters_by_metadata_and_verifies() {
     );
     *next_cursor.lock().expect("cursor") = Value::Null;
 
+    // An EMPTY page is exhaustion regardless of the cursor — `cloud_walk`'s
+    // own rule, mirrored so get/forget agree with list about one response
+    // shape: a filter-honoring server with the record would have put it on
+    // this first filtered page, so zero results is the trustworthy absent.
+    *answer.lock().expect("answer") = json!([]);
+    *next_cursor.lock().expect("cursor") = json!("https://api.mem0.ai/v3/memories/?page=2");
+    let got = driver
+        .get("project", "decision")
+        .await
+        .expect("empty page with a live cursor is still absence, not an error");
+    assert!(got.is_none());
+    assert!(
+        !driver
+            .forget("project", "decision")
+            .await
+            .expect("forget of an absent key answers false, not an error"),
+        "forget must report false for an absent key"
+    );
+    *next_cursor.lock().expect("cursor") = Value::Null;
+
     // Issue #75: delete rides the SAME keyed seam — one filtered resolve
     // carrying the metadata key, then one DELETE by id. No account walk.
     *answer.lock().expect("answer") = json!([record("project", "decision")]);

@@ -285,13 +285,18 @@ async fn sm_update(
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, axum::http::StatusCode> {
     // Mirrors `sm_create`: the real PATCH requires `containerTag` and 400s
-    // without it (issue #75).
-    if body["containerTag"].as_str().is_none_or(str::is_empty) {
+    // without it (issue #75) — and the value must match the row it scopes: a
+    // foreign tag on a PATCH is a cross-container write, not a detail.
+    let Some(sent_tag) = body["containerTag"].as_str().filter(|tag| !tag.is_empty()) else {
         return Err(axum::http::StatusCode::BAD_REQUEST);
-    }
+    };
+    let sent_tag = sent_tag.to_owned();
     let mut store = store.lock().expect("store lock");
     let id = body["id"].as_str().unwrap_or_default().to_owned();
     if let Some(row) = store.rows.get_mut(&id) {
+        if row.tag != sent_tag {
+            return Err(axum::http::StatusCode::BAD_REQUEST);
+        }
         if let Some(text) = body["newContent"].as_str() {
             row.content = text.to_owned();
         }
