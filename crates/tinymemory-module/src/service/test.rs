@@ -349,7 +349,6 @@ async fn a_leaf_store_cannot_recursively_open_another_store() {
 
 #[tokio::test]
 async fn repeated_and_concurrent_opens_reuse_the_registered_object_path() {
-    use std::sync::atomic::Ordering;
     use std::sync::Arc;
 
     let workspace = tempfile::tempdir().expect("tempdir");
@@ -373,8 +372,8 @@ async fn repeated_and_concurrent_opens_reuse_the_registered_object_path() {
     for task in tasks {
         assert_eq!(task.await.expect("join").expect("reused store"), expected);
     }
-    assert_eq!(opener.allocation_attempts.load(Ordering::SeqCst), 1);
-    assert_eq!(opener.registration_attempts.load(Ordering::SeqCst), 1);
+    assert_eq!(opener.instrumentation.allocation_attempts(), 1);
+    assert_eq!(opener.instrumentation.registration_attempts(), 1);
     assert_eq!(opener.served.lock().await.len(), 1);
 
     let driver_id: String = connection
@@ -388,7 +387,6 @@ async fn repeated_and_concurrent_opens_reuse_the_registered_object_path() {
 
 #[tokio::test]
 async fn a_failed_registration_is_retried_and_only_success_counts_toward_the_cap() {
-    use std::sync::atomic::Ordering;
     use std::sync::Arc;
 
     let workspace = tempfile::tempdir().expect("tempdir");
@@ -396,7 +394,7 @@ async fn a_failed_registration_is_retried_and_only_success_counts_toward_the_cap
     let config = test_config(workspace.path());
     let _embedding_host = EmbeddingHostRestore::install(connection.clone(), &config);
     let opener = test_opener(connection, config);
-    opener.fail_registrations(1);
+    opener.instrumentation.fail_registrations(1);
     let service = super::MemoryService::root(test_provider(), Arc::clone(&opener));
     service
         .open_store("retry".to_string())
@@ -409,14 +407,13 @@ async fn a_failed_registration_is_retried_and_only_success_counts_toward_the_cap
         .await
         .expect("the same subtree must be retried");
     assert_eq!(path, format!("{}/stores/retry", super::OBJECT_PATH));
-    assert_eq!(opener.allocation_attempts.load(Ordering::SeqCst), 2);
-    assert_eq!(opener.registration_attempts.load(Ordering::SeqCst), 2);
+    assert_eq!(opener.instrumentation.allocation_attempts(), 2);
+    assert_eq!(opener.instrumentation.registration_attempts(), 2);
     assert_eq!(opener.served.lock().await.len(), 1);
 }
 
 #[tokio::test]
 async fn the_open_store_cap_is_reached_through_successful_opens() {
-    use std::sync::atomic::Ordering;
     use std::sync::Arc;
 
     let workspace = tempfile::tempdir().expect("tempdir");
@@ -443,12 +440,12 @@ async fn the_open_store_cap_is_reached_through_successful_opens() {
     assert!(message.contains(&super::MAX_OPEN_STORES.to_string()));
     assert_eq!(opener.served.lock().await.len(), super::MAX_OPEN_STORES);
     assert_eq!(
-        opener.allocation_attempts.load(Ordering::SeqCst),
+        opener.instrumentation.allocation_attempts(),
         super::MAX_OPEN_STORES,
         "the refused open must not allocate"
     );
     assert_eq!(
-        opener.registration_attempts.load(Ordering::SeqCst),
+        opener.instrumentation.registration_attempts(),
         super::MAX_OPEN_STORES,
         "the refused open must not register"
     );

@@ -14,32 +14,19 @@ use std::collections::HashSet;
 
 use crate::types::{ContentType, SourceContent, SourceItem};
 
+use super::parse_iso_ts;
 use super::types::GhCommit;
-use super::{parse_iso_ts, GH_CLI_TIMEOUT};
 
+#[cfg(not(test))]
+#[path = "api/transport.rs"]
+mod selected_transport;
 #[cfg(test)]
-tokio::task_local! {
-    static TEST_RESPONSES: std::cell::RefCell<
-        std::collections::VecDeque<Result<String, String>>
-    >;
-}
+#[path = "api/transport_test.rs"]
+mod selected_transport;
 
-/// Run a future with a task-local sequence of GitHub responses.
-///
-/// Task-local storage keeps parallel reader tests isolated and makes an
-/// exhausted fixture fail closed instead of accidentally reaching the network.
+pub(super) use selected_transport::fetch_github;
 #[cfg(test)]
-pub(super) async fn with_test_responses<F>(
-    responses: Vec<Result<String, String>>,
-    future: F,
-) -> F::Output
-where
-    F: std::future::Future,
-{
-    TEST_RESPONSES
-        .scope(std::cell::RefCell::new(responses.into()), future)
-        .await
-}
+pub(super) use selected_transport::with_test_responses;
 
 /// GitHub REST API maximum page size (`per_page`).
 pub(super) const GH_PAGE_SIZE: u32 = 100;
@@ -47,75 +34,6 @@ pub(super) const GH_PAGE_SIZE: u32 = 100;
 /// Hard ceiling on pagination loops so a misbehaving API (always returning a
 /// full page) can never spin forever even if `max` is enormous.
 pub(super) const GH_MAX_PAGES: u32 = 1000;
-
-/// Run `gh <args>` and return stdout as UTF-8.
-pub(super) async fn gh_json(args: &[&str]) -> Result<String, String> {
-    let output = tokio::time::timeout(
-        GH_CLI_TIMEOUT,
-        tokio::process::Command::new("gh").args(args).output(),
-    )
-    .await
-    .map_err(|_| format!("gh command timed out after {}s", GH_CLI_TIMEOUT.as_secs()))?
-    .map_err(|e| format!("gh command failed: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("gh exited {}: {stderr}", output.status));
-    }
-
-    String::from_utf8(output.stdout).map_err(|e| format!("gh output not utf8: {e}"))
-}
-
-/// Unauthenticated GET against the GitHub REST API.
-pub(super) async fn api_get(path: &str) -> Result<String, String> {
-    let url = format!("https://api.github.com{path}");
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-        .map_err(|e| format!("failed to build GitHub client: {e}"))?;
-    let resp = client
-        .get(&url)
-        .header("User-Agent", "openhuman")
-        .header("Accept", "application/vnd.github.v3+json")
-        .send()
-        .await
-        .map_err(|e| format!("GitHub API request failed: {e}"))?;
-
-    if !resp.status().is_success() {
-        let status = resp.status();
-        let body = resp.text().await.unwrap_or_default();
-        return Err(format!("GitHub API returned {status}: {body}"));
-    }
-
-    resp.text()
-        .await
-        .map_err(|e| format!("failed to read response: {e}"))
-}
-
-/// Try `gh api` first, fall back to unauthenticated REST API.
-pub(super) async fn fetch_github(api_path: &str, use_gh: bool) -> Result<String, String> {
-    #[cfg(test)]
-    if let Ok(response) = TEST_RESPONSES.try_with(|responses| responses.borrow_mut().pop_front()) {
-        return response.unwrap_or_else(|| {
-            Err(format!(
-                "no deterministic GitHub response queued for {api_path}"
-            ))
-        });
-    }
-    if use_gh {
-        match gh_json(&["api", api_path]).await {
-            Ok(s) => return Ok(s),
-            Err(e) => {
-                tracing::debug!(
-                    error = %e,
-                    path = %api_path,
-                    "[memory_sources:github] gh failed, falling back to API"
-                );
-            }
-        }
-    }
-    api_get(&format!("/{api_path}")).await
-}
 
 /// Fetch up to `max` rows from a paginated GitHub list endpoint.
 ///

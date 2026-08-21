@@ -148,6 +148,13 @@ use tinymemory_api::types::{
 };
 use tinymemory_api::wire;
 
+#[cfg(not(test))]
+#[path = "instrumentation.rs"]
+mod instrumentation;
+#[cfg(test)]
+#[path = "instrumentation_test.rs"]
+mod instrumentation;
+
 /// Well-known name exported by the `TinyMemory` module.
 pub const BUS_NAME: &str = "ai.tinyhumans.tinymemory.Memory";
 
@@ -194,12 +201,7 @@ pub(crate) struct StoreOpener {
     /// through and produce exactly the double-open it is here to prevent. That
     /// is why this is a `tokio::sync::Mutex`.
     served: Mutex<HashMap<String, String>>,
-    #[cfg(test)]
-    allocation_attempts: std::sync::atomic::AtomicUsize,
-    #[cfg(test)]
-    registration_attempts: std::sync::atomic::AtomicUsize,
-    #[cfg(test)]
-    registration_failures: std::sync::atomic::AtomicUsize,
+    instrumentation: instrumentation::OpenStoreInstrumentation,
 }
 
 impl MemoryService {
@@ -226,19 +228,8 @@ impl StoreOpener {
             connection,
             config,
             served: Mutex::new(HashMap::new()),
-            #[cfg(test)]
-            allocation_attempts: std::sync::atomic::AtomicUsize::new(0),
-            #[cfg(test)]
-            registration_attempts: std::sync::atomic::AtomicUsize::new(0),
-            #[cfg(test)]
-            registration_failures: std::sync::atomic::AtomicUsize::new(0),
+            instrumentation: instrumentation::OpenStoreInstrumentation::default(),
         }
-    }
-
-    #[cfg(test)]
-    fn fail_registrations(&self, count: usize) {
-        self.registration_failures
-            .store(count, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -399,10 +390,7 @@ impl MemoryService {
             });
         }
 
-        #[cfg(test)]
-        opener
-            .allocation_attempts
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        opener.instrumentation.record_allocation();
         let client = tinymemory_core::store::factories::create_memory_client_in_subdir(
             &opener.config.memory,
             None,
@@ -423,26 +411,7 @@ impl MemoryService {
         })?;
 
         let provider = crate::provider::provider(&opener.config, Arc::new(client));
-        #[cfg(test)]
-        {
-            opener
-                .registration_attempts
-                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            if opener
-                .registration_failures
-                .fetch_update(
-                    std::sync::atomic::Ordering::SeqCst,
-                    std::sync::atomic::Ordering::SeqCst,
-                    |remaining| remaining.checked_sub(1),
-                )
-                .is_ok()
-            {
-                return Err(BusError::MethodFailed {
-                    name: "ai.tinyhumans.tinymemory.Error.Other".to_string(),
-                    message: "injected store registration failure".to_string(),
-                });
-            }
-        }
+        opener.instrumentation.before_registration()?;
         opener
             .connection
             .serve_at(
