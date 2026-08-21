@@ -5,6 +5,342 @@ use crate::sources::MemorySourceEntry;
 use crate::sync::composio::{get_composio_sync_provider, init_default_composio_sync_providers};
 use crate::sync::pipelines::host::{is_composio_toolkit_syncable, syncable_composio_toolkits};
 
+fn memory_fixture() -> (
+    tempfile::TempDir,
+    tinymemory_api::host::test_support::TestHostConfig,
+    crate::store::MemoryClientRef,
+) {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let mut config = tinymemory_api::host::test_support::TestHostConfig::default();
+    config.workspace_dir = workspace.path().join("memory");
+    let client = std::sync::Arc::new(
+        crate::store::MemoryClient::from_workspace_dir(config.workspace_dir.clone())
+            .expect("memory client"),
+    );
+    (workspace, config, client)
+}
+
+fn source(kind: &str, fields: serde_json::Value) -> MemorySourceEntry {
+    let mut value = serde_json::json!({
+        "id": format!("source-{kind}"),
+        "kind": kind,
+        "label": format!("{kind} source"),
+    });
+    value
+        .as_object_mut()
+        .expect("source object")
+        .extend(fields.as_object().expect("fields object").clone());
+    serde_json::from_value(value).expect("valid source fixture")
+}
+
+#[tokio::test]
+async fn failure_and_context_helpers_preserve_contract_state() {
+    let failure = super::SourcePipelineFailure::without_usage("offline");
+    assert_eq!(failure.to_string(), "offline");
+    assert_eq!(failure.actions_called, 0);
+    assert_eq!(failure.provider_cost_usd, 0.0);
+
+    let (_workspace, config, client) = memory_fixture();
+    let context = super::sync_context(client.clone());
+    assert!(context.local_documents.is_none());
+    assert!(context.external_sources.is_none());
+    assert!(context.summariser.is_none());
+
+    let local = super::source_sync_context(client.clone(), &config, true);
+    assert!(local.local_documents.is_some());
+    assert!(local.external_sources.is_some());
+    assert!(local.summariser.is_some());
+
+    let remote = super::source_sync_context(client, &config, false);
+    assert!(remote.local_documents.is_none());
+    assert!(remote.external_sources.is_none());
+    assert!(remote.summariser.is_none());
+}
+
+#[tokio::test]
+async fn adapter_state_and_document_seams_round_trip_locally() {
+    use tinycortex::memory::sync::{SkillDocSink, SkillDocument, SyncStateStore};
+
+    let (_workspace, _config, client) = memory_fixture();
+    let adapter = super::HostSyncAdapter::new(client.clone());
+    let value = serde_json::json!({"cursor": "next"});
+
+    SyncStateStore::set(&adapter, "sync-state", "gmail", &value)
+        .await
+        .expect("set engine state");
+    assert_eq!(
+        SyncStateStore::get(&adapter, "sync-state", "gmail")
+            .await
+            .expect("get engine state"),
+        Some(value.clone())
+    );
+    crate::sync::composio::providers::sync_state::SyncStateStore::set(
+        &adapter,
+        "host-state",
+        "slack",
+        &value,
+    )
+    .await
+    .expect("set host state");
+    assert_eq!(
+        crate::sync::composio::providers::sync_state::SyncStateStore::get(
+            &adapter,
+            "host-state",
+            "slack",
+        )
+        .await
+        .expect("get host state"),
+        Some(value)
+    );
+
+    SkillDocSink::store(
+        &adapter,
+        SkillDocument {
+            namespace_skill_id: "gmail".into(),
+            connection_id: "connection-1".into(),
+            document_id: "message-1".into(),
+            title: "Planning".into(),
+            content: "The launch is Tuesday.".into(),
+            toolkit: "gmail".into(),
+            metadata: serde_json::json!({"thread": "t-1"}),
+        },
+    )
+    .await
+    .expect("store synchronized document");
+    let stored = client
+        .get_document("skill-gmail", "message-1")
+        .await
+        .expect("read synchronized document");
+    assert_eq!(
+        stored.as_ref().map(|document| document.content.as_str()),
+        Some("The launch is Tuesday.")
+    );
+    SkillDocSink::delete(&adapter, "gmail", "message-1")
+        .await
+        .expect("delete synchronized document");
+    assert!(client
+        .get_document("skill-gmail", "message-1")
+        .await
+        .expect("read after delete")
+        .is_none());
+}
+
+#[tokio::test]
+async fn configless_local_and_external_seams_fail_before_io() {
+    use tinycortex::memory::sync::{ExternalSourceReader, LocalDocument, LocalDocumentSink};
+
+    let (_workspace, _config, client) = memory_fixture();
+    let adapter = super::HostSyncAdapter::new(client);
+    let local = LocalDocument {
+        source_id: "local:one".into(),
+        path_scope: None,
+        owner: "folder:one".into(),
+        tags: vec!["local".into()],
+        title: "Local".into(),
+        body: "body".into(),
+        modified_at: chrono::Utc::now(),
+        source_ref: None,
+    };
+    assert!(LocalDocumentSink::upsert(&adapter, local)
+        .await
+        .expect_err("configless upsert must fail")
+        .to_string()
+        .contains("missing host config"));
+    assert!(LocalDocumentSink::delete(&adapter, "local:one")
+        .await
+        .expect_err("configless delete must fail")
+        .to_string()
+        .contains("missing host config"));
+
+    let host_source = source("folder", serde_json::json!({"path": "."}));
+    let engine_source =
+        serde_json::from_value(serde_json::to_value(host_source).expect("serialize source"))
+            .expect("engine source");
+    assert!(ExternalSourceReader::list_items(&adapter, &engine_source)
+        .await
+        .expect_err("configless list must fail")
+        .to_string()
+        .contains("requires host config"));
+    assert!(
+        ExternalSourceReader::read_item(&adapter, &engine_source, "item")
+            .await
+            .expect_err("configless read must fail")
+            .to_string()
+            .contains("requires host config")
+    );
+}
+
+#[tokio::test]
+async fn configured_local_document_sink_upserts_and_deletes_chunks() {
+    use tinycortex::memory::sync::{LocalDocument, LocalDocumentSink};
+
+    crate::test_seams::init();
+    let (_workspace, config, client) = memory_fixture();
+    let adapter = super::HostSyncAdapter::with_config(
+        client,
+        tinymemory_api::host::MemoryHostConfig::to_arc(&config),
+    );
+    LocalDocumentSink::upsert(
+        &adapter,
+        LocalDocument {
+            source_id: "folder:notes:one".into(),
+            path_scope: Some("folder:notes".into()),
+            owner: "folder-sync".into(),
+            tags: vec!["notes".into()],
+            title: "One".into(),
+            body: "A deterministic local document body.".into(),
+            modified_at: chrono::DateTime::from_timestamp_millis(1_700_000_000_000)
+                .expect("fixed timestamp"),
+            source_ref: Some("one.md".into()),
+        },
+    )
+    .await
+    .expect("upsert local document");
+    let chunks = crate::store::chunks::store::list_chunks(
+        &config,
+        &tinycortex::memory::chunks::ListChunksQuery {
+            source_id: Some("folder:notes:one".into()),
+            ..Default::default()
+        },
+    )
+    .expect("list local chunks");
+    assert_eq!(chunks.len(), 1);
+    assert_eq!(
+        chunks[0].metadata.path_scope.as_deref(),
+        Some("folder:notes")
+    );
+
+    LocalDocumentSink::delete(&adapter, "folder:notes:one")
+        .await
+        .expect("delete local document");
+    assert!(crate::store::chunks::store::list_chunks(
+        &config,
+        &tinycortex::memory::chunks::ListChunksQuery {
+            source_id: Some("folder:notes:one".into()),
+            ..Default::default()
+        },
+    )
+    .expect("list after delete")
+    .is_empty());
+}
+
+#[tokio::test]
+async fn configured_external_reader_lists_and_reads_a_local_folder() {
+    use tinycortex::memory::sync::ExternalSourceReader;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let source_dir = workspace.path().join("source");
+    std::fs::create_dir_all(&source_dir).expect("create source directory");
+    std::fs::write(source_dir.join("note.md"), "# Note\n\nLocal body.")
+        .expect("write source document");
+    let mut config = tinymemory_api::host::test_support::TestHostConfig::default();
+    config.workspace_dir = workspace.path().join("memory");
+    let client = std::sync::Arc::new(
+        crate::store::MemoryClient::from_workspace_dir(config.workspace_dir.clone())
+            .expect("memory client"),
+    );
+    let adapter = super::HostSyncAdapter::with_config(
+        client,
+        tinymemory_api::host::MemoryHostConfig::to_arc(&config),
+    );
+    let host_source = source(
+        "folder",
+        serde_json::json!({"path": source_dir, "glob": "**/*.md"}),
+    );
+    let engine_source =
+        serde_json::from_value(serde_json::to_value(host_source).expect("serialize source"))
+            .expect("engine source");
+    let items = ExternalSourceReader::list_items(&adapter, &engine_source)
+        .await
+        .expect("list folder items");
+    assert_eq!(items.len(), 1);
+    let content = ExternalSourceReader::read_item(&adapter, &engine_source, &items[0].id)
+        .await
+        .expect("read folder item");
+    assert_eq!(content.body, "# Note\n\nLocal body.");
+}
+
+#[test]
+fn pipeline_builder_covers_every_tree_coupled_source_kind() {
+    let config = tinymemory_api::host::test_support::TestHostConfig::default();
+    let mut memory_config =
+        tinycortex::memory::config::MemoryConfig::new(config.workspace_dir.clone());
+    let fixtures = [
+        source("folder", serde_json::json!({"path": "."})),
+        source(
+            "github_repo",
+            serde_json::json!({"url": "https://github.com/tinyhumansai/tinymemory"}),
+        ),
+        source(
+            "rss_feed",
+            serde_json::json!({"url": "https://example.com/feed.xml"}),
+        ),
+        source(
+            "web_page",
+            serde_json::json!({"url": "https://example.com/page"}),
+        ),
+        source("conversation", serde_json::json!({})),
+    ];
+    for fixture in fixtures {
+        let pipeline = super::build_pipeline(&fixture, &config, &mut memory_config)
+            .unwrap_or_else(|error| panic!("{} pipeline: {error}", fixture.kind.as_str()));
+        assert!(!pipeline.id().is_empty());
+    }
+}
+
+#[tokio::test]
+async fn composio_validation_reports_missing_fields_without_usage() {
+    let config = tinymemory_api::host::test_support::TestHostConfig::default();
+    let missing_toolkit = source(
+        "composio",
+        serde_json::json!({"connection_id": "connection-1"}),
+    );
+    let failure = super::run_source_pipeline(&missing_toolkit, &config)
+        .await
+        .expect_err("toolkit is required");
+    assert!(failure.message.contains("missing toolkit"));
+    assert_eq!(failure.actions_called, 0);
+    assert_eq!(failure.provider_cost_usd, 0.0);
+
+    let missing_connection = source("composio", serde_json::json!({"toolkit": "gmail"}));
+    let failure = super::run_source_pipeline(&missing_connection, &config)
+        .await
+        .expect_err("connection is required");
+    assert!(failure.message.contains("missing connection_id"));
+    assert_eq!(failure.actions_called, 0);
+}
+
+#[tokio::test]
+async fn raw_archive_and_stage_helpers_cover_empty_local_state() {
+    let (_workspace, config, _client) = memory_fixture();
+    assert!(super::read_audit_log(&config).is_empty());
+    assert_eq!(super::estimate_cost_usd(0, 0), 0.0);
+    let coverage =
+        super::raw_coverage(&config, "gmail:one", "gmail.com:one").expect("empty archive coverage");
+    assert_eq!(coverage.total, 0);
+    assert_eq!(coverage.covered, 0);
+    assert!(!super::needs_rebuild(&config, "gmail:one", "gmail.com:one"));
+    assert_eq!(
+        [
+            tinycortex::memory::sync::SyncStage::Requested,
+            tinycortex::memory::sync::SyncStage::Fetching,
+            tinycortex::memory::sync::SyncStage::Stored,
+            tinycortex::memory::sync::SyncStage::Ingesting,
+            tinycortex::memory::sync::SyncStage::Completed,
+            tinycortex::memory::sync::SyncStage::Failed,
+        ]
+        .map(super::stage_name),
+        [
+            "requested",
+            "fetching",
+            "stored",
+            "ingesting",
+            "completed",
+            "failed",
+        ]
+    );
+}
+
 /// The advertised set (`memory_sources.supported_toolkits`, sourced from the
 /// provider registry) and the syncable set (`build_pipeline`) must not
 /// diverge: a toolkit that is advertised but has no pipeline reports ACTIVE
