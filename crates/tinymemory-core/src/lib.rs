@@ -80,9 +80,6 @@ pub mod tree_policy;
 pub mod tree_source;
 pub mod util;
 
-#[cfg(test)]
-mod host_seams_tests;
-
 // The host seam, re-exported so downstream code takes one dependency. These are
 // the *only* types this crate accepts from its host.
 pub use tinymemory_api::host::{

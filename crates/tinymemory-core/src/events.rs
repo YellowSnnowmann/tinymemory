@@ -73,16 +73,65 @@ pub(crate) struct RecordingSink {
 
 #[cfg(test)]
 impl RecordingSink {
-    /// Install a fresh recorder and return it. Replaces any existing sink.
-    pub(crate) fn install() -> Arc<Self> {
+    /// Install a fresh recorder for the lifetime of the returned guard.
+    ///
+    /// All unit tests that replace the process-global sink share one lock.
+    /// Dropping the guard restores the previous sink only when this recorder
+    /// still owns the slot, so cleanup cannot clobber a newer host install.
+    pub(crate) fn install() -> RecordingSinkGuard {
+        static TEST_SINK_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let lock = TEST_SINK_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let previous = event_sink();
         let sink = Arc::new(Self::default());
-        set_event_sink(Arc::clone(&sink) as Arc<dyn MemoryEventSink>);
-        sink
+        let installed = Arc::clone(&sink) as Arc<dyn MemoryEventSink>;
+        set_event_sink(Arc::clone(&installed));
+        RecordingSinkGuard {
+            sink,
+            installed,
+            previous,
+            _lock: lock,
+        }
     }
 
     /// Take everything recorded so far, leaving the recorder empty.
     pub(crate) fn drain(&self) -> Vec<MemoryEvent> {
         std::mem::take(&mut *self.events.lock())
+    }
+}
+
+/// Serialises unit tests that temporarily replace the global event sink.
+#[cfg(test)]
+pub(crate) struct RecordingSinkGuard {
+    sink: Arc<RecordingSink>,
+    installed: Arc<dyn MemoryEventSink>,
+    previous: Option<Arc<dyn MemoryEventSink>>,
+    _lock: std::sync::MutexGuard<'static, ()>,
+}
+
+#[cfg(test)]
+impl std::ops::Deref for RecordingSinkGuard {
+    type Target = RecordingSink;
+
+    fn deref(&self) -> &Self::Target {
+        &self.sink
+    }
+}
+
+#[cfg(test)]
+impl Drop for RecordingSinkGuard {
+    fn drop(&mut self) {
+        let still_installed = event_sink()
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, &self.installed));
+        if !still_installed {
+            return;
+        }
+        match self.previous.take() {
+            Some(previous) => set_event_sink(previous),
+            None => clear_event_sink(),
+        }
     }
 }
 

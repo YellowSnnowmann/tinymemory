@@ -1,5 +1,35 @@
 //! Tests for the process-global host integration seams.
 
+// This is deliberately an integration-test binary. Its process globals are
+// isolated from the library unit-test binary, where `test_seams::init` installs
+// long-lived stubs behind a `Once`.
+
+mod scheduler_gate {
+    pub use tinymemory_core::scheduler_gate::*;
+}
+
+mod config_loader {
+    pub use tinymemory_core::config_loader::*;
+}
+
+mod shutdown {
+    pub use tinymemory_core::shutdown::*;
+}
+
+mod nlp_host {
+    pub use tinymemory_core::nlp_host::*;
+}
+
+mod chat_host {
+    pub use tinymemory_core::chat_host::*;
+}
+
+mod composio_host {
+    pub use tinymemory_core::composio_host::*;
+}
+
+type Config = tinymemory_core::Config;
+
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
 
@@ -8,7 +38,6 @@ use tinymemory_api::host::test_support::TestHostConfig;
 use tokio::sync::Notify;
 
 use crate::scheduler_gate::{Policy, SchedulerGate};
-use crate::Config;
 
 static SEAM_LOCK: Mutex<()> = Mutex::new(());
 
@@ -16,6 +45,22 @@ fn seam_guard() -> MutexGuard<'static, ()> {
     SEAM_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+struct Restore(Option<Box<dyn FnOnce()>>);
+
+impl Restore {
+    fn new(restore: impl FnOnce() + 'static) -> Self {
+        Self(Some(Box::new(restore)))
+    }
+}
+
+impl Drop for Restore {
+    fn drop(&mut self) {
+        if let Some(restore) = self.0.take() {
+            restore();
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -46,6 +91,10 @@ impl SchedulerGate for TestGate {
 async fn scheduler_gate_delegates_and_clear_restores_ungated_defaults() {
     let _guard = seam_guard();
     let previous = crate::scheduler_gate::scheduler_gate();
+    let _restore = Restore::new(move || match previous {
+        Some(gate) => crate::scheduler_gate::set_scheduler_gate(gate),
+        None => crate::scheduler_gate::clear_scheduler_gate(),
+    });
     crate::scheduler_gate::clear_scheduler_gate();
 
     assert_eq!(crate::scheduler_gate::current_policy(), Policy::Normal);
@@ -70,11 +119,6 @@ async fn scheduler_gate_delegates_and_clear_restores_ungated_defaults() {
     ));
     assert!(crate::scheduler_gate::wait_for_capacity().await.is_some());
     assert!(waited.load(Ordering::SeqCst));
-
-    match previous {
-        Some(gate) => crate::scheduler_gate::set_scheduler_gate(gate),
-        None => crate::scheduler_gate::clear_scheduler_gate(),
-    }
 }
 
 #[derive(Debug)]
@@ -99,6 +143,10 @@ impl crate::config_loader::ConfigLoader for TestLoader {
 async fn config_loader_reports_unwired_and_delegates_both_load_paths() {
     let _guard = seam_guard();
     let previous = crate::config_loader::config_loader();
+    let _restore = Restore::new(move || match previous {
+        Some(loader) => crate::config_loader::set_config_loader(loader),
+        None => crate::config_loader::clear_config_loader(),
+    });
     crate::config_loader::clear_config_loader();
 
     let error = crate::config_loader::load_config_with_timeout()
@@ -115,11 +163,6 @@ async fn config_loader_reports_unwired_and_delegates_both_load_paths() {
         .await
         .expect("test loader should reload");
     assert_eq!(reloaded.output_language(), Some("de"));
-
-    match previous {
-        Some(loader) => crate::config_loader::set_config_loader(loader),
-        None => crate::config_loader::clear_config_loader(),
-    }
 }
 
 #[derive(Default)]
@@ -145,6 +188,11 @@ impl crate::shutdown::ShutdownHost for TestShutdownHost {
 #[tokio::test]
 async fn shutdown_host_keeps_repeatable_hooks_and_unwired_registration_is_safe() {
     let _guard = seam_guard();
+    let previous = crate::shutdown::shutdown_host();
+    let _restore = Restore::new(move || match previous {
+        Some(host) => crate::shutdown::set_shutdown_host(host),
+        None => crate::shutdown::clear_shutdown_host(),
+    });
     crate::shutdown::clear_shutdown_host();
     crate::shutdown::register(|| async {});
 
@@ -167,7 +215,6 @@ async fn shutdown_host_keeps_repeatable_hooks_and_unwired_registration_is_safe()
     (hooks[0])().await;
     assert_eq!(calls.load(Ordering::SeqCst), 2);
     drop(hooks);
-    crate::shutdown::clear_shutdown_host();
 }
 
 #[derive(Debug)]
@@ -196,6 +243,10 @@ impl crate::nlp_host::NlpHost for TestNlpHost {
 async fn nlp_host_reports_unwired_then_returns_host_response() {
     let _guard = seam_guard();
     let previous = crate::nlp_host::nlp_host();
+    let _restore = Restore::new(move || match previous {
+        Some(host) => crate::nlp_host::set_nlp_host(host),
+        None => crate::nlp_host::clear_nlp_host(),
+    });
     crate::nlp_host::clear_nlp_host();
     let config = TestHostConfig::default();
     let error = crate::nlp_host::extract_spacy(&config, "TinyMemory")
@@ -208,11 +259,6 @@ async fn nlp_host_reports_unwired_then_returns_host_response() {
         .await
         .expect("test NLP host should answer");
     assert_eq!(response.entities[0].text, "TinyMemory");
-
-    match previous {
-        Some(host) => crate::nlp_host::set_nlp_host(host),
-        None => crate::nlp_host::clear_nlp_host(),
-    }
 }
 
 #[test]
@@ -220,6 +266,14 @@ fn required_host_seams_fail_loudly_when_unwired() {
     let _guard = seam_guard();
     let chat = crate::chat_host::chat_host();
     let composio = crate::composio_host::composio_host();
+    let _chat_restore = Restore::new(move || match chat {
+        Some(host) => crate::chat_host::set_chat_host(host),
+        None => crate::chat_host::clear_chat_host(),
+    });
+    let _composio_restore = Restore::new(move || match composio {
+        Some(host) => crate::composio_host::set_composio_host(host),
+        None => crate::composio_host::clear_composio_host(),
+    });
     crate::chat_host::clear_chat_host();
     crate::composio_host::clear_composio_host();
 
@@ -240,11 +294,4 @@ fn required_host_seams_fail_loudly_when_unwired() {
     );
     assert!(!crate::composio_host::is_available(&config));
     assert_eq!(crate::composio_host::api_key(&config), None);
-
-    if let Some(host) = chat {
-        crate::chat_host::set_chat_host(host);
-    }
-    if let Some(host) = composio {
-        crate::composio_host::set_composio_host(host);
-    }
 }
