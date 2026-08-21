@@ -85,6 +85,14 @@ fn a_filename_with_no_extension_maps_to_nothing() {
 }
 
 #[test]
+fn legacy_doc_is_not_claimed_as_docx() {
+    // `.doc` and `application/msword` name the legacy binary Word format, not
+    // the Open XML `.docx` package the `Docx` converter targets.
+    assert_eq!(DocumentFormat::from_filename("report.doc"), None);
+    assert_eq!(DocumentFormat::from_mime("application/msword"), None);
+}
+
+#[test]
 fn html_is_recognised_from_its_opening_alone() {
     assert_eq!(
         DocumentFormat::sniff(b"<!DOCTYPE html><html><body>hi</body></html>", None, None),
