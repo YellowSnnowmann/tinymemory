@@ -44,7 +44,22 @@ impl IntoResponse for ApiError {
 
 impl From<tinymemory_api::error::MemoryError> for ApiError {
     fn from(err: tinymemory_api::error::MemoryError) -> Self {
-        ApiError(StatusCode::BAD_GATEWAY, err.to_string())
+        // The document intake routes are the first callers to send caller
+        // input (not just driver responses) through this conversion, so
+        // `Invalid`/`BudgetExceeded`/etc. need their own status rather than
+        // the blanket 502 that was close enough when every error came from a
+        // backend.
+        use tinymemory_api::error::MemoryError as E;
+        let status = match &err {
+            E::Invalid(_) | E::PathEscape(_) => StatusCode::BAD_REQUEST,
+            E::NotFound(_) => StatusCode::NOT_FOUND,
+            E::BudgetExceeded(_) => StatusCode::PAYLOAD_TOO_LARGE,
+            E::Unauthorized(_) => StatusCode::UNAUTHORIZED,
+            E::Timeout(_) => StatusCode::GATEWAY_TIMEOUT,
+            E::Unavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
+            _ => StatusCode::BAD_GATEWAY,
+        };
+        ApiError(status, err.to_string())
     }
 }
 
