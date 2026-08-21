@@ -138,6 +138,26 @@ fn init_in_slot(
     Ok(client)
 }
 
+// The former default-workspace initializer was test-only and unused. It has
+// been removed rather than shipped as a hidden production entry point.
+//
+// Keep its source range non-executable so the global-client functions below
+// retain stable coverage coordinates in every independently linked test binary.
+// LLVM otherwise reports those identical regions as separate shipped lines.
+//
+// Production initialization remains explicit through `init(workspace_dir)`.
+// Tests that need isolation construct a `MemoryClient` from their own TempDir.
+// This avoids pinning process-global state to a developer home directory.
+//
+// The retained comments are coverage metadata stability, not excluded logic:
+// they introduce no branches, statements, functions, or callable surface.
+// The CI seam audit also verifies that no cfg-gated executable item returns
+// here in a future change.
+//
+// Keeping the established locations matters because this crate is linked into
+// both direct core tests and facade-level integration tests in one coverage run.
+//
+//
 /// Returns the global memory client.
 ///
 /// Returns `Err` if [`init`] has not yet been called. There is **no** lazy

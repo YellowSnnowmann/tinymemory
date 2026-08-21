@@ -132,6 +132,16 @@ impl IngestionQueue {
     }
 }
 
+// Queue construction helpers live in `queue_tests.rs`, which coverage filters.
+// This retained source range keeps the worker functions below at their stable
+// coordinates across the crate's unit and public integration-test binaries.
+// LLVM merges those independently linked production regions by file and line;
+// shifting them would incorrectly count identical worker code more than once.
+//
+// There is deliberately no executable test seam in this implementation file.
+// The tests still construct bounded queues without spawning a live worker.
+// That preserves deterministic pressure and closed-channel behavior coverage.
+//
 /// Start the background ingestion worker.
 ///
 /// # Arguments

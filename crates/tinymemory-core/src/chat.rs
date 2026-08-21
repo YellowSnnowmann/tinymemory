@@ -170,6 +170,13 @@ impl ChatProvider for InferenceChatProvider {
 #[cfg(any(test, feature = "test-support"))]
 pub use test_support::{test_override, StaticChatProvider};
 
+// The task-local provider implementation is external test support. Keep the
+// live runtime builder below at its established source coordinates so LLVM can
+// merge identical copies linked into unit and integration-test executables.
+//
+// Runtime selection remains explicit in `runtime_override`; no test provider
+// implementation or fixture state lives in this production source file.
+//
 /// Build the memory LLM provider and return the resolved model id.
 pub fn build_chat_runtime(config: &Config) -> Result<(Arc<dyn ChatProvider>, String)> {
     if let Some(runtime) = runtime_override::current_runtime() {

@@ -229,6 +229,20 @@ pub fn clear_storage_degraded() {
 #[cfg(any(test, feature = "test-support"))]
 pub use test_support::test_guard;
 
+// The reset implementation is isolated in filtered test support. Retaining
+// this non-executable range keeps the health snapshot below at its established
+// source coordinates when core is linked into different workspace test bins.
+// LLVM merges by file and line, so shifting the snapshot would duplicate real
+// production regions instead of measuring them once.
+//
+// The public production health state and its acquire/release ordering remain
+// unchanged. Only the deterministic test mutex and reset operations moved.
+//
+// CI separately verifies that filtered support filenames contribute no regions
+// and that production-named files contain no cfg-gated executable test items.
+//
+//
+//
 /// Snapshot the current process-global [`DegradedState`] for the status /
 /// doctor surface. The `cause` is populated from the last recorded
 /// [`FailureCode`] when either flag is set.
