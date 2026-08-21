@@ -301,6 +301,73 @@ async fn api_commit_fallback_reports_transport_and_parse_failures_without_networ
     assert!(exhausted.contains("no deterministic GitHub response queued"));
 }
 
+#[tokio::test]
+async fn reader_falls_back_from_a_broken_local_cache_to_the_api_without_network() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let cache = git::git_cache_dir(workspace.path(), "owner", "repo");
+    std::fs::create_dir_all(&cache).expect("cache directory");
+    std::fs::write(cache.join("HEAD"), "not a git repository").expect("broken cache marker");
+
+    let mut source = github_source(Some("https://github.com/owner/repo"));
+    source.max_commits = Some(5);
+    source.max_issues = Some(0);
+    source.max_prs = Some(0);
+    let reader = GithubReader;
+
+    let listed = api::with_test_responses(
+        vec![Ok(format!(
+            "[{}]",
+            commit_json("fallback", "API fallback commit", Some("octocat"))
+        ))],
+        reader.list_items(&source, workspace.path()),
+    )
+    .await
+    .expect("broken git cache falls back to API list");
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].id, "commit:fallback");
+
+    let content = api::with_test_responses(
+        vec![Ok(commit_json(
+            "fallback",
+            "API fallback commit\nfull body",
+            Some("octocat"),
+        ))],
+        reader.read_item(&source, "commit:fallback", workspace.path()),
+    )
+    .await
+    .expect("broken git cache falls back to API read");
+    assert_eq!(content.id, "commit:fallback");
+    assert!(content.body.contains("full body"));
+    assert_eq!(content.metadata["author_handle"], "octocat");
+}
+
+#[tokio::test]
+async fn reader_keeps_successful_families_when_commit_transports_fail() {
+    let workspace = tempfile::tempdir().expect("workspace");
+    let cache = git::git_cache_dir(workspace.path(), "owner", "repo");
+    std::fs::create_dir_all(&cache).expect("cache directory");
+    std::fs::write(cache.join("HEAD"), "not a git repository").expect("broken cache marker");
+
+    let mut source = github_source(Some("https://github.com/owner/repo"));
+    source.max_commits = Some(1);
+    source.max_issues = Some(1);
+    source.max_prs = Some(0);
+
+    let items = api::with_test_responses(
+        vec![
+            Err("commit API offline".into()),
+            Ok(serde_json::json!([issue_json(7)]).to_string()),
+        ],
+        GithubReader.list_items(&source, workspace.path()),
+    )
+    .await
+    .expect("a successful issue family makes the partial result usable");
+
+    assert_eq!(items.len(), 1);
+    assert_eq!(items[0].id, "issue:7");
+    assert_eq!(items[0].title, "#7 Reader issue");
+}
+
 #[test]
 fn git_log_args_default_to_head_without_branch() {
     // With no branch configured the walk must stay on the bare clone's HEAD

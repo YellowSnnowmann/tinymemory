@@ -86,6 +86,34 @@ async fn operations_require_a_connected_engine() {
 }
 
 #[tokio::test]
+async fn capability_routes_check_connection_before_processing_input() {
+    let requests = [
+        Request::get("/api/graph/relations")
+            .body(Body::empty())
+            .unwrap(),
+        json_request(Method::POST, "/api/graph/view", json!({ "seeds": ["ada"] })),
+        multipart_request(&[("file", Some("note.txt"), Some("text/plain"), b"body")]),
+        json_request(
+            Method::POST,
+            "/api/ingest/url",
+            json!({
+                "url": "https://user:secret@example.com/private",
+                "namespace": "documents"
+            }),
+        ),
+    ];
+
+    for request in requests {
+        let response = test_app(empty_state()).oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::CONFLICT);
+        assert_eq!(
+            json_body(response).await,
+            json!({ "error": "no engine connected yet" })
+        );
+    }
+}
+
+#[tokio::test]
 async fn local_connect_status_and_disconnect_are_consistent() {
     let router = test_app(empty_state());
     let initial = router
@@ -645,6 +673,50 @@ async fn document_upload_validates_required_parts_and_supported_formats() {
 }
 
 #[tokio::test]
+async fn document_upload_rejects_invalid_text_and_malformed_multipart() {
+    let router = test_app(empty_state());
+    connect_local(&router).await;
+
+    let invalid_text = router
+        .clone()
+        .oneshot(multipart_request(&[
+            ("namespace", None, None, b"documents"),
+            (
+                "file",
+                Some("broken.txt"),
+                Some("text/plain"),
+                &[0xff, 0xfe, 0xfd],
+            ),
+        ]))
+        .await
+        .unwrap();
+    assert_eq!(invalid_text.status(), StatusCode::BAD_REQUEST);
+    assert!(!json_body(invalid_text).await["error"]
+        .as_str()
+        .unwrap()
+        .is_empty());
+
+    let malformed = Request::builder()
+        .method(Method::POST)
+        .uri("/api/documents/upload")
+        .header(
+            header::CONTENT_TYPE,
+            "multipart/form-data; boundary=broken-boundary",
+        )
+        .body(Body::from(
+            b"--broken-boundary\r\nContent-Disposition: form-data; name=\"namespace\"\r\ninvalid header\r\n\r\ndocuments\r\n--broken-boundary--\r\n"
+                .as_slice(),
+        ))
+        .unwrap();
+    let malformed = router.oneshot(malformed).await.unwrap();
+    assert_eq!(malformed.status(), StatusCode::BAD_REQUEST);
+    assert!(!json_body(malformed).await["error"]
+        .as_str()
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
 async fn minimal_upload_uses_safe_external_defaults_and_ignores_unknown_parts() {
     let provider = Arc::new(RecordingProvider::default());
     let state = empty_state();
@@ -1084,6 +1156,102 @@ fn state_with_document(provider: Arc<RecordingProvider>) -> SharedState {
             })
         }),
     })
+}
+
+fn state_with_local_document(content: &'static str, mime: &'static str) -> SharedState {
+    let memory: Arc<dyn tinymemory_tinycortex::tinycortex::memory::Memory> =
+        Arc::new(tinymemory_tinycortex::InMemoryMemoryStore::new());
+    let provider: Arc<dyn MemoryProvider> = Arc::new(tinymemory_tinycortex::provider(memory));
+    Arc::new(AppState {
+        active: RwLock::new(Some(provider)),
+        url_fetcher: Arc::new(move |url| {
+            Box::pin(async move { Ok(RawDocument::new(content).with_origin(url).with_mime(mime)) })
+        }),
+    })
+}
+
+#[tokio::test]
+async fn text_upload_falls_back_to_core_storage_for_the_local_engine() {
+    let router = test_app(empty_state());
+    connect_local(&router).await;
+
+    let uploaded = router
+        .clone()
+        .oneshot(multipart_request(&[
+            ("namespace", None, None, b"manuals"),
+            ("key", None, None, b"quickstart"),
+            ("tags", None, None, b"guide, local"),
+            (
+                "file",
+                Some("guide.html"),
+                Some("text/html"),
+                b"<h1>Start</h1><p>Use TinyMemory locally.</p>",
+            ),
+        ]))
+        .await
+        .unwrap();
+    assert_eq!(uploaded.status(), StatusCode::OK);
+    let receipt = json_body(uploaded).await;
+    assert_eq!(receipt["route"], "core");
+    assert_eq!(receipt["namespace"], "manuals");
+    assert_eq!(receipt["key"], "quickstart");
+
+    let stored = router
+        .oneshot(
+            Request::get("/api/get?namespace=manuals&key=quickstart")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(stored.status(), StatusCode::OK);
+    let entry = json_body(stored).await;
+    assert_eq!(entry["key"], "quickstart");
+    assert!(entry["content"].as_str().unwrap().contains("Start"));
+    assert!(entry["content"]
+        .as_str()
+        .unwrap()
+        .contains("Use TinyMemory locally."));
+    assert_eq!(entry["taint"], "external_sync");
+}
+
+#[tokio::test]
+async fn url_ingest_falls_back_to_core_storage_without_network() {
+    let router = test_app(state_with_local_document(
+        "# Remote guide\n\nFetched deterministically.",
+        "text/markdown",
+    ));
+    let ingested = router
+        .clone()
+        .oneshot(json_request(
+            Method::POST,
+            "/api/ingest/url",
+            json!({
+                "url": "https://example.com/guides/remote.md",
+                "namespace": "web-guides",
+                "key": "remote",
+                "tags": ["guide"]
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(ingested.status(), StatusCode::OK);
+    let receipt = json_body(ingested).await;
+    assert_eq!(receipt["route"], "core");
+    assert_eq!(receipt["key"], "remote");
+
+    let recalled = router
+        .oneshot(json_request(
+            Method::POST,
+            "/api/recall",
+            json!({ "query": "Fetched deterministically", "namespace": "web-guides" }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(recalled.status(), StatusCode::OK);
+    let hits = json_body(recalled).await;
+    assert_eq!(hits[0]["key"], "remote");
+    assert_eq!(hits[0]["taint"], "external_sync");
 }
 
 #[tokio::test]
