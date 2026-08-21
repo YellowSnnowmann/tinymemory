@@ -124,10 +124,10 @@ impl HostChat {
         _role: String,
         _request: tinyagents::harness::model::ModelRequest,
     ) -> BusResult<tinyagents::harness::model::ModelResponse> {
-        std::future::ready(()).await;
         use tinyagents::harness::message::{AssistantMessage, ContentBlock};
         use tinyagents::harness::usage::Usage;
 
+        std::future::ready(()).await;
         Ok(tinyagents::harness::model::ModelResponse {
             message: AssistantMessage {
                 id: None,
