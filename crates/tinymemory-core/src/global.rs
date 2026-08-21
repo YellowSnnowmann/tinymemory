@@ -150,13 +150,10 @@ fn init_in_slot(
 /// which this crate cannot see; the home-directory lookup is reproduced here
 /// rather than added to the config seam for a test-only helper.
 #[cfg(test)]
-pub fn init_default() -> Result<MemoryClientRef, String> {
-    let workspace_dir = dirs::home_dir()
-        .ok_or_else(|| "Could not find home directory".to_string())?
-        .join(".openhuman")
-        .join("workspace");
-    init(workspace_dir)
-}
+#[path = "global_test_support.rs"]
+mod test_support;
+#[cfg(test)]
+pub use test_support::init_default;
 
 /// Returns the global memory client.
 ///

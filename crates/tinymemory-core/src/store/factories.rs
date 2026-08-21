@@ -129,9 +129,10 @@ fn surface_local_model_unavailable_to_clients() {
 /// exercises a fallback path should call this first so it can't be flaked by
 /// suite ordering (an earlier test that already tripped the latch).
 #[cfg(test)]
-fn reset_health_gate_for_test() {
-    OLLAMA_HEALTH_REPORTED.store(false, Ordering::Release);
-}
+#[path = "factories_test_support.rs"]
+mod test_support;
+#[cfg(test)]
+use test_support::reset_health_gate_for_test;
 
 /// Effective Ollama base URL.
 ///

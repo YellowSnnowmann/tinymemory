@@ -58,86 +58,8 @@ pub fn publish(event: MemoryEvent) {
     }
 }
 
-/// A [`MemoryEventSink`] that records what it was given, for tests.
-///
-/// Several tests used to assert on the host's web-channel broadcast, because
-/// before the extraction the publish went straight onto that channel. The
-/// decision to publish is core behaviour; the wire format is the host's. So the
-/// tests kept the half they are actually about — *did the transition publish,
-/// and did it publish exactly once* — and assert it here instead.
 #[cfg(test)]
-#[derive(Debug, Default)]
-pub(crate) struct RecordingSink {
-    events: parking_lot::Mutex<Vec<MemoryEvent>>,
-}
-
+#[path = "events_test_support.rs"]
+mod test_support;
 #[cfg(test)]
-impl RecordingSink {
-    /// Install a fresh recorder for the lifetime of the returned guard.
-    ///
-    /// All unit tests that replace the process-global sink share one lock.
-    /// Dropping the guard restores the previous sink only when this recorder
-    /// still owns the slot, so cleanup cannot clobber a newer host install.
-    pub(crate) fn install() -> RecordingSinkGuard {
-        static TEST_SINK_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let lock = TEST_SINK_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
-        let previous = event_sink();
-        let sink = Arc::new(Self::default());
-        let installed = Arc::clone(&sink) as Arc<dyn MemoryEventSink>;
-        set_event_sink(Arc::clone(&installed));
-        RecordingSinkGuard {
-            sink,
-            installed,
-            previous,
-            _lock: lock,
-        }
-    }
-
-    /// Take everything recorded so far, leaving the recorder empty.
-    pub(crate) fn drain(&self) -> Vec<MemoryEvent> {
-        std::mem::take(&mut *self.events.lock())
-    }
-}
-
-/// Serialises unit tests that temporarily replace the global event sink.
-#[cfg(test)]
-pub(crate) struct RecordingSinkGuard {
-    sink: Arc<RecordingSink>,
-    installed: Arc<dyn MemoryEventSink>,
-    previous: Option<Arc<dyn MemoryEventSink>>,
-    _lock: std::sync::MutexGuard<'static, ()>,
-}
-
-#[cfg(test)]
-impl std::ops::Deref for RecordingSinkGuard {
-    type Target = RecordingSink;
-
-    fn deref(&self) -> &Self::Target {
-        &self.sink
-    }
-}
-
-#[cfg(test)]
-impl Drop for RecordingSinkGuard {
-    fn drop(&mut self) {
-        let still_installed = event_sink()
-            .as_ref()
-            .is_some_and(|current| Arc::ptr_eq(current, &self.installed));
-        if !still_installed {
-            return;
-        }
-        match self.previous.take() {
-            Some(previous) => set_event_sink(previous),
-            None => clear_event_sink(),
-        }
-    }
-}
-
-#[cfg(test)]
-impl MemoryEventSink for RecordingSink {
-    fn publish(&self, event: MemoryEvent) {
-        self.events.lock().push(event);
-    }
-}
+pub(crate) use test_support::RecordingSink;

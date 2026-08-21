@@ -112,27 +112,11 @@ impl IngestionState {
         snap.queue_depth = self.inner.queue_depth.load(Ordering::SeqCst);
         snap
     }
-
-    /// Reset the queue depth counter and running snapshot to idle.
-    ///
-    /// Neutralises residue from background ingestion workers that outlived a
-    /// prior test's lock scope. Call at the start of each test body that
-    /// asserts exact `queue_depth` or `running` state.
-    ///
-    /// Preserves `last_completed_at`, `last_document_id`, and `last_success`
-    /// so tests that assert completion history still work.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn reset_for_test(&self) {
-        self.inner.queue_depth.store(0, Ordering::SeqCst);
-        let mut snap = self.inner.snapshot.write();
-        snap.running = false;
-        snap.current_document_id = None;
-        snap.current_title = None;
-        snap.current_namespace = None;
-        // Preserve last_completed_at, last_document_id, last_success so
-        // tests that assert completion history still work.
-    }
 }
+
+#[cfg(any(test, feature = "test-support"))]
+#[path = "state_test_support.rs"]
+mod test_support;
 
 #[cfg(test)]
 #[path = "state_tests.rs"]

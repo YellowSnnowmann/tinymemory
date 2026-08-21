@@ -167,19 +167,18 @@ impl ChatProvider for InferenceChatProvider {
     }
 }
 
-#[cfg(any(test, feature = "test-support"))]
-fn test_override_runtime() -> Option<(Arc<dyn ChatProvider>, String)> {
-    test_override::current().map(|provider| (provider, "test:override".to_string()))
-}
-
 #[cfg(not(any(test, feature = "test-support")))]
-fn test_override_runtime() -> Option<(Arc<dyn ChatProvider>, String)> {
-    None
-}
+#[path = "chat_runtime_override.rs"]
+mod runtime_override;
+#[cfg(any(test, feature = "test-support"))]
+#[path = "chat_test_support.rs"]
+mod runtime_override;
+#[cfg(any(test, feature = "test-support"))]
+pub use runtime_override::{test_override, StaticChatProvider};
 
 /// Build the memory LLM provider and return the resolved model id.
 pub fn build_chat_runtime(config: &Config) -> Result<(Arc<dyn ChatProvider>, String)> {
-    if let Some(runtime) = test_override_runtime() {
+    if let Some(runtime) = runtime_override::current_runtime() {
         return Ok(runtime);
     }
 
@@ -209,56 +208,6 @@ pub fn build_chat_runtime(config: &Config) -> Result<(Arc<dyn ChatProvider>, Str
 /// Build the memory LLM provider dictated by the inference workload routing.
 pub fn build_chat_provider(config: &Config) -> Result<Arc<dyn ChatProvider>> {
     Ok(build_chat_runtime(config)?.0)
-}
-
-#[cfg(any(test, feature = "test-support"))]
-pub struct StaticChatProvider {
-    pub response: String,
-    pub calls: std::sync::atomic::AtomicUsize,
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl StaticChatProvider {
-    pub fn new(response: impl Into<String>) -> Self {
-        Self {
-            response: response.into(),
-            calls: std::sync::atomic::AtomicUsize::new(0),
-        }
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-#[async_trait]
-impl ChatProvider for StaticChatProvider {
-    fn name(&self) -> &str {
-        "test:static"
-    }
-
-    async fn chat_for_json(&self, _prompt: &ChatPrompt) -> Result<String> {
-        self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        Ok(self.response.clone())
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-pub mod test_override {
-    use super::ChatProvider;
-    use std::sync::Arc;
-
-    tokio::task_local! {
-        static OVERRIDE: Arc<dyn ChatProvider>;
-    }
-
-    pub fn current() -> Option<Arc<dyn ChatProvider>> {
-        OVERRIDE.try_with(Arc::clone).ok()
-    }
-
-    pub async fn with_provider<F, T>(provider: Arc<dyn ChatProvider>, fut: F) -> T
-    where
-        F: std::future::Future<Output = T>,
-    {
-        OVERRIDE.scope(provider, fut).await
-    }
 }
 
 #[cfg(test)]

@@ -172,11 +172,11 @@ jobs:
         run: |
           set -euo pipefail
           cargo llvm-cov --all-features --workspace \
-            --ignore-filename-regex '(^|/)(tests|vendor)/|(^|/)(test|tests|test_helpers|test_support|test_seams)\.rs$|(_test|_tests)\.rs$|/crates/tinymemory-core/src/(engine/parity|tree/retrieval/benchmarks)\.rs$' \
+            --ignore-filename-regex '(^|/)(tests|vendor)/|(^|/)(test|tests|test_helpers|test_support|test_seams)\.rs$|(_test|_tests|_test_support)\.rs$|/crates/tinymemory-core/src/(engine/parity|tree/retrieval/benchmarks)\.rs$' \
             --fail-under-lines 80 --summary-only \
             | tee "$GITHUB_STEP_SUMMARY"
           cargo llvm-cov report \
-            --ignore-filename-regex '(^|/)(tests|vendor)/|(^|/)(test|tests|test_helpers|test_support|test_seams)\.rs$|(_test|_tests)\.rs$|/crates/tinymemory-core/src/(engine/parity|tree/retrieval/benchmarks)\.rs$' \
+            --ignore-filename-regex '(^|/)(tests|vendor)/|(^|/)(test|tests|test_helpers|test_support|test_seams)\.rs$|(_test|_tests|_test_support)\.rs$|/crates/tinymemory-core/src/(engine/parity|tree/retrieval/benchmarks)\.rs$' \
             --json --output-path target/production-coverage.json
           test_decl_line="$(grep -n '#\[cfg(test)\]' \
             crates/tinymemory-api/src/host/local_ai.rs | tail -1 | cut -d: -f1)"
@@ -196,6 +196,27 @@ jobs:
               and ([$data[].files[]
                 | select(.filename | endswith("/local_ai_tests.rs"))] | length == 0)
           ' target/production-coverage.json
+          inline_test_code="$(
+            rg -l '^[[:space:]]*#\[cfg\((test|any\(test,)' crates \
+              --glob '*.rs' --glob '!**/test.rs' --glob '!**/tests.rs' \
+              --glob '!**/*_test.rs' --glob '!**/*_tests.rs' \
+              --glob '!**/*_test_support.rs' --glob '!**/test_support.rs' \
+              --glob '!**/test_helpers.rs' --glob '!**/test_seams.rs' \
+            | xargs -r awk '
+              /^[[:space:]]*#\[cfg\((test|any\(test,)/ { cfgline=FNR; pending=1; next }
+              pending && (/^[[:space:]]*$/ || /^[[:space:]]*#/ || /^[[:space:]]*\/\//) { next }
+              pending {
+                if ($0 !~ /^[[:space:]]*(pub\([^)]*\)[[:space:]]+)?(pub[[:space:]]+)?(mod|use)[[:space:]]/)
+                  print FILENAME ":" cfgline ":" $0
+                pending=0
+              }
+            '
+          )"
+          if [[ -n "$inline_test_code" ]]; then
+            printf '%s\n' "$inline_test_code" >&2
+            echo 'inline test-only executable code must live in a filtered test file' >&2
+            exit 1
+          fi
 
   # §E2's first half: build **and test** each engine configuration on its own.
   #
@@ -317,7 +338,7 @@ jobs:
           set -euo pipefail
           cargo llvm-cov --manifest-path crates/tinymemory-module/Cargo.toml \
             --workspace --all-features \
-            --ignore-filename-regex '(^|/)(tests|vendor)/|(^|/)(test|tests|test_helpers|test_support|test_seams)\.rs$|(_test|_tests)\.rs$|/crates/tinymemory-core/src/(engine/parity|tree/retrieval/benchmarks)\.rs$' \
+            --ignore-filename-regex '(^|/)(tests|vendor)/|(^|/)(test|tests|test_helpers|test_support|test_seams)\.rs$|(_test|_tests|_test_support)\.rs$|/crates/tinymemory-core/src/(engine/parity|tree/retrieval/benchmarks)\.rs$' \
             --fail-under-lines 80 --summary-only \
             | tee "$GITHUB_STEP_SUMMARY"
 

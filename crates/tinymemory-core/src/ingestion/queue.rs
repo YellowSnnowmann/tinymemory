@@ -130,17 +130,11 @@ impl IngestionQueue {
     pub fn state(&self) -> IngestionState {
         self.state.clone()
     }
-
-    /// Build a queue handle from a raw sender, state, and capacity. Test-only.
-    #[cfg(test)]
-    fn from_parts(tx: mpsc::Sender<IngestionJob>, state: IngestionState, capacity: usize) -> Self {
-        Self {
-            tx,
-            state,
-            capacity,
-        }
-    }
 }
+
+#[cfg(test)]
+#[path = "queue_test_support.rs"]
+mod test_support;
 
 /// Start the background ingestion worker.
 ///

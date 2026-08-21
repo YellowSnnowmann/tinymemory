@@ -227,21 +227,10 @@ pub fn clear_storage_degraded() {
 /// top: it takes a shared mutex (serialising all flag-touching tests) and
 /// resets both flags to a clean baseline so the test starts deterministic.
 #[cfg(any(test, feature = "test-support"))]
-pub fn test_guard() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-    let g = LOCK
-        .get_or_init(|| std::sync::Mutex::new(()))
-        .lock()
-        .unwrap_or_else(|p| p.into_inner());
-    SEMANTIC_RECALL_DEGRADED.store(false, Ordering::Relaxed);
-    LOCAL_MODEL_USER_ERROR_SURFACED.store(false, Ordering::Relaxed);
-    STRUCTURE_DEGRADED.store(false, Ordering::Relaxed);
-    STORAGE_DEGRADED.store(false, Ordering::Relaxed);
-    SEMANTIC_RECALL_CAUSE.store(0, Ordering::Relaxed);
-    STRUCTURE_CAUSE.store(0, Ordering::Relaxed);
-    STORAGE_CAUSE.store(0, Ordering::Relaxed);
-    g
-}
+#[path = "health_test_support.rs"]
+mod test_support;
+#[cfg(any(test, feature = "test-support"))]
+pub use test_support::test_guard;
 
 /// Snapshot the current process-global [`DegradedState`] for the status /
 /// doctor surface. The `cause` is populated from the last recorded

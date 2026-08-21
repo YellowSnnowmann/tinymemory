@@ -423,13 +423,6 @@ impl ProviderContext {
     ///
     /// Under `cfg(test)` the global singleton is not booted, so build a
     /// workspace-scoped client directly instead.
-    #[cfg(test)]
-    pub fn memory_client(&self) -> Option<crate::store::MemoryClientRef> {
-        crate::store::MemoryClient::from_workspace_dir(self.config.workspace_dir().clone())
-            .ok()
-            .map(std::sync::Arc::new)
-    }
-
     /// Memory client handle if the global memory singleton is ready.
     /// Used by providers that want to persist sync snapshots.
     #[cfg(not(test))]
@@ -437,6 +430,10 @@ impl ProviderContext {
         crate::global::client_if_ready()
     }
 }
+
+#[cfg(test)]
+#[path = "types_test_support.rs"]
+mod test_support;
 
 #[cfg(test)]
 #[path = "types_tests.rs"]
