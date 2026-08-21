@@ -70,7 +70,7 @@ pub async fn fetch_url(url: &str) -> Result<RawDocument> {
     // one this process should never have finished buffering.
     let bytes = read_body_capped(response, MAX_DOCUMENT_BYTES as u64)
         .await
-        .map_err(|error| MemoryError::BudgetExceeded(format!("reading {url:?}: {error}")))?;
+        .map_err(|error| read_error(url, &error))?;
 
     if bytes.is_empty() {
         return Err(MemoryError::Invalid(format!("{url:?} returned no body")));
