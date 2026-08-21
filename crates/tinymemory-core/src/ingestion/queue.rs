@@ -132,7 +132,6 @@ impl IngestionQueue {
     }
 }
 
-#[cfg(test)]
 #[path = "queue_test_support.rs"]
 mod test_support;
 

@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Test-only construction helpers for bounded ingestion queues.
 
 use super::*;

@@ -226,7 +226,6 @@ pub fn clear_storage_degraded() {
 /// cargo's parallel runner. Any such test must `let _g = test_guard();` at the
 /// top: it takes a shared mutex (serialising all flag-touching tests) and
 /// resets both flags to a clean baseline so the test starts deterministic.
-#[cfg(any(test, feature = "test-support"))]
 #[path = "health_test_support.rs"]
 mod test_support;
 #[cfg(any(test, feature = "test-support"))]

@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Test-only reset helper for the process-global health-report latch.
 
 use super::*;

@@ -1,3 +1,4 @@
+#![cfg(any(test, feature = "test-support"))]
 //! Task-local deterministic chat provider support for tests and test hosts.
 
 use super::*;

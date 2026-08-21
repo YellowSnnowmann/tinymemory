@@ -167,14 +167,12 @@ impl ChatProvider for InferenceChatProvider {
     }
 }
 
-#[cfg(not(any(test, feature = "test-support")))]
 #[path = "chat_runtime_override.rs"]
 mod runtime_override;
-#[cfg(any(test, feature = "test-support"))]
 #[path = "chat_test_support.rs"]
-mod runtime_override;
+mod test_support;
 #[cfg(any(test, feature = "test-support"))]
-pub use runtime_override::{test_override, StaticChatProvider};
+pub use test_support::{test_override, StaticChatProvider};
 
 /// Build the memory LLM provider and return the resolved model id.
 pub fn build_chat_runtime(config: &Config) -> Result<(Arc<dyn ChatProvider>, String)> {

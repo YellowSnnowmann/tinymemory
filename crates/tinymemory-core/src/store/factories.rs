@@ -128,7 +128,6 @@ fn surface_local_model_unavailable_to_clients() {
 /// Resets the once-per-process Sentry latch. Test-only — any test that
 /// exercises a fallback path should call this first so it can't be flaked by
 /// suite ordering (an earlier test that already tripped the latch).
-#[cfg(test)]
 #[path = "factories_test_support.rs"]
 mod test_support;
 #[cfg(test)]

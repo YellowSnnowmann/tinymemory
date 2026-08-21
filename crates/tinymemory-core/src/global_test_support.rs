@@ -1,3 +1,4 @@
+#![cfg(test)]
 //! Test-only helpers for initializing the process-global memory client.
 
 use super::*;

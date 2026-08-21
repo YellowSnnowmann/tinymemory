@@ -149,7 +149,6 @@ fn init_in_slot(
 /// The host resolves this path through `config::default_root_openhuman_dir`,
 /// which this crate cannot see; the home-directory lookup is reproduced here
 /// rather than added to the config seam for a test-only helper.
-#[cfg(test)]
 #[path = "global_test_support.rs"]
 mod test_support;
 #[cfg(test)]

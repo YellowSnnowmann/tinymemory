@@ -1,3 +1,4 @@
+#![cfg(any(test, feature = "test-support"))]
 //! Test-only serialization and reset for global degraded-health state.
 
 use super::*;
