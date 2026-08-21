@@ -44,3 +44,21 @@ async fn a_non_http_scheme_is_refused() {
         );
     }
 }
+
+#[test]
+fn a_size_limit_failure_is_reported_as_budget_exceeded() {
+    let error = read_error(
+        "https://example.com/",
+        "response body exceeds 8-byte limit (Content-Length=9)",
+    );
+    assert!(matches!(error, MemoryError::BudgetExceeded(_)), "got {error:?}");
+}
+
+#[test]
+fn an_interrupted_read_is_reported_as_unreachable_not_budget_exceeded() {
+    let error = read_error(
+        "https://example.com/",
+        "failed to read response body: connection reset",
+    );
+    assert!(matches!(error, MemoryError::Unreachable(_)), "got {error:?}");
+}
