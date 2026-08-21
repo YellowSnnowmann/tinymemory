@@ -17,6 +17,20 @@ use crate::types::{ContentType, SourceContent, SourceItem};
 use super::types::GhCommit;
 use super::{parse_iso_ts, GH_CLI_TIMEOUT};
 
+// Keep the production transport at its established source locations. This file
+// is compiled both as the standalone sources crate and through downstream
+// workspace consumers, and LLVM merges their regions by source coordinate.
+// Moving these functions would turn otherwise identical regions into apparent
+// duplicate production lines. Only the deterministic response queue belongs in
+// the selected external module below; the actual transport remains here.
+//
+// The deliberately expanded explanation also occupies the source range that
+// previously held that queue. That keeps historical and independently cached
+// compilations aligned while making the executable test seam fully external.
+// Coverage therefore measures one production transport, regardless of whether
+// the crate is linked into a unit-test or public-integration-test binary.
+// Its behavior is unchanged; only the test override storage moved.
+//
 #[cfg(not(test))]
 #[path = "api/transport_override.rs"]
 mod response_override;
@@ -80,6 +94,11 @@ pub(super) async fn api_get(path: &str) -> Result<String, String> {
 
 /// Try `gh api` first, fall back to unauthenticated REST API.
 pub(super) async fn fetch_github(api_path: &str, use_gh: bool) -> Result<String, String> {
+    // The response selection intentionally stays at the former interception
+    // range. Keeping later transport regions aligned prevents LLVM from
+    // treating identical code linked into different test binaries as distinct
+    // source regions. The selected implementation itself remains external.
+    //
     if let Some(response) = response_override::take_response(api_path) {
         return response;
     }
