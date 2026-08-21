@@ -507,3 +507,33 @@ fn a_key_derived_from_unusable_text_falls_back_to_a_name_rather_than_an_empty_st
     let document = RawDocument::new("body").with_filename("???");
     assert_eq!(request.key(&document, ""), "document");
 }
+
+#[test]
+fn two_origins_sharing_a_long_prefix_do_not_collide_into_one_key() {
+    // Both origins agree on the first 200+ characters and only diverge in
+    // their last path segment. Naive truncation to 120 characters would cut
+    // both inside the shared prefix and collide the two documents onto one
+    // upsert key.
+    let request = IntakeRequest::new("document:x");
+    let shared_prefix = "a".repeat(150);
+    let one = RawDocument::new("body")
+        .with_origin(format!("https://example.com/{shared_prefix}/chapter-one"));
+    let two = RawDocument::new("body")
+        .with_origin(format!("https://example.com/{shared_prefix}/chapter-two"));
+
+    let key_one = request.key(&one, "");
+    let key_two = request.key(&two, "");
+
+    assert_ne!(key_one, key_two, "{key_one} vs {key_two}");
+    assert!(key_one.len() <= 120, "{key_one} is {} bytes", key_one.len());
+    assert!(key_two.len() <= 120, "{key_two} is {} bytes", key_two.len());
+}
+
+#[test]
+fn a_truncated_key_is_deterministic_for_the_same_input() {
+    let request = IntakeRequest::new("document:x");
+    let long_origin = format!("https://example.com/{}", "a".repeat(200));
+    let document = RawDocument::new("body").with_origin(long_origin);
+
+    assert_eq!(request.key(&document, ""), request.key(&document, ""));
+}
