@@ -58,3 +58,11 @@ fn several_entities_in_one_string_are_all_decoded() {
         "<a href=\"x\">A & B</a>"
     );
 }
+
+#[test]
+fn a_multibyte_run_after_an_ampersand_does_not_panic() {
+    // Each `€` is 3 bytes, so the 12-byte scan window lands mid-character
+    // unless the scan snaps back to a char boundary first.
+    let input = "&€€€€;";
+    assert_eq!(decode_entities(input), input);
+}
