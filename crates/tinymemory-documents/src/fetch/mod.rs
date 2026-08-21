@@ -92,5 +92,20 @@ pub async fn fetch_url(url: &str) -> Result<RawDocument> {
     Ok(document)
 }
 
+/// Turn a `read_body_capped` failure into the right [`MemoryError`] variant.
+///
+/// `read_body_capped` collapses two different failures into one `String`: a
+/// body over the size cap, and a stream that failed mid-read. Those need
+/// different retry policies from a caller, so this tells them apart by the
+/// message `read_body_capped` always uses for the size case, rather than
+/// reporting every failure as a budget overrun.
+fn read_error(url: &str, error: &str) -> MemoryError {
+    if error.contains("exceeds") && error.contains("-byte limit") {
+        MemoryError::BudgetExceeded(format!("reading {url:?}: {error}"))
+    } else {
+        MemoryError::Unreachable(format!("reading {url:?}: {error}"))
+    }
+}
+
 #[cfg(test)]
 mod test;
