@@ -280,7 +280,15 @@ async fn sm_create(
     Ok(Json(json!({ "memories": [{ "id": id }] })))
 }
 
-async fn sm_update(State(store): State<Store>, Json(body): Json<Value>) -> Json<Value> {
+async fn sm_update(
+    State(store): State<Store>,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, axum::http::StatusCode> {
+    // Mirrors `sm_create`: the real PATCH requires `containerTag` and 400s
+    // without it (issue #75).
+    if body["containerTag"].as_str().is_none_or(str::is_empty) {
+        return Err(axum::http::StatusCode::BAD_REQUEST);
+    }
     let mut store = store.lock().expect("store lock");
     let id = body["id"].as_str().unwrap_or_default().to_owned();
     if let Some(row) = store.rows.get_mut(&id) {
@@ -291,7 +299,7 @@ async fn sm_update(State(store): State<Store>, Json(body): Json<Value>) -> Json<
             row.metadata = body["metadata"].clone();
         }
     }
-    Json(json!({ "id": id }))
+    Ok(Json(json!({ "id": id })))
 }
 
 async fn sm_delete(State(store): State<Store>, Json(body): Json<Value>) -> Json<Value> {

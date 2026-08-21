@@ -279,6 +279,10 @@ impl SupermemoryDialect {
     async fn memories_in_tag(&self, container_tag: &str) -> anyhow::Result<Vec<StoredEntry>> {
         let mut entries = Vec::new();
         {
+            // Bounded like mem0's CLOUD_MAX_PAGES (issue #75): totalPages is
+            // server-supplied, and a lying or looping value must fail loudly
+            // instead of spinning the walk and growing the buffer forever.
+            const MAX_PAGES: u64 = 500;
             let mut page = 1_u64;
             loop {
                 let response: Value = self
@@ -324,6 +328,12 @@ impl SupermemoryDialect {
                 if page >= total_pages {
                     break;
                 }
+                anyhow::ensure!(
+                    page < MAX_PAGES,
+                    "supermemory kept answering more pages after {MAX_PAGES} — a \
+                     totalPages that never lets the walk finish is a server fault; \
+                     refusing rather than walking forever"
+                );
                 page += 1;
             }
         }
@@ -360,7 +370,13 @@ impl Dialect for SupermemoryDialect {
                     Some(&json!({
                         "id": existing.remote_id,
                         "newContent": entry.content,
-                        "metadata": metadata
+                        "metadata": metadata,
+                        // Required by PATCH /v4/memories ("Required to scope
+                        // the operation"; 400 without it) — the POST and
+                        // DELETE bodies always carried it, PATCH alone
+                        // didn't, so the FIRST store of a key worked and
+                        // every re-store failed (issue #75).
+                        "containerTag": Self::container_tag(&entry.namespace),
                     })),
                 )
                 .await?;

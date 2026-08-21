@@ -69,6 +69,12 @@ async fn add(State(state): State<AppState>, Json(body): Json<Value>) -> Json<Val
     Json(json!({"memories": [{"id": id}]}))
 }
 async fn update(State(state): State<AppState>, Json(body): Json<Value>) -> StatusCode {
+    // The real PATCH /v4/memories requires `containerTag` ("Required to scope
+    // the operation") and 400s without it — a double that accepted a tagless
+    // PATCH hid exactly the adapter regression issue #75 found.
+    if body["containerTag"].as_str().is_none_or(str::is_empty) {
+        return StatusCode::BAD_REQUEST;
+    }
     let id = body["id"].as_str().unwrap_or_default();
     if let Some(record) = state
         .0

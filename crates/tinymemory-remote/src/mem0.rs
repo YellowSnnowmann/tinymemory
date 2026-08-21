@@ -605,6 +605,19 @@ impl Dialect for Mem0Dialect {
                 entry.key
             );
         }
+        // A FULL page in which nothing even decodes is inconclusive, not
+        // absent: a server that dropped the filter answers with the whole
+        // account, and if page 1 is all foreign non-TinyMemory records the
+        // one asked for may sit past it. Only a short page proves absence —
+        // the server returned everything it had and ours was not among it.
+        anyhow::ensure!(
+            results.len() < CLOUD_PAGE_SIZE as usize,
+            "mem0's filtered lookup answered a full page of {} records none of which are \
+             TinyMemory's — the server did not honor the metadata filter, and the record \
+             asked for ({namespace}/{key}) may sit beyond this page; refusing to answer \
+             an untrustworthy `absent`",
+            results.len()
+        );
         Ok(None)
     }
 
@@ -675,13 +688,13 @@ impl Dialect for Mem0Dialect {
     }
 
     /// Finds and deletes an exact TinyMemory logical record.
+    ///
+    /// Through the keyed seam (issue #75): one filtered request on cloud, one
+    /// namespace-scoped listing self-hosted — the whole-account walk this
+    /// used to run died at the OSS ≥1000-record ceiling and paged the entire
+    /// hosted account to delete one record.
     async fn delete(&self, namespace: &str, key: &str) -> anyhow::Result<bool> {
-        let Some(entry) = self
-            .entries()
-            .await?
-            .into_iter()
-            .find(|item| item.namespace == namespace && item.key == key)
-        else {
+        let Some(entry) = self.entry(namespace, key).await? else {
             return Ok(false);
         };
         self.client

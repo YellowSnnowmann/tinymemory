@@ -244,6 +244,41 @@ async fn a_cursor_that_never_clears_is_refused_rather_than_walked_for_ever() {
     );
 }
 
+/// Supermemory's twin of the guard above (issue #75): its per-tag pager
+/// loops on server-supplied `totalPages`, which is exactly as
+/// server-controlled as mem0's cursor — a value that never lets the walk
+/// finish must be refused, not walked for ever.
+#[tokio::test]
+async fn a_total_pages_that_never_lets_the_walk_finish_is_refused() {
+    use axum::routing::{get, post};
+    let app = Router::new()
+        .route(
+            "/v3/container-tags/list",
+            get(|| async { axum::Json(serde_json::json!([{"containerTag": "tinymemory:tm_x"}])) }),
+        )
+        .route(
+            "/v4/memories/list",
+            post(|| async {
+                axum::Json(serde_json::json!({
+                    "memories": [{"id": "sm-1", "memory": "x", "metadata": {}}],
+                    "pagination": {"totalPages": 1_000_000}
+                }))
+            }),
+        );
+    let endpoint = serve(app).await;
+    let memory = SupermemoryMemory::api(&endpoint, "sm-test-key").expect("client");
+
+    let outcome = tokio::time::timeout(std::time::Duration::from_secs(60), memory.count()).await;
+    let Ok(result) = outcome else {
+        panic!("the per-tag walk never terminated against a lying totalPages");
+    };
+    let error = result.expect_err("a totalPages that never clears cannot be answered correctly");
+    assert!(
+        format!("{error:#}").contains("pages"),
+        "the refusal must name the page ceiling it hit, got: {error:#}"
+    );
+}
+
 #[tokio::test]
 async fn a_paginated_export_terminates_instead_of_looping() {
     // The partial-page leg of §E6. A backend that keeps answering with a page

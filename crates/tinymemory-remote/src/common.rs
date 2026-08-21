@@ -67,6 +67,31 @@ const MAX_RESPONSE_BYTES: u64 = 64 * 1024 * 1024;
 /// enforces the cap while the bytes arrive. Same argument, and same shape, as
 /// `tinymemory-sources`' `read_body_capped` -- that guard was written for the
 /// web-page reader and simply had not been applied on this path.
+/// Error bodies get a far smaller cap: [`status_error`] surfaces ~300 chars,
+/// so 64 KiB preserves every message any API writes while denying a hostile
+/// endpoint the unbounded buffer `Response::text()` would hand it — the exact
+/// threat [`MAX_RESPONSE_BYTES`] names, which the error paths had skipped
+/// (issue #75). Truncation is silent by design: an error body is diagnostic
+/// text, not data.
+const MAX_ERROR_BODY_BYTES: usize = 64 * 1024;
+
+/// Reads at most [`MAX_ERROR_BODY_BYTES`] of a non-success body, never
+/// failing: the caller is already about to return the status error, and a
+/// body-read fault must not mask it.
+async fn read_error_body(response: reqwest::Response) -> String {
+    use futures::StreamExt;
+    let mut body = Vec::new();
+    let mut stream = response.bytes_stream();
+    while let Some(Ok(chunk)) = stream.next().await {
+        let room = MAX_ERROR_BODY_BYTES.saturating_sub(body.len());
+        body.extend_from_slice(&chunk[..chunk.len().min(room)]);
+        if body.len() >= MAX_ERROR_BODY_BYTES {
+            break;
+        }
+    }
+    String::from_utf8_lossy(&body).into_owned()
+}
+
 async fn read_capped(response: reqwest::Response, path: &str) -> anyhow::Result<Vec<u8>> {
     use futures::StreamExt;
     if let Some(len) = response.content_length() {
@@ -409,7 +434,7 @@ impl HttpClient {
             .map_err(|error| self.transport_error(error))?;
         let status = response.status();
         if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
+            let body = read_error_body(response).await;
             return Err(self.status_error(path, status, &body));
         }
         let body = read_capped(response, path).await?;
@@ -432,7 +457,7 @@ impl HttpClient {
                 .map_err(|error| self.transport_error(error))?;
             let status = response.status();
             if !status.is_success() {
-                let body = response.text().await.unwrap_or_default();
+                let body = read_error_body(response).await;
                 return Err(self.status_error(path, status, &body));
             }
             let body = read_capped(response, path).await?;
@@ -461,7 +486,7 @@ impl HttpClient {
             .map_err(|error| self.transport_error(error))?;
         let status = response.status();
         if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
+            let body = read_error_body(response).await;
             return Err(self.status_error(path, status, &body));
         }
         Ok(status)
@@ -470,6 +495,33 @@ impl HttpClient {
     /// Starts an authenticated multipart request.
     pub(crate) fn multipart(&self, method: Method, path: &str) -> anyhow::Result<RequestBuilder> {
         self.request(method, path)
+    }
+
+    /// Sends a prepared multipart form and types its failures like every
+    /// other path: transport faults through [`Self::transport_error`],
+    /// non-success statuses through [`Self::status_error`]. The upload leg
+    /// previously spoke raw `anyhow!` strings, so a 400 refusal reached
+    /// callers as `Other` instead of `Invalid`, a 401 was not `Unauthorized`,
+    /// and a 429/503 was never retried-or-classified `Unavailable` — the one
+    /// write path outside the §A4 taxonomy (issue #75).
+    pub(crate) async fn send_multipart(
+        &self,
+        method: Method,
+        path: &str,
+        form: reqwest::multipart::Form,
+    ) -> anyhow::Result<()> {
+        let response = self
+            .multipart(method, path)?
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|error| self.transport_error(error))?;
+        let status = response.status();
+        if !status.is_success() {
+            let body = read_error_body(response).await;
+            return Err(self.status_error(path, status, &body));
+        }
+        Ok(())
     }
 
     /// Probes a GET endpoint and reports WHY it failed, typed (issue #18
@@ -484,7 +536,7 @@ impl HttpClient {
             .map_err(|error| self.transport_error(error))?;
         let status = response.status();
         if !status.is_success() {
-            let body = response.text().await.unwrap_or_default();
+            let body = read_error_body(response).await;
             return Err(self.status_error(path, status, &body));
         }
         Ok(())
