@@ -18,7 +18,13 @@ pub(super) fn decode_entities(text: &str) -> String {
         let tail = &rest[at..];
         // An entity is short; a '&' with no ';' within that window is a
         // literal ampersand, which is far more common than a malformed entity.
-        let Some(end) = tail[..tail.len().min(12)].find(';') else {
+        // The window has to land on a char boundary, or slicing panics on a
+        // multibyte character sitting across the 12-byte mark.
+        let mut window = tail.len().min(12);
+        while window > 0 && !tail.is_char_boundary(window) {
+            window -= 1;
+        }
+        let Some(end) = tail[..window].find(';') else {
             out.push('&');
             rest = &tail[1..];
             continue;
