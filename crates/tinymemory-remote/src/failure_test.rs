@@ -424,6 +424,51 @@ async fn a_400_refusal_is_invalid_not_backend() {
     }
 }
 
+/// Issue #75: the multipart UPLOAD leg speaks the same taxonomy. The generic
+/// 400 test above never reaches it — cognee's preceding dataset GET fails
+/// first against a fail-everything double — so this double lets the resolve
+/// succeed and fails only the upload, pinning the one write path that used
+/// to answer an untyped string.
+#[tokio::test]
+async fn a_400_on_the_multipart_upload_leg_is_invalid_not_other() {
+    use axum::routing::{get, post};
+    let app = Router::new()
+        .route(
+            "/api/v1/datasets/",
+            get(|| async { axum::Json(serde_json::json!([])) }),
+        )
+        .route(
+            "/api/v1/remember",
+            post(|| async {
+                (
+                    StatusCode::BAD_REQUEST,
+                    r#"{"error":"file rejected"}"#.to_owned(),
+                )
+            }),
+        );
+    let endpoint = serve(app).await;
+    let memory = CogneeMemory::self_hosted(&endpoint, None).expect("client");
+
+    let error = memory
+        .store_with_taint(
+            "ns",
+            "k",
+            "content",
+            MemoryCategory::Core,
+            None,
+            MemoryTaint::Internal,
+        )
+        .await
+        .expect_err("the upload 400 must surface");
+    assert!(
+        matches!(
+            error.downcast_ref::<MemoryError>(),
+            Some(MemoryError::Invalid(_))
+        ),
+        "a multipart 400 must be Invalid, got: {error}"
+    );
+}
+
 /// #68 review Major 4: the retry split is now a per-call statement. A 503 on
 /// a retrying READ is attempted three times; the same 503 on a WRITE path
 /// (`empty` — no marker, no retry machinery at all) is attempted once. The
