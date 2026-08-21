@@ -9,9 +9,12 @@
 //! the implementation falls back to `GLOBAL_NAMESPACE` (legacy behavior), which
 //! Phase B/C will tighten once the memory tools pass namespace explicitly.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use chrono::{TimeZone, Utc};
-use rusqlite::{params, OptionalExtension};
+use parking_lot::Mutex;
+use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::json;
 
 use crate::store::namespace_store::fts5;
@@ -134,7 +137,18 @@ impl UnifiedMemory {
         }
 
         if let Some(sid) = opts.session_id {
-            let episodic_entries = match fts5::episodic_session_entries(&self.conn, sid) {
+            // Synchronous SQL behind the connection mutex — run it on the
+            // blocking pool rather than an executor thread. A join failure is
+            // folded into the same non-fatal arm as a query failure below.
+            let fetched = {
+                let conn = Arc::clone(&self.conn);
+                let session = sid.to_owned();
+                tokio::task::spawn_blocking(move || fts5::episodic_session_entries(&conn, &session))
+                    .await
+                    .context("join episodic session entries")
+                    .and_then(|entries| entries)
+            };
+            let episodic_entries = match fetched {
                 Ok(entries) => {
                     tracing::debug!(
                         "[memory-trait] loaded {} episodic entries for session={sid}",
@@ -192,9 +206,19 @@ impl UnifiedMemory {
         // already came in via the same-session path above.
         if opts.cross_session {
             let exclude = opts.session_id;
-            let cross_entries = match fts5::episodic_cross_session_search(
-                &self.conn, query, limit, exclude,
-            ) {
+            // Same blocking-pool hop as the same-session fetch above.
+            let fetched = {
+                let conn = Arc::clone(&self.conn);
+                let query = query.to_owned();
+                let exclude = exclude.map(str::to_owned);
+                tokio::task::spawn_blocking(move || {
+                    fts5::episodic_cross_session_search(&conn, &query, limit, exclude.as_deref())
+                })
+                .await
+                .context("join cross-session episodic search")
+                .and_then(|entries| entries)
+            };
+            let cross_entries = match fetched {
                 Ok(entries) => {
                     tracing::debug!(
                             "[memory-trait] cross-session episodic recall returned {} entries (exclude={:?})",
@@ -263,6 +287,150 @@ impl UnifiedMemory {
         }
 
         Ok(out)
+    }
+}
+
+// ── Blocking SQL bodies ──────────────────────────────────────────────────────
+//
+// The connection is a `parking_lot::Mutex<rusqlite::Connection>`: every SQL
+// call is synchronous and holds the lock for its duration, so running one on
+// an executor thread stalls every task scheduled there. Each `Memory` method
+// below owns its parameters, hops to `spawn_blocking`, and runs its body here;
+// the bodies are associated fns (not `&self` methods) because the closure must
+// be `'static` and cannot borrow the store.
+
+/// One `memory_docs` row as `get` selects it:
+/// `(document_id, key, content, updated_at, category, taint, session_id)`.
+type MemoryDocRow = (String, String, String, f64, String, String, Option<String>);
+
+impl UnifiedMemory {
+    fn get_blocking(
+        conn: &Arc<Mutex<Connection>>,
+        ns: &str,
+        key: &str,
+    ) -> anyhow::Result<Option<MemoryEntry>> {
+        let conn = conn.lock();
+        // `session_id` is selected here for the same reason `list` selects it:
+        // it is a column on this row, and a `get` that dropped it made the two
+        // readers disagree about one record. The contract's round-trip
+        // assertion catches exactly that (`tinymemory_conformance`), and it was
+        // invisible until #18 §A3 let this store be bound as a driver at all.
+        let row: Option<MemoryDocRow> = conn
+            .query_row(
+                "SELECT document_id, key, content, updated_at, category, taint, session_id
+                 FROM memory_docs WHERE namespace = ?1 AND key = ?2 LIMIT 1",
+                params![ns, key],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                    ))
+                },
+            )
+            .optional()?;
+        Ok(row.map(
+            |(id, key, content, updated_at, category, taint_str, session_id)| MemoryEntry {
+                id,
+                key,
+                content,
+                namespace: Some(ns.to_string()),
+                category: memory_category_from_stored(&category),
+                timestamp: timestamp_to_rfc3339(updated_at),
+                session_id,
+                score: None,
+                taint: crate::MemoryTaint::from_db_str(&taint_str),
+            },
+        ))
+    }
+
+    fn list_blocking(
+        conn: &Arc<Mutex<Connection>>,
+        ns: &str,
+        category: Option<&MemoryCategory>,
+        session_id: Option<&str>,
+    ) -> anyhow::Result<Vec<MemoryEntry>> {
+        let conn = conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT document_id, key, content, category, session_id, updated_at, taint
+             FROM memory_docs WHERE namespace = ?1 ORDER BY updated_at DESC",
+        )?;
+        let rows = stmt.query_map(params![ns], |row| {
+            let stored_category: String = row.get(3)?;
+            Ok(MemoryEntry {
+                id: row.get(0)?,
+                key: row.get(1)?,
+                content: row.get(2)?,
+                namespace: Some(ns.to_string()),
+                category: memory_category_from_stored(&stored_category),
+                session_id: row.get(4)?,
+                timestamp: timestamp_to_rfc3339(row.get(5)?),
+                score: None,
+                taint: crate::MemoryTaint::from_db_str(&row.get::<_, String>(6)?),
+            })
+        })?;
+        let mut entries = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        if let Some(category) = category {
+            entries.retain(|entry| &entry.category == category);
+        }
+        if let Some(session_id) = session_id {
+            entries.retain(|entry| entry.session_id.as_deref() == Some(session_id));
+        }
+        Ok(entries)
+    }
+
+    fn forget_lookup_blocking(
+        conn: &Arc<Mutex<Connection>>,
+        ns: &str,
+        key: &str,
+    ) -> anyhow::Result<Option<String>> {
+        let conn = conn.lock();
+        Ok(conn
+            .query_row(
+                "SELECT document_id FROM memory_docs WHERE namespace = ?1 AND key = ?2 LIMIT 1",
+                params![ns, key],
+                |row| row.get(0),
+            )
+            .optional()?)
+    }
+
+    fn namespace_summaries_blocking(
+        conn: &Arc<Mutex<Connection>>,
+    ) -> anyhow::Result<Vec<NamespaceSummary>> {
+        let conn = conn.lock();
+        let mut stmt = conn.prepare(
+            "SELECT namespace, COUNT(*) AS n, MAX(updated_at) AS last
+             FROM memory_docs
+             GROUP BY namespace
+             ORDER BY namespace",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let ns: String = row.get(0)?;
+            let count: i64 = row.get(1)?;
+            let last: Option<f64> = row.get(2)?;
+            Ok((ns, count, last))
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            let (ns, count, last) = r?;
+            out.push(NamespaceSummary {
+                namespace: ns,
+                count: usize::try_from(count).unwrap_or(0),
+                last_updated: last.map(timestamp_to_rfc3339),
+            });
+        }
+        Ok(out)
+    }
+
+    fn count_blocking(conn: &Arc<Mutex<Connection>>) -> anyhow::Result<usize> {
+        let conn = conn.lock();
+        let count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM memory_docs", [], |row| row.get(0))?;
+        usize::try_from(count).context("negative count")
     }
 }
 
@@ -369,43 +537,10 @@ impl Memory for UnifiedMemory {
         // it again, which is the retry loop behind #5164.
         let ns = UnifiedMemory::sanitize_namespace(namespace);
         let key = crate::store::safety::canonical_document_key(key);
-        let conn = self.conn.lock();
-        // `session_id` is selected here for the same reason `list` selects it:
-        // it is a column on this row, and a `get` that dropped it made the two
-        // readers disagree about one record. The contract's round-trip
-        // assertion catches exactly that (`tinymemory_conformance`), and it was
-        // invisible until #18 §A3 let this store be bound as a driver at all.
-        let row: Option<(String, String, String, f64, String, String, Option<String>)> = conn
-            .query_row(
-                "SELECT document_id, key, content, updated_at, category, taint, session_id
-                 FROM memory_docs WHERE namespace = ?1 AND key = ?2 LIMIT 1",
-                params![ns, key],
-                |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                        row.get(5)?,
-                        row.get(6)?,
-                    ))
-                },
-            )
-            .optional()?;
-        Ok(row.map(
-            |(id, key, content, updated_at, category, taint_str, session_id)| MemoryEntry {
-                id,
-                key,
-                content,
-                namespace: Some(ns.clone()),
-                category: memory_category_from_stored(&category),
-                timestamp: timestamp_to_rfc3339(updated_at),
-                session_id,
-                score: None,
-                taint: crate::MemoryTaint::from_db_str(&taint_str),
-            },
-        ))
+        let conn = Arc::clone(&self.conn);
+        tokio::task::spawn_blocking(move || Self::get_blocking(&conn, &ns, &key))
+            .await
+            .context("join Memory::get")?
     }
 
     async fn list(
@@ -415,33 +550,14 @@ impl Memory for UnifiedMemory {
         session_id: Option<&str>,
     ) -> anyhow::Result<Vec<MemoryEntry>> {
         let ns = UnifiedMemory::sanitize_namespace(normalize_namespace(namespace));
-        let conn = self.conn.lock();
-        let mut stmt = conn.prepare(
-            "SELECT document_id, key, content, category, session_id, updated_at, taint
-             FROM memory_docs WHERE namespace = ?1 ORDER BY updated_at DESC",
-        )?;
-        let rows = stmt.query_map(params![ns], |row| {
-            let stored_category: String = row.get(3)?;
-            Ok(MemoryEntry {
-                id: row.get(0)?,
-                key: row.get(1)?,
-                content: row.get(2)?,
-                namespace: Some(ns.clone()),
-                category: memory_category_from_stored(&stored_category),
-                session_id: row.get(4)?,
-                timestamp: timestamp_to_rfc3339(row.get(5)?),
-                score: None,
-                taint: crate::MemoryTaint::from_db_str(&row.get::<_, String>(6)?),
-            })
-        })?;
-        let mut entries = rows.collect::<rusqlite::Result<Vec<_>>>()?;
-        if let Some(category) = category {
-            entries.retain(|entry| &entry.category == category);
-        }
-        if let Some(session_id) = session_id {
-            entries.retain(|entry| entry.session_id.as_deref() == Some(session_id));
-        }
-        Ok(entries)
+        let category = category.cloned();
+        let session_id = session_id.map(str::to_owned);
+        let conn = Arc::clone(&self.conn);
+        tokio::task::spawn_blocking(move || {
+            Self::list_blocking(&conn, &ns, category.as_ref(), session_id.as_deref())
+        })
+        .await
+        .context("join Memory::list")?
     }
 
     async fn forget(&self, namespace: &str, key: &str) -> anyhow::Result<bool> {
@@ -451,17 +567,17 @@ impl Memory for UnifiedMemory {
         let ns = UnifiedMemory::sanitize_namespace(namespace);
         let key = crate::store::safety::canonical_document_key(key);
         let row: Option<String> = {
-            let conn = self.conn.lock();
-            conn.query_row(
-                "SELECT document_id FROM memory_docs WHERE namespace = ?1 AND key = ?2 LIMIT 1",
-                params![ns, key],
-                |row| row.get(0),
-            )
-            .optional()?
+            let conn = Arc::clone(&self.conn);
+            let ns = ns.clone();
+            tokio::task::spawn_blocking(move || Self::forget_lookup_blocking(&conn, &ns, &key))
+                .await
+                .context("join Memory::forget")??
         };
         let Some(document_id) = row else {
             return Ok(false);
         };
+        // `delete_document` awaits internally (graph upkeep, sidecar removal),
+        // so only the synchronous lookup above runs on the blocking pool.
         self.delete_document(&ns, &document_id)
             .await
             .map_err(anyhow::Error::msg)?;
@@ -469,36 +585,17 @@ impl Memory for UnifiedMemory {
     }
 
     async fn namespace_summaries(&self) -> anyhow::Result<Vec<NamespaceSummary>> {
-        let conn = self.conn.lock();
-        let mut stmt = conn.prepare(
-            "SELECT namespace, COUNT(*) AS n, MAX(updated_at) AS last
-             FROM memory_docs
-             GROUP BY namespace
-             ORDER BY namespace",
-        )?;
-        let rows = stmt.query_map([], |row| {
-            let ns: String = row.get(0)?;
-            let count: i64 = row.get(1)?;
-            let last: Option<f64> = row.get(2)?;
-            Ok((ns, count, last))
-        })?;
-        let mut out = Vec::new();
-        for r in rows {
-            let (ns, count, last) = r?;
-            out.push(NamespaceSummary {
-                namespace: ns,
-                count: usize::try_from(count).unwrap_or(0),
-                last_updated: last.map(timestamp_to_rfc3339),
-            });
-        }
-        Ok(out)
+        let conn = Arc::clone(&self.conn);
+        tokio::task::spawn_blocking(move || Self::namespace_summaries_blocking(&conn))
+            .await
+            .context("join Memory::namespace_summaries")?
     }
 
     async fn count(&self) -> anyhow::Result<usize> {
-        let conn = self.conn.lock();
-        let count: i64 =
-            conn.query_row("SELECT COUNT(*) FROM memory_docs", [], |row| row.get(0))?;
-        usize::try_from(count).context("negative count")
+        let conn = Arc::clone(&self.conn);
+        tokio::task::spawn_blocking(move || Self::count_blocking(&conn))
+            .await
+            .context("join Memory::count")?
     }
 
     async fn health_check(&self) -> bool {

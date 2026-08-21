@@ -118,3 +118,106 @@ async fn the_full_provider_actually_retains() {
          almost nothing"
     );
 }
+
+/// The KV write path canonicalizes identifiers (the shim in `tinymemory-core`
+/// routes every `set_*`/`delete_*` through `canonical_identifier`), so a read
+/// path that compares the raw caller key misses every rewritten key: put→get
+/// answered `None` while put→delete answered `true`. `kv_get` and `kv_list`
+/// must apply the same transform the write path did.
+#[tokio::test(flavor = "multi_thread")]
+async fn kv_reads_find_a_key_the_canonicalizer_rewrites() {
+    use tinymemory_api::provider::MemoryProvider;
+    use tinymemory_core::store::safety::canonical_identifier;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let graph = provider.as_graph().expect("the full provider serves Graph");
+
+    // A formatted national ID is strict-gated PII, so the write path rewrites
+    // it. (A bare Luhn-valid digit run would NOT do here: the strict gate
+    // deliberately ignores bare-numeric shapes so scanner-built identifiers —
+    // timestamps, phone-shaped JIDs — keep their identity.)
+    let key = "ssn-123-45-6789";
+    let canonical = canonical_identifier(key);
+    assert_ne!(
+        canonical, key,
+        "fixture must be a key the canonicalizer rewrites"
+    );
+
+    let value = serde_json::json!({"ticket": 42});
+    graph
+        .kv_put(None, key, value.clone())
+        .await
+        .expect("kv_put");
+
+    let record = graph
+        .kv_get(None, key)
+        .await
+        .expect("kv_get")
+        .expect("kv_get must find the key it just put under the same raw key");
+    assert_eq!(record.value, value, "kv_get surfaced another record");
+    assert_eq!(
+        record.key, canonical,
+        "the stored key is the canonical form, and reads surface it as stored"
+    );
+
+    // Prefix matching is over canonical stored keys, so the raw caller key
+    // works as a prefix of its own record.
+    let listed = graph.kv_list(None, Some(key), 16).await.expect("kv_list");
+    assert!(
+        listed.iter().any(|r| r.key == canonical),
+        "kv_list under the raw-key prefix must reach the rewritten record, got {listed:?}"
+    );
+
+    // Delete already routed through the canonicalizing shim; the fix must not
+    // break that half of the symmetry.
+    assert!(
+        graph.kv_delete(None, key).await.expect("kv_delete"),
+        "kv_delete must find the rewritten key"
+    );
+    assert!(
+        graph
+            .kv_get(None, key)
+            .await
+            .expect("kv_get after delete")
+            .is_none(),
+        "the record must be gone after kv_delete reported true"
+    );
+}
+
+/// The same symmetry holds for namespaced KV rows: namespace and key are both
+/// canonicalized on write, so both must be canonicalized on read.
+#[tokio::test(flavor = "multi_thread")]
+async fn namespaced_kv_reads_apply_the_write_path_canonicalization() {
+    use tinymemory_api::provider::MemoryProvider;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let graph = provider.as_graph().expect("the full provider serves Graph");
+
+    // A namespace the canonicalizer rewrites, guarded like the key leg — a
+    // no-op namespace would prove only key symmetry under a namespace.
+    let ns = "ssn-123-45-6789";
+    assert_ne!(
+        tinymemory_core::store::safety::canonical_identifier(ns),
+        ns,
+        "the fixture namespace must be one the canonicalizer rewrites"
+    );
+    let key = "cliente-RFC-VECJ880326XK4";
+    let value = serde_json::json!("rewritten");
+    graph
+        .kv_put(Some(ns), key, value.clone())
+        .await
+        .expect("kv_put");
+
+    let record = graph
+        .kv_get(Some(ns), key)
+        .await
+        .expect("kv_get")
+        .expect("a namespaced put must be readable back under the same raw key");
+    assert_eq!(record.value, value);
+    assert!(
+        graph.kv_delete(Some(ns), key).await.expect("kv_delete"),
+        "namespaced kv_delete must stay symmetric with kv_put"
+    );
+}

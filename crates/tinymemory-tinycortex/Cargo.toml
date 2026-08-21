@@ -22,14 +22,16 @@ tinymemory-api = { path = "../tinymemory-api" }
 # `Memory` traits.
 tinycortex = { version = "0.1", default-features = false }
 # The optional capability families lifted here in issue #18 §C3 delegate to
-# `tinymemory-core` on a blocking thread — that is where the summary tree,
-# chunk store, entities, graph and diff ledger actually live. Depending on it
+# `tinymemory-core` — that is where the summary tree, chunk store, entities,
+# graph and diff ledger actually live. The synchronous-SQL families run on a
+# blocking thread; the KV/graph accessors go through the client shim inline. Depending on it
 # makes this adapter heavier than the mandatory-only version it replaces; §D
 # feature-gates that weight once §A3 has removed the direct engine call sites
 # core still has.
 tinymemory-core = { path = "../tinymemory-core" }
-# `spawn_blocking`: every family method runs synchronous engine work off the
-# async executor rather than blocking it.
+# `spawn_blocking`: the families that run synchronous engine work (profile,
+# episodic, goals — and, via `tinymemory-core`, the mandatory Memory methods)
+# hop off the async executor rather than blocking it.
 tokio = { version = "1", features = ["rt"] }
 # Timestamps on ingest and diff records.
 chrono = { version = "0.4", features = ["serde"] }
