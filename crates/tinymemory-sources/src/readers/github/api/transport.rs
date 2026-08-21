@@ -2,6 +2,12 @@
 
 use super::super::GH_CLI_TIMEOUT;
 
+#[cfg(not(test))]
+#[path = "transport_override.rs"]
+mod response_override;
+#[cfg(test)]
+use super::transport_test_support as response_override;
+
 /// Run `gh <args>` and return stdout as UTF-8.
 async fn gh_json(args: &[&str]) -> Result<String, String> {
     let output = tokio::time::timeout(
@@ -48,6 +54,9 @@ async fn api_get(path: &str) -> Result<String, String> {
 
 /// Try `gh api` first, fall back to unauthenticated REST API.
 pub(crate) async fn fetch_github(api_path: &str, use_gh: bool) -> Result<String, String> {
+    if let Some(response) = response_override::take_response(api_path) {
+        return response;
+    }
     if use_gh {
         match gh_json(&["api", api_path]).await {
             Ok(s) => return Ok(s),

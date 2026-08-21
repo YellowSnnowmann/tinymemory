@@ -17,16 +17,15 @@ use crate::types::{ContentType, SourceContent, SourceItem};
 use super::parse_iso_ts;
 use super::types::GhCommit;
 
-#[cfg(not(test))]
 #[path = "api/transport.rs"]
 mod selected_transport;
 #[cfg(test)]
 #[path = "api/transport_test.rs"]
-mod selected_transport;
+mod transport_test_support;
 
 pub(super) use selected_transport::fetch_github;
 #[cfg(test)]
-pub(super) use selected_transport::with_test_responses;
+pub(super) use transport_test_support::with_test_responses;
 
 /// GitHub REST API maximum page size (`per_page`).
 pub(super) const GH_PAGE_SIZE: u32 = 100;

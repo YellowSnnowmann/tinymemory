@@ -19,14 +19,16 @@ where
         .await
 }
 
-/// Return the next deterministic response and fail closed when exhausted.
-pub(crate) async fn fetch_github(api_path: &str, _use_gh: bool) -> Result<String, String> {
+/// Return the next deterministic response, or no override outside its scope.
+pub(crate) fn take_response(api_path: &str) -> Option<Result<String, String>> {
     TEST_RESPONSES
-        .try_with(|responses| responses.borrow_mut().pop_front())
-        .map_err(|_| format!("no deterministic GitHub transport installed for {api_path}"))?
-        .unwrap_or_else(|| {
-            Err(format!(
-                "no deterministic GitHub response queued for {api_path}"
-            ))
+        .try_with(|responses| {
+            Some(responses.borrow_mut().pop_front().unwrap_or_else(|| {
+                Err(format!(
+                    "no deterministic GitHub response queued for {api_path}"
+                ))
+            }))
         })
+        .ok()
+        .flatten()
 }
