@@ -426,6 +426,12 @@ async fn people_profile_and_episodic_lifecycles_are_real_and_typed() {
             .id,
         resolved.id
     );
+    let named = people
+        .resolve_handle(&PersonHandle::DisplayName("Ada Lovelace".into()), true)
+        .await
+        .expect("resolve display name")
+        .expect("named person created");
+    assert!(named.created);
     assert!(matches!(
         people
             .record_interaction(&PersonInteraction {
@@ -456,7 +462,7 @@ async fn people_profile_and_episodic_lifecycles_are_real_and_typed() {
         1
     );
     let people_list = people.list_people(Some(10)).await.expect("list people");
-    assert_eq!(people_list.len(), 1);
+    assert_eq!(people_list.len(), 2);
     assert_eq!(people_list[0].person.id, resolved.id);
     assert_eq!(
         people
@@ -501,10 +507,26 @@ async fn people_profile_and_episodic_lifecycles_are_real_and_typed() {
         .expect("get facet")
         .expect("facet present");
     assert_eq!(facet.value, "concise");
-    assert_eq!(profile.list_active_facets().await.expect("active").len(), 1);
+    let mut complete_facet = facet.clone();
+    complete_facet.facet_id = "facet-complete".into();
+    complete_facet.key = "style/complete".into();
+    profile
+        .upsert_facet(&complete_facet)
+        .await
+        .expect("upsert complete facet");
+    assert_eq!(
+        profile
+            .get_facet("style/complete")
+            .await
+            .expect("get complete facet")
+            .expect("complete facet present")
+            .facet_id,
+        "facet-complete"
+    );
+    assert_eq!(profile.list_active_facets().await.expect("active").len(), 2);
     assert_eq!(
         profile.list_all_facets().await.expect("all facets").len(),
-        1
+        2
     );
     assert_eq!(
         profile
@@ -512,7 +534,7 @@ async fn people_profile_and_episodic_lifecycles_are_real_and_typed() {
             .await
             .expect("facets by type")
             .len(),
-        1
+        2
     );
     assert!(
         !profile
@@ -536,6 +558,10 @@ async fn people_profile_and_episodic_lifecycles_are_real_and_typed() {
         .delete_facet("style/verbosity")
         .await
         .expect("delete facet"));
+    assert!(profile
+        .delete_facet_by_id("facet-complete")
+        .await
+        .expect("delete complete facet"));
     profile
         .upsert_provider_facet(
             "facet-low",
@@ -675,6 +701,25 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
         .expect("successful deterministic ingest");
     assert!(outcome.written > 0, "ingest must persist a chunk");
     assert!(!outcome.ids.is_empty(), "ingest must identify its chunks");
+    let chat = ingest
+        .ingest_chat(vec![IngestItem {
+            namespace: Some("chat".into()),
+            source: DataSource::Conversation,
+            source_id: "chat-session".into(),
+            owner: "owner".into(),
+            source_ref: None,
+            content: "A deterministic chat message about TinyMemory.".into(),
+            mime: Some("text/plain".into()),
+            timestamp: Some(
+                chrono::DateTime::from_timestamp(1_700_000_100, 0).expect("fixed timestamp"),
+            ),
+            tags: vec!["chat".into()],
+            taint: MemoryTaint::Internal,
+            path_scope: None,
+        }])
+        .await
+        .expect("successful chat ingest");
+    assert!(chat.written > 0);
 
     let chunks = provider.as_chunks().expect("Chunks");
     let stored = chunks
@@ -725,6 +770,24 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
             .await,
         Err(MemoryError::Invalid(_))
     ));
+    let fast = retrieval
+        .fast_retrieve(
+            "TinyMemory adapter",
+            FastRetrieveQuery {
+                limit: 5,
+                max_hops: 2,
+                time_window_days: Some(30),
+            },
+            None,
+        )
+        .await
+        .expect("fast retrieval");
+    assert!(fast.hits.len() <= 5);
+    let entities = retrieval
+        .search_entities("Alice", None, 5)
+        .await
+        .expect("unrestricted entity search");
+    assert!(entities.len() <= 5);
     assert!(matches!(
         retrieval
             .search_entities("x", Some(&["not-a-kind".to_string()]), 5)

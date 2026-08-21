@@ -22,7 +22,10 @@ use tinymemory_api::host::MemoryHostConfig;
 use tinymemory_api::provider::types::IngestItem;
 use tinymemory_api::types::MemoryTaint;
 
-use super::{advertised_capabilities, validate_ingest_item, EngineRuntimeConfig};
+use super::{
+    advertised_capabilities, facet_type_to_engine, handle_to_contract, handle_to_engine,
+    parse_person_id, scope_to_engine, validate_ingest_item, EngineRuntimeConfig,
+};
 
 fn ingest_item(content: &str, mime: Option<&str>, taint: MemoryTaint) -> IngestItem {
     IngestItem {
@@ -135,6 +138,28 @@ fn ingest_rejects_empty_binary_and_non_default_taint() {
 async fn runtime_config_routes_models_and_round_trips_source_configuration() {
     let mut config = runtime_config();
     assert_eq!(
+        config.workspace_dir(),
+        &std::path::PathBuf::from("/workspace")
+    );
+    assert_eq!(
+        config.config_path(),
+        &std::path::PathBuf::from("/workspace/config.toml")
+    );
+    assert_eq!(
+        config.memory_tree_content_root(),
+        std::path::PathBuf::from("/workspace/memory_tree/content")
+    );
+    let _ = config.memory();
+    let _ = config.memory_tree();
+    let _ = config.scheduler_gate();
+    let _ = config.local_ai();
+    assert!(config.cloud_providers().is_empty());
+    assert_eq!(
+        config.embeddings_provider(),
+        Some("ollama: nomic-embed-text")
+    );
+    assert_eq!(config.memory_provider(), Some("ollama: qwen3"));
+    assert_eq!(
         config.workload_local_model("embeddings").as_deref(),
         Some("nomic-embed-text")
     );
@@ -146,6 +171,18 @@ async fn runtime_config_routes_models_and_round_trips_source_configuration() {
     assert_eq!(config.default_model(), Some("host/model"));
     assert_eq!(config.default_temperature(), 0.3);
     assert_eq!(config.output_language(), Some("en"));
+    assert!(config.as_any().is::<EngineRuntimeConfig>());
+    assert!(config.to_arc().as_any().is::<EngineRuntimeConfig>());
+    assert_eq!(config.api_url(), None);
+    assert!(config.effective_backend_api_url().is_empty());
+    assert_eq!(config.session_token().expect("session token"), None);
+    assert_eq!(config.memory_sync_interval_secs(), Some(0));
+    assert!(config.onboarding_completed());
+    assert!(!config.secrets_encrypt());
+    assert!(!config.composio().is_direct());
+    assert_eq!(config.composio_source_caps_migration_version(), 0);
+    config.set_composio_source_caps_migration_version(2);
+    config.apply_env_overrides();
     assert_eq!(
         config.memory_sources_json().expect("source JSON"),
         serde_json::json!([{"id": "source-1"}])
@@ -162,4 +199,52 @@ async fn runtime_config_routes_models_and_round_trips_source_configuration() {
         .save()
         .await
         .expect("the in-memory adapter save is a no-op");
+}
+
+#[test]
+fn people_profile_and_scope_boundary_conversions_are_total_and_fail_closed() {
+    use tinymemory_api::provider::types::SourceScope;
+    use tinymemory_api::provider::{FacetType, PersonHandle};
+    use tinymemory_core::store::namespace_store::profile::FacetType as EngineFacet;
+
+    for handle in [
+        PersonHandle::IMessage("+15551234567".into()),
+        PersonHandle::Email("person@example.com".into()),
+        PersonHandle::DisplayName("Ada Lovelace".into()),
+    ] {
+        assert_eq!(handle_to_contract(handle_to_engine(&handle)), handle);
+    }
+
+    let id = uuid::Uuid::nil().to_string();
+    assert_eq!(parse_person_id(&id).expect("valid id").0.to_string(), id);
+    assert!(matches!(
+        parse_person_id("not-a-person-id"),
+        Err(MemoryError::Invalid(_))
+    ));
+
+    assert_eq!(
+        [
+            FacetType::Preference,
+            FacetType::Workflow,
+            FacetType::Role,
+            FacetType::Personality,
+            FacetType::Context,
+        ]
+        .map(facet_type_to_engine),
+        [
+            EngineFacet::Preference,
+            EngineFacet::Workflow,
+            EngineFacet::Role,
+            EngineFacet::Personality,
+            EngineFacet::Context,
+        ]
+    );
+
+    assert!(scope_to_engine(None).is_none());
+    assert_eq!(
+        scope_to_engine(Some(&SourceScope::new(["source-a", "source-b"])))
+            .expect("scoped set")
+            .len(),
+        2
+    );
 }

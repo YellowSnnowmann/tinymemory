@@ -323,6 +323,64 @@ async fn malformed_remote_endpoints_are_rejected_at_connection_time() {
 }
 
 #[tokio::test]
+async fn empty_remote_connection_fields_are_treated_as_missing() {
+    let cases = [
+        (
+            json!({ "engine": "supermemory", "endpoint": "", "api_key": "" }),
+            "supermemory requires an endpoint URL",
+        ),
+        (
+            json!({ "engine": "mem0", "endpoint": "", "api_key": "" }),
+            "mem0 requires an endpoint URL",
+        ),
+        (
+            json!({ "engine": "cognee", "endpoint": "", "api_key": "" }),
+            "cognee requires an endpoint URL",
+        ),
+    ];
+
+    for (request, message) in cases {
+        let response = test_app(empty_state())
+            .oneshot(json_request(Method::POST, "/api/connect", request))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(json_body(response).await["error"], message);
+    }
+}
+
+#[tokio::test]
+async fn omitted_deployment_uses_each_remote_engines_documented_default() {
+    let cases = [
+        (
+            json!({
+                "engine": "mem0",
+                "endpoint": tinymemory_remote::MEM0_API_ENDPOINT,
+                "api_key": "test-key"
+            }),
+            "mem0",
+        ),
+        (
+            json!({ "engine": "mem0", "endpoint": "http://127.0.0.1:9" }),
+            "mem0",
+        ),
+        (
+            json!({ "engine": "cognee", "endpoint": "http://127.0.0.1:9" }),
+            "cognee",
+        ),
+    ];
+
+    for (request, driver_id) in cases {
+        let response = test_app(empty_state())
+            .oneshot(json_request(Method::POST, "/api/connect", request))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(json_body(response).await["driver_id"], driver_id);
+    }
+}
+
+#[tokio::test]
 async fn every_remote_connection_mode_builds_without_contacting_its_endpoint() {
     let cases = [
         (
@@ -541,6 +599,23 @@ async fn minimal_upload_uses_safe_external_defaults_and_ignores_unknown_parts() 
 struct RecordingProvider {
     document: Mutex<Option<NamespaceDocumentInput>>,
     relations: Vec<GraphRelationRecord>,
+    failure: Mutex<Option<MemoryError>>,
+}
+
+impl RecordingProvider {
+    fn failing(error: MemoryError) -> Self {
+        Self {
+            failure: Mutex::new(Some(error)),
+            ..Self::default()
+        }
+    }
+
+    fn take_failure(&self) -> Result<(), MemoryError> {
+        match self.failure.lock().unwrap().take() {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
 }
 
 #[async_trait]
@@ -554,14 +629,17 @@ impl MemoryCore for RecordingProvider {
         _session_id: Option<&str>,
         _taint: MemoryTaint,
     ) -> Result<(), MemoryError> {
+        self.take_failure()?;
         Ok(())
     }
 
     async fn get(&self, _namespace: &str, _key: &str) -> Result<Option<MemoryEntry>, MemoryError> {
+        self.take_failure()?;
         Ok(None)
     }
 
     async fn forget(&self, _namespace: &str, _key: &str) -> Result<bool, MemoryError> {
+        self.take_failure()?;
         Ok(false)
     }
 
@@ -571,10 +649,12 @@ impl MemoryCore for RecordingProvider {
         _category: Option<&MemoryCategory>,
         _session_id: Option<&str>,
     ) -> Result<Vec<MemoryEntry>, MemoryError> {
+        self.take_failure()?;
         Ok(Vec::new())
     }
 
     async fn namespaces(&self) -> Result<Vec<NamespaceSummary>, MemoryError> {
+        self.take_failure()?;
         Ok(Vec::new())
     }
 }
@@ -588,6 +668,7 @@ impl MemoryRecall for RecordingProvider {
         _opts: &OwnedRecallOpts,
         _scope: Option<&SourceScope>,
     ) -> Result<Vec<MemoryEntry>, MemoryError> {
+        self.take_failure()?;
         Ok(Vec::new())
     }
 }
@@ -599,6 +680,7 @@ impl MemoryPortability for RecordingProvider {
         _cursor: Option<&str>,
         _limit: usize,
     ) -> Result<ExportPage, MemoryError> {
+        self.take_failure()?;
         Ok(ExportPage::default())
     }
 
@@ -613,6 +695,7 @@ impl MemoryPortability for RecordingProvider {
 #[async_trait]
 impl MemoryDocuments for RecordingProvider {
     async fn put_document(&self, input: NamespaceDocumentInput) -> Result<String, MemoryError> {
+        self.take_failure()?;
         *self.document.lock().unwrap() = Some(input);
         Ok("document-1".to_string())
     }
@@ -699,6 +782,7 @@ impl MemoryGraph for RecordingProvider {
         predicate: Option<&str>,
         limit: usize,
     ) -> Result<Vec<GraphRelationRecord>, MemoryError> {
+        self.take_failure()?;
         Ok(self
             .relations
             .iter()
@@ -1022,6 +1106,214 @@ async fn url_ingest_maps_size_and_blocked_redirect_failures_without_network() {
         assert_eq!(body["error"], message);
         assert!(!body.to_string().contains("top-secret"));
     }
+}
+
+fn state_with_provider(provider: RecordingProvider) -> SharedState {
+    Arc::new(AppState {
+        active: RwLock::new(Some(Arc::new(provider))),
+        url_fetcher: guarded_url_fetcher(),
+    })
+}
+
+#[tokio::test]
+async fn empty_categories_use_defaults_in_every_core_request_shape() {
+    let cases = [
+        (
+            Method::POST,
+            "/api/store",
+            json!({
+                "namespace": "notes",
+                "key": "one",
+                "content": "body",
+                "category": ""
+            }),
+        ),
+        (
+            Method::POST,
+            "/api/recall",
+            json!({ "query": "body", "category": "" }),
+        ),
+    ];
+
+    for (method, uri, request) in cases {
+        let response = test_app(state_with_provider(RecordingProvider::default()))
+            .oneshot(json_request(method, uri, request))
+            .await
+            .unwrap();
+        assert!(response.status().is_success(), "{uri}");
+    }
+
+    let listed = test_app(state_with_provider(RecordingProvider::default()))
+        .oneshot(
+            Request::get("/api/list?category=")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(listed.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn arbitrary_document_categories_are_preserved_as_custom_values() {
+    let upload_provider = Arc::new(RecordingProvider::default());
+    let upload_state = empty_state();
+    *upload_state.active.write().await = Some(upload_provider.clone());
+    let uploaded = test_app(upload_state)
+        .oneshot(multipart_request(&[
+            ("namespace", None, None, b"documents"),
+            ("category", None, None, b"research-notes"),
+            ("file", Some("note.txt"), Some("text/plain"), b"body"),
+        ]))
+        .await
+        .unwrap();
+    assert_eq!(uploaded.status(), StatusCode::OK);
+    assert_eq!(
+        upload_provider
+            .document
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .category,
+        "custom:research-notes"
+    );
+
+    let ingest_provider = Arc::new(RecordingProvider::default());
+    let ingested = test_app(state_with_document(ingest_provider.clone()))
+        .oneshot(json_request(
+            Method::POST,
+            "/api/ingest/url",
+            json!({
+                "url": "https://example.com/note.txt",
+                "namespace": "documents",
+                "category": "web-clipping"
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(ingested.status(), StatusCode::OK);
+    assert_eq!(
+        ingest_provider
+            .document
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .category,
+        "custom:web-clipping"
+    );
+}
+
+#[tokio::test]
+async fn provider_failures_are_propagated_by_every_core_handler() {
+    let requests = [
+        json_request(
+            Method::POST,
+            "/api/store",
+            json!({ "namespace": "n", "key": "k", "content": "body" }),
+        ),
+        Request::get("/api/get?namespace=n&key=k")
+            .body(Body::empty())
+            .unwrap(),
+        json_request(
+            Method::POST,
+            "/api/forget",
+            json!({ "namespace": "n", "key": "k" }),
+        ),
+        Request::get("/api/list").body(Body::empty()).unwrap(),
+        Request::get("/api/namespaces").body(Body::empty()).unwrap(),
+        json_request(Method::POST, "/api/recall", json!({ "query": "body" })),
+        Request::get("/api/export").body(Body::empty()).unwrap(),
+    ];
+
+    for request in requests {
+        let response = test_app(state_with_provider(RecordingProvider::failing(
+            MemoryError::Backend("driver rejected request".into()),
+        )))
+        .oneshot(request)
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+        assert_eq!(
+            json_body(response).await["error"],
+            "backend failed: driver rejected request"
+        );
+    }
+}
+
+#[tokio::test]
+async fn provider_failures_are_propagated_by_graph_and_document_handlers() {
+    let graph_requests = [
+        Request::get("/api/graph/relations")
+            .body(Body::empty())
+            .unwrap(),
+        json_request(Method::POST, "/api/graph/view", json!({ "seeds": ["ada"] })),
+    ];
+    for request in graph_requests {
+        let response = test_app(state_with_provider(RecordingProvider::failing(
+            MemoryError::Unavailable("graph offline".into()),
+        )))
+        .oneshot(request)
+        .await
+        .unwrap();
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            json_body(response).await["error"],
+            "unavailable: graph offline"
+        );
+    }
+
+    let upload = test_app(state_with_provider(RecordingProvider::failing(
+        MemoryError::BudgetExceeded("document quota reached".into()),
+    )))
+    .oneshot(multipart_request(&[
+        ("namespace", None, None, b"documents"),
+        ("file", Some("note.txt"), Some("text/plain"), b"body"),
+    ]))
+    .await
+    .unwrap();
+    assert_eq!(upload.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    assert_eq!(
+        json_body(upload).await["error"],
+        "budget exceeded: document quota reached"
+    );
+}
+
+#[tokio::test]
+async fn url_fetch_backend_details_and_query_secrets_are_never_reflected() {
+    let response = test_app(state_with_fetch_error(MemoryError::Backend(
+        "GET https://example.com/note?token=top-secret failed".into(),
+    )))
+    .oneshot(json_request(
+        Method::POST,
+        "/api/ingest/url",
+        json!({
+            "url": "https://example.com/note?token=top-secret",
+            "namespace": "documents"
+        }),
+    ))
+    .await
+    .unwrap();
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let body = json_body(response).await;
+    assert_eq!(body["error"], "URL fetch failed");
+    assert!(!body.to_string().contains("top-secret"));
+}
+
+#[tokio::test]
+async fn url_validation_rejects_password_only_credentials_and_accepts_https_ports() {
+    let Err(ApiError(status, message)) = validate_ingest_url("https://:secret@example.com/private")
+    else {
+        panic!("password-only URL credentials must be rejected");
+    };
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(message, "URL credentials are not allowed");
+
+    let Ok(url) = validate_ingest_url("HTTPS://example.com:8443/a/../note?q=one#section") else {
+        panic!("a credential-free HTTPS URL must be accepted");
+    };
+    assert_eq!(url, "https://example.com:8443/note?q=one#section");
 }
 
 #[test]
