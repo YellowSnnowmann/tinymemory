@@ -97,7 +97,10 @@ fn sanitize_text_redacts_oauth_url_style_params() {
 #[test]
 fn sanitize_text_redacts_multiline_private_key_blocks() {
     let key_kind = format!("{} PRIVATE KEY", "OPENSSH");
-    let input = format!("BEGIN\n{}\nEND", private_key_fixture(&key_kind, "line1\nline2"));
+    let input = format!(
+        "BEGIN\n{}\nEND",
+        private_key_fixture(&key_kind, "line1\nline2")
+    );
     let sanitized = sanitize_text(&input);
     assert!(!sanitized.value.contains(&key_kind));
     assert!(sanitized.value.contains(REDACTED_PRIVATE_KEY));
