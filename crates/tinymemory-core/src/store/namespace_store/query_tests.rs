@@ -1,6 +1,6 @@
 //! Tests for the `query` module — hybrid retrieval scoring.
 
-use super::{TemporalOperator, UnifiedMemory};
+use super::{RelationMatch, RetrievalPlan, StoredChunk, TemporalOperator, UnifiedMemory};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -220,6 +220,130 @@ fn context_formatting_covers_every_memory_kind_and_relation_labels() {
         UnifiedMemory::format_context_text(&[hit(MemoryItemKind::Document, "doc", "body")], None),
         "doc: body"
     );
+}
+
+#[test]
+fn relation_planning_traversal_temporal_filters_and_scoring_cover_graph_branches() {
+    let tmp = TempDir::new().unwrap();
+    let memory = UnifiedMemory::new(tmp.path(), Arc::new(NoopEmbedding), None).unwrap();
+    let make_relation =
+        |subject: &str, predicate: &str, object: &str, order: i64, document: &str, chunk: &str| {
+            GraphRelationRecord {
+                namespace: Some("team".into()),
+                subject: subject.into(),
+                predicate: predicate.into(),
+                object: object.into(),
+                attrs: json!({}),
+                updated_at: order as f64,
+                evidence_count: order.max(1) as u32,
+                order_index: Some(order),
+                document_ids: vec![document.into()],
+                chunk_ids: vec![chunk.into()],
+            }
+        };
+    let relations = vec![
+        make_relation("Alice", "OWNS", "Atlas", 10, "doc-atlas", "chunk-atlas"),
+        make_relation(
+            "Atlas",
+            "LOCATED_IN",
+            "Paris",
+            20,
+            "doc-atlas",
+            "chunk-paris",
+        ),
+        make_relation("Alice", "OWNS", "Beta", 30, "doc-beta", "chunk-beta"),
+    ];
+    let all_plan = RetrievalPlan {
+        query_terms: vec!["alice".into(), "owns".into()],
+        seed_entities: vec!["Alice".into()],
+        relation_types: vec!["OWNS".into()],
+        chains: vec![vec!["OWNS".into(), "LOCATED_IN".into()]],
+        temporal: TemporalOperator::All,
+        anchor_entity: None,
+    };
+
+    let direct = memory.direct_relation_matches(&all_plan, &relations);
+    assert_eq!(direct.len(), 2);
+    let chained = memory.multi_hop_relation_matches(&all_plan, &relations);
+    assert_eq!(chained.len(), 3);
+    let collected = memory.collect_relation_matches(&all_plan, &relations);
+    assert_eq!(
+        collected.len(),
+        3,
+        "direct and chain duplicates are removed"
+    );
+
+    let mut no_chain = all_plan.clone();
+    no_chain.chains.clear();
+    assert!(memory
+        .multi_hop_relation_matches(&no_chain, &relations)
+        .is_empty());
+    no_chain.chains = vec![vec!["MISSING".into()]];
+    assert!(memory
+        .multi_hop_relation_matches(&no_chain, &relations)
+        .is_empty());
+
+    let relation_matches = relations
+        .iter()
+        .cloned()
+        .map(|relation| RelationMatch { relation, hop: 1 })
+        .collect::<Vec<_>>();
+    let mut earliest = all_plan.clone();
+    earliest.temporal = TemporalOperator::Earliest;
+    let earliest_matches =
+        UnifiedMemory::apply_temporal_filter(&earliest, None, relation_matches.clone());
+    assert_eq!(earliest_matches.len(), 2);
+    assert!(earliest_matches
+        .iter()
+        .any(|item| item.relation.order_index == Some(10)));
+
+    let mut before = all_plan.clone();
+    before.temporal = TemporalOperator::Before;
+    before.anchor_entity = Some("Paris".into());
+    assert_eq!(memory.resolve_anchor_order(&before, &relations), Some(20));
+    let before_matches =
+        UnifiedMemory::apply_temporal_filter(&before, Some(20), relation_matches.clone());
+    assert_eq!(before_matches.len(), 1);
+    assert_eq!(before_matches[0].relation.object, "Atlas");
+
+    let mut after = before.clone();
+    after.temporal = TemporalOperator::After;
+    assert_eq!(memory.resolve_anchor_order(&after, &relations), Some(20));
+    let after_matches = UnifiedMemory::apply_temporal_filter(&after, Some(20), relation_matches);
+    assert_eq!(after_matches.len(), 1);
+    assert_eq!(after_matches[0].relation.object, "Beta");
+
+    let chunks = vec![StoredChunk {
+        document_id: "doc-atlas".into(),
+        chunk_id: "chunk-paris".into(),
+        embedding: None,
+        model_signature: None,
+    }];
+    let graph_scores = memory.compute_graph_document_scores(&[], &chunks, &collected);
+    assert!(graph_scores.get("doc-atlas").copied().unwrap_or_default() > 0.7);
+    assert!(graph_scores.contains_key("doc-beta"));
+    let supporting = memory.supporting_relations_for_document(
+        "doc-atlas",
+        "Alice owns Atlas in Paris",
+        &collected,
+    );
+    assert_eq!(supporting.len(), 3);
+    assert!(
+        memory.document_recall_graph_signal("doc-atlas", "Alice owns Atlas", &relations,) > 0.0
+    );
+
+    assert_eq!(memory.keyword_score_for_text(&[], &["anything"]), 0.0);
+    assert_eq!(memory.keyword_score_for_text(&["alice".into()], &[""]), 0.0);
+    assert_eq!(
+        memory.keyword_score_for_text(&["alice".into(), "missing".into()], &["Alice owns Atlas"]),
+        0.5
+    );
+    let composed = UnifiedMemory::compose_query_score(0.5, 0.25, 1.0);
+    assert_eq!(composed.graph_relevance, 1.0);
+    assert!(composed.final_score > 0.6);
+    let fallback = UnifiedMemory::compose_fallback_query_score(0.5, 0.25);
+    assert_eq!(fallback.graph_relevance, 0.0);
+    assert!(fallback.final_score > 0.0);
 }
 
 #[tokio::test]
