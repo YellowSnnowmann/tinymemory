@@ -215,6 +215,11 @@ impl Namespace {
     /// fails validation.
     pub fn new(section: MemorySection, scope: impl Into<String>) -> Result<Self, MemoryError> {
         let scope = scope.into();
+        // A `Custom` section that spells a known prefix must not become a
+        // second representation of the same rendered name: `from_prefix` maps
+        // it onto the matching known variant so `PartialEq`/`Hash` agree with
+        // `Namespace::parse` on the same string.
+        let section = MemorySection::from_prefix(section.as_str());
         if !is_valid_section(section.as_str()) {
             return Err(MemoryError::Invalid(format!(
                 "namespace section {:?} must be lowercase letters, digits, '-' or '_'",
