@@ -558,4 +558,26 @@ mod tests {
         assert_eq!(apply(""), None);
         assert_eq!(apply("   "), None);
     }
+
+    #[test]
+    fn memory_config_debug_redacts_agentmemory_secret() {
+        let cfg = MemoryConfig {
+            agentmemory_secret: Some("bearer-secret".into()),
+            ..Default::default()
+        };
+        let debug = format!("{cfg:?}");
+        assert!(!debug.contains("bearer-secret"));
+        assert!(debug.contains("<redacted>"));
+    }
+
+    #[test]
+    fn memory_config_deserialization_supplies_operational_defaults() {
+        let cfg: MemoryConfig = toml::from_str("").unwrap();
+        assert_eq!(cfg.backend, "sqlite");
+        assert!(cfg.auto_save);
+        assert_eq!(cfg.embedding_provider, "cloud");
+        assert_eq!(cfg.embedding_model, "embedding-v1");
+        assert_eq!(cfg.embedding_dimensions, 1024);
+        assert_eq!(cfg.embedding_rate_limit_per_min, 60);
+    }
 }

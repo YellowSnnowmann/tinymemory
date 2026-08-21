@@ -186,10 +186,8 @@ jobs:
   # `DriverRegistry` admission is a static policy table rather than a function
   # of which adapters were compiled in.
   #
-  # Two of §E2's nine configurations name features the facade does not have.
-  # `--features contacts` belongs to `tinymemory-core` and is covered by the
-  # powerset job above. `--features sync-composio` names a feature that exists
-  # nowhere in the workspace: the Composio sync is unconditional in
+  # `--features sync-composio` names a feature that exists nowhere in the
+  # workspace: the Composio sync is unconditional in
   # `tinymemory-core`, so there is nothing to select and nothing to isolate.
   # Recorded here rather than quietly dropped, because a missing row in a
   # matrix reads as covered.
@@ -208,6 +206,18 @@ jobs:
             features: --features tinycortex
           - name: tinycortex and memory-git
             features: --features tinycortex,memory-git
+          - name: memory-git implication
+            features: --no-default-features --features memory-git
+          - name: all engines aggregate
+            features: --no-default-features --features engines
+          - name: sources network implication
+            features: --no-default-features --features sources-network
+          - name: documents network implication
+            features: --no-default-features --features documents-network
+          - name: contacts implication
+            features: --no-default-features --features contacts
+          - name: full aggregate
+            features: --no-default-features --features full
           - name: mem0
             features: --features mem0
           - name: supermemory

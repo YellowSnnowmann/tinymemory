@@ -60,7 +60,9 @@ fn escape_component(value: &str) -> String {
 
 #[cfg(test)]
 mod embedding_signature_tests {
-    use super::format_embedding_signature;
+    use async_trait::async_trait;
+
+    use super::{format_embedding_signature, EmbeddingProvider, NoopEmbedding};
 
     /// The signature format is a **persisted key**, pinned to literal values.
     ///
@@ -125,6 +127,41 @@ mod embedding_signature_tests {
                 "{provider}/{model} must not be rewritten — it is a persisted key"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn noop_returns_one_empty_vector_per_input() {
+        let provider = NoopEmbedding;
+        assert_eq!(provider.signature(), "provider=none;model=none;dims=0");
+        assert_eq!(
+            provider.embed(&["a", "b"]).await.unwrap(),
+            vec![Vec::<f32>::new(), Vec::<f32>::new()]
+        );
+        assert!(provider.embed_one("a").await.unwrap().is_empty());
+    }
+
+    struct EmptyProvider;
+
+    #[async_trait]
+    impl EmbeddingProvider for EmptyProvider {
+        fn name(&self) -> &str {
+            "empty"
+        }
+        fn model_id(&self) -> &str {
+            "empty"
+        }
+        fn dimensions(&self) -> usize {
+            0
+        }
+        async fn embed(&self, _: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[tokio::test]
+    async fn embed_one_rejects_a_provider_that_returns_no_vectors() {
+        let error = EmptyProvider.embed_one("text").await.unwrap_err();
+        assert!(error.to_string().contains("Empty embedding result"));
     }
 }
 

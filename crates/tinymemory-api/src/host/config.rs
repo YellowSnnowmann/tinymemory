@@ -50,7 +50,7 @@ pub const COMPOSIO_MODE_DIRECT: &str = "direct";
 /// `ComposioConfig` carries fields (toolkit triage opt-outs, the enabled flag)
 /// that have nothing to do with memory, and because borrowing it would pin the
 /// host's type into this contract.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Default, PartialEq, Eq)]
 pub struct ComposioMode {
     /// [`COMPOSIO_MODE_BACKEND`] or [`COMPOSIO_MODE_DIRECT`].
     pub mode: String,
@@ -61,6 +61,17 @@ pub struct ComposioMode {
     pub api_key: Option<String>,
     /// Whether the LLM triage turn is switched off for all triggers.
     pub triage_disabled: bool,
+}
+
+impl std::fmt::Debug for ComposioMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ComposioMode")
+            .field("mode", &self.mode)
+            .field("entity_id", &self.entity_id)
+            .field("api_key", &self.api_key.as_ref().map(|_| "<redacted>"))
+            .field("triage_disabled", &self.triage_disabled)
+            .finish()
+    }
 }
 
 impl ComposioMode {
@@ -272,4 +283,34 @@ pub trait MemoryHostConfig: Send + Sync + std::fmt::Debug {
     /// # Errors
     /// Propagates the host's own write/serialize failure.
     async fn save(&self) -> anyhow::Result<()>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn composio_direct_mode_is_ascii_case_insensitive() {
+        assert!(ComposioMode {
+            mode: "DIRECT".into(),
+            ..Default::default()
+        }
+        .is_direct());
+        assert!(!ComposioMode {
+            mode: COMPOSIO_MODE_BACKEND.into(),
+            ..Default::default()
+        }
+        .is_direct());
+    }
+
+    #[test]
+    fn composio_debug_output_redacts_the_api_key() {
+        let mode = ComposioMode {
+            api_key: Some("composio-secret".into()),
+            ..Default::default()
+        };
+        let debug = format!("{mode:?}");
+        assert!(!debug.contains("composio-secret"));
+        assert!(debug.contains("<redacted>"));
+    }
 }
