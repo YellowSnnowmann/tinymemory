@@ -221,3 +221,362 @@ async fn namespaced_kv_reads_apply_the_write_path_canonicalization() {
         "namespaced kv_delete must stay symmetric with kv_put"
     );
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn document_source_graph_goals_and_tool_rule_state_transitions_round_trip() {
+    use tinymemory_api::goals::{GoalItem, GoalsDoc};
+    use tinymemory_api::provider::types::SourceItem;
+    use tinymemory_api::provider::MemoryProvider;
+    use tinymemory_api::tool_memory::{ToolMemoryPriority, ToolMemoryRule, ToolMemorySource};
+    use tinymemory_api::types::{GraphRelationRecord, MemoryTaint, NamespaceDocumentInput};
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+
+    let documents = provider.as_documents().expect("Documents");
+    let input = NamespaceDocumentInput {
+        namespace: "project".into(),
+        key: "brief".into(),
+        title: "Brief".into(),
+        content: "Ship the deterministic test suite".into(),
+        source_type: "upload".into(),
+        priority: "high".into(),
+        tags: vec!["tests".into()],
+        metadata: serde_json::json!({"ticket": 81}),
+        category: "core".into(),
+        session_id: Some("session-1".into()),
+        document_id: None,
+        taint: MemoryTaint::ExternalSync,
+    };
+    let document_id = documents.put_document(input).await.expect("put document");
+    let document = documents
+        .get_document("project", "brief")
+        .await
+        .expect("get document")
+        .expect("document present");
+    assert_eq!(document.document_id, document_id);
+    assert_eq!(document.metadata, serde_json::json!({"ticket": 81}));
+    assert_eq!(document.taint, MemoryTaint::ExternalSync);
+    assert!(documents
+        .list_namespaces()
+        .await
+        .expect("namespaces")
+        .contains(&"project".into()));
+    documents
+        .delete_document("project", &document_id)
+        .await
+        .expect("delete document");
+    assert!(documents
+        .get_document("project", "brief")
+        .await
+        .expect("get after delete")
+        .is_none());
+
+    let source = provider.as_sources().expect("SourceSink");
+    let outcome = source
+        .accept_source_items(
+            "drive-1",
+            "drive",
+            vec![SourceItem {
+                item_id: "item-1".into(),
+                title: "Source item".into(),
+                content: "source body".into(),
+                mime: Some("text/plain".into()),
+                url: Some("https://example.invalid/item-1".into()),
+                updated_at_ms: Some(42),
+                tags: vec!["source".into()],
+            }],
+            MemoryTaint::ExternalSync,
+        )
+        .await
+        .expect("accept source item");
+    assert_eq!(outcome.written, 1);
+    assert_eq!(
+        source
+            .forget_source("drive-1")
+            .await
+            .expect("forget source"),
+        1
+    );
+
+    let graph = provider.as_graph().expect("Graph");
+    let relation = GraphRelationRecord {
+        namespace: Some("project".into()),
+        subject: "suite".into(),
+        predicate: "covers".into(),
+        object: "adapter".into(),
+        attrs: serde_json::json!({"confidence": 1.0}),
+        updated_at: 0.0,
+        evidence_count: 0,
+        order_index: None,
+        document_ids: Vec::new(),
+        chunk_ids: Vec::new(),
+    };
+    graph.put_relation(relation).await.expect("put relation");
+    let relations = graph
+        .relations(Some("project"), Some("suite"), Some("covers"), 1)
+        .await
+        .expect("relations");
+    assert_eq!(relations.len(), 1);
+    assert_eq!(relations[0].object, "ADAPTER");
+    assert!(graph
+        .relations(Some("project"), None, None, 0)
+        .await
+        .expect("zero limit")
+        .is_empty());
+
+    let goals = provider.as_goals().expect("Goals");
+    let expected_goals = GoalsDoc {
+        items: vec![GoalItem::new("g1", "finish coverage")],
+    };
+    goals
+        .set_goals(expected_goals.clone())
+        .await
+        .expect("set goals");
+    assert_eq!(goals.goals().await.expect("goals"), expected_goals);
+
+    let tools = provider.as_tool_memory().expect("ToolMemory");
+    let rule = ToolMemoryRule::new(
+        "shell",
+        "never delete broad paths",
+        ToolMemoryPriority::Critical,
+        ToolMemorySource::UserExplicit,
+    );
+    let rule_id = rule.id.clone();
+    tools.put_tool_rule(rule).await.expect("put tool rule");
+    let rules = tools.tool_rules("shell").await.expect("tool rules");
+    assert_eq!(rules.len(), 1);
+    assert_eq!(rules[0].id, rule_id);
+    assert!(tools
+        .delete_tool_rule("shell", &rule_id)
+        .await
+        .expect("delete rule"));
+    assert!(!tools
+        .delete_tool_rule("shell", &rule_id)
+        .await
+        .expect("delete missing rule"));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn people_profile_and_episodic_lifecycles_are_real_and_typed() {
+    use tinymemory_api::error::MemoryError;
+    use tinymemory_api::provider::{
+        EpisodicTurn, FacetType, MemoryProvider, PersonHandle, PersonInteraction, UserState,
+    };
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+
+    let people = provider.as_people().expect("People");
+    let handle = PersonHandle::Email(" Friend@Example.com ".into());
+    assert!(people
+        .resolve_handle(&handle, false)
+        .await
+        .expect("resolve absent")
+        .is_none());
+    let resolved = people
+        .resolve_handle(&handle, true)
+        .await
+        .expect("resolve/create")
+        .expect("person created");
+    assert!(resolved.created);
+    assert_eq!(
+        people
+            .resolve_handle(&PersonHandle::Email("friend@example.com".into()), false)
+            .await
+            .expect("resolve canonical")
+            .expect("same person")
+            .id,
+        resolved.id
+    );
+    assert!(matches!(
+        people
+            .record_interaction(&PersonInteraction {
+                person_id: resolved.id.clone(),
+                at: "not-a-time".into(),
+                is_outbound: true,
+                length: 10,
+            })
+            .await,
+        Err(MemoryError::Invalid(_))
+    ));
+    people
+        .record_interaction(&PersonInteraction {
+            person_id: resolved.id.clone(),
+            at: "2026-08-21T00:00:00Z".into(),
+            is_outbound: true,
+            length: 120,
+        })
+        .await
+        .expect("record interaction");
+    assert_eq!(
+        people
+            .score_person(&resolved.id)
+            .await
+            .expect("score")
+            .expect("person score")
+            .interaction_count,
+        1
+    );
+
+    let profile = provider.as_profile().expect("Profile");
+    profile
+        .upsert_provider_facet(
+            "facet-1",
+            FacetType::Preference,
+            "style/verbosity",
+            "concise",
+            0.9,
+            Some("segment-1"),
+            100.0,
+        )
+        .await
+        .expect("upsert facet");
+    let facet = profile
+        .get_facet("style/verbosity")
+        .await
+        .expect("get facet")
+        .expect("facet present");
+    assert_eq!(facet.value, "concise");
+    assert!(profile
+        .set_facet_user_state("style/verbosity", UserState::Pinned)
+        .await
+        .expect("pin facet"));
+    assert_eq!(
+        profile
+            .get_facet("style/verbosity")
+            .await
+            .expect("get pinned facet")
+            .expect("facet present")
+            .user_state,
+        UserState::Pinned
+    );
+    assert!(profile
+        .delete_facet("style/verbosity")
+        .await
+        .expect("delete facet"));
+
+    let episodic = provider.as_episodic().expect("Episodic");
+    let turn_id = episodic
+        .insert_turn(&EpisodicTurn {
+            id: None,
+            session_id: "session-1".into(),
+            timestamp: 10.0,
+            role: "user".into(),
+            content: "remember the test".into(),
+            lesson: Some("verify state".into()),
+            tool_calls_json: None,
+            cost_microdollars: -1,
+        })
+        .await
+        .expect("insert turn");
+    let turns = episodic
+        .session_turns("session-1")
+        .await
+        .expect("session turns");
+    assert_eq!(turns.len(), 1);
+    assert_eq!(turns[0].id, Some(turn_id));
+    assert_eq!(turns[0].cost_microdollars, 0, "negative costs clamp");
+    episodic
+        .create_segment("seg-1", "session-1", "global", turn_id, 10.0, 10.0)
+        .await
+        .expect("create segment");
+    episodic
+        .append_turn("seg-1", turn_id, 10.0, 11.0)
+        .await
+        .expect("append turn");
+    let segment = episodic
+        .open_segment("session-1")
+        .await
+        .expect("open segment")
+        .expect("segment present");
+    assert_eq!(segment.turn_count, 2);
+    episodic
+        .close_segment("seg-1", 13.0)
+        .await
+        .expect("close segment");
+    episodic
+        .set_segment_summary("seg-1", "one remembered turn", 14.0)
+        .await
+        .expect("set summary");
+    assert!(episodic
+        .open_segment("session-1")
+        .await
+        .expect("open segment after close")
+        .is_none());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn ingest_chunk_and_retrieval_validation_paths_are_exercised_without_network() {
+    use tinymemory_api::chunks::DataSource;
+    use tinymemory_api::error::MemoryError;
+    use tinymemory_api::provider::types::IngestItem;
+    use tinymemory_api::provider::{ChunkQuery, FastRetrieveQuery, MemoryProvider};
+    use tinymemory_api::types::MemoryTaint;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let ingest = provider.as_ingest().expect("Ingest");
+    let invalid = IngestItem {
+        namespace: None,
+        source: DataSource::Upload,
+        source_id: "upload-1".into(),
+        owner: "owner".into(),
+        source_ref: None,
+        content: "binary".into(),
+        mime: Some("application/pdf".into()),
+        timestamp: None,
+        tags: Vec::new(),
+        taint: MemoryTaint::Internal,
+        path_scope: None,
+    };
+    assert!(matches!(
+        ingest.ingest_document(invalid).await,
+        Err(MemoryError::Invalid(_))
+    ));
+    assert!(ingest
+        .ingest_chat(Vec::new())
+        .await
+        .expect("empty chat")
+        .ids
+        .is_empty());
+
+    let chunks = provider.as_chunks().expect("Chunks");
+    assert!(chunks
+        .list_chunks(&ChunkQuery::default(), None)
+        .await
+        .expect("empty chunk list")
+        .is_empty());
+    assert!(chunks
+        .get_chunk("missing")
+        .await
+        .expect("missing chunk")
+        .is_none());
+    assert!(!chunks
+        .storage_kinds()
+        .await
+        .expect("storage kinds")
+        .is_empty());
+
+    let retrieval = provider.as_retrieval().expect("Retrieval");
+    assert!(matches!(
+        retrieval
+            .fast_retrieve(
+                "   ",
+                FastRetrieveQuery {
+                    limit: 5,
+                    max_hops: 1,
+                    time_window_days: None,
+                },
+                None,
+            )
+            .await,
+        Err(MemoryError::Invalid(_))
+    ));
+    assert!(matches!(
+        retrieval
+            .search_entities("x", Some(&["not-a-kind".to_string()]), 5)
+            .await,
+        Err(MemoryError::Invalid(_))
+    ));
+}

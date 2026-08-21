@@ -467,15 +467,12 @@ async fn document_formats(State(state): State<SharedState>) -> Result<Response, 
         .into_iter()
         .map(|format| format.to_string())
         .collect();
-    let route = match state.active.read().await.as_ref() {
-        Some(provider) => Some(
-            DocumentIntake::new(provider.as_ref(), &chain)
-                .route()
-                .as_str()
-                .to_string(),
-        ),
-        None => None,
-    };
+    let route = state.active.read().await.as_ref().map(|provider| {
+        DocumentIntake::new(provider.as_ref(), &chain)
+            .route()
+            .as_str()
+            .to_string()
+    });
     Ok(Json(serde_json::json!({ "formats": formats, "route": route })).into_response())
 }
 
@@ -634,15 +631,7 @@ fn intake_request(
     Ok(request)
 }
 
-#[tokio::main]
-async fn main() {
-    let state: SharedState = Arc::new(AppState {
-        active: RwLock::new(None),
-    });
-
-    let web_dir = std::env::var("TINYMEMORY_TESTING_UI_WEB")
-        .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/web").to_string());
-
+fn app(state: SharedState, web_dir: impl Into<String>) -> Router {
     let api = Router::new()
         .route("/connect", post(connect))
         .route("/disconnect", post(disconnect))
@@ -661,9 +650,21 @@ async fn main() {
         .route("/ingest/url", post(ingest_url))
         .with_state(state);
 
-    let app = Router::new()
+    Router::new()
         .nest("/api", api)
-        .fallback_service(ServeDir::new(web_dir));
+        .fallback_service(ServeDir::new(web_dir.into()))
+}
+
+#[tokio::main]
+async fn main() {
+    let state: SharedState = Arc::new(AppState {
+        active: RwLock::new(None),
+    });
+
+    let web_dir = std::env::var("TINYMEMORY_TESTING_UI_WEB")
+        .unwrap_or_else(|_| concat!(env!("CARGO_MANIFEST_DIR"), "/web").to_string());
+
+    let app = app(state, web_dir);
 
     let addr: SocketAddr = std::env::var("TINYMEMORY_TESTING_UI_ADDR")
         .ok()
@@ -676,3 +677,6 @@ async fn main() {
         .expect("bind testing UI address");
     axum::serve(listener, app).await.expect("serve testing UI");
 }
+
+#[cfg(test)]
+mod test;

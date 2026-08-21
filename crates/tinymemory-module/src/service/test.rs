@@ -18,6 +18,23 @@ use tinymemory_api::wire;
 
 use super::into_bus_error;
 
+fn test_provider() -> std::sync::Arc<dyn tinymemory_api::provider::MemoryProvider> {
+    std::sync::Arc::new(tinymemory_tinycortex::provider(std::sync::Arc::new(
+        tinycortex::memory::store::InMemoryMemoryStore::new(),
+    )))
+}
+
+async fn test_connection() -> tinybus::Connection {
+    use tinybus::transport::memory::MemoryBus;
+
+    let bus = MemoryBus::new();
+    let broker = tinybus::broker::Broker::new();
+    let _broker_task = broker.spawn(bus.clone());
+    tinybus::Connection::connect(bus.connect().await.expect("test transport"))
+        .await
+        .expect("test connection")
+}
+
 /// The name and message a mapped error carries on the wire.
 fn mapped(error: &MemoryError) -> (String, String) {
     match into_bus_error(error) {
@@ -222,6 +239,105 @@ fn the_per_entry_overhead_is_counted_so_many_tiny_entries_still_trip_it() {
         super::ensure_response_fits(&entries, "List").is_err(),
         "entries with no content must still be counted"
     );
+}
+
+#[test]
+fn store_object_paths_accept_only_one_safe_identifier_component() {
+    let valid = ["profile-1", "profile_one", "A9", &"x".repeat(128)];
+    for subdir in valid {
+        assert_eq!(
+            super::object_path_for_subdir(subdir),
+            Some(format!("{}/stores/{subdir}", super::OBJECT_PATH))
+        );
+    }
+
+    for invalid in [
+        "",
+        ".",
+        "..",
+        "../escape",
+        "nested/store",
+        "nested\\store",
+        "profile.name",
+        "profile name",
+        "pröfile",
+        &"x".repeat(129),
+    ] {
+        assert!(
+            super::object_path_for_subdir(invalid).is_none(),
+            "unsafe subdirectory was admitted: {invalid:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_leaf_store_cannot_recursively_open_another_store() {
+    let service = super::MemoryService::new(test_provider());
+    let error = service
+        .open_store("child".to_string())
+        .await
+        .expect_err("leaf stores must not recursively open stores");
+    let tinybus::Error::MethodFailed { name, message } = error else {
+        panic!("expected MethodFailed");
+    };
+    assert_eq!(name, tinymemory_api::wire::INVALID);
+    assert!(message.contains("root"));
+}
+
+#[tokio::test]
+async fn repeated_and_concurrent_opens_reuse_the_registered_object_path() {
+    use std::sync::Arc;
+
+    let connection = test_connection().await;
+    let opener = Arc::new(super::StoreOpener::new(
+        connection,
+        crate::config::ModuleConfig::default(),
+    ));
+    let expected = format!("{}/stores/profile-1", super::OBJECT_PATH);
+    opener
+        .served
+        .lock()
+        .await
+        .insert("profile-1".to_string(), expected.clone());
+    let service = Arc::new(super::MemoryService::root(test_provider(), opener));
+
+    let mut tasks = Vec::new();
+    for _ in 0..16 {
+        let service = Arc::clone(&service);
+        tasks.push(tokio::spawn(async move {
+            service.open_store("profile-1".to_string()).await
+        }));
+    }
+    for task in tasks {
+        assert_eq!(task.await.expect("join").expect("reused store"), expected);
+    }
+}
+
+#[tokio::test]
+async fn the_open_store_cap_is_enforced_before_allocating_another_store() {
+    use std::sync::Arc;
+
+    let opener = Arc::new(super::StoreOpener::new(
+        test_connection().await,
+        crate::config::ModuleConfig::default(),
+    ));
+    {
+        let mut served = opener.served.lock().await;
+        for index in 0..super::MAX_OPEN_STORES {
+            served.insert(format!("profile-{index}"), format!("/served/{index}"));
+        }
+    }
+    let service = super::MemoryService::root(test_provider(), Arc::clone(&opener));
+    let error = service
+        .open_store("one-more".to_string())
+        .await
+        .expect_err("the store cap must be enforced");
+    let tinybus::Error::MethodFailed { name, message } = error else {
+        panic!("expected MethodFailed");
+    };
+    assert_eq!(name, tinymemory_api::wire::INVALID);
+    assert!(message.contains(&super::MAX_OPEN_STORES.to_string()));
+    assert_eq!(opener.served.lock().await.len(), super::MAX_OPEN_STORES);
 }
 
 /// Every method the service implements must also be declared in the manifest.

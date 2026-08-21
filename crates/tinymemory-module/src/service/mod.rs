@@ -256,7 +256,6 @@ impl MemoryService {
     /// The bound driver's stable identifier.
     #[allow(
         clippy::unused_async,
-        clippy::unused_async_trait_impl,
         reason = "tinybus::interface requires every method to be `async fn`"
     )]
     async fn driver_id(&self) -> BusResult<String> {
@@ -270,7 +269,6 @@ impl MemoryService {
     /// change afterwards.
     #[allow(
         clippy::unused_async,
-        clippy::unused_async_trait_impl,
         reason = "tinybus::interface requires every method to be `async fn`"
     )]
     async fn capabilities(&self) -> BusResult<Capabilities> {
