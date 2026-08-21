@@ -7,8 +7,12 @@ use std::sync::Arc;
 use serde_json::json;
 use tempfile::TempDir;
 
-use crate::store::NamespaceDocumentInput;
+use crate::store::{
+    GraphRelationRecord, MemoryItemKind, NamespaceDocumentInput, NamespaceMemoryHit,
+    RetrievalScoreBreakdown,
+};
 use crate::Memory;
+use crate::MemoryTaint;
 use tinymemory_api::host::NoopEmbedding;
 
 #[test]
@@ -124,6 +128,97 @@ fn score_normalization_and_priority_signals_are_bounded() {
     assert_eq!(
         UnifiedMemory::entity_label_with_type("Atlas", &json!({}), "object"),
         "Atlas"
+    );
+}
+
+fn relation() -> GraphRelationRecord {
+    GraphRelationRecord {
+        namespace: Some("team".into()),
+        subject: "Alice".into(),
+        predicate: "OWNS".into(),
+        object: "Atlas".into(),
+        attrs: json!({"entity_types": {"subject": "person", "object": "project"}}),
+        updated_at: 42.8,
+        evidence_count: 2,
+        order_index: None,
+        document_ids: vec!["doc-1".into()],
+        chunk_ids: vec!["chunk-1".into()],
+    }
+}
+
+fn hit(kind: MemoryItemKind, key: &str, content: &str) -> NamespaceMemoryHit {
+    NamespaceMemoryHit {
+        id: format!("id:{key}"),
+        kind,
+        namespace: "team".into(),
+        key: key.into(),
+        title: None,
+        content: content.into(),
+        category: "core".into(),
+        source_type: None,
+        updated_at: 1.0,
+        score: 0.5,
+        score_breakdown: RetrievalScoreBreakdown::default(),
+        document_id: None,
+        chunk_id: None,
+        supporting_relations: Vec::new(),
+        taint: MemoryTaint::Internal,
+    }
+}
+
+#[test]
+fn relation_helpers_match_terms_identity_and_order_fallback() {
+    let mut relation = relation();
+    assert!(UnifiedMemory::relation_matches_terms(
+        &relation,
+        &["atlas".into()]
+    ));
+    assert!(!UnifiedMemory::relation_matches_terms(
+        &relation,
+        &["missing".into()]
+    ));
+    assert_eq!(
+        UnifiedMemory::relation_identity(&relation),
+        "team|Alice|OWNS|Atlas"
+    );
+    assert_eq!(UnifiedMemory::relation_order_value(&relation), 43);
+    relation.order_index = Some(7);
+    relation.namespace = None;
+    assert_eq!(UnifiedMemory::relation_order_value(&relation), 7);
+    assert_eq!(
+        UnifiedMemory::relation_identity(&relation),
+        "global|Alice|OWNS|Atlas"
+    );
+}
+
+#[test]
+fn context_formatting_covers_every_memory_kind_and_relation_labels() {
+    let mut document = hit(MemoryItemKind::Document, "doc", " document body ");
+    document.title = Some("Decision".into());
+    document.supporting_relations = vec![relation()];
+    let hits = vec![
+        document,
+        hit(MemoryItemKind::Kv, "preference", " dark "),
+        hit(MemoryItemKind::Episodic, "session", " remembered "),
+        hit(MemoryItemKind::Event, "decision", " selected "),
+    ];
+    let rendered = UnifiedMemory::format_context_text(&hits, Some("what changed"));
+    for expected in [
+        "Query: what changed",
+        "Decision: document body",
+        "[kv:preference] dark",
+        "[episodic:session] remembered",
+        "[event:decision] selected",
+        "Alice (person) -[OWNS]-> Atlas (project)",
+    ] {
+        assert!(
+            rendered.contains(expected),
+            "missing {expected}: {rendered}"
+        );
+    }
+    assert_eq!(
+        UnifiedMemory::format_context_text(&[hit(MemoryItemKind::Document, "doc", "body")], None),
+        "doc: body"
     );
 }
 
