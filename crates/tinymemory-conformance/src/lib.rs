@@ -44,10 +44,10 @@ pub mod suite;
 pub use reference::{InMemoryProvider, REFERENCE_DRIVER_ID};
 pub use suite::{
     assert_awkward_content_round_trips, assert_capability_audit, assert_export_cursor_terminates,
-    assert_export_import_round_trip, assert_forget_is_idempotent, assert_list_filters_narrow,
-    assert_namespaces_are_isolated, assert_provider, assert_recall_respects_limit_and_namespace,
-    assert_store_get_round_trip, assert_taint_is_preserved,
-    assert_upsert_replaces_rather_than_duplicates,
+    assert_export_import_round_trip, assert_forget_is_idempotent, assert_kv_round_trip,
+    assert_list_filters_narrow, assert_namespaces_are_isolated, assert_provider,
+    assert_recall_respects_limit_and_namespace, assert_store_get_round_trip,
+    assert_taint_is_preserved, assert_upsert_replaces_rather_than_duplicates,
 };
 pub use suite::{
     // Exported alongside the assertions because a caller standing up its own

@@ -56,6 +56,9 @@ use tinymemory_api::types::{
     NamespaceDocumentInput, NamespaceMemoryHit, NamespaceRetrievalContext, NamespaceSummary,
     StoredMemoryDocument,
 };
+// The KV read paths must address rows by the same canonical form the
+// write-path shim stores them under — see `MemoryGraph::kv_get` below.
+use tinymemory_core::store::safety::canonical_identifier;
 use tinymemory_core::store::{MemoryClient, MemoryClientRef};
 
 /// The concrete, credential-free host configuration available inside a module.
@@ -538,6 +541,12 @@ impl MemoryGraph for TinycortexProvider {
         namespace: Option<&str>,
         key: &str,
     ) -> Result<Option<MemoryKvRecord>, MemoryError> {
+        // The write path stores `canonical_identifier(key)` (the KV shim in
+        // `tinymemory-core` canonicalizes on the way in), so the stored keys
+        // are canonical and a raw-key comparison misses every rewritten key.
+        // `kv_delete` already goes through the shim; this lookup has to apply
+        // the same transform or put→get misses while put→delete works.
+        let key = canonical_identifier(key);
         let record = self
             .client
             .kv_records(namespace)
@@ -579,7 +588,13 @@ impl MemoryGraph for TinycortexProvider {
             .await
             .map_err(|error| Self::other("kv_list", error))?;
         if let Some(prefix) = prefix {
-            records.retain(|record| record.key.starts_with(prefix));
+            // Stored keys are canonical (see `kv_get`), so prefix matching is
+            // over canonical stored keys: the caller's prefix is canonicalized
+            // before comparing. A prefix that truncates a PII pattern
+            // mid-match stays raw (the transform is a no-op on it) and will
+            // not reach a rewritten key — the placeholder is the stored form.
+            let prefix = canonical_identifier(prefix);
+            records.retain(|record| record.key.starts_with(&prefix));
         }
         records.truncate(limit);
         Self::cross(&records, "convert key/value records")
