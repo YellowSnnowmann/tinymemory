@@ -69,9 +69,18 @@ async fn configured_role_and_model_cross_the_chat_bridge() {
     };
     let bridge = BusChatHost::new(bus_with_chat_host().await, &config);
     let runtime = tinymemory_tinycortex::engine::EngineRuntimeConfig::from(&config);
+    let rendered = format!("{bridge:?}");
+    assert!(rendered.contains("BusChatHost"), "{rendered}");
+    assert!(rendered.contains("host-router"), "{rendered}");
+    assert!(rendered.contains("host-model"), "{rendered}");
+    assert!(!rendered.contains("Connection"), "{rendered}");
     assert_eq!(
         bridge.provider_for_role("summarizer", &runtime),
         "host-router"
+    );
+    assert_eq!(
+        bridge.summarizer_available(&runtime),
+        (true, "served by the TinyMemory host callback")
     );
     let (model, model_id) = bridge
         .create_chat_model_with_model_id("summarizer", &runtime, 0.2)
@@ -85,6 +94,7 @@ async fn configured_role_and_model_cross_the_chat_bridge() {
         .invoke(&(), ModelRequest::new(vec![Message::user("summarize")]))
         .await
         .expect("chat call");
+    assert!(bridge.usage_from_response(&response).is_none());
     assert!(matches!(
         response.message.content.as_slice(),
         [ContentBlock::Text(text)] if text == "summarizer:1"
