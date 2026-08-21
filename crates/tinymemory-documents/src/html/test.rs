@@ -237,3 +237,12 @@ fn a_missing_or_empty_title_is_none() {
     assert_eq!(extract_title("<html><body>no title</body></html>"), None);
     assert_eq!(extract_title("<title>   </title>"), None);
 }
+
+#[test]
+fn elements_whose_names_merely_start_with_a_raw_element_name_keep_their_text() {
+    // `<scripture>` and `<style-guide>` share a prefix with `script`/`style`
+    // but are not those elements; only `>`, `/`, or whitespace right after the
+    // name is a real tag-name boundary.
+    assert_eq!(to_markdown("<scripture>keep</scripture>"), "keep");
+    assert_eq!(to_markdown("<style-guide>keep</style-guide>"), "keep");
+}
