@@ -129,8 +129,13 @@ impl DocumentFormat {
             "text/plain" => Some(Self::PlainText),
             "text/html" | "application/xhtml+xml" => Some(Self::Html),
             "application/pdf" => Some(Self::Pdf),
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            | "application/msword" => Some(Self::Docx),
+            // Deliberately excludes `application/msword`: that MIME type
+            // names the legacy binary `.doc` format, not the Open XML `.docx`
+            // package this variant's converter targets. Claiming `Docx` for
+            // it would hand a bound DOCX extractor input it cannot read.
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document" => {
+                Some(Self::Docx)
+            }
             _ => None,
         }
     }
@@ -143,7 +148,9 @@ impl DocumentFormat {
             "txt" | "text" | "log" => Some(Self::PlainText),
             "html" | "htm" | "xhtml" => Some(Self::Html),
             "pdf" => Some(Self::Pdf),
-            "docx" | "doc" => Some(Self::Docx),
+            // `.doc` is the legacy binary Word format, not Open XML `.docx`;
+            // see the `application/msword` note in `from_mime`.
+            "docx" => Some(Self::Docx),
             _ => None,
         }
     }
