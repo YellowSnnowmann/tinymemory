@@ -49,6 +49,44 @@ async fn init_rebinds_client_when_workspace_changes() {
 }
 
 #[tokio::test]
+async fn switching_back_to_a_workspace_reuses_its_cached_client() {
+    crate::test_seams::init();
+    let slot = GlobalClientSlot::default();
+    let tmp = TempDir::new().unwrap();
+    let workspace_a = tmp.path().join("ws-a-cached");
+    let workspace_b = tmp.path().join("ws-b-cached");
+
+    let first_a = init_in_slot(&slot, workspace_a.clone()).unwrap();
+    let _b = init_in_slot(&slot, workspace_b).unwrap();
+    let second_a = init_in_slot(&slot, workspace_a).unwrap();
+
+    assert!(Arc::ptr_eq(&first_a, &second_a));
+    assert!(Arc::ptr_eq(&second_a, &client_from(&slot).unwrap()));
+}
+
+#[tokio::test]
+async fn workspace_scoped_clients_are_cached_without_global_rebinding() {
+    crate::test_seams::init();
+    let tmp = TempDir::new().unwrap();
+    let workspace = tmp.path().join("workspace-scoped");
+
+    let first = client_for_workspace(&workspace).unwrap();
+    let second = client_for_workspace(&workspace).unwrap();
+
+    assert!(Arc::ptr_eq(&first, &second));
+}
+
+#[tokio::test]
+async fn active_workspace_reports_an_explicit_global_binding() {
+    crate::test_seams::init();
+    let tmp = TempDir::new().unwrap();
+    let workspace = tmp.path().join("active-workspace");
+    init(workspace).unwrap();
+
+    assert!(active_workspace_dir().is_some());
+}
+
+#[tokio::test]
 async fn init_clears_existing_client_when_rebind_workspace_cannot_initialise() {
     crate::test_seams::init();
     let slot = GlobalClientSlot::default();
