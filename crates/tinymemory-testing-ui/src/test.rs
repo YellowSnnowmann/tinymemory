@@ -1,5 +1,6 @@
 //! HTTP and static UI contract tests for the local testing harness.
 
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -14,12 +15,12 @@ use tinymemory_api::error::MemoryError;
 use tinymemory_api::health::MemoryHealth;
 use tinymemory_api::provider::types::{ExportPage, ExportRecord, ImportOutcome, SourceScope};
 use tinymemory_api::provider::{
-    MemoryCore, MemoryDocuments, MemoryPortability, MemoryProvider, MemoryRecall,
+    MemoryCore, MemoryDocuments, MemoryGraph, MemoryPortability, MemoryProvider, MemoryRecall,
 };
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::types::{
-    MemoryCategory, MemoryEntry, MemoryTaint, NamespaceDocumentInput, NamespaceRetrievalContext,
-    NamespaceSummary, StoredMemoryDocument,
+    GraphRelationRecord, MemoryCategory, MemoryEntry, MemoryKvRecord, MemoryTaint,
+    NamespaceDocumentInput, NamespaceRetrievalContext, NamespaceSummary, StoredMemoryDocument,
 };
 
 use super::*;
@@ -27,6 +28,7 @@ use super::*;
 fn empty_state() -> SharedState {
     Arc::new(AppState {
         active: RwLock::new(None),
+        url_fetcher: guarded_url_fetcher(),
     })
 }
 
@@ -388,6 +390,7 @@ async fn document_upload_validates_required_parts_and_supported_formats() {
 #[derive(Default)]
 struct RecordingProvider {
     document: Mutex<Option<NamespaceDocumentInput>>,
+    relations: Vec<GraphRelationRecord>,
 }
 
 #[async_trait]
@@ -508,13 +511,70 @@ impl MemoryDocuments for RecordingProvider {
 }
 
 #[async_trait]
+impl MemoryGraph for RecordingProvider {
+    async fn kv_get(
+        &self,
+        _namespace: Option<&str>,
+        _key: &str,
+    ) -> Result<Option<MemoryKvRecord>, MemoryError> {
+        Ok(None)
+    }
+
+    async fn kv_put(
+        &self,
+        _namespace: Option<&str>,
+        _key: &str,
+        _value: Value,
+    ) -> Result<(), MemoryError> {
+        Ok(())
+    }
+
+    async fn kv_delete(&self, _namespace: Option<&str>, _key: &str) -> Result<bool, MemoryError> {
+        Ok(false)
+    }
+
+    async fn kv_list(
+        &self,
+        _namespace: Option<&str>,
+        _prefix: Option<&str>,
+        _limit: usize,
+    ) -> Result<Vec<MemoryKvRecord>, MemoryError> {
+        Ok(Vec::new())
+    }
+
+    async fn relations(
+        &self,
+        namespace: Option<&str>,
+        subject: Option<&str>,
+        predicate: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<GraphRelationRecord>, MemoryError> {
+        Ok(self
+            .relations
+            .iter()
+            .filter(|edge| namespace.is_none_or(|value| edge.namespace.as_deref() == Some(value)))
+            .filter(|edge| subject.is_none_or(|value| edge.subject == value))
+            .filter(|edge| predicate.is_none_or(|value| edge.predicate == value))
+            .take(limit)
+            .cloned()
+            .collect())
+    }
+
+    async fn put_relation(&self, _relation: GraphRelationRecord) -> Result<(), MemoryError> {
+        Ok(())
+    }
+}
+
+#[async_trait]
 impl MemoryProvider for RecordingProvider {
     fn driver_id(&self) -> &str {
         "recording"
     }
 
     fn capabilities(&self) -> Capabilities {
-        Capabilities::mandatory().with(Capability::Documents)
+        Capabilities::mandatory()
+            .with(Capability::Documents)
+            .with(Capability::Graph)
     }
 
     async fn health(&self) -> MemoryHealth {
@@ -522,6 +582,10 @@ impl MemoryProvider for RecordingProvider {
     }
 
     fn as_documents(&self) -> Option<&dyn MemoryDocuments> {
+        Some(self)
+    }
+
+    fn as_graph(&self) -> Option<&dyn MemoryGraph> {
         Some(self)
     }
 }
@@ -563,39 +627,141 @@ async fn text_upload_preserves_filename_tags_category_and_taint() {
     assert_eq!(document.metadata["source_format"], "plain_text");
 }
 
+#[tokio::test]
+async fn graph_view_http_route_returns_a_bounded_renderable_view() {
+    let provider = Arc::new(RecordingProvider {
+        relations: vec![GraphRelationRecord {
+            namespace: Some("people".to_string()),
+            subject: "ada".to_string(),
+            predicate: "wrote".to_string(),
+            object: "notes".to_string(),
+            attrs: Value::Null,
+            updated_at: 0.0,
+            evidence_count: 1,
+            order_index: None,
+            document_ids: Vec::new(),
+            chunk_ids: Vec::new(),
+        }],
+        ..RecordingProvider::default()
+    });
+    let state = empty_state();
+    *state.active.write().await = Some(provider);
+
+    let response = test_app(state)
+        .oneshot(json_request(
+            Method::POST,
+            "/api/graph/view",
+            json!({
+                "namespace": "people",
+                "seeds": ["ada"],
+                "depth": 1,
+                "max_nodes": 8,
+                "max_edges": 8
+            }),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = json_body(response).await;
+    assert_eq!(body["namespace"], "people");
+    assert_eq!(body["seeds"], json!(["ada"]));
+    assert_eq!(body["nodes"].as_array().unwrap().len(), 2);
+    assert_eq!(body["edges"][0]["predicate"], "wrote");
+}
+
+fn state_with_fetch_error(error: MemoryError) -> SharedState {
+    let error = Arc::new(Mutex::new(Some(error)));
+    Arc::new(AppState {
+        active: RwLock::new(Some(Arc::new(RecordingProvider::default()))),
+        url_fetcher: Arc::new(move |_| {
+            let error = error
+                .lock()
+                .unwrap()
+                .take()
+                .expect("test fetcher is called exactly once");
+            Box::pin(async move { Err(error) })
+        }),
+    })
+}
+
+#[tokio::test]
+async fn url_ingest_rejects_malformed_schemes_private_targets_and_credentials() {
+    let router = test_app(empty_state());
+    connect_local(&router).await;
+    let cases = [
+        ("not a URL", "invalid URL"),
+        ("file:///etc/passwd", "URL scheme must be http or https"),
+        (
+            "http://127.0.0.1/private",
+            "URL is not an allowed fetch target",
+        ),
+        (
+            "https://user:top-secret@example.com/private",
+            "URL credentials are not allowed",
+        ),
+    ];
+
+    for (url, message) in cases {
+        let response = router
+            .clone()
+            .oneshot(json_request(
+                Method::POST,
+                "/api/ingest/url",
+                json!({ "url": url, "namespace": "documents" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{url}");
+        let body = json_body(response).await;
+        assert_eq!(body["error"], message, "{url}");
+        assert!(!body.to_string().contains("top-secret"));
+    }
+}
+
+#[tokio::test]
+async fn url_ingest_maps_size_and_blocked_redirect_failures_without_network() {
+    let cases = [
+        (
+            MemoryError::BudgetExceeded("response body exceeds 33554432-byte limit".to_string()),
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "URL response exceeds document size limit",
+        ),
+        (
+            MemoryError::Invalid(
+                "redirect from https://example.com/?api_key=top-secret is not allowed".to_string(),
+            ),
+            StatusCode::BAD_REQUEST,
+            "URL is not an allowed fetch target",
+        ),
+    ];
+
+    for (error, status, message) in cases {
+        let response = test_app(state_with_fetch_error(error))
+            .oneshot(json_request(
+                Method::POST,
+                "/api/ingest/url",
+                json!({ "url": "https://example.com/document.txt", "namespace": "documents" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), status);
+        let body = json_body(response).await;
+        assert_eq!(body["error"], message);
+        assert!(!body.to_string().contains("top-secret"));
+    }
+}
+
 #[test]
-fn html_exposes_every_visible_operation_and_its_route_contract() {
-    let html = include_str!("../web/index.html");
-    for id in [
-        "connect-btn",
-        "disconnect-btn",
-        "store-btn",
-        "upload-btn",
-        "get-btn",
-        "recall-btn",
-        "list-btn",
-        "namespaces-btn",
-        "forget-btn",
-        "export-btn",
-        "graph-btn",
-    ] {
-        assert!(html.contains(&format!("id=\"{id}\"")), "missing #{id}");
-    }
-    for route in [
-        "/connect",
-        "/disconnect",
-        "/store",
-        "/get",
-        "/recall",
-        "/list",
-        "/namespaces",
-        "/forget",
-        "/export",
-        "/graph/relations",
-    ] {
-        assert!(
-            html.contains(&format!("\"{route}")),
-            "missing route {route}"
-        );
-    }
+fn browser_upload_workflow_contract_executes() {
+    let output = Command::new("node")
+        .args(["--test", "web/workflows.test.js"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("Node.js is required to test the browser workflow contract");
+    assert!(
+        output.status.success(),
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

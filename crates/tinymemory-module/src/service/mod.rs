@@ -194,6 +194,12 @@ pub(crate) struct StoreOpener {
     /// through and produce exactly the double-open it is here to prevent. That
     /// is why this is a `tokio::sync::Mutex`.
     served: Mutex<HashMap<String, String>>,
+    #[cfg(test)]
+    allocation_attempts: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    registration_attempts: std::sync::atomic::AtomicUsize,
+    #[cfg(test)]
+    registration_failures: std::sync::atomic::AtomicUsize,
 }
 
 impl MemoryService {
@@ -220,7 +226,19 @@ impl StoreOpener {
             connection,
             config,
             served: Mutex::new(HashMap::new()),
+            #[cfg(test)]
+            allocation_attempts: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(test)]
+            registration_attempts: std::sync::atomic::AtomicUsize::new(0),
+            #[cfg(test)]
+            registration_failures: std::sync::atomic::AtomicUsize::new(0),
         }
+    }
+
+    #[cfg(test)]
+    fn fail_registrations(&self, count: usize) {
+        self.registration_failures
+            .store(count, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
@@ -231,6 +249,8 @@ impl StoreOpener {
 /// this from a profile id, and an id that fails validation must produce a
 /// refusal, not a malformed path.
 fn object_path_for_subdir(memory_subdir: &str) -> Option<String> {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+
     if memory_subdir.is_empty()
         || memory_subdir.len() > 128
         || !memory_subdir
@@ -239,7 +259,21 @@ fn object_path_for_subdir(memory_subdir: &str) -> Option<String> {
     {
         return None;
     }
-    Some(format!("{OBJECT_PATH}/stores/{memory_subdir}"))
+
+    // TinyBus object-path elements accept ASCII alphanumerics and `_`, but a
+    // profile id commonly contains `-`. Escape both punctuation characters so
+    // the mapping remains injective (`a-b` cannot collide with `a_2db`).
+    let mut component = String::with_capacity(memory_subdir.len());
+    for byte in memory_subdir.bytes() {
+        if byte.is_ascii_alphanumeric() {
+            component.push(char::from(byte));
+        } else {
+            component.push('_');
+            component.push(char::from(HEX[usize::from(byte >> 4)]));
+            component.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+    }
+    Some(format!("{OBJECT_PATH}/stores/{component}"))
 }
 
 macro_rules! require_family {
@@ -365,6 +399,10 @@ impl MemoryService {
             });
         }
 
+        #[cfg(test)]
+        opener
+            .allocation_attempts
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let client = tinymemory_core::store::factories::create_memory_client_in_subdir(
             &opener.config.memory,
             None,
@@ -385,6 +423,26 @@ impl MemoryService {
         })?;
 
         let provider = crate::provider::provider(&opener.config, Arc::new(client));
+        #[cfg(test)]
+        {
+            opener
+                .registration_attempts
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if opener
+                .registration_failures
+                .fetch_update(
+                    std::sync::atomic::Ordering::SeqCst,
+                    std::sync::atomic::Ordering::SeqCst,
+                    |remaining| remaining.checked_sub(1),
+                )
+                .is_ok()
+            {
+                return Err(BusError::MethodFailed {
+                    name: "ai.tinyhumans.tinymemory.Error.Other".to_string(),
+                    message: "injected store registration failure".to_string(),
+                });
+            }
+        }
         opener
             .connection
             .serve_at(

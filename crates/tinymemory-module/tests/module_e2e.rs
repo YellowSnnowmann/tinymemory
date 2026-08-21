@@ -1,6 +1,6 @@
 //! The real thing: a `dlopen`ed `cdylib`, a real broker, a real store.
 //!
-//! # Why every test here is `#[ignore]`d
+//! # Why loader cases are marked `#[ignore]`
 //!
 //! Not flakiness — a runtime constraint that cannot be worked around inside a
 //! single test binary.
@@ -13,7 +13,9 @@
 //! it fires rather than failing cleanly.
 //!
 //! So a test that drives a real module must be the only one running in its
-//! process. Run them one at a time:
+//! process. [`all_loader_cases_run_in_isolated_processes`] is part of the normal
+//! suite and re-executes this test binary once per ignored loader case. To run a
+//! single case manually:
 //!
 //! ```sh
 //! # Both paths are the module's own workspace, not the repo root: this crate is
@@ -60,6 +62,49 @@ const DIMS: usize = 8;
 /// process is already a hard constraint here (see the module docs), so a global
 /// is not shared between tests in practice.
 static EMBED_CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
+const LOADER_CASES: &[&str] = &[
+    "the_module_advertises_the_complete_tinymemory_api",
+    "an_entry_stored_over_the_bus_is_read_back",
+    "a_missing_entry_is_none_and_not_an_error",
+    "recall_reaches_the_host_embedder",
+    "an_export_page_terminates_on_a_none_cursor",
+    "a_rejected_request_comes_back_under_its_contract_name",
+    "the_module_matches_the_in_process_engine_for_the_same_input",
+    "the_manifest_declares_every_method_the_module_serves",
+    "what_is_written_lands_in_the_workspace_it_was_given",
+    "every_declared_method_is_actually_routed",
+];
+
+#[test]
+fn all_loader_cases_run_in_isolated_processes() {
+    let test_binary = std::env::current_exe().expect("current test executable");
+    let artifact = std::env::var_os("TINYMEMORY_TEST_MODULE").unwrap_or_else(|| {
+        test_binary
+            .parent()
+            .expect("test executable lives under target/<profile>/deps")
+            .join(format!(
+                "{}tinymemory_module{}",
+                std::env::consts::DLL_PREFIX,
+                std::env::consts::DLL_SUFFIX
+            ))
+            .into_os_string()
+    });
+    assert!(
+        std::path::Path::new(&artifact).is_file(),
+        "module artifact does not exist at {}",
+        std::path::Path::new(&artifact).display()
+    );
+
+    for case in LOADER_CASES {
+        let status = std::process::Command::new(&test_binary)
+            .args(["--ignored", "--exact", case, "--nocapture"])
+            .env("TINYMEMORY_TEST_MODULE", &artifact)
+            .status()
+            .unwrap_or_else(|error| panic!("could not run {case}: {error}"));
+        assert!(status.success(), "isolated loader case {case} failed");
+    }
+}
 
 /// Stands in for the host's embedder so recall has something to work with.
 ///

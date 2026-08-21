@@ -30,9 +30,32 @@ async fn test_connection() -> tinybus::Connection {
     let bus = MemoryBus::new();
     let broker = tinybus::broker::Broker::new();
     let _broker_task = broker.spawn(bus.clone());
-    tinybus::Connection::connect(bus.connect().await.expect("test transport"))
+    let connection = tinybus::Connection::connect(bus.connect().await.expect("test transport"))
         .await
-        .expect("test connection")
+        .expect("test connection");
+    connection
+        .request_name(super::BUS_NAME)
+        .await
+        .expect("claim test service name");
+    connection
+}
+
+fn test_config(workspace: &std::path::Path) -> crate::config::ModuleConfig {
+    crate::config::ModuleConfig {
+        workspace_dir: workspace.to_path_buf(),
+        ..crate::config::ModuleConfig::default()
+    }
+}
+
+fn test_opener(
+    connection: tinybus::Connection,
+    workspace: &std::path::Path,
+) -> std::sync::Arc<super::StoreOpener> {
+    let config = test_config(workspace);
+    tinymemory_core::embedding_host::set_embedding_host(std::sync::Arc::new(
+        crate::embedding::BusEmbeddingHost::new(connection.clone(), &config),
+    ));
+    std::sync::Arc::new(super::StoreOpener::new(connection, config))
 }
 
 /// The name and message a mapped error carries on the wire.
@@ -243,13 +266,24 @@ fn the_per_entry_overhead_is_counted_so_many_tiny_entries_still_trip_it() {
 
 #[test]
 fn store_object_paths_accept_only_one_safe_identifier_component() {
-    let valid = ["profile-1", "profile_one", "A9", &"x".repeat(128)];
-    for subdir in valid {
+    let valid = [
+        ("profile-1", "profile_2d1".to_string()),
+        ("profile_one", "profile_5fone".to_string()),
+        ("A9", "A9".to_string()),
+        (&"x".repeat(128), "x".repeat(128)),
+    ];
+    for (subdir, component) in valid {
         assert_eq!(
             super::object_path_for_subdir(subdir),
-            Some(format!("{}/stores/{subdir}", super::OBJECT_PATH))
+            Some(format!("{}/stores/{component}", super::OBJECT_PATH))
         );
     }
+
+    assert_ne!(
+        super::object_path_for_subdir("a-b"),
+        super::object_path_for_subdir("a_2db"),
+        "escaped identifiers must not collide"
+    );
 
     for invalid in [
         "",
@@ -286,20 +320,17 @@ async fn a_leaf_store_cannot_recursively_open_another_store() {
 
 #[tokio::test]
 async fn repeated_and_concurrent_opens_reuse_the_registered_object_path() {
+    use std::sync::atomic::Ordering;
     use std::sync::Arc;
 
+    let workspace = tempfile::tempdir().expect("tempdir");
     let connection = test_connection().await;
-    let opener = Arc::new(super::StoreOpener::new(
-        connection,
-        crate::config::ModuleConfig::default(),
+    let opener = test_opener(connection.clone(), workspace.path());
+    let expected = format!("{}/stores/profile_2d1", super::OBJECT_PATH);
+    let service = Arc::new(super::MemoryService::root(
+        test_provider(),
+        Arc::clone(&opener),
     ));
-    let expected = format!("{}/stores/profile-1", super::OBJECT_PATH);
-    opener
-        .served
-        .lock()
-        .await
-        .insert("profile-1".to_string(), expected.clone());
-    let service = Arc::new(super::MemoryService::root(test_provider(), opener));
 
     let mut tasks = Vec::new();
     for _ in 0..16 {
@@ -311,23 +342,59 @@ async fn repeated_and_concurrent_opens_reuse_the_registered_object_path() {
     for task in tasks {
         assert_eq!(task.await.expect("join").expect("reused store"), expected);
     }
+    assert_eq!(opener.allocation_attempts.load(Ordering::SeqCst), 1);
+    assert_eq!(opener.registration_attempts.load(Ordering::SeqCst), 1);
+    assert_eq!(opener.served.lock().await.len(), 1);
+
+    let driver_id: String = connection
+        .proxy(super::BUS_NAME, &expected, super::BUS_NAME)
+        .expect("store proxy")
+        .call("DriverId", ())
+        .await
+        .expect("the newly registered object must answer");
+    assert_eq!(driver_id, "tinycortex");
 }
 
 #[tokio::test]
-async fn the_open_store_cap_is_enforced_before_allocating_another_store() {
+async fn a_failed_registration_is_retried_and_only_success_counts_toward_the_cap() {
+    use std::sync::atomic::Ordering;
     use std::sync::Arc;
 
-    let opener = Arc::new(super::StoreOpener::new(
-        test_connection().await,
-        crate::config::ModuleConfig::default(),
-    ));
-    {
-        let mut served = opener.served.lock().await;
-        for index in 0..super::MAX_OPEN_STORES {
-            served.insert(format!("profile-{index}"), format!("/served/{index}"));
-        }
-    }
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let opener = test_opener(test_connection().await, workspace.path());
+    opener.fail_registrations(1);
     let service = super::MemoryService::root(test_provider(), Arc::clone(&opener));
+    service
+        .open_store("retry".to_string())
+        .await
+        .expect_err("the first registration is injected to fail");
+    assert!(opener.served.lock().await.is_empty());
+
+    let path = service
+        .open_store("retry".to_string())
+        .await
+        .expect("the same subtree must be retried");
+    assert_eq!(path, format!("{}/stores/retry", super::OBJECT_PATH));
+    assert_eq!(opener.allocation_attempts.load(Ordering::SeqCst), 2);
+    assert_eq!(opener.registration_attempts.load(Ordering::SeqCst), 2);
+    assert_eq!(opener.served.lock().await.len(), 1);
+}
+
+#[tokio::test]
+async fn the_open_store_cap_is_reached_through_successful_opens() {
+    use std::sync::atomic::Ordering;
+    use std::sync::Arc;
+
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let opener = test_opener(test_connection().await, workspace.path());
+    let service = super::MemoryService::root(test_provider(), Arc::clone(&opener));
+
+    for index in 0..super::MAX_OPEN_STORES {
+        service
+            .open_store(format!("profile-{index}"))
+            .await
+            .unwrap_or_else(|error| panic!("successful open {index} failed: {error}"));
+    }
     let error = service
         .open_store("one-more".to_string())
         .await
@@ -338,6 +405,16 @@ async fn the_open_store_cap_is_enforced_before_allocating_another_store() {
     assert_eq!(name, tinymemory_api::wire::INVALID);
     assert!(message.contains(&super::MAX_OPEN_STORES.to_string()));
     assert_eq!(opener.served.lock().await.len(), super::MAX_OPEN_STORES);
+    assert_eq!(
+        opener.allocation_attempts.load(Ordering::SeqCst),
+        super::MAX_OPEN_STORES,
+        "the refused open must not allocate"
+    );
+    assert_eq!(
+        opener.registration_attempts.load(Ordering::SeqCst),
+        super::MAX_OPEN_STORES,
+        "the refused open must not register"
+    );
 }
 
 /// Every method the service implements must also be declared in the manifest.

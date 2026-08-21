@@ -79,12 +79,27 @@ impl tinymemory_api::host::EmbeddingHost for NoopEmbeddingHost {
 }
 
 fn provider_over(workspace: &std::path::Path) -> TinycortexProvider {
+    provider_over_sources(workspace, serde_json::Value::Null)
+}
+
+fn provider_over_sources(
+    workspace: &std::path::Path,
+    memory_sources: serde_json::Value,
+) -> TinycortexProvider {
     tinymemory_core::embedding_host::set_embedding_host(Arc::new(NoopEmbeddingHost));
     let client = Arc::new(
         tinymemory_core::store::MemoryClient::from_workspace_dir(workspace.to_path_buf())
             .expect("open the workspace store"),
     );
-    let config = EngineRuntimeConfig {
+    let config = provider_config(workspace, memory_sources);
+    TinycortexProvider::new("tinycortex".into(), config, client)
+}
+
+fn provider_config(
+    workspace: &std::path::Path,
+    memory_sources: serde_json::Value,
+) -> EngineRuntimeConfig {
+    EngineRuntimeConfig {
         workspace_dir: workspace.to_path_buf(),
         config_path: workspace.join("config.toml"),
         memory: Default::default(),
@@ -96,9 +111,8 @@ fn provider_over(workspace: &std::path::Path) -> TinycortexProvider {
         default_model: None,
         default_temperature: 0.2,
         output_language: None,
-        memory_sources: serde_json::Value::Null,
-    };
-    TinycortexProvider::new("tinycortex".into(), config, client)
+        memory_sources,
+    }
 }
 
 #[tokio::test(flavor = "multi_thread")]
@@ -507,7 +521,7 @@ async fn people_profile_and_episodic_lifecycles_are_real_and_typed() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn ingest_chunk_and_retrieval_validation_paths_are_exercised_without_network() {
+async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_network() {
     use tinymemory_api::chunks::DataSource;
     use tinymemory_api::error::MemoryError;
     use tinymemory_api::provider::types::IngestItem;
@@ -541,12 +555,45 @@ async fn ingest_chunk_and_retrieval_validation_paths_are_exercised_without_netwo
         .ids
         .is_empty());
 
+    let outcome = ingest
+        .ingest_document(IngestItem {
+            namespace: None,
+            source: DataSource::Upload,
+            source_id: "successful-upload".into(),
+            owner: "owner".into(),
+            source_ref: None,
+            content: "Alice maintains the TinyMemory adapter in Kuwait.".into(),
+            mime: Some("text/plain".into()),
+            timestamp: Some(
+                chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("fixed timestamp"),
+            ),
+            tags: vec!["coverage".into()],
+            taint: MemoryTaint::Internal,
+            path_scope: None,
+        })
+        .await
+        .expect("successful deterministic ingest");
+    assert!(outcome.written > 0, "ingest must persist a chunk");
+    assert!(!outcome.ids.is_empty(), "ingest must identify its chunks");
+
     let chunks = provider.as_chunks().expect("Chunks");
-    assert!(chunks
+    let stored = chunks
         .list_chunks(&ChunkQuery::default(), None)
         .await
-        .expect("empty chunk list")
-        .is_empty());
+        .expect("chunk list after ingest");
+    assert!(!stored.is_empty());
+    let chunk = chunks
+        .get_chunk(&outcome.ids[0])
+        .await
+        .expect("get ingested chunk")
+        .expect("chunk present");
+    assert!(chunk.content.contains("TinyMemory"));
+    let detail = chunks
+        .chunk_detail(&outcome.ids[0])
+        .await
+        .expect("chunk detail")
+        .expect("detail present");
+    assert_eq!(detail.chunk.id, outcome.ids[0]);
     assert!(chunks
         .get_chunk("missing")
         .await
@@ -579,4 +626,183 @@ async fn ingest_chunk_and_retrieval_validation_paths_are_exercised_without_netwo
             .await,
         Err(MemoryError::Invalid(_))
     ));
+    let leaves = retrieval
+        .retrieve_leaves(&outcome.ids, None)
+        .await
+        .expect("retrieve ingested leaves");
+    assert!(!leaves.is_empty());
+    assert!(leaves.iter().any(|hit| hit.content.contains("TinyMemory")));
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tree_entities_and_maintenance_execute_real_workspace_transitions() {
+    use tinymemory_api::provider::MemoryProvider;
+    use tinymemory_api::tree::IngestRequest;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+
+    let tree = provider.as_tree().expect("Tree");
+    tree.append(IngestRequest {
+        namespace: "project".into(),
+        content: "A deterministic tree buffer entry".into(),
+        timestamp: Some(chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("timestamp")),
+        metadata: Some(serde_json::json!({"source": "test"})),
+    })
+    .await
+    .expect("append tree content");
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+    let buffered = tinymemory_core::tree::tree_runtime::store::buffer_read(&config, "project")
+        .expect("read persisted buffer");
+    assert_eq!(buffered.len(), 1);
+    assert!(buffered[0].1.contains("deterministic tree buffer"));
+    let empty_status = tree.seal("empty-tree").await.expect("seal empty tree");
+    assert_eq!(empty_status.total_nodes, 0);
+    let cascaded = tree
+        .cascade("empty-tree")
+        .await
+        .expect("cascade empty tree");
+    assert_eq!(cascaded.namespace, empty_status.namespace);
+    assert_eq!(cascaded.total_nodes, empty_status.total_nodes);
+    assert_eq!(cascaded.depth, empty_status.depth);
+
+    use tinymemory_core::engine::backend::store::entity_index::{CanonicalEntity, EntityKind};
+    let indexed = [
+        CanonicalEntity {
+            canonical_id: "person:alice".into(),
+            kind: EntityKind::Person,
+            surface: "Alice".into(),
+            span_start: 0,
+            span_end: 5,
+            score: 1.0,
+        },
+        CanonicalEntity {
+            canonical_id: "organization:tinymemory".into(),
+            kind: EntityKind::Organization,
+            surface: "TinyMemory".into(),
+            span_start: 16,
+            span_end: 26,
+            score: 1.0,
+        },
+    ];
+    assert_eq!(
+        tinymemory_core::store::entities::index_entities(
+            &config,
+            &indexed,
+            "chunk-1",
+            "leaf",
+            1_700_000_000_000,
+            Some("project"),
+        )
+        .expect("seed entity index"),
+        2
+    );
+    let entities = provider.as_entities().expect("Entities");
+    let hits = entities
+        .entities("project", Some("alice"), 10)
+        .await
+        .expect("query entities");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].entity.id, "person:alice");
+    assert_eq!(hits[0].mentions, 1);
+    let edges = entities
+        .entity_edges("project", "person:alice", 10)
+        .await
+        .expect("entity edges");
+    assert_eq!(edges.len(), 1);
+    assert_eq!(edges[0].object, "organization:tinymemory");
+    entities
+        .touch_entities("project", &["person:alice".into()])
+        .await
+        .expect("touch entity hotness");
+    let touched = entities
+        .entities("project", Some("alice"), 10)
+        .await
+        .expect("query touched entity");
+    assert!(touched[0].hotness > 0.0);
+
+    let maintenance = provider.as_maintenance().expect("Maintenance");
+    let reembed = maintenance.reembed().await.expect("reembed");
+    assert_eq!(reembed.operation, "reembed");
+    let compact = maintenance.compact().await.expect("compact");
+    assert_eq!(compact.operation, "compact");
+    let first = maintenance.consolidate().await.expect("consolidate");
+    let second = maintenance.consolidate().await.expect("consolidate again");
+    assert_eq!(first.operation, "consolidate");
+    assert!(first.changed <= 1 && second.changed <= 1);
+    let doctor = maintenance.doctor().await.expect("doctor");
+    assert_eq!(doctor.operation, "doctor");
+    assert_eq!(doctor.changed, 0);
+}
+
+#[cfg(feature = "memory-git")]
+#[tokio::test(flavor = "multi_thread")]
+async fn diff_captures_and_compares_real_source_snapshots() {
+    use tinymemory_api::chunks::{Chunk, Metadata, SourceKind};
+    use tinymemory_api::provider::types::ChangeKind;
+    use tinymemory_api::provider::MemoryProvider;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let source_path = workspace.path().join("source");
+    std::fs::create_dir(&source_path).expect("source directory");
+    let sources = serde_json::json!([{
+        "id": "src_diff",
+        "kind": "folder",
+        "label": "Diff folder",
+        "enabled": true,
+        "path": source_path,
+    }]);
+    let provider = provider_over_sources(workspace.path(), sources.clone());
+    let config = provider_config(workspace.path(), sources);
+    let timestamp = chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("timestamp");
+    let chunk = |content: &str| Chunk {
+        id: "stable-chunk-id".into(),
+        content: content.into(),
+        metadata: Metadata::point_in_time(
+            SourceKind::Document,
+            "mem_src:src_diff:item-1",
+            "owner",
+            timestamp,
+        ),
+        token_count: 3,
+        seq_in_source: 0,
+        created_at: timestamp,
+        partial_message: false,
+    };
+    assert_eq!(
+        tinymemory_core::store::chunks::store::upsert_chunks(&config, &[chunk("first body")])
+            .expect("seed source chunk"),
+        1
+    );
+
+    let diff = provider.as_diff().expect("Diff enabled by memory-git");
+    let first = diff
+        .capture_snapshot("src_diff")
+        .await
+        .expect("first snapshot");
+    assert_eq!(first.item_count, 1);
+    assert_eq!(
+        tinymemory_core::store::chunks::store::upsert_chunks(&config, &[chunk("second body")])
+            .expect("modify source chunk"),
+        1
+    );
+    let second = diff
+        .capture_snapshot("src_diff")
+        .await
+        .expect("second snapshot");
+    let snapshots = diff
+        .snapshots("src_diff", 10)
+        .await
+        .expect("list snapshots");
+    assert_eq!(snapshots.len(), 2);
+    let report = diff
+        .diff("src_diff", Some(&first.id), &second.id)
+        .await
+        .expect("diff snapshots");
+    assert_eq!(report.modified, 1);
+    assert_eq!(report.added, 0);
+    assert_eq!(report.removed, 0);
+    assert_eq!(report.changes.len(), 1);
+    assert_eq!(report.changes[0].item_id, "item-1");
+    assert_eq!(report.changes[0].kind, ChangeKind::Modified);
 }
