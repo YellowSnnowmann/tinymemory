@@ -167,10 +167,6 @@ impl ChatProvider for InferenceChatProvider {
     }
 }
 
-#[path = "chat_runtime_override.rs"]
-mod runtime_override;
-#[path = "chat_test_support.rs"]
-mod test_support;
 #[cfg(any(test, feature = "test-support"))]
 pub use test_support::{test_override, StaticChatProvider};
 
@@ -211,3 +207,8 @@ pub fn build_chat_provider(config: &Config) -> Result<Arc<dyn ChatProvider>> {
 #[cfg(test)]
 #[path = "chat_tests.rs"]
 mod tests;
+
+#[path = "chat_runtime_override.rs"]
+mod runtime_override;
+#[path = "chat_test_support.rs"]
+mod test_support;
