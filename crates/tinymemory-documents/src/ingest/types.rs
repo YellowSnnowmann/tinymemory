@@ -270,11 +270,33 @@ fn slugify(raw: &str) -> String {
             last_dash = true;
         }
     }
-    let trimmed = out.trim_matches(['-', '/', '.']).to_string();
+    let trimmed = out.trim_matches(['-', '/', '.']);
     if trimmed.is_empty() {
         return "document".to_string();
     }
     // Keys share the namespace character rules and the same practical length
-    // ceiling; a key longer than this is a URL with a session token in it.
-    trimmed.chars().take(120).collect()
+    // ceiling; a key longer than this is a URL with a session token in it. A
+    // shortened key is disambiguated with a digest of the *full* input, so two
+    // origins that only differ after the cut do not upsert over each other.
+    if trimmed.chars().count() <= 120 {
+        return trimmed.to_string();
+    }
+    let head: String = trimmed.chars().take(112).collect();
+    let head = head.trim_matches(['-', '/', '.']);
+    format!("{head}-{:07x}", fnv1a(trimmed) & 0xfff_ffff)
+}
+
+/// A stable, non-cryptographic digest used only to keep truncated slugify keys
+/// distinct. FNV-1a rather than `DefaultHasher`, whose output is not
+/// guaranteed stable across Rust releases and would silently reshuffle keys
+/// that were already truncated.
+fn fnv1a(raw: &str) -> u64 {
+    const OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
+    const PRIME: u64 = 0x0000_0100_0000_01b3;
+    let mut hash = OFFSET_BASIS;
+    for byte in raw.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(PRIME);
+    }
+    hash
 }
