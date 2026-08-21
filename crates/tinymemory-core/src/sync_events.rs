@@ -115,3 +115,7 @@ pub fn extract_mem_src_id(composite_source_id: &str) -> Option<&str> {
     }
     Some(source_id)
 }
+
+#[cfg(test)]
+#[path = "sync_events_tests.rs"]
+mod tests;

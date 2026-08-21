@@ -238,4 +238,84 @@ mod tests {
             "chunk separator must be escaped: {md}"
         );
     }
+
+    fn message_json(sent_at: serde_json::Value) -> serde_json::Value {
+        serde_json::json!({
+            "from": "sender",
+            "subject": "subject",
+            "sent_at": sent_at,
+            "body": "body"
+        })
+    }
+
+    #[test]
+    fn flexible_timestamp_accepts_rfc3339_and_numeric_or_string_milliseconds() {
+        for value in [
+            serde_json::json!("2026-01-02T03:04:05Z"),
+            serde_json::json!(1_767_323_045_000_i64),
+            serde_json::json!("1767323045000"),
+        ] {
+            let message: EmailMessage = serde_json::from_value(message_json(value)).unwrap();
+            assert_eq!(message.sent_at.timestamp_millis(), 1_767_323_045_000);
+        }
+    }
+
+    #[test]
+    fn flexible_timestamp_rejects_seconds_and_malformed_text() {
+        for value in [
+            serde_json::json!(1_767_322_245_i64),
+            serde_json::json!("1767322245"),
+            serde_json::json!("last Tuesday"),
+        ] {
+            let error = serde_json::from_value::<EmailMessage>(message_json(value)).unwrap_err();
+            assert!(
+                error.to_string().contains("milliseconds")
+                    || error.to_string().contains("cannot parse"),
+                "unexpected error: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn rendering_sorts_oldest_first_and_escapes_header_markdown() {
+        let at = |timestamp: &str| {
+            DateTime::parse_from_rfc3339(timestamp)
+                .unwrap()
+                .with_timezone(&Utc)
+        };
+        let thread = EmailThread {
+            provider: "gmail".into(),
+            thread_subject: "thread".into(),
+            messages: vec![
+                EmailMessage {
+                    from: "*new*".into(),
+                    to: Vec::new(),
+                    cc: Vec::new(),
+                    subject: "[later]".into(),
+                    sent_at: at("2026-02-01T00:00:00Z"),
+                    body: "new".into(),
+                    source_ref: None,
+                    list_unsubscribe: None,
+                },
+                EmailMessage {
+                    from: "_old_".into(),
+                    to: vec!["a|b".into()],
+                    cc: vec!["c`d".into()],
+                    subject: "# first".into(),
+                    sent_at: at("2026-01-01T00:00:00Z"),
+                    body: "old".into(),
+                    source_ref: None,
+                    list_unsubscribe: Some("<https://example.com/unsub?a=1&b=2>".into()),
+                },
+            ],
+        };
+
+        let markdown = thread_markdown(thread).unwrap();
+        assert!(markdown.find("old").unwrap() < markdown.find("new").unwrap());
+        assert!(markdown.contains("From: \\_old\\_"));
+        assert!(markdown.contains("To: a\\|b"));
+        assert!(markdown.contains("Cc: c\\`d"));
+        assert!(markdown.contains("Subject: # first"));
+        assert!(markdown.contains("List-Unsubscribe: <https://example.com/unsub?a=1&b=2>"));
+    }
 }
