@@ -347,6 +347,61 @@ fn relation_planning_traversal_temporal_filters_and_scoring_cover_graph_branches
 }
 
 #[tokio::test]
+async fn retrieval_plan_matches_document_and_graph_entities_and_selects_last_anchor() {
+    let tmp = TempDir::new().unwrap();
+    let memory = UnifiedMemory::new(tmp.path(), Arc::new(NoopEmbedding), None).unwrap();
+    memory
+        .upsert_document(NamespaceDocumentInput {
+            namespace: "team".into(),
+            key: "Project Atlas".into(),
+            title: "Atlas Launch".into(),
+            content: "Alice moved Atlas from London to Paris.".into(),
+            source_type: "doc".into(),
+            priority: "medium".into(),
+            tags: vec![],
+            metadata: json!({}),
+            category: "core".into(),
+            session_id: None,
+            document_id: None,
+            taint: MemoryTaint::Internal,
+        })
+        .await
+        .unwrap();
+    let docs = memory.load_documents_for_scope("team").await.unwrap();
+    let relations = vec![
+        GraphRelationRecord {
+            subject: "Atlas".into(),
+            predicate: "LOCATED_IN".into(),
+            object: "London".into(),
+            ..relation()
+        },
+        GraphRelationRecord {
+            subject: "Atlas".into(),
+            predicate: "TRAVELS_TO".into(),
+            object: "Paris".into(),
+            ..relation()
+        },
+    ];
+
+    let plan =
+        memory.build_retrieval_plan("where was Project Atlas before Paris", &docs, &relations);
+    assert_eq!(plan.temporal, TemporalOperator::Before);
+    assert_eq!(plan.anchor_entity.as_deref(), Some("Paris"));
+    assert!(plan.seed_entities.iter().any(|entity| entity == "Atlas"));
+    assert!(plan
+        .relation_types
+        .iter()
+        .any(|predicate| predicate == "LOCATED_IN"));
+    assert!(!plan.chains.is_empty());
+
+    assert_eq!(memory.resolve_anchor_entity("anything", &[]), None);
+    assert_eq!(
+        memory.resolve_anchor_entity("Alice then Bob", &["".into(), "Alice".into(), "Bob".into()]),
+        Some("Bob".into())
+    );
+}
+
+#[tokio::test]
 async fn graph_duplicate_upsert_aggregates_evidence_count() {
     let tmp = TempDir::new().unwrap();
     let memory = UnifiedMemory::new(tmp.path(), Arc::new(NoopEmbedding), None).unwrap();
