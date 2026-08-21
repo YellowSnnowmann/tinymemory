@@ -257,6 +257,11 @@ pub trait MemoryGraph: Send + Sync {
             if view.nodes.iter().any(|n| &n.id == seed) {
                 continue;
             }
+            if view.nodes.len() >= query.max_nodes {
+                unexpanded.insert(seed.clone());
+                view.truncated = true;
+                continue;
+            }
             view.nodes.push(GraphNode::bare(seed.clone(), 0));
             frontier.push(seed.clone());
         }
