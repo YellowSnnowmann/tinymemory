@@ -1890,6 +1890,7 @@ dependencies = [
  "tinymemory-api",
  "tinymemory-conformance",
  "tinymemory-core",
+ "tinymemory-documents",
  "tinymemory-remote",
  "tinymemory-sources",
  "tinymemory-sync",
@@ -1974,6 +1975,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "tinymemory-documents"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tinymemory-api",
+ "tinymemory-sources",
+ "tokio",
+]
+
+[[package]]
 name = "tinymemory-remote"
 version = "0.1.0"
 dependencies = [
@@ -2033,6 +2048,7 @@ dependencies = [
  "serde_json",
  "tinymemory",
  "tinymemory-api",
+ "tinymemory-documents",
  "tinymemory-remote",
  "tinymemory-tinycortex",
  "tokio",

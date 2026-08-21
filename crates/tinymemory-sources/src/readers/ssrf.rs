@@ -27,7 +27,7 @@ use reqwest::dns::{Addrs, Name, Resolve, Resolving};
 /// Build an HTTP client with a redirect policy that re-applies the SSRF
 /// host/scheme check to every redirect hop, and a DNS resolver that only
 /// yields globally routable addresses.
-pub(super) fn build_client() -> Result<reqwest::Client, String> {
+pub fn build_client() -> Result<reqwest::Client, String> {
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(20))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
@@ -50,7 +50,7 @@ pub(super) fn build_client() -> Result<reqwest::Client, String> {
 /// server that omits or understates `Content-Length` (for example a chunked
 /// response) could OOM the process despite the cap. Reading incrementally
 /// enforces the limit while the bytes arrive.
-pub(super) async fn read_body_capped(resp: reqwest::Response, max: u64) -> Result<Vec<u8>, String> {
+pub async fn read_body_capped(resp: reqwest::Response, max: u64) -> Result<Vec<u8>, String> {
     // Trust a truthful Content-Length up front so a known-huge body is
     // rejected before the first byte is read.
     if let Some(len) = resp.content_length() {
@@ -159,7 +159,7 @@ fn is_public_ipv6(ip: Ipv6Addr) -> bool {
 }
 
 /// Whether a URL may be fetched: `http(s)` scheme against a public host.
-pub(super) fn is_url_allowed(url: &reqwest::Url) -> bool {
+pub fn is_url_allowed(url: &reqwest::Url) -> bool {
     match url.scheme() {
         "http" | "https" => {}
         _ => return false,

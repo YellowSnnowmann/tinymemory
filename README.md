@@ -43,6 +43,10 @@ crates/
 │                       them
 ├── tinymemory-sources/ memory-source contracts and readers — local folders
 │                       always, GitHub/RSS/web pages behind `network`
+├── tinymemory-documents/ document and URL intake: sniff a format, convert it
+│                       to markdown, and write it into whichever engine is
+│                       bound. The URL half is behind `network` and reuses the
+│                       source readers' SSRF guard rather than growing a second
 ├── tinymemory-tinycortex/  the TinyCortex engine seen through the contract
 ├── tinymemory-remote/  native HTTP dialects for Supermemory, Mem0, and Cognee
 ├── tinymemory-conformance/ the behavioural suite every driver must pass
@@ -79,6 +83,8 @@ composition — no storage engine, no HTTP stack, no native library.
 | `sync` | `tinymemory::sync` — the Composio normalisers |
 | `sources` | `tinymemory::sources` — source contracts and local readers |
 | `sources-network` | `sources`, plus the GitHub/RSS/web-page readers |
+| `documents` | `tinymemory::documents` — document intake and markdown conversion |
+| `documents-network` | `documents`, plus the URL fetch path |
 | `conformance` | `tinymemory::conformance` — the driver contract suite |
 | `memory-git` | git-backed diff snapshots (implies `tinycortex`; links libgit2) |
 | `contacts` | the macOS address-book seeding path (implies `core`) |

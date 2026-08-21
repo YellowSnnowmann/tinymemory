@@ -70,6 +70,13 @@
 //! - [`traits`]: the [`traits::Memory`] storage-backend trait.
 //! - [`chunks`]: the persisted chunk model ([`chunks::Chunk`], [`chunks::Metadata`],
 //!   [`chunks::SourceRef`], …) and the deterministic [`chunks::chunk_id`].
+//! - [`graph`]: the bounded graph-view model ([`graph::GraphView`],
+//!   [`graph::GraphViewQuery`], [`graph::GraphNode`], [`graph::GraphEdge`]) —
+//!   the graph counterpart of [`tree`], and what
+//!   [`provider::MemoryGraph::graph_view`] returns.
+//! - [`namespace`]: the `<section>:<scope>` namespace convention
+//!   ([`namespace::Namespace`], [`namespace::MemorySection`]) and its
+//!   validator.
 //! - [`tree`]: the markdown summary-tree node model ([`tree::TreeNode`],
 //!   [`tree::NodeLevel`], [`tree::TreeStatus`], …).
 //! - [`tool_memory`]: tool-scoped rule contracts ([`tool_memory::ToolMemoryRule`], …).
@@ -99,7 +106,8 @@ pub mod host;
 // point: a second definition would need a conversion at the module seam that
 // nothing type-checks.
 pub use tinymemory_bus::{
-    capabilities, chunks, error, goals, health, recall, tool_memory, tree, types, version, wire,
+    capabilities, chunks, error, goals, graph, health, namespace, recall, tool_memory, tree, types,
+    version, wire,
 };
 /// The mandatory-family composition: wrap any [`traits::Memory`] backend as a
 /// complete [`provider::MemoryProvider`].
