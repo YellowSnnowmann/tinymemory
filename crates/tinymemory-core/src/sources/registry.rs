@@ -191,3 +191,7 @@ pub fn decode_memory_sources(config: &crate::Config) -> Vec<MemorySourceEntry> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "registry_tests.rs"]
+mod tests;

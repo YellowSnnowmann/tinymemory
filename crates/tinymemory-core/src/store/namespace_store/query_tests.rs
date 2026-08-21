@@ -1,13 +1,131 @@
 //! Tests for the `query` module — hybrid retrieval scoring.
 
+use super::{TemporalOperator, UnifiedMemory};
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use serde_json::json;
 use tempfile::TempDir;
 
-use crate::store::{NamespaceDocumentInput, UnifiedMemory};
+use crate::store::NamespaceDocumentInput;
 use crate::Memory;
 use tinymemory_api::host::NoopEmbedding;
+
+#[test]
+fn retrieval_plan_helpers_cover_temporal_relation_and_chain_vocabulary() {
+    let terms = |values: &[&str]| {
+        values
+            .iter()
+            .map(|value| (*value).to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        UnifiedMemory::infer_temporal_operator(&terms(&["before"])),
+        TemporalOperator::Before
+    );
+    assert_eq!(
+        UnifiedMemory::infer_temporal_operator(&terms(&["after"])),
+        TemporalOperator::After
+    );
+    assert_eq!(
+        UnifiedMemory::infer_temporal_operator(&terms(&["history"])),
+        TemporalOperator::All
+    );
+    assert_eq!(
+        UnifiedMemory::infer_temporal_operator(&terms(&["earliest"])),
+        TemporalOperator::Earliest
+    );
+    assert_eq!(
+        UnifiedMemory::infer_temporal_operator(&terms(&["ordinary"])),
+        TemporalOperator::Latest
+    );
+
+    let relation_types = UnifiedMemory::infer_relation_types(&terms(&[
+        "where", "owner", "company", "north", "south", "east", "west", "sent",
+    ]));
+    for expected in [
+        "LOCATED_IN",
+        "RESIDES_AT",
+        "TRAVELS_TO",
+        "OWNS",
+        "USES",
+        "WORKS_FOR",
+        "NORTH_OF",
+        "SOUTH_OF",
+        "EAST_OF",
+        "WEST_OF",
+    ] {
+        assert!(relation_types.iter().any(|value| value == expected));
+    }
+    assert_eq!(
+        UnifiedMemory::infer_relation_chains(&terms(&["where"]), &relation_types).len(),
+        4
+    );
+    assert_eq!(
+        UnifiedMemory::infer_relation_chains(&terms(&["gave"]), &[]),
+        vec![vec!["USES".to_string()]]
+    );
+    assert_eq!(
+        UnifiedMemory::infer_relation_chains(&terms(&["who"]), &["OWNS".into()]),
+        vec![vec!["OWNS".to_string()]]
+    );
+    assert!(UnifiedMemory::infer_relation_chains(&terms(&["who"]), &[]).is_empty());
+    assert!(UnifiedMemory::predicate_matches_query(
+        "WORKS_FOR",
+        &terms(&["works"])
+    ));
+}
+
+#[test]
+fn score_normalization_and_priority_signals_are_bounded() {
+    assert!(UnifiedMemory::normalize_scores(HashMap::new()).is_empty());
+    assert!(UnifiedMemory::normalize_scores(HashMap::from([("zero".into(), 0.0)])).is_empty());
+    let normalized = UnifiedMemory::normalize_scores(HashMap::from([
+        ("top".into(), 4.0),
+        ("half".into(), 2.0),
+        ("negative".into(), -1.0),
+    ]));
+    assert_eq!(normalized["top"], 1.0);
+    assert_eq!(normalized["half"], 0.5);
+    assert_eq!(normalized["negative"], 0.0);
+
+    assert!(
+        (UnifiedMemory::document_priority_signal(
+            "core",
+            "critical",
+            &["decision".into()],
+            &json!({"kind": "profile"}),
+        ) - 1.0)
+            .abs()
+            < f64::EPSILON
+    );
+    assert_eq!(
+        UnifiedMemory::document_priority_signal("other", "normal", &[], &json!({})),
+        0.25
+    );
+    assert!(
+        UnifiedMemory::kv_priority_signal("user.preference.theme", &json!({"value": "dark"}))
+            > UnifiedMemory::kv_priority_signal("misc", &json!("plain"))
+    );
+    assert_eq!(UnifiedMemory::render_kv_value(&json!("text")), "text");
+    assert_eq!(UnifiedMemory::render_kv_value(&json!([1, 2])), "[1,2]");
+    assert_eq!(
+        UnifiedMemory::render_kv_value(&json!({"enabled": true})),
+        "{\"enabled\":true}"
+    );
+    assert_eq!(
+        UnifiedMemory::entity_label_with_type(
+            "Alice",
+            &json!({"entity_types": {"subject": "person"}}),
+            "subject",
+        ),
+        "Alice (person)"
+    );
+    assert_eq!(
+        UnifiedMemory::entity_label_with_type("Atlas", &json!({}), "object"),
+        "Atlas"
+    );
+}
 
 #[tokio::test]
 async fn graph_duplicate_upsert_aggregates_evidence_count() {

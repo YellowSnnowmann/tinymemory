@@ -152,6 +152,57 @@ fn create_memory_for_migration_returns_writable_memory_on_unified_core() {
     }
 }
 
+#[tokio::test]
+async fn factory_entry_points_build_stores_and_provider_contracts() {
+    crate::embedding_host::TestEmbeddingHost::install();
+    let tmp = tempfile::tempdir().unwrap();
+    let config = MemoryConfig::default();
+
+    let memory = create_memory(&config, tmp.path()).unwrap();
+    let provider = bind_as_provider(memory);
+    assert_eq!(
+        provider.driver_id(),
+        tinymemory_api::drivers::NAMESPACE_DRIVER_ID
+    );
+    assert_eq!(
+        provider.capabilities(),
+        tinymemory_api::capabilities::Capabilities::mandatory()
+    );
+    assert!(create_memory_provider(&config, tmp.path()).is_ok());
+    assert!(create_memory_with_local_ai(&config, None, "", &[], None, tmp.path()).is_ok());
+    assert!(create_memory_client_with_local_ai(&config, None, "", &[], None, tmp.path()).is_ok());
+}
+
+#[tokio::test]
+async fn session_and_explicit_subdir_factories_keep_storage_isolated() {
+    crate::embedding_host::TestEmbeddingHost::install();
+    let tmp = tempfile::tempdir().unwrap();
+    let config = MemoryConfig::default();
+    let session = create_session_memory_with_local_ai(
+        &config,
+        None,
+        "",
+        &[],
+        None,
+        tmp.path(),
+        "memory-profile",
+    )
+    .unwrap();
+    assert!(session.sqlite_connection.lock().is_autocommit());
+    drop(session.memory);
+
+    assert!(
+        create_memory_client_in_subdir(&config, None, "", &[], None, tmp.path(), "memory-a",)
+            .is_ok()
+    );
+    assert!(
+        create_memory_client_in_subdir(&config, None, "", &[], None, tmp.path(), "memory-b",)
+            .is_ok()
+    );
+    assert!(tmp.path().join("memory-a").exists());
+    assert!(tmp.path().join("memory-b").exists());
+}
+
 /// Spin up a mock Ollama-shaped server that responds 200 OK on `/api/tags`.
 async fn start_mock_ollama() -> String {
     let app = Router::new().route(
