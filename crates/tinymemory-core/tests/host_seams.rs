@@ -31,20 +31,18 @@ mod composio_host {
 type Config = tinymemory_core::Config;
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use tinymemory_api::host::test_support::TestHostConfig;
-use tokio::sync::Notify;
+use tokio::sync::{Mutex, MutexGuard, Notify};
 
 use crate::scheduler_gate::{Policy, SchedulerGate};
 
-static SEAM_LOCK: Mutex<()> = Mutex::new(());
+static SEAM_LOCK: Mutex<()> = Mutex::const_new(());
 
-fn seam_guard() -> MutexGuard<'static, ()> {
-    SEAM_LOCK
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+async fn seam_guard() -> MutexGuard<'static, ()> {
+    SEAM_LOCK.lock().await
 }
 
 struct Restore(Option<Box<dyn FnOnce()>>);
@@ -89,7 +87,7 @@ impl SchedulerGate for TestGate {
 
 #[tokio::test]
 async fn scheduler_gate_delegates_and_clear_restores_ungated_defaults() {
-    let _guard = seam_guard();
+    let _guard = seam_guard().await;
     let previous = crate::scheduler_gate::scheduler_gate();
     let _restore = Restore::new(move || match previous {
         Some(gate) => crate::scheduler_gate::set_scheduler_gate(gate),
@@ -141,7 +139,7 @@ impl crate::config_loader::ConfigLoader for TestLoader {
 
 #[tokio::test]
 async fn config_loader_reports_unwired_and_delegates_both_load_paths() {
-    let _guard = seam_guard();
+    let _guard = seam_guard().await;
     let previous = crate::config_loader::config_loader();
     let _restore = Restore::new(move || match previous {
         Some(loader) => crate::config_loader::set_config_loader(loader),
@@ -187,7 +185,7 @@ impl crate::shutdown::ShutdownHost for TestShutdownHost {
 
 #[tokio::test]
 async fn shutdown_host_keeps_repeatable_hooks_and_unwired_registration_is_safe() {
-    let _guard = seam_guard();
+    let _guard = seam_guard().await;
     let previous = crate::shutdown::shutdown_host();
     let _restore = Restore::new(move || match previous {
         Some(host) => crate::shutdown::set_shutdown_host(host),
@@ -209,12 +207,14 @@ async fn shutdown_host_keeps_repeatable_hooks_and_unwired_registration_is_safe()
         }
     });
 
-    let hooks = host.hooks.lock();
-    assert_eq!(hooks.len(), 1);
-    (hooks[0])().await;
-    (hooks[0])().await;
+    let (first_call, second_call) = {
+        let hooks = host.hooks.lock();
+        assert_eq!(hooks.len(), 1);
+        ((hooks[0])(), (hooks[0])())
+    };
+    first_call.await;
+    second_call.await;
     assert_eq!(calls.load(Ordering::SeqCst), 2);
-    drop(hooks);
 }
 
 #[derive(Debug)]
@@ -241,7 +241,7 @@ impl crate::nlp_host::NlpHost for TestNlpHost {
 
 #[tokio::test]
 async fn nlp_host_reports_unwired_then_returns_host_response() {
-    let _guard = seam_guard();
+    let _guard = seam_guard().await;
     let previous = crate::nlp_host::nlp_host();
     let _restore = Restore::new(move || match previous {
         Some(host) => crate::nlp_host::set_nlp_host(host),
@@ -261,9 +261,9 @@ async fn nlp_host_reports_unwired_then_returns_host_response() {
     assert_eq!(response.entities[0].text, "TinyMemory");
 }
 
-#[test]
-fn required_host_seams_fail_loudly_when_unwired() {
-    let _guard = seam_guard();
+#[tokio::test]
+async fn required_host_seams_fail_loudly_when_unwired() {
+    let _guard = seam_guard().await;
     let chat = crate::chat_host::chat_host();
     let composio = crate::composio_host::composio_host();
     let _chat_restore = Restore::new(move || match chat {
