@@ -55,6 +55,15 @@ fn score_adapters_round_trip_upsert_batch_and_count() {
     assert_eq!(stored.total, 0.9);
     assert!(!stored.dropped);
     assert_eq!(stored.reason.as_deref(), Some("test rationale"));
+    assert_eq!(stored.computed_at_ms, 1_700_000_000_000);
+    assert_eq!(stored.signals.token_count, 0.2);
+    assert_eq!(stored.signals.unique_words, 0.3);
+    assert_eq!(stored.signals.metadata_weight, 0.4);
+    assert_eq!(stored.signals.source_weight, 0.5);
+    assert_eq!(stored.signals.interaction, 0.6);
+    assert_eq!(stored.signals.entity_density, 0.7);
+    assert_eq!(stored.signals.llm_importance, 0.0);
+    assert_eq!(stored.llm_importance_reason, None);
     let batch = get_scores_batch(
         &config,
         &["chunk-b".into(), "missing".into(), "chunk-a".into()],
@@ -84,6 +93,13 @@ fn entity_adapters_preserve_kind_span_scope_and_lifecycle() {
         span_end: 18,
         score: 0.9,
     };
+    let converted = to_store_entity(&alice).expect("convert resolver entity");
+    assert_eq!(converted.canonical_id, "person:alice");
+    assert_eq!(converted.kind.as_str(), "person");
+    assert_eq!(converted.surface, "Alice");
+    assert_eq!(converted.span_start, 4);
+    assert_eq!(converted.span_end, 9);
+    assert_eq!(converted.score, 0.95);
 
     index_entity(&config, &alice, "node-a", "chunk", 100, Some("tree-a"))
         .expect("index one entity");
@@ -106,13 +122,72 @@ fn entity_adapters_preserve_kind_span_scope_and_lifecycle() {
     );
     let hits = lookup_entity(&config, "person:alice", None).expect("entity hits");
     assert_eq!(hits.len(), 2);
-    assert_eq!(hits[0].entity_kind.as_str(), "person");
-    assert!(hits
+    let chunk_hit = hits
         .iter()
-        .all(|hit| hit.tree_id.as_deref() == Some("tree-a")));
+        .find(|hit| hit.node_id == "node-a")
+        .expect("chunk occurrence");
+    assert_eq!(chunk_hit.node_kind, "chunk");
+    assert_eq!(chunk_hit.entity_kind.as_str(), "person");
+    assert_eq!(chunk_hit.surface, "Alice");
+    assert_eq!(chunk_hit.score, 0.95);
+    assert_eq!(chunk_hit.timestamp_ms, 100);
+    assert_eq!(chunk_hit.tree_id.as_deref(), Some("tree-a"));
+    let summary_hit = hits
+        .iter()
+        .find(|hit| hit.node_id == "node-b")
+        .expect("summary occurrence");
+    assert_eq!(summary_hit.node_kind, "summary");
+    assert_eq!(summary_hit.surface, "Alice");
+    assert_eq!(summary_hit.score, 0.95);
+    assert_eq!(summary_hit.timestamp_ms, 200);
+    assert_eq!(summary_hit.tree_id.as_deref(), Some("tree-a"));
+    let rust_hits = lookup_entity(&config, "technology:rust", None).expect("technology hits");
+    assert_eq!(rust_hits.len(), 1);
+    assert_eq!(rust_hits[0].surface, "Rust");
+    assert_eq!(rust_hits[0].score, 0.9);
+
+    let other_scope = CanonicalEntity {
+        canonical_id: "person:mallory".into(),
+        kind: EntityKind::Person,
+        surface: "Mallory".into(),
+        span_start: 2,
+        span_end: 9,
+        score: 0.8,
+    };
+    index_entity(
+        &config,
+        &other_scope,
+        "node-c",
+        "chunk",
+        300,
+        Some("tree-b"),
+    )
+    .expect("index other scope");
+    let tree_a = crate::store::entities::namespace_entities(&config, "tree-a", None, 10)
+        .expect("tree-a entities");
+    assert!(tree_a.iter().all(|entity| entity.id != "person:mallory"));
+    assert_eq!(
+        crate::store::entities::namespace_entities(&config, "tree-b", None, 10)
+            .expect("tree-b entities")[0]
+            .id,
+        "person:mallory"
+    );
     assert_eq!(
         clear_entity_index_for_node(&config, "node-b").expect("clear node entities"),
         2
     );
-    assert_eq!(count_entity_index(&config).expect("remaining entities"), 1);
+    assert!(list_entity_ids_for_node(&config, "node-b")
+        .expect("cleared node")
+        .is_empty());
+    assert_eq!(
+        list_entity_ids_for_node(&config, "node-a").expect("preserved node"),
+        vec!["person:alice"]
+    );
+    assert_eq!(
+        lookup_entity(&config, "person:alice", None)
+            .expect("remaining hit")
+            .len(),
+        1
+    );
+    assert_eq!(count_entity_index(&config).expect("remaining entities"), 2);
 }

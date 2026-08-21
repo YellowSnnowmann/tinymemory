@@ -17,6 +17,30 @@ use crate::types::{ContentType, SourceContent, SourceItem};
 use super::types::GhCommit;
 use super::{parse_iso_ts, GH_CLI_TIMEOUT};
 
+#[cfg(test)]
+tokio::task_local! {
+    static TEST_RESPONSES: std::cell::RefCell<
+        std::collections::VecDeque<Result<String, String>>
+    >;
+}
+
+/// Run a future with a task-local sequence of GitHub responses.
+///
+/// Task-local storage keeps parallel reader tests isolated and makes an
+/// exhausted fixture fail closed instead of accidentally reaching the network.
+#[cfg(test)]
+pub(super) async fn with_test_responses<F>(
+    responses: Vec<Result<String, String>>,
+    future: F,
+) -> F::Output
+where
+    F: std::future::Future,
+{
+    TEST_RESPONSES
+        .scope(std::cell::RefCell::new(responses.into()), future)
+        .await
+}
+
 /// GitHub REST API maximum page size (`per_page`).
 pub(super) const GH_PAGE_SIZE: u32 = 100;
 
@@ -70,6 +94,14 @@ pub(super) async fn api_get(path: &str) -> Result<String, String> {
 
 /// Try `gh api` first, fall back to unauthenticated REST API.
 pub(super) async fn fetch_github(api_path: &str, use_gh: bool) -> Result<String, String> {
+    #[cfg(test)]
+    if let Ok(response) = TEST_RESPONSES.try_with(|responses| responses.borrow_mut().pop_front()) {
+        return response.unwrap_or_else(|| {
+            Err(format!(
+                "no deterministic GitHub response queued for {api_path}"
+            ))
+        });
+    }
     if use_gh {
         match gh_json(&["api", api_path]).await {
             Ok(s) => return Ok(s),
