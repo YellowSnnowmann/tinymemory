@@ -556,3 +556,29 @@ fn periodic_pause_reason_returns_none_when_gate_not_initialised() {
         periodic_pause_reason()
     );
 }
+
+#[test]
+fn synthesized_periodic_source_is_enabled_scoped_and_uncapped() {
+    let source = periodic_source("gmail", "connection-42");
+    assert_eq!(source.id, "composio:connection-42");
+    assert_eq!(source.kind, SourceKind::Composio);
+    assert_eq!(source.label, "gmail");
+    assert!(source.enabled);
+    assert_eq!(source.toolkit.as_deref(), Some("gmail"));
+    assert_eq!(source.connection_id.as_deref(), Some("connection-42"));
+    assert!(source.path.is_none());
+    assert!(source.glob.is_none());
+    assert!(source.url.is_none());
+    assert!(source.branch.is_none());
+    assert!(source.paths.is_empty());
+    assert!(source.max_commits.is_none());
+    assert!(source.max_issues.is_none());
+    assert!(source.max_prs.is_none());
+    assert!(source.query.is_none());
+    assert!(source.since_days.is_none());
+    assert!(source.max_items.is_none());
+    assert!(source.selector.is_none());
+    assert!(source.max_tokens_per_sync.is_none());
+    assert!(source.max_cost_per_sync_usd.is_none());
+    assert!(source.sync_depth_days.is_none());
+}

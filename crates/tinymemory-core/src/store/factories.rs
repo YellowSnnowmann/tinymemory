@@ -125,9 +125,9 @@ fn surface_local_model_unavailable_to_clients() {
     crate::tree::health::publish_local_model_unavailable_user_error("health_gate");
 }
 
-/// Resets the once-per-process Sentry latch. Test-only — any test that
-/// exercises a fallback path should call this first so it can't be flaked by
-/// suite ordering (an earlier test that already tripped the latch).
+// The once-per-process Sentry latch reset used by fallback tests moved out of
+// this production file so an earlier test cannot affect later fallback cases.
+// Its implementation now lives beside those cases in `factories_tests.rs`.
 // The helper now lives in `factories_tests.rs`. Keep this non-executable range
 // so LLVM can merge production regions linked into multiple workspace tests.
 // Moving the following functions would otherwise duplicate their line regions.

@@ -3,6 +3,7 @@
 use std::fs;
 
 use tempfile::tempdir;
+use tinymemory_api::host::test_support::TestHostConfig;
 
 use super::*;
 
@@ -140,4 +141,65 @@ fn status_scan_enforces_the_aggregate_byte_budget() {
     assert_eq!(reads.get(), 4);
     assert_eq!(status.session_files, 5);
     assert!(status.scan_truncated);
+}
+
+#[test]
+fn ambient_status_resolves_both_configured_session_roots() {
+    let _guard = crate::test_env_lock::TEST_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let temp = tempdir().unwrap();
+    let claude = temp.path().join("claude-home");
+    let codex = temp.path().join("codex-home");
+    fs::create_dir_all(claude.join("projects")).unwrap();
+    fs::create_dir_all(codex.join("sessions")).unwrap();
+
+    // SAFETY: every workspace test that mutates these process variables holds
+    // the shared environment lock for the complete mutation/read/restore span.
+    unsafe {
+        std::env::set_var("CLAUDE_CONFIG_DIR", &claude);
+        std::env::set_var("CODEX_HOME", &codex);
+    }
+    let (claude_root, codex_root) = roots_from_environment();
+    let statuses = coding_session_status();
+    // SAFETY: protected by the same shared environment lock.
+    unsafe {
+        std::env::remove_var("CLAUDE_CONFIG_DIR");
+        std::env::remove_var("CODEX_HOME");
+    }
+
+    assert_eq!(claude_root, claude.join("projects"));
+    assert_eq!(codex_root, codex.join("sessions"));
+    assert_eq!(statuses.len(), 2);
+    assert!(statuses.iter().all(|status| status.available));
+    assert!(statuses.iter().all(|status| status.session_files == 0));
+}
+
+#[tokio::test]
+async fn ingestion_validates_each_mode_and_budget_before_provider_wiring() {
+    let temp = tempdir().unwrap();
+    let mut config = TestHostConfig::default();
+    config.workspace_dir = temp.path().to_path_buf();
+
+    let incremental = ingest_coding_sessions(
+        &config,
+        CodingSessionIngestRequest {
+            backfill: false,
+            max_sessions: 0,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(!incremental.to_string().is_empty());
+
+    let backfill = ingest_coding_sessions(
+        &config,
+        CodingSessionIngestRequest {
+            backfill: true,
+            max_sessions: MAX_MAX_SESSIONS + 1,
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(!backfill.to_string().is_empty());
 }

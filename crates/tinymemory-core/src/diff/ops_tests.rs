@@ -108,6 +108,49 @@ async fn compute_diff_against_none_marks_all_added() {
 }
 
 #[tokio::test]
+async fn auto_snapshot_and_listing_round_trip_empty_source_state() {
+    let config = test_config();
+    let source = folder_source("src_empty");
+
+    let snapshot = auto_snapshot_after_sync(&source, &config).await.unwrap();
+    assert_eq!(snapshot.source_id, source.id);
+    assert_eq!(snapshot.trigger, SnapshotTrigger::Auto);
+    assert_eq!(snapshot.item_count, 0);
+
+    let for_source = list_snapshots(&config, Some("src_empty"), 10)
+        .await
+        .unwrap();
+    assert_eq!(for_source.len(), 1);
+    assert_eq!(for_source[0].id, snapshot.id);
+    assert_eq!(list_snapshots(&config, None, 10).await.unwrap().len(), 1);
+    assert!(list_snapshots(&config, Some("unknown"), 10)
+        .await
+        .unwrap()
+        .is_empty());
+}
+
+#[tokio::test]
+async fn cleanup_removes_old_checkpoint_tags_but_keeps_snapshots() {
+    let config = test_config();
+    let snapshot = seed(&config, "src_cleanup", 1_000, &[("a", "alpha")]);
+    let ledger = Ledger::open(&config.workspace_dir).unwrap();
+    ledger
+        .create_checkpoint("ckpt_old", "old", std::slice::from_ref(&snapshot.id), 1_500)
+        .unwrap();
+    assert_eq!(ledger.list_checkpoints(10).unwrap().len(), 1);
+    drop(ledger);
+
+    assert_eq!(cleanup(&config, 0).await.unwrap(), 1);
+    assert_eq!(
+        list_snapshots(&config, Some("src_cleanup"), 10)
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[tokio::test]
 async fn compute_diff_rejects_cross_source() {
     let config = test_config();
     let from = seed(&config, "src_a", 1000, &[("a", "x")]);

@@ -142,6 +142,60 @@ fn source_claim_raw_paths_and_deletes_are_idempotent() {
 }
 
 #[test]
+fn raw_archive_references_round_trip_through_direct_and_transaction_paths() {
+    let (_tmp, config) = config();
+    let first = chunk("raw:a", 0, 1_700_000_000_000);
+    let second = chunk("raw:b", 0, 1_700_000_001_000);
+    upsert_chunks(&config, &[first.clone(), second.clone()]).unwrap();
+    let first_refs = vec![RawRef {
+        path: "raw/mail/one.md".into(),
+        start: 4,
+        end: Some(12),
+    }];
+    set_chunk_raw_refs(&config, &first.id, &first_refs).unwrap();
+    with_connection(&config, |connection| {
+        let transaction = connection.unchecked_transaction()?;
+        set_chunk_raw_refs_tx(
+            &transaction,
+            &second.id,
+            &[RawRef {
+                path: "raw/mail/two.md".into(),
+                start: 0,
+                end: Some(8),
+            }],
+        )?;
+        transaction.commit()?;
+        Ok(())
+    })
+    .unwrap();
+
+    let stored = get_chunk_raw_refs(&config, &first.id)
+        .unwrap()
+        .expect("raw refs stored");
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].path, first_refs[0].path);
+    assert_eq!(stored[0].start, first_refs[0].start);
+    assert_eq!(stored[0].end, first_refs[0].end);
+    assert!(get_chunk_raw_refs(&config, "missing").unwrap().is_none());
+    let paths = list_chunk_raw_ref_paths_with_prefix(&config, "raw/mail/").unwrap();
+    assert_eq!(paths.len(), 2);
+    assert!(paths.contains("raw/mail/one.md"));
+    assert!(paths.contains("raw/mail/two.md"));
+    assert!(get_chunk_content_pointers(&config, &first.id)
+        .unwrap()
+        .is_none());
+    assert!(get_chunk_content_path(&config, &first.id)
+        .unwrap()
+        .is_none());
+    assert!(get_summary_content_pointers(&config, "missing")
+        .unwrap()
+        .is_none());
+    assert!(list_summaries_with_content_path(&config)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
 fn embeddings_are_signature_scoped_and_tombstones_clear() {
     let (_tmp, config) = config();
     let first = chunk("team:a", 0, 1_700_000_000_000);
