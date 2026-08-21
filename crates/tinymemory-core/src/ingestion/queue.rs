@@ -279,6 +279,3 @@ async fn ingestion_worker(
 #[cfg(test)]
 #[path = "queue_tests.rs"]
 mod tests;
-
-#[path = "queue_test_support.rs"]
-mod test_support;

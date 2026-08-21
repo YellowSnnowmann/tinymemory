@@ -6,6 +6,10 @@ use axum::{routing::get, Json, Router};
 use std::ffi::OsString;
 use std::net::SocketAddr;
 
+fn reset_health_gate_for_test() {
+    OLLAMA_HEALTH_REPORTED.store(false, Ordering::Release);
+}
+
 /// RAII helper that swaps `OPENHUMAN_OLLAMA_BASE_URL` to `value` for the
 /// duration of the scope while holding the local-AI domain test mutex.
 /// The previous value (if any) is restored on drop.

@@ -138,20 +138,6 @@ fn init_in_slot(
     Ok(client)
 }
 
-/// Initialise using the default `~/.openhuman/workspace` directory.
-///
-/// **TEST-ONLY.** Production code must call [`init`] with the real workspace
-/// directory at startup wiring. If this function ran first in production it
-/// would pin the singleton to `~/.openhuman/workspace`, causing every
-/// subsequent `init(custom_workspace)` to silently no-op and return the wrong
-/// handle (`OnceLock::set` is one-shot).
-///
-/// The host resolves this path through `config::default_root_openhuman_dir`,
-/// which this crate cannot see; the home-directory lookup is reproduced here
-/// rather than added to the config seam for a test-only helper.
-#[cfg(test)]
-pub use test_support::init_default;
-
 /// Returns the global memory client.
 ///
 /// Returns `Err` if [`init`] has not yet been called. There is **no** lazy
@@ -290,6 +276,3 @@ pub fn client_if_ready() -> Option<MemoryClientRef> {
 #[cfg(test)]
 #[path = "global_tests.rs"]
 mod tests;
-
-#[path = "global_test_support.rs"]
-mod test_support;

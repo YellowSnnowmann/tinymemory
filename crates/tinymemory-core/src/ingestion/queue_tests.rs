@@ -8,6 +8,16 @@ use super::*;
 
 use serde_json::json;
 
+impl IngestionQueue {
+    fn from_parts(tx: mpsc::Sender<IngestionJob>, state: IngestionState, capacity: usize) -> Self {
+        Self {
+            tx,
+            state,
+            capacity,
+        }
+    }
+}
+
 fn fixture_job(title: &str) -> IngestionJob {
     IngestionJob {
         document_id: format!("doc-{title}"),

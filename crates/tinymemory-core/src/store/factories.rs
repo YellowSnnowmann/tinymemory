@@ -128,9 +128,6 @@ fn surface_local_model_unavailable_to_clients() {
 /// Resets the once-per-process Sentry latch. Test-only — any test that
 /// exercises a fallback path should call this first so it can't be flaked by
 /// suite ordering (an earlier test that already tripped the latch).
-#[cfg(test)]
-use test_support::reset_health_gate_for_test;
-
 /// Effective Ollama base URL.
 ///
 /// Delegates to the host's [`EmbeddingHost::ollama_base_url`] so the probe
@@ -723,6 +720,3 @@ pub fn create_memory_for_migration(
 #[cfg(test)]
 #[path = "factories_tests.rs"]
 mod tests;
-
-#[path = "factories_test_support.rs"]
-mod test_support;
