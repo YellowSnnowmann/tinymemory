@@ -617,7 +617,14 @@ fn intake_request(
     taint: &Option<String>,
     category: &Option<String>,
 ) -> Result<IntakeRequest, ApiError> {
-    let mut request = base.with_tags(tags).with_taint(parse_taint(taint));
+    let mut request = base.with_tags(tags);
+    // Only an explicit value overrides `IntakeRequest::new`'s closed default
+    // (`ExternalSync`, since this content arrived from outside). Applying
+    // `parse_taint` unconditionally would silently reverse that default to
+    // `Internal` for every request that omits `taint`.
+    if let Some(taint) = taint.as_deref().filter(|value| !value.is_empty()) {
+        request = request.with_taint(parse_taint(&Some(taint.to_string())));
+    }
     if let Some(key) = key.filter(|key| !key.is_empty()) {
         request = request.with_key(key);
     }
