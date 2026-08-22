@@ -418,6 +418,41 @@ async fn the_refusal_names_the_character_without_emitting_it() {
     );
 }
 
+/// A refusal must stay clean even when the identity is not.
+///
+/// Metadata is not sanitised, so a namespace or key may itself carry a NUL and
+/// be stored perfectly happily. That makes the two halves meet here: content
+/// the service would alter, under an identity that holds a control character.
+/// The message interpolates the identity, so this is where a refusal would
+/// leak the very character the naming exists to keep out of logs.
+#[tokio::test]
+async fn a_refusal_emits_no_control_character_from_the_identity_either() {
+    let (_state, driver) = spawn_double().await;
+    let result = driver
+        .store(
+            "project\u{0}alpha",
+            "decision\u{0}beta",
+            "a\u{0}b",
+            MemoryCategory::Core,
+            None,
+            MemoryTaint::Internal,
+        )
+        .await;
+    assert!(result.is_err(), "the content must still be refused");
+    let message = result
+        .err()
+        .map(|error| error.to_string())
+        .unwrap_or_default();
+    assert!(
+        !message.chars().any(|character| character.is_control()),
+        "the refusal must carry no control character at all: {message:?}"
+    );
+    assert!(
+        message.contains("project") && message.contains("decision"),
+        "the identity is still named, just escaped: {message}"
+    );
+}
+
 /// The predicate stays as narrow as the defect.
 ///
 /// Only these two characters were measured as dropped; every other C0 control
@@ -467,24 +502,26 @@ async fn content_supermemory_preserves_is_still_stored() {
 #[tokio::test]
 async fn identity_carrying_the_same_characters_is_not_refused() {
     let (_state, driver) = spawn_double().await;
-    driver
-        .store(
-            "project\u{0}alpha",
-            "decision\u{0}beta",
-            "ordinary content",
-            MemoryCategory::Core,
-            None,
-            MemoryTaint::Internal,
-        )
-        .await
-        .expect("metadata is not sanitised, so identity is not refused");
-    let stored = driver
-        .get("project\u{0}alpha", "decision\u{0}beta")
-        .await
-        .expect("get");
-    assert_eq!(
-        stored.map(|entry| entry.content),
-        Some("ordinary content".to_string()),
-        "the record is reachable under the key it was stored with"
-    );
+    for (label, character) in [("nul", '\u{0}'), ("replacement", '\u{FFFD}')] {
+        let namespace = format!("project{character}alpha");
+        let key = format!("decision{character}beta");
+        let content = format!("ordinary content for {label}");
+        driver
+            .store(
+                &namespace,
+                &key,
+                &content,
+                MemoryCategory::Core,
+                None,
+                MemoryTaint::Internal,
+            )
+            .await
+            .expect("metadata is not sanitised, so identity is not refused");
+        let stored = driver.get(&namespace, &key).await.expect("get");
+        assert_eq!(
+            stored.map(|entry| entry.content),
+            Some(content),
+            "{label}: the record is reachable under the identity it was stored with"
+        );
+    }
 }

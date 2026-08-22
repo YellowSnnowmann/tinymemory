@@ -410,7 +410,11 @@ impl Dialect for SupermemoryDialect {
     async fn upsert(&self, entry: StoredEntry) -> anyhow::Result<()> {
         if let Some((at, character)) = dropped_content_character(&entry.content) {
             return Err(anyhow::Error::new(MemoryError::Invalid(format!(
-                "supermemory removes {} from stored content, so `{}`/`{}` would read back \
+                // Debug-escaped, not raw: metadata is not sanitised, so an
+                // identity may itself hold a NUL — and a refusal that emits
+                // one lands in the same logs and terminals that render it as
+                // nothing, which is the failure this message exists to avoid.
+                "supermemory removes {} from stored content, so {:?}/{:?} would read back \
                  changed (first occurrence at byte {at}); remove the character, or store \
                  this record through a driver that preserves it",
                 character_name(character),

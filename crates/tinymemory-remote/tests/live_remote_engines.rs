@@ -22,8 +22,6 @@
 //! account the key belongs to. Point it at a scratch account rather than one
 //! holding anything you would miss.
 
-#![allow(clippy::expect_used)]
-
 use std::sync::Arc;
 
 use tinymemory_remote::{supermemory_provider, SupermemoryMemory};
@@ -42,10 +40,11 @@ fn credentials(engine: &str) -> Option<(String, String)> {
 ///
 /// Skipped without `TINYMEMORY_TEST_SUPERMEMORY_URL` and `..._KEY`.
 #[tokio::test]
-async fn live_supermemory_upholds_the_provider_contract() {
+async fn live_supermemory_upholds_the_provider_contract() -> anyhow::Result<()> {
     let Some((url, key)) = credentials("SUPERMEMORY") else {
-        return;
+        return Ok(());
     };
-    let provider = supermemory_provider(SupermemoryMemory::api(&url, &key).expect("client"));
+    let provider = supermemory_provider(SupermemoryMemory::api(&url, &key)?);
     tinymemory_conformance::assert_provider(Arc::new(provider)).await;
+    Ok(())
 }
