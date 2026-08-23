@@ -192,6 +192,12 @@ async fn maintenance_diagnostics_read_the_store_rather_than_their_defaults() {
         after.chunks,
         before.chunks
     );
+    assert!(
+        after.chunks_with_structure <= after.chunks,
+        "extracted chunks are a subset of stored ones; a numerator above its \
+         denominator is a coverage over 100%, which is what reading the two \
+         separately can produce"
+    );
 
     // A queue this engine has not been asked to fill is legitimately empty, so
     // the assertion is that the call answers from the queue at all rather than
@@ -265,6 +271,21 @@ async fn a_reported_failure_carries_the_success_watermark_that_supersedes_it() {
     assert_eq!(
         failure.last_success_ms, None,
         "nothing has succeeded yet, so there is no watermark to supersede it"
+    );
+
+    let queue = provider.queue_stats(None).await.expect("queue stats");
+    assert_eq!(queue.failed, 1, "the job is parked as failed");
+    assert_eq!(
+        queue.failed_unrecoverable, 1,
+        "an exhausted budget is not retried on its own, and a caller that \
+         escalates on `failed` alone cannot tell that apart from a failure \
+         about to self-heal"
+    );
+    assert!(
+        queue.last_completed_ms.is_some(),
+        "a failure settles a job too. Counting only successes here reports a \
+         queue that is failing fast — as fast as it can run — as one that has \
+         gone idle, which is the opposite diagnosis"
     );
 
     // Now settle one successfully. Same queue, same connection the failure is

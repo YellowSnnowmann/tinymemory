@@ -1160,24 +1160,36 @@ impl MemoryMaintenance for TinycortexProvider {
 
     async fn store_stats(&self) -> Result<StoreStats, MemoryError> {
         blocking(self.config.clone(), "read store stats", move |config| {
-            let chunks = tinymemory_core::store::chunks::store::count_chunks(config).unwrap_or(0);
-            // `MAX` over an empty table is SQL NULL, which is the same answer
-            // as "no chunks" and must stay distinguishable from a chunk
-            // stamped at the epoch — hence `Option`, not `0`.
-            let most_recent_chunk_ms =
-                tinymemory_core::store::chunks::store::with_connection(config, |conn| {
-                    let newest: Option<i64> = conn.query_row(
-                        "SELECT MAX(timestamp_ms) FROM mem_tree_chunks",
+            tinymemory_core::store::chunks::store::with_connection(config, |conn| {
+                // One statement for all three. The count and the extracted
+                // count are a ratio the caller displays, and sampling them
+                // either side of a write can put the numerator above the
+                // denominator — a coverage over 100%.
+                //
+                // `MAX` over an empty table is SQL NULL, which is the same
+                // answer as "no chunks" and must stay distinguishable from a
+                // chunk stamped at the epoch — hence `Option`, not `0`.
+                let (chunks, chunks_with_structure, most_recent_chunk_ms): (i64, i64, Option<i64>) =
+                    conn.query_row(
+                        "SELECT
+                       COUNT(*),
+                       COALESCE(SUM(EXISTS (
+                         SELECT 1 FROM mem_tree_entity_index e
+                          WHERE e.node_id = c.id
+                       )), 0),
+                       MAX(timestamp_ms)
+                     FROM mem_tree_chunks c",
                         [],
-                        |row| row.get(0),
+                        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                     )?;
-                    Ok(newest)
+                let count = |n: i64| u64::try_from(n).unwrap_or(0);
+                Ok(StoreStats {
+                    chunks: count(chunks),
+                    chunks_with_structure: count(chunks_with_structure),
+                    most_recent_chunk_ms,
                 })
-                .unwrap_or(None);
-            Ok(StoreStats {
-                chunks,
-                most_recent_chunk_ms,
             })
+            .map_err(|error| anyhow::anyhow!("store stats: {error}"))
         })
         .await
     }
@@ -1197,17 +1209,28 @@ impl MemoryMaintenance for TinycortexProvider {
                     running,
                     done,
                     failed,
+                    failed_unrecoverable,
                     eligible_now,
                     last_completed_ms,
                     oldest_eligible_ms,
-                ): (i64, i64, i64, i64, i64, Option<i64>, Option<i64>) = conn.query_row(
+                ): (i64, i64, i64, i64, i64, i64, Option<i64>, Option<i64>) = conn.query_row(
                     "SELECT
                        COALESCE(SUM(status = 'ready'), 0),
                        COALESCE(SUM(status = 'running'), 0),
                        COALESCE(SUM(status = 'done'), 0),
                        COALESCE(SUM(status = 'failed'), 0),
+                       COALESCE(SUM(status = 'failed'
+                                    AND failure_class = 'unrecoverable'), 0),
                        COALESCE(SUM(status = 'ready' AND available_at_ms <= ?1), 0),
-                       MAX(CASE WHEN status = 'done' THEN completed_at_ms END),
+                       -- Every status, not just 'done'. A job that fails
+                       -- stamps `completed_at_ms` too, and a queue failing
+                       -- fast is making progress in the only sense this
+                       -- field measures: it is not stuck. Filtering to
+                       -- 'done' would report a fast-failing pipeline as
+                       -- idle, which is the misdiagnosis this exists to
+                       -- avoid. Supersession wants the opposite reading and
+                       -- gets its own field on `QueueFailure`.
+                       MAX(completed_at_ms),
                        MIN(CASE WHEN status = 'ready' AND available_at_ms <= ?1
                                 THEN available_at_ms END)
                      FROM mem_tree_jobs
@@ -1222,6 +1245,7 @@ impl MemoryMaintenance for TinycortexProvider {
                             row.get(4)?,
                             row.get(5)?,
                             row.get(6)?,
+                            row.get(7)?,
                         ))
                     },
                 )?;
@@ -1231,6 +1255,7 @@ impl MemoryMaintenance for TinycortexProvider {
                     running: count(running),
                     done: count(done),
                     failed: count(failed),
+                    failed_unrecoverable: count(failed_unrecoverable),
                     eligible_now: count(eligible_now),
                     last_completed_ms,
                     oldest_eligible_ms,

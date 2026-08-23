@@ -398,6 +398,17 @@ pub struct MaintenanceReport {
 pub struct StoreStats {
     /// Chunks the driver holds.
     pub chunks: u64,
+    /// Of those chunks, how many the driver has extracted structure from.
+    ///
+    /// A count rather than the ratio a caller displays, because the ratio is
+    /// only meaningful against the denominator it was measured with. Read
+    /// separately, the two can be sampled either side of a write and produce a
+    /// coverage above 1.0; read together they cannot.
+    ///
+    /// A driver that does not extract structure leaves this at zero, which
+    /// reads as "nothing extracted" — correct for it, and the reason a caller
+    /// should show the pair rather than the ratio alone.
+    pub chunks_with_structure: u64,
     /// Timestamp of the most recently stored chunk, if any.
     ///
     /// `None` for an empty store — distinct from `Some(0)`, which would be a
@@ -421,6 +432,15 @@ pub struct QueueStats {
     pub done: u64,
     /// Jobs that ended in a terminal failure.
     pub failed: u64,
+    /// Of those failures, how many the driver will not retry on its own.
+    ///
+    /// The distinction is what separates an alert from a shrug: transient
+    /// failures self-heal on the next attempt, and a caller that escalates on
+    /// [`Self::failed`] alone pages someone for a queue that is already
+    /// recovering. Counted with `failed` rather than beside it, because two
+    /// reads can land either side of a retry and report more unrecoverable
+    /// failures than there are failures.
+    pub failed_unrecoverable: u64,
     /// Ready jobs whose scheduled time has already passed.
     ///
     /// The difference between this and [`Self::ready`] is deferred work, and
