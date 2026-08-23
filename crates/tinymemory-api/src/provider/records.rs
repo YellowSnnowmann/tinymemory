@@ -185,7 +185,10 @@ pub trait MemoryMaintenance: Send + Sync {
     ///
     /// `kind` narrows to one job kind (the driver's own identifier); `None`
     /// counts every kind. A driver with no queue answers all-zero, which is
-    /// true of it rather than a refusal.
+    /// true of it rather than a refusal — and so does a kind this driver does
+    /// not have, since "no jobs of a kind I never enqueue" is the honest
+    /// count. A caller that does not know the driver's vocabulary passes
+    /// `None`; that is what the `Option` is for.
     ///
     /// # Errors
     ///

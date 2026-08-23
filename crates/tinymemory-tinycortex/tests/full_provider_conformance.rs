@@ -223,6 +223,60 @@ async fn maintenance_diagnostics_read_the_store_rather_than_their_defaults() {
     );
 }
 
+/// Work the queue has deliberately parked is ready, but not eligible now.
+///
+/// This is the difference between a backlog and a stall. A job backing off
+/// after a transient failure stays `ready` with its next attempt scheduled
+/// forward; counting it as runnable means a queue that is behaving correctly
+/// reports as one that has stopped, and the caller escalates on it. The
+/// caller cannot make the distinction itself — it sees counts, not schedules
+/// — so the split has to be made here.
+#[tokio::test]
+async fn deferred_work_stays_ready_without_becoming_eligible() {
+    use tinymemory_api::provider::MemoryMaintenance;
+    use tinymemory_core::queue::store as queue_store;
+    use tinymemory_core::queue::types::{FlushStalePayload, NewJob};
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+
+    let new_job =
+        NewJob::flush_stale(&FlushStalePayload::default(), "2026-08-21", 1).expect("build a job");
+    let id = queue_store::enqueue(&config, &new_job)
+        .expect("enqueue")
+        .expect("a fresh job is not a duplicate");
+    let job = queue_store::get_job(&config, &id)
+        .expect("read the job")
+        .expect("the job exists");
+
+    let queue = provider.queue_stats(None).await.expect("queue stats");
+    assert_eq!(queue.ready, 1);
+    assert_eq!(
+        queue.eligible_now, 1,
+        "precondition: a freshly enqueued job is runnable now"
+    );
+
+    // Park it the way a backing-off retry does: still `ready`, scheduled
+    // forward. Far enough forward that no plausible clock lands after it.
+    let until_ms = chrono::Utc::now().timestamp_millis() + 60 * 60 * 1000;
+    queue_store::mark_deferred(&config, &job, until_ms, "backing off").expect("defer the job");
+
+    let queue = provider.queue_stats(None).await.expect("queue stats");
+    assert_eq!(
+        queue.ready, 1,
+        "deferred work is still queued — it has not been abandoned"
+    );
+    assert_eq!(
+        queue.eligible_now, 0,
+        "but nothing is runnable, so nothing is being held up"
+    );
+    assert_eq!(
+        queue.oldest_eligible_ms, None,
+        "and there is no waiting job to measure an idle window from"
+    );
+}
+
 /// A reported failure carries the success watermark that decides whether it is
 /// still worth showing.
 ///
