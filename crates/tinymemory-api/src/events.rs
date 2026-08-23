@@ -21,9 +21,7 @@
 
 use std::sync::{Arc, RwLock};
 
-pub use crate::host::{
-    EmbeddingHealthReason, MemoryEvent, MemoryEventSink, NoopEventSink,
-};
+pub use crate::host::{EmbeddingHealthReason, MemoryEvent, MemoryEventSink, NoopEventSink};
 
 /// `std::sync::RwLock`, not the engine's `parking_lot` one. The lock is held
 /// for a clone and nothing else, so the two behave identically here — and using
