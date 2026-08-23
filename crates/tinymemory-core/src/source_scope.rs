@@ -1,5 +1,26 @@
 //! Ambient per-turn allowlist of memory-source scopes an agent may recall from.
 //!
+//! # Why this stayed here and did not move to `tinymemory-api`
+//!
+//! [`events`](crate::events) and [`sync_events`](crate::sync_events) moved into
+//! the contract crate; this did not, for two independent reasons.
+//!
+//! It is a `tokio::task_local!`, and `tinymemory-api`'s manifest carries an
+//! explicit invariant — with a `cargo tree` guard command beside it — that
+//! nothing in its normal graph may pull in an async runtime. That is a promise
+//! to third-party driver authors, who implement `MemoryProvider` and never
+//! touch a host's per-turn allowlist.
+//!
+//! It also does not need to move. This task-local is the **in-process**
+//! convenience default, read by
+//! [`query_source`](crate::tree::retrieval::source::query_source); the
+//! transport-facing form is `query_source_scoped`, which takes the scope as an
+//! argument, and the bus carries it explicitly as
+//! `tinymemory_api::provider::types::SourceScope`. A host driving memory
+//! through the loadable module could not share a task-local with it in any
+//! case — the module is a separately compiled `cdylib` with its own statics —
+//! so it gathers its own ambient scope and passes it as a parameter.
+//!
 //! Agent profiles can restrict which memory sources a flavour recalls (the
 //! `AgentProfile::memory_sources` allowlist). Threading that allowlist through
 //! every memory tool and the deep `select_trees` retrieval layer would touch

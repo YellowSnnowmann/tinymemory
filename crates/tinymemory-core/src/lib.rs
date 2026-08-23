@@ -72,23 +72,6 @@ pub mod rpc_models;
 pub mod scheduler_gate;
 pub mod search;
 pub mod shutdown;
-/// The per-turn memory-source allowlist.
-///
-/// Deliberately **not** moved into `tinymemory-api` alongside [`events`] and
-/// [`sync_events`]. It is a `tokio::task_local!`, and that crate's manifest
-/// carries an explicit invariant — with a `cargo tree` guard command beside it
-/// — that nothing in its normal graph may pull in an async runtime. That is a
-/// promise to third-party driver authors, who implement `MemoryProvider` and
-/// never touch a host's per-turn allowlist.
-///
-/// It also does not need to move. This task-local is the **in-process**
-/// convenience default, read by `tree::retrieval::source::query_source`; the
-/// transport-facing form is `query_source_scoped`, which takes the scope as an
-/// argument, and the bus carries it explicitly as
-/// [`tinymemory_api::provider::types::SourceScope`]. A host driving memory
-/// through the loadable module could not share a task-local with it in any
-/// case — the module is a separately compiled `cdylib` with its own statics —
-/// so it gathers its own ambient scope and passes it as a parameter.
 pub mod source_scope;
 pub mod sources;
 pub mod store;
