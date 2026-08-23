@@ -82,33 +82,41 @@ pub fn publish(event: MemoryEvent) {
 
 /// A [`MemoryEventSink`] that records what it was given, for tests.
 ///
+/// Behind the `test-support` feature rather than `#[cfg(test)]`, and `pub`
+/// rather than `pub(crate)`, because `tinymemory-core` asserts on published
+/// events throughout its own suite and can no longer reach a crate-private
+/// helper now that the event bus lives here. Same shape as
+/// [`crate::host::test_support::TestHostConfig`]: core enables the feature from
+/// its dev-dependencies, and nothing enables it in a shipped build.
+///
 /// Several tests used to assert on the host's web-channel broadcast, because
 /// before the extraction the publish went straight onto that channel. The
 /// decision to publish is core behaviour; the wire format is the host's. So the
 /// tests kept the half they are actually about — *did the transition publish,
 /// and did it publish exactly once* — and assert it here instead.
-#[cfg(test)]
+#[cfg(feature = "test-support")]
 #[derive(Debug, Default)]
-pub(crate) struct RecordingSink {
+pub struct RecordingSink {
     events: std::sync::Mutex<Vec<MemoryEvent>>,
 }
 
-#[cfg(test)]
+#[cfg(feature = "test-support")]
 impl RecordingSink {
     /// Install a fresh recorder and return it. Replaces any existing sink.
-    pub(crate) fn install() -> Arc<Self> {
+    #[must_use]
+    pub fn install() -> Arc<Self> {
         let sink = Arc::new(Self::default());
         set_event_sink(Arc::clone(&sink) as Arc<dyn MemoryEventSink>);
         sink
     }
 
     /// Take everything recorded so far, leaving the recorder empty.
-    pub(crate) fn drain(&self) -> Vec<MemoryEvent> {
+    pub fn drain(&self) -> Vec<MemoryEvent> {
         std::mem::take(&mut *self.events.lock().expect("recording sink lock"))
     }
 }
 
-#[cfg(test)]
+#[cfg(feature = "test-support")]
 impl MemoryEventSink for RecordingSink {
     fn publish(&self, event: MemoryEvent) {
         self.events.lock().expect("recording sink lock").push(event);
