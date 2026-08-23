@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 use parking_lot::RwLock;
 
-pub use tinymemory_api::host::{
+pub use crate::host::{
     EmbeddingHealthReason, MemoryEvent, MemoryEventSink, NoopEventSink,
 };
 
