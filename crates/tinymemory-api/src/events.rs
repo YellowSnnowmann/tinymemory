@@ -1,4 +1,4 @@
-//! The process-global [`MemoryEventSink`](crate::host::MemoryEventSink), and
+//! The process-global [`MemoryEventSink`], and
 //! the [`publish()`] the engine calls in place of the host's own bus.
 //!
 //! # Why this is in the contract crate
