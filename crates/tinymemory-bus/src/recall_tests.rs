@@ -99,6 +99,7 @@ fn owned_recall_opts_serde_round_trips_every_field() {
             "category": "custom:field_notes",
             "session_id": "session-42",
             "min_score": 0.75,
+            "exclude_session_id": "thread-live",
             "cross_session": true
         })
     );
