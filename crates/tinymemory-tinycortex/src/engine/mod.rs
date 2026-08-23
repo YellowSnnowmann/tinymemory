@@ -1158,6 +1158,31 @@ impl MemoryMaintenance for TinycortexProvider {
         })
     }
 
+    async fn retry_failed(&self) -> Result<MaintenanceReport, MemoryError> {
+        let (examined, changed) = blocking(
+            self.config.clone(),
+            "retry failed queue work",
+            move |config| {
+                let examined = tinymemory_core::queue::count_total(config).unwrap_or(0);
+                let changed = tinymemory_core::queue::store::requeue_failed(config)?;
+                // Inside the same call, and only when something moved: rows
+                // put back on `ready` sit until the next scheduled window
+                // otherwise, which reads as a retry that did nothing.
+                if changed > 0 {
+                    tinymemory_core::queue::wake_workers();
+                }
+                Ok((examined, changed))
+            },
+        )
+        .await?;
+        Ok(MaintenanceReport {
+            operation: "retry_failed".to_string(),
+            examined,
+            changed,
+            findings: vec![format!("requeued {changed} failed job(s)")],
+        })
+    }
+
     async fn store_stats(&self) -> Result<StoreStats, MemoryError> {
         blocking(self.config.clone(), "read store stats", move |config| {
             tinymemory_core::store::chunks::store::with_connection(config, |conn| {

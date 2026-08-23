@@ -671,6 +671,7 @@ const EXPECTED_METHODS: &[&str] = &[
     "Compact",
     "Consolidate",
     "Doctor",
+    "RetryFailed",
     "StoreStats",
     "QueueStats",
     "LatestQueueFailure",

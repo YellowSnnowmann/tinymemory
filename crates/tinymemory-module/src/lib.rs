@@ -307,6 +307,7 @@ mod exports {
             "Compact",
             "Consolidate",
             "Doctor",
+            "RetryFailed",
             "StoreStats",
             "QueueStats",
             "LatestQueueFailure",

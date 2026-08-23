@@ -887,6 +887,13 @@ impl MemoryService {
             .map_err(|error| into_bus_error(&error))
     }
 
+    async fn retry_failed(&self) -> BusResult<MaintenanceReport> {
+        require_family!(self, as_maintenance, Capability::Maintenance)
+            .retry_failed()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
     async fn store_stats(&self) -> BusResult<StoreStats> {
         require_family!(self, as_maintenance, Capability::Maintenance)
             .store_stats()
