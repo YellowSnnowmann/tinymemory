@@ -42,3 +42,6 @@ pub const MEM0_DRIVER_ID: &str = "mem0";
 
 /// Driver id of the native Cognee HTTP adapter.
 pub const COGNEE_DRIVER_ID: &str = "cognee";
+
+/// Driver id of the local AgentMemory HTTP adapter.
+pub const AGENTMEMORY_DRIVER_ID: &str = "agentmemory";

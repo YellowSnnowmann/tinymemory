@@ -177,7 +177,12 @@ fn a_trusted_external_driver_is_admitted() {
 #[test]
 fn supported_external_ids_have_a_fixed_class() {
     let registry = DriverRegistry::builtin();
-    for id in [SUPERMEMORY_DRIVER_ID, MEM0_DRIVER_ID, COGNEE_DRIVER_ID] {
+    for id in [
+        SUPERMEMORY_DRIVER_ID,
+        MEM0_DRIVER_ID,
+        COGNEE_DRIVER_ID,
+        AGENTMEMORY_DRIVER_ID,
+    ] {
         let admitted = registry
             .admit(id, Some(entry(Some("external"), TRUSTED)), labels())
             .expect("supported external driver admits");
