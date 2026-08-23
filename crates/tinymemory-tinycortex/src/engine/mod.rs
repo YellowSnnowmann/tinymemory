@@ -1275,12 +1275,7 @@ impl MemoryMaintenance for TinycortexProvider {
                     },
                 )?;
                 let count = |n: i64| u64::try_from(n).unwrap_or(0);
-                // A process-global the backfill chain owns, not a column —
-                // read here so it arrives with the counts it has to be
-                // interpreted next to.
-                let backfill_in_progress = tinymemory_core::queue::backfill_in_progress();
                 Ok(QueueStats {
-                    backfill_in_progress,
                     ready: count(ready),
                     running: count(running),
                     done: count(done),
