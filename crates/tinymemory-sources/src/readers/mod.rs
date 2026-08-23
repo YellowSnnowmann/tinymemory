@@ -36,8 +36,13 @@ pub mod web_page;
 
 /// SSRF guard + fetch hygiene shared by the sync-gated network readers
 /// (`web_page`, `rss`). See the `ssrf` module docs.
+///
+/// Public because it is not only the readers that fetch a URL any more:
+/// `tinymemory-documents` pulls a page into memory on request, and a second
+/// SSRF implementation in the same workspace would mean one of the two is the
+/// weaker without anyone knowing which.
 #[cfg(feature = "network")]
-mod ssrf;
+pub mod ssrf;
 
 use async_trait::async_trait;
 

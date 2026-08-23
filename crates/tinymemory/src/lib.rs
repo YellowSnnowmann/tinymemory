@@ -84,13 +84,18 @@ pub use tinymemory_api::mandatory;
 #[cfg(feature = "tinycortex")]
 pub use tinymemory_tinycortex as tinycortex;
 
-/// The hosted HTTP engines, when any of `supermemory`, `mem0` or `cognee` is on.
+/// The HTTP engines, when any remote-engine feature is on.
 ///
 /// One module for all three because they share one adapter crate — enabling
 /// two of them costs one dependency, not two. The per-engine features still
 /// exist so a host states which it actually uses, and so a future split can
 /// happen without changing how hosts ask for them.
-#[cfg(any(feature = "supermemory", feature = "mem0", feature = "cognee"))]
+#[cfg(any(
+    feature = "supermemory",
+    feature = "mem0",
+    feature = "cognee",
+    feature = "agentmemory"
+))]
 pub use tinymemory_remote as remote;
 
 /// The engine-neutral memory subsystem, when the `core` feature is on.
@@ -117,6 +122,16 @@ pub use tinymemory_sync as sync;
 /// folders links no HTTP stack.
 #[cfg(feature = "sources")]
 pub use tinymemory_sources as sources;
+
+/// Document and URL intake — [`documents::DocumentIntake`]: sniff a format,
+/// convert it to markdown, and write it into whichever engine is bound.
+///
+/// Behind the `documents` feature; the URL half needs `documents-network`,
+/// which links an HTTP stack. Deliberately *not* part of the mandatory
+/// composition: a host that stores only what its agent produces converts
+/// nothing and should link none of this.
+#[cfg(feature = "documents")]
+pub use tinymemory_documents as documents;
 
 /// The behavioural conformance suite, when the `conformance` feature is on.
 ///

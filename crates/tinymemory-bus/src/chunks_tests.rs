@@ -96,7 +96,7 @@ fn data_source_round_trip() {
 
 #[test]
 fn data_source_has_all_variants() {
-    assert_eq!(DataSource::all().len(), 9);
+    assert_eq!(DataSource::all().len(), 11);
 }
 
 #[test]
@@ -108,7 +108,7 @@ fn data_source_kind_mapping() {
     for ds in [Gmail, OtherEmail] {
         assert_eq!(ds.kind(), SourceKind::Email);
     }
-    for ds in [Notion, MeetingNotes, DriveDocs] {
+    for ds in [Notion, MeetingNotes, DriveDocs, Upload, WebPage] {
         assert_eq!(ds.kind(), SourceKind::Document);
     }
 }

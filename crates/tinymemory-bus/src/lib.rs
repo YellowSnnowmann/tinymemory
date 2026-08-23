@@ -12,6 +12,11 @@
 //! - [`names`] — the bus name, the object path, and one constant per member.
 //! - [`types`], [`chunks`], [`recall`], [`tree`], [`goals`], [`tool_memory`],
 //!   [`health`], [`capabilities`], [`evidence`] — the value vocabulary.
+//! - [`graph`] — the bounded graph-view model ([`graph::GraphView`],
+//!   [`graph::GraphViewQuery`]), the graph counterpart of [`tree`].
+//! - [`namespace`] — the `<section>:<scope>` namespace convention
+//!   ([`namespace::Namespace`], [`namespace::MemorySection`]) and its
+//!   validator.
 //! - [`provider`] — the value types the capability families exchange.
 //! - [`error`] and [`wire`] — [`error::MemoryError`] and the name table it
 //!   round-trips through when a driver is reached over a wire.
@@ -71,8 +76,10 @@ pub mod chunks;
 pub mod error;
 pub mod evidence;
 pub mod goals;
+pub mod graph;
 pub mod health;
 pub mod names;
+pub mod namespace;
 pub mod provider;
 pub mod recall;
 pub mod tool_memory;
