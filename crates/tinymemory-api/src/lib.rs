@@ -96,6 +96,7 @@ pub mod host;
 /// Host policy in the same sense as [`events`]: the host decides which sources a
 /// turn may recall from, and the engine merely reads the task-local. Kept here
 /// so that decision is expressible without the engine crate.
+#[cfg(feature = "source-scope")]
 pub mod source_scope;
 /// The memory-sync lifecycle vocabulary and its emit helper.
 pub mod sync_events;
