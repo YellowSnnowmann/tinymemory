@@ -9,7 +9,14 @@ services:
         FROM node:22-bookworm-slim
         WORKDIR /app
         COPY package.json .
-        RUN npm install
+        # The image's bundled npm (10.9.8) fails resolving this package.json
+        # with "Cannot read properties of null (reading 'edgesOut')" — an
+        # arborist bug, not a bad dependency: npm 11.12.1 resolves the exact
+        # same file to 276 packages. It surfaced without any change here, on a
+        # day when this job went from green at 10:47 to red at 15:39, because
+        # the build has no lockfile and resolves against a registry that moves.
+        # Pinned rather than floated for the same reason.
+        RUN npm install -g npm@11.12.1 && npm install
         COPY . .
         RUN npm run build
         CMD ["node", "dist/index.mjs"]
