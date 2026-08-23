@@ -15,7 +15,11 @@ readme = "../../README.md"
 [dependencies]
 # The contract. `tinymemory-core` implements and consumes it; the host seam
 # traits (config, event sink, embeddings, chat) live in `tinymemory_api::host`.
-tinymemory-api = { path = "../tinymemory-api" }
+# `source-scope` because the per-turn allowlist moved into the contract crate
+# (with `events` and `sync_events`) but is gated there — it is that crate's only
+# `tokio` edge, and it promises driver authors it pulls in no async runtime.
+# This crate already depends on tokio, so enabling it costs nothing here.
+tinymemory-api = { path = "../tinymemory-api", features = ["source-scope"] }
 # Composio payload normalisers, extracted out of the engine (issue #18 §B3).
 # They were reached through `tinycortex` until now, which meant a host binding a
 # different engine could not have Composio sync despite none of this code
@@ -78,7 +82,7 @@ walkdir = "2"
 wiremock = "0.6"
 # `TestHostConfig` — the concrete `MemoryHostConfig` the extracted test suites
 # build, since `Config` is a trait object and cannot be `Default`ed.
-tinymemory-api = { path = "../tinymemory-api", features = ["test-support"] }
+tinymemory-api = { path = "../tinymemory-api", features = ["source-scope", "test-support"] }
 # The driver conformance suite (#18 §E1). A dev-dependency only: it exists to
 # hold this crate's own store to the same contract the adapters are held to.
 # No cycle — `tinymemory-conformance` depends on `tinymemory-api` alone.
