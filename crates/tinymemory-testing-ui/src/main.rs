@@ -346,6 +346,9 @@ async fn recall(
         category,
         session_id: req.session_id,
         min_score: req.min_score,
+        // The testing UI drives recall directly, outside any agent turn, so
+        // there is no live thread to exclude.
+        exclude_session_id: None,
         cross_session: req.cross_session,
     };
     let hits = provider
