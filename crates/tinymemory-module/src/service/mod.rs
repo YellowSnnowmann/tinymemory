@@ -121,8 +121,7 @@ use tinymemory_api::goals::GoalsDoc;
 use tinymemory_api::health::MemoryHealth;
 use tinymemory_api::provider::types::{
     DiffReport, EntityHit, ExportPage, ExportRecord, ImportOutcome, IngestItem, IngestOutcome,
-    MaintenanceReport, QueueFailure, QueueStats, SnapshotRef, SourceItem, SourceScope,
-    StoreStats,
+    MaintenanceReport, QueueFailure, QueueStats, SnapshotRef, SourceItem, SourceScope, StoreStats,
 };
 // `MemoryCore`, `MemoryRecall` and `MemoryPortability` are deliberately not
 // imported: they are supertraits of `MemoryProvider`, so their methods are
