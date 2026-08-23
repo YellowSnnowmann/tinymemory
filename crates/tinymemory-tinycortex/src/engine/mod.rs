@@ -33,7 +33,7 @@ use tinymemory_api::host::{
 use tinymemory_api::mandatory::MemoryTraitProvider;
 use tinymemory_api::provider::types::{
     EntityHit, EntityRef, ExportPage, ExportRecord, ImportOutcome, IngestItem, IngestOutcome,
-    MaintenanceReport, SourceItem, SourceScope,
+    MaintenanceReport, QueueFailure, QueueStats, SourceItem, SourceScope, StoreStats,
 };
 // Diff-family value types, used only by the `MemoryDiff` impl below — which is
 // compiled out without the git-backed snapshot store.
@@ -1156,6 +1156,121 @@ impl MemoryMaintenance for TinycortexProvider {
             changed,
             findings: vec![format!("enqueued {changed} re-embedding job(s)")],
         })
+    }
+
+    async fn store_stats(&self) -> Result<StoreStats, MemoryError> {
+        blocking(self.config.clone(), "read store stats", move |config| {
+            let chunks = tinymemory_core::store::chunks::store::count_chunks(config).unwrap_or(0);
+            // `MAX` over an empty table is SQL NULL, which is the same answer
+            // as "no chunks" and must stay distinguishable from a chunk
+            // stamped at the epoch — hence `Option`, not `0`.
+            let most_recent_chunk_ms =
+                tinymemory_core::store::chunks::store::with_connection(config, |conn| {
+                    let newest: Option<i64> = conn.query_row(
+                        "SELECT MAX(timestamp_ms) FROM mem_tree_chunks",
+                        [],
+                        |row| row.get(0),
+                    )?;
+                    Ok(newest)
+                })
+                .unwrap_or(None);
+            Ok(StoreStats {
+                chunks,
+                most_recent_chunk_ms,
+            })
+        })
+        .await
+    }
+
+    async fn queue_stats(&self, kind: Option<&str>) -> Result<QueueStats, MemoryError> {
+        let kind = kind.map(str::to_string);
+        blocking(self.config.clone(), "read queue stats", move |config| {
+            let now_ms = chrono::Utc::now().timestamp_millis();
+            tinymemory_core::store::chunks::store::with_connection(config, |conn| {
+                // One statement rather than six round trips, and one `now`
+                // rather than one per sub-query: counts taken at different
+                // instants can disagree with each other, and an idle-time
+                // calculation built on that reads as a stall that never
+                // happened.
+                let (
+                    ready,
+                    running,
+                    done,
+                    failed,
+                    eligible_now,
+                    last_completed_ms,
+                    oldest_eligible_ms,
+                ): (i64, i64, i64, i64, i64, Option<i64>, Option<i64>) = conn.query_row(
+                    "SELECT
+                       COALESCE(SUM(status = 'ready'), 0),
+                       COALESCE(SUM(status = 'running'), 0),
+                       COALESCE(SUM(status = 'done'), 0),
+                       COALESCE(SUM(status = 'failed'), 0),
+                       COALESCE(SUM(status = 'ready' AND available_at_ms <= ?1), 0),
+                       MAX(CASE WHEN status = 'done' THEN completed_at_ms END),
+                       MIN(CASE WHEN status = 'ready' AND available_at_ms <= ?1
+                                THEN available_at_ms END)
+                     FROM mem_tree_jobs
+                     WHERE (?2 IS NULL OR kind = ?2)",
+                    rusqlite::params![now_ms, kind],
+                    |row| {
+                        Ok((
+                            row.get(0)?,
+                            row.get(1)?,
+                            row.get(2)?,
+                            row.get(3)?,
+                            row.get(4)?,
+                            row.get(5)?,
+                            row.get(6)?,
+                        ))
+                    },
+                )?;
+                let count = |n: i64| u64::try_from(n).unwrap_or(0);
+                Ok(QueueStats {
+                    ready: count(ready),
+                    running: count(running),
+                    done: count(done),
+                    failed: count(failed),
+                    eligible_now: count(eligible_now),
+                    last_completed_ms,
+                    oldest_eligible_ms,
+                })
+            })
+            .map_err(|error| anyhow::anyhow!("queue stats: {error}"))
+        })
+        .await
+    }
+
+    async fn latest_queue_failure(&self) -> Result<Option<QueueFailure>, MemoryError> {
+        blocking(
+            self.config.clone(),
+            "read latest queue failure",
+            move |config| {
+                tinymemory_core::store::chunks::store::with_connection(config, |conn| {
+                    use rusqlite::OptionalExtension;
+                    let row = conn
+                        .query_row(
+                            "SELECT failure_reason, failure_class, completed_at_ms
+                           FROM mem_tree_jobs
+                          WHERE status = 'failed' AND failure_reason IS NOT NULL
+                          ORDER BY completed_at_ms DESC
+                          LIMIT 1",
+                            [],
+                            |row| {
+                                Ok(QueueFailure {
+                                    reason: row.get(0)?,
+                                    class: row.get(1)?,
+                                    completed_at_ms: row.get(2)?,
+                                })
+                            },
+                        )
+                        .optional()?;
+                    Ok(row)
+                })
+                .map_err(|error| anyhow::anyhow!("latest queue failure: {error}"))
+            },
+        )
+        .await
     }
 
     async fn compact(&self) -> Result<MaintenanceReport, MemoryError> {

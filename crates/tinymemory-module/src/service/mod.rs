@@ -121,7 +121,8 @@ use tinymemory_api::goals::GoalsDoc;
 use tinymemory_api::health::MemoryHealth;
 use tinymemory_api::provider::types::{
     DiffReport, EntityHit, ExportPage, ExportRecord, ImportOutcome, IngestItem, IngestOutcome,
-    MaintenanceReport, SnapshotRef, SourceItem, SourceScope,
+    MaintenanceReport, QueueFailure, QueueStats, SnapshotRef, SourceItem, SourceScope,
+    StoreStats,
 };
 // `MemoryCore`, `MemoryRecall` and `MemoryPortability` are deliberately not
 // imported: they are supertraits of `MemoryProvider`, so their methods are
@@ -883,6 +884,27 @@ impl MemoryService {
     async fn doctor(&self) -> BusResult<MaintenanceReport> {
         require_family!(self, as_maintenance, Capability::Maintenance)
             .doctor()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn store_stats(&self) -> BusResult<StoreStats> {
+        require_family!(self, as_maintenance, Capability::Maintenance)
+            .store_stats()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn queue_stats(&self, kind: Option<String>) -> BusResult<QueueStats> {
+        require_family!(self, as_maintenance, Capability::Maintenance)
+            .queue_stats(kind.as_deref())
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn latest_queue_failure(&self) -> BusResult<Option<QueueFailure>> {
+        require_family!(self, as_maintenance, Capability::Maintenance)
+            .latest_queue_failure()
             .await
             .map_err(|error| into_bus_error(&error))
     }

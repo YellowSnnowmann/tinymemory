@@ -133,6 +133,90 @@ async fn the_full_provider_actually_retains() {
     );
 }
 
+/// The maintenance diagnostics answer from the store, not from their defaults.
+///
+/// `store_stats`, `queue_stats` and `latest_queue_failure` are defaulted on
+/// the trait so a driver without a queue compiles and answers "nothing" rather
+/// than refusing. That default is also the failure this test exists to catch:
+/// an engine that inherits it reports an empty store and an idle queue forever,
+/// which is indistinguishable from a healthy quiet one and is exactly the shape
+/// a caller cannot detect. Asserting a zero would pass against the default, so
+/// this stores something first and requires the numbers to move.
+#[tokio::test(flavor = "multi_thread")]
+async fn maintenance_diagnostics_read_the_store_rather_than_their_defaults() {
+    use tinymemory_api::chunks::DataSource;
+    use tinymemory_api::provider::{MemoryMaintenance, MemoryProvider};
+    use tinymemory_api::types::MemoryTaint;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+
+    let before = provider.store_stats().await.expect("store stats");
+    assert_eq!(before.chunks, 0, "a fresh workspace holds nothing");
+    assert_eq!(
+        before.most_recent_chunk_ms, None,
+        "an empty store has no newest chunk — `None`, never `Some(0)`, which \
+         would be a chunk stamped at the epoch"
+    );
+
+    // Ingested, not `store`d: `MemoryCore::store` writes a memory entry, and
+    // `store_stats.chunks` counts the CHUNK tier, which only ingest fills.
+    // Asserting against `store` here passed a zero against a zero and proved
+    // nothing — the first version of this test did exactly that.
+    let outcome = provider
+        .as_ingest()
+        .expect("Ingest")
+        .ingest_document(tinymemory_api::provider::types::IngestItem {
+            namespace: None,
+            source: DataSource::Upload,
+            source_id: "diagnostics-upload".into(),
+            owner: "owner".into(),
+            source_ref: None,
+            content: "A deterministic sentence for the diagnostics test.".into(),
+            mime: Some("text/plain".into()),
+            timestamp: Some(
+                chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("fixed timestamp"),
+            ),
+            tags: Vec::new(),
+            taint: MemoryTaint::Internal,
+            path_scope: None,
+        })
+        .await
+        .expect("ingest a document");
+    assert!(outcome.written > 0, "the ingest must persist a chunk");
+
+    let after = provider.store_stats().await.expect("store stats");
+    assert!(
+        after.chunks > before.chunks,
+        "the count must follow the store; got {} after writing to {}",
+        after.chunks,
+        before.chunks
+    );
+
+    // A queue this engine has not been asked to fill is legitimately empty, so
+    // the assertion is that the call answers from the queue at all rather than
+    // erroring — the numbers themselves are only meaningful once work exists.
+    let queue = provider.queue_stats(None).await.expect("queue stats");
+    assert_eq!(
+        queue.eligible_now.min(queue.ready),
+        queue.eligible_now,
+        "jobs eligible now are a subset of jobs ready; conflating the two \
+         reads a backlog of deferred work as a stall"
+    );
+
+    // Nothing has failed, and that must read as `None` rather than an error:
+    // a healthy queue and a driver keeping no failure history give the same
+    // answer, and neither is something a caller can act on.
+    assert!(
+        provider
+            .latest_queue_failure()
+            .await
+            .expect("latest queue failure")
+            .is_none(),
+        "a store that has run no failing job reports no failure"
+    );
+}
+
 /// The KV write path canonicalizes identifiers (the shim in `tinymemory-core`
 /// routes every `set_*`/`delete_*` through `canonical_identifier`), so a read
 /// path that compares the raw caller key misses every rewritten key: put→get
