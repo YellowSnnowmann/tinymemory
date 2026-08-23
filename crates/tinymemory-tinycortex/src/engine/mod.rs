@@ -1158,6 +1158,31 @@ impl MemoryMaintenance for TinycortexProvider {
         })
     }
 
+    async fn retry_failed(&self) -> Result<MaintenanceReport, MemoryError> {
+        let (examined, changed) = blocking(
+            self.config.clone(),
+            "retry failed queue work",
+            move |config| {
+                let examined = tinymemory_core::queue::count_total(config).unwrap_or(0);
+                let changed = tinymemory_core::queue::store::requeue_failed(config)?;
+                // Inside the same call, and only when something moved: rows
+                // put back on `ready` sit until the next scheduled window
+                // otherwise, which reads as a retry that did nothing.
+                if changed > 0 {
+                    tinymemory_core::queue::wake_workers();
+                }
+                Ok((examined, changed))
+            },
+        )
+        .await?;
+        Ok(MaintenanceReport {
+            operation: "retry_failed".to_string(),
+            examined,
+            changed,
+            findings: vec![format!("requeued {changed} failed job(s)")],
+        })
+    }
+
     async fn store_stats(&self) -> Result<StoreStats, MemoryError> {
         blocking(self.config.clone(), "read store stats", move |config| {
             tinymemory_core::store::chunks::store::with_connection(config, |conn| {
@@ -1250,7 +1275,12 @@ impl MemoryMaintenance for TinycortexProvider {
                     },
                 )?;
                 let count = |n: i64| u64::try_from(n).unwrap_or(0);
+                // A process-global the backfill chain owns, not a column —
+                // read here so it arrives with the counts it has to be
+                // interpreted next to.
+                let backfill_in_progress = tinymemory_core::queue::backfill_in_progress();
                 Ok(QueueStats {
+                    backfill_in_progress,
                     ready: count(ready),
                     running: count(running),
                     done: count(done),

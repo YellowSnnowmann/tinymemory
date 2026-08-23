@@ -181,6 +181,29 @@ pub trait MemoryMaintenance: Send + Sync {
         Ok(StoreStats::default())
     }
 
+    /// Give terminally-failed queue work another attempt, and nudge whatever
+    /// drains the queue.
+    ///
+    /// The nudge is part of the operation, not a separate call. A driver that
+    /// requeues without waking has moved rows from `failed` back to `ready`
+    /// and left them there until the next scheduled window, which looks
+    /// identical to a retry that did not work — and the caller has no way to
+    /// ask for the wake on its own.
+    ///
+    /// What counts as retryable is the driver's judgement. A failure it will
+    /// never recover from is one it should leave parked; the caller is asking
+    /// for another attempt, not asserting that one can succeed.
+    ///
+    /// Defaulted to an empty report — a driver with no queue has nothing to
+    /// retry, which is true of it rather than a refusal.
+    ///
+    /// # Errors
+    ///
+    /// Backend failures only.
+    async fn retry_failed(&self) -> Result<MaintenanceReport, MemoryError> {
+        Ok(MaintenanceReport::default())
+    }
+
     /// The ingest and re-embed queue's state.
     ///
     /// `kind` narrows to one job kind (the driver's own identifier); `None`

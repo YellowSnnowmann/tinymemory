@@ -277,6 +277,64 @@ async fn deferred_work_stays_ready_without_becoming_eligible() {
     );
 }
 
+/// Retrying moves parked work back to ready, and says how much it moved.
+///
+/// The count is the point. A caller offering the user a "retry failed" control
+/// has to tell them whether anything happened, and `0` from a queue with
+/// nothing parked has to be distinguishable from a retry that silently did
+/// not run — which is what the direct call this replaces gave them, since it
+/// returned a count the host then had to pair with a separate wake.
+#[tokio::test]
+async fn retrying_moves_parked_work_back_to_ready_and_counts_it() {
+    use tinymemory_api::provider::MemoryMaintenance;
+    use tinymemory_core::queue::store as queue_store;
+    use tinymemory_core::queue::types::{FlushStalePayload, NewJob};
+    use tinymemory_core::tree::health::{FailureCode, PipelineFailure};
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+
+    // Nothing parked: a retry is honest about having moved nothing rather than
+    // refusing or inventing a number.
+    let report = provider.retry_failed().await.expect("retry");
+    assert_eq!(report.operation, "retry_failed");
+    assert_eq!(report.changed, 0, "an empty queue has nothing to requeue");
+
+    let new_job =
+        NewJob::flush_stale(&FlushStalePayload::default(), "2026-08-23", 1).expect("build a job");
+    let id = queue_store::enqueue(&config, &new_job)
+        .expect("enqueue")
+        .expect("a fresh job is not a duplicate");
+    let job = queue_store::get_job(&config, &id)
+        .expect("read the job")
+        .expect("the job exists");
+    queue_store::mark_failed_typed(
+        &config,
+        &job,
+        "parked for the retry test",
+        Some(&PipelineFailure::new(FailureCode::BudgetExhausted)),
+    )
+    .expect("park the job");
+
+    let before = provider.queue_stats(None).await.expect("queue stats");
+    assert_eq!(before.failed, 1, "precondition: one job is parked");
+    assert_eq!(before.ready, 0);
+
+    let report = provider.retry_failed().await.expect("retry");
+    assert_eq!(
+        report.changed, 1,
+        "the parked job was given another attempt, and the caller is told so"
+    );
+
+    let after = provider.queue_stats(None).await.expect("queue stats");
+    assert_eq!(after.failed, 0, "nothing is parked any more");
+    assert_eq!(
+        after.ready, 1,
+        "and the job is queued again rather than lost"
+    );
+}
+
 /// A reported failure carries the success watermark that decides whether it is
 /// still worth showing.
 ///

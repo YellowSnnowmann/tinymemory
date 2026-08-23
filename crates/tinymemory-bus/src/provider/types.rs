@@ -449,6 +449,16 @@ pub struct QueueStats {
     /// When the queue last settled a job.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_completed_ms: Option<i64>,
+    /// Whether a re-embedding backfill chain is still working through its
+    /// rows.
+    ///
+    /// Not derivable from the counts. A backfill runs as a chain that
+    /// re-enqueues itself, so between one link finishing and the next being
+    /// written there is an instant where nothing is ready, nothing is running,
+    /// and the backfill is nevertheless not done. A caller deciding whether to
+    /// warn that recall is degraded has to know the difference.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub backfill_in_progress: bool,
     /// The scheduled time of the oldest job eligible to run now.
     ///
     /// With [`Self::last_completed_ms`] this is what an idle-time calculation
