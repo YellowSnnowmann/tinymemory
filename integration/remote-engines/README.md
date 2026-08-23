@@ -58,7 +58,8 @@ fixture, not a quality benchmark.
 AgentMemory is pinned to its `v0.9.29` source release and the compatible
 `iiidev/iii:0.11.2` engine. Its harness is deliberately zero-LLM: it verifies
 the native REST routes, persistence, and TinyMemory envelope translation
-without requiring external credentials.
+without requiring external credentials. CI runs the same harness through
+`scripts/ci/agentmemory-e2e.sh` on every push and pull request.
 
 Stop the harness without deleting its named volumes:
 
