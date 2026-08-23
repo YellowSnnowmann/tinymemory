@@ -53,6 +53,12 @@ tinymemory-bus = { path = "../tinymemory-bus" }
 anyhow = "1"
 async-trait = "0.1"
 log = "0.4"
+# `events`' process-global sink. Same lock the engine used before the module
+# moved here, so the publish path is unchanged.
+parking_lot = "0.12"
+# `source_scope` is a `tokio::task_local!`. Only the macro and the task-local
+# machinery are needed — no runtime, no I/O driver — so no features are enabled.
+tokio = { version = "1", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = "1.2"
