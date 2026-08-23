@@ -19,39 +19,61 @@
 //! path, and none of the call sites have anything useful to do with that error:
 //! the work they are reporting on has already happened.
 
-use std::sync::Arc;
-
-use parking_lot::RwLock;
+use std::sync::{Arc, RwLock};
 
 pub use crate::host::{
     EmbeddingHealthReason, MemoryEvent, MemoryEventSink, NoopEventSink,
 };
 
+/// `std::sync::RwLock`, not the engine's `parking_lot` one. The lock is held
+/// for a clone and nothing else, so the two behave identically here — and using
+/// the `std` lock is what let the event bus move onto the host side of the
+/// split without this crate taking on a new dependency, which its module docs
+/// promise callers it will not do.
 static SINK: RwLock<Option<Arc<dyn MemoryEventSink>>> = RwLock::new(None);
+
+/// Read the sink, treating a poisoned lock as the sink it holds.
+///
+/// Poisoning means another thread panicked while holding the lock. The only
+/// thing ever done under it is a `clone`, so there is no torn state to recover
+/// from, and the module docs above are explicit that an unwired bus **drops**
+/// the event rather than turning every emit site into an error path.
+/// Propagating a panic out of `publish` would do exactly what they rule out.
+fn sink_snapshot() -> Option<Arc<dyn MemoryEventSink>> {
+    match SINK.read() {
+        Ok(guard) => guard.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
+    }
+}
 
 /// Install the host's event sink. Called once during startup wiring, before any
 /// memory work begins. Calling it again replaces the sink, which is what test
 /// harnesses want between cases.
 pub fn set_event_sink(sink: Arc<dyn MemoryEventSink>) {
-    *SINK.write() = Some(sink);
+    match SINK.write() {
+        Ok(mut guard) => *guard = Some(sink),
+        Err(poisoned) => *poisoned.into_inner() = Some(sink),
+    }
 }
 
 /// Remove any installed sink, returning to silent-drop behaviour. For tests.
 pub fn clear_event_sink() {
-    *SINK.write() = None;
+    match SINK.write() {
+        Ok(mut guard) => *guard = None,
+        Err(poisoned) => *poisoned.into_inner() = None,
+    }
 }
 
 /// The installed sink, or `None` when no host has wired one up.
 #[must_use]
 pub fn event_sink() -> Option<Arc<dyn MemoryEventSink>> {
-    SINK.read().clone()
+    sink_snapshot()
 }
 
 /// Announce a memory-domain event to the host. A no-op when no sink is
 /// installed.
 pub fn publish(event: MemoryEvent) {
-    let sink = SINK.read().clone();
-    if let Some(sink) = sink {
+    if let Some(sink) = sink_snapshot() {
         sink.publish(event);
     } else {
         log::trace!("[memory:events] dropped event with no sink installed: {event:?}");
@@ -68,7 +90,7 @@ pub fn publish(event: MemoryEvent) {
 #[cfg(test)]
 #[derive(Debug, Default)]
 pub(crate) struct RecordingSink {
-    events: parking_lot::Mutex<Vec<MemoryEvent>>,
+    events: std::sync::Mutex<Vec<MemoryEvent>>,
 }
 
 #[cfg(test)]
@@ -82,13 +104,13 @@ impl RecordingSink {
 
     /// Take everything recorded so far, leaving the recorder empty.
     pub(crate) fn drain(&self) -> Vec<MemoryEvent> {
-        std::mem::take(&mut *self.events.lock())
+        std::mem::take(&mut *self.events.lock().expect("recording sink lock"))
     }
 }
 
 #[cfg(test)]
 impl MemoryEventSink for RecordingSink {
     fn publish(&self, event: MemoryEvent) {
-        self.events.lock().push(event);
+        self.events.lock().expect("recording sink lock").push(event);
     }
 }
