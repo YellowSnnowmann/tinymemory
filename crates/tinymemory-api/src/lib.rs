@@ -91,17 +91,6 @@ pub mod drivers;
 /// a sink and read sync events without linking the engine.
 pub mod events;
 pub mod host;
-/// The ambient per-turn memory-source allowlist (`AgentProfile::memory_sources`).
-///
-/// Host policy in the same sense as [`events`]: the host decides which sources a
-/// turn may recall from, and the engine merely reads the task-local. Kept here
-/// so that decision is expressible without the engine crate.
-///
-/// Behind the `source-scope` feature: it is a `tokio::task_local!`, and the
-/// module docs above promise driver authors that depending on the contract
-/// never drags in an async runtime.
-#[cfg(feature = "source-scope")]
-pub mod source_scope;
 /// The memory-sync lifecycle vocabulary and its emit helper.
 pub mod sync_events;
 

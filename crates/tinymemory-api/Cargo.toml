@@ -53,13 +53,6 @@ tinymemory-bus = { path = "../tinymemory-bus" }
 anyhow = "1"
 async-trait = "0.1"
 log = "0.4"
-# `source_scope` only. OPTIONAL, and off by default, because this crate's
-# module docs promise that "depending on the contract never drags in SQLite,
-# git2, reqwest, or an async runtime" — a promise made to third-party driver
-# authors, who implement `MemoryProvider` and never touch the host's per-turn
-# allowlist. `default-features = false` keeps even the enabled form to the
-# `task_local!` macro and its machinery: no runtime, no I/O driver, no timers.
-tokio = { version = "1", default-features = false, optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 schemars = "1.2"
@@ -75,9 +68,6 @@ tokio = { version = "1", features = ["macros", "rt"] }
 
 [features]
 default = []
-# `source_scope` — the ambient per-turn memory-source allowlist. Gated because
-# it is the crate's only `tokio` edge; see the dependency comment above.
-source-scope = ["dep:tokio"]
 # `host::test_support::TestHostConfig` — a concrete, `Default`-able
 # `MemoryHostConfig`. `tinymemory-core` enables this from its dev-dependencies;
 # nothing enables it in a shipped build.
