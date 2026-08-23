@@ -133,6 +133,248 @@ async fn the_full_provider_actually_retains() {
     );
 }
 
+/// The maintenance diagnostics answer from the store, not from their defaults.
+///
+/// `store_stats`, `queue_stats` and `latest_queue_failure` are defaulted on
+/// the trait so a driver without a queue compiles and answers "nothing" rather
+/// than refusing. That default is also the failure this test exists to catch:
+/// an engine that inherits it reports an empty store and an idle queue forever,
+/// which is indistinguishable from a healthy quiet one and is exactly the shape
+/// a caller cannot detect. Asserting a zero would pass against the default, so
+/// this stores something first and requires the numbers to move.
+#[tokio::test(flavor = "multi_thread")]
+async fn maintenance_diagnostics_read_the_store_rather_than_their_defaults() {
+    use tinymemory_api::chunks::DataSource;
+    use tinymemory_api::provider::{MemoryMaintenance, MemoryProvider};
+    use tinymemory_api::types::MemoryTaint;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+
+    let before = provider.store_stats().await.expect("store stats");
+    assert_eq!(before.chunks, 0, "a fresh workspace holds nothing");
+    assert_eq!(
+        before.most_recent_chunk_ms, None,
+        "an empty store has no newest chunk — `None`, never `Some(0)`, which \
+         would be a chunk stamped at the epoch"
+    );
+
+    // Ingested, not `store`d: `MemoryCore::store` writes a memory entry, and
+    // `store_stats.chunks` counts the CHUNK tier, which only ingest fills.
+    // Asserting against `store` here passed a zero against a zero and proved
+    // nothing — the first version of this test did exactly that.
+    let outcome = provider
+        .as_ingest()
+        .expect("Ingest")
+        .ingest_document(tinymemory_api::provider::types::IngestItem {
+            namespace: None,
+            source: DataSource::Upload,
+            source_id: "diagnostics-upload".into(),
+            owner: "owner".into(),
+            source_ref: None,
+            content: "A deterministic sentence for the diagnostics test.".into(),
+            mime: Some("text/plain".into()),
+            timestamp: Some(
+                chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("fixed timestamp"),
+            ),
+            tags: Vec::new(),
+            taint: MemoryTaint::Internal,
+            path_scope: None,
+        })
+        .await
+        .expect("ingest a document");
+    assert!(outcome.written > 0, "the ingest must persist a chunk");
+
+    let after = provider.store_stats().await.expect("store stats");
+    assert!(
+        after.chunks > before.chunks,
+        "the count must follow the store; got {} after writing to {}",
+        after.chunks,
+        before.chunks
+    );
+    assert!(
+        after.chunks_with_structure <= after.chunks,
+        "extracted chunks are a subset of stored ones; a numerator above its \
+         denominator is a coverage over 100%, which is what reading the two \
+         separately can produce"
+    );
+
+    // A queue this engine has not been asked to fill is legitimately empty, so
+    // the assertion is that the call answers from the queue at all rather than
+    // erroring — the numbers themselves are only meaningful once work exists.
+    let queue = provider.queue_stats(None).await.expect("queue stats");
+    assert_eq!(
+        queue.eligible_now.min(queue.ready),
+        queue.eligible_now,
+        "jobs eligible now are a subset of jobs ready; conflating the two \
+         reads a backlog of deferred work as a stall"
+    );
+
+    // Nothing has failed, and that must read as `None` rather than an error:
+    // a healthy queue and a driver keeping no failure history give the same
+    // answer, and neither is something a caller can act on.
+    assert!(
+        provider
+            .latest_queue_failure()
+            .await
+            .expect("latest queue failure")
+            .is_none(),
+        "a store that has run no failing job reports no failure"
+    );
+}
+
+/// Work the queue has deliberately parked is ready, but not eligible now.
+///
+/// This is the difference between a backlog and a stall. A job backing off
+/// after a transient failure stays `ready` with its next attempt scheduled
+/// forward; counting it as runnable means a queue that is behaving correctly
+/// reports as one that has stopped, and the caller escalates on it. The
+/// caller cannot make the distinction itself — it sees counts, not schedules
+/// — so the split has to be made here.
+#[tokio::test]
+async fn deferred_work_stays_ready_without_becoming_eligible() {
+    use tinymemory_api::provider::MemoryMaintenance;
+    use tinymemory_core::queue::store as queue_store;
+    use tinymemory_core::queue::types::{FlushStalePayload, NewJob};
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+
+    let new_job =
+        NewJob::flush_stale(&FlushStalePayload::default(), "2026-08-21", 1).expect("build a job");
+    let id = queue_store::enqueue(&config, &new_job)
+        .expect("enqueue")
+        .expect("a fresh job is not a duplicate");
+    let job = queue_store::get_job(&config, &id)
+        .expect("read the job")
+        .expect("the job exists");
+
+    let queue = provider.queue_stats(None).await.expect("queue stats");
+    assert_eq!(queue.ready, 1);
+    assert_eq!(
+        queue.eligible_now, 1,
+        "precondition: a freshly enqueued job is runnable now"
+    );
+
+    // Park it the way a backing-off retry does: still `ready`, scheduled
+    // forward. Far enough forward that no plausible clock lands after it.
+    let until_ms = chrono::Utc::now().timestamp_millis() + 60 * 60 * 1000;
+    queue_store::mark_deferred(&config, &job, until_ms, "backing off").expect("defer the job");
+
+    let queue = provider.queue_stats(None).await.expect("queue stats");
+    assert_eq!(
+        queue.ready, 1,
+        "deferred work is still queued — it has not been abandoned"
+    );
+    assert_eq!(
+        queue.eligible_now, 0,
+        "but nothing is runnable, so nothing is being held up"
+    );
+    assert_eq!(
+        queue.oldest_eligible_ms, None,
+        "and there is no waiting job to measure an idle window from"
+    );
+}
+
+/// A reported failure carries the success watermark that decides whether it is
+/// still worth showing.
+///
+/// A caller asking "has anything succeeded since this failed?" out of two
+/// separate calls lets a job settle in between and flip the answer. So the
+/// watermark rides along with the failure, and what this test pins is that it
+/// is populated from the store rather than left at `None` — the shape that
+/// would push the caller back into asking twice.
+#[tokio::test]
+async fn a_reported_failure_carries_the_success_watermark_that_supersedes_it() {
+    use tinymemory_api::provider::MemoryMaintenance;
+    use tinymemory_core::queue::store as queue_store;
+    use tinymemory_core::queue::types::{FlushStalePayload, NewJob};
+    use tinymemory_core::tree::health::{FailureCode, PipelineFailure};
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+
+    // Fail one job for real rather than writing the row by hand: the query
+    // filters on `failure_reason IS NOT NULL`, which only the typed failure
+    // path fills, and a hand-written row would not prove that filter matches
+    // what the engine actually persists.
+    let failing =
+        NewJob::flush_stale(&FlushStalePayload::default(), "2026-08-21", 1).expect("build a job");
+    let failing_id = queue_store::enqueue(&config, &failing)
+        .expect("enqueue")
+        .expect("a fresh job is not a duplicate");
+    let failing = queue_store::get_job(&config, &failing_id)
+        .expect("read the job")
+        .expect("the job exists");
+    queue_store::mark_failed_typed(
+        &config,
+        &failing,
+        "the failure the operator would see",
+        Some(&PipelineFailure::new(FailureCode::BudgetExhausted)),
+    )
+    .expect("fail the job");
+
+    let failure = provider
+        .latest_queue_failure()
+        .await
+        .expect("latest queue failure")
+        .expect("the failed job is reported");
+    assert_eq!(failure.reason, "budget_exhausted");
+    assert_eq!(
+        failure.last_success_ms, None,
+        "nothing has succeeded yet, so there is no watermark to supersede it"
+    );
+
+    let queue = provider.queue_stats(None).await.expect("queue stats");
+    assert_eq!(queue.failed, 1, "the job is parked as failed");
+    assert_eq!(
+        queue.failed_unrecoverable, 1,
+        "an exhausted budget is not retried on its own, and a caller that \
+         escalates on `failed` alone cannot tell that apart from a failure \
+         about to self-heal"
+    );
+    assert!(
+        queue.last_completed_ms.is_some(),
+        "a failure settles a job too. Counting only successes here reports a \
+         queue that is failing fast — as fast as it can run — as one that has \
+         gone idle, which is the opposite diagnosis"
+    );
+
+    // Now settle one successfully. Same queue, same connection the failure is
+    // read on.
+    let done =
+        NewJob::flush_stale(&FlushStalePayload::default(), "2026-08-22", 1).expect("build a job");
+    let done_id = queue_store::enqueue(&config, &done)
+        .expect("enqueue")
+        .expect("a fresh job is not a duplicate");
+    let done = queue_store::get_job(&config, &done_id)
+        .expect("read the job")
+        .expect("the job exists");
+    queue_store::mark_done(&config, &done).expect("settle the job");
+
+    let failure = provider
+        .latest_queue_failure()
+        .await
+        .expect("latest queue failure")
+        .expect("the failed job is still the newest failure");
+    let watermark = failure
+        .last_success_ms
+        .expect("a completed job must show up as the success watermark");
+    let failed_at = failure
+        .completed_at_ms
+        .expect("the typed failure path stamps a completion time");
+    // `>=`, not `>`: both settle from the wall clock and can land on the same
+    // millisecond. What is under test is that the two values arrive together
+    // and are comparable at all, not the resolution of the clock.
+    assert!(
+        watermark >= failed_at,
+        "the success settled after the failure; got watermark {watermark} against failure \
+         {failed_at}"
+    );
+}
+
 /// The KV write path canonicalizes identifiers (the shim in `tinymemory-core`
 /// routes every `set_*`/`delete_*` through `canonical_identifier`), so a read
 /// path that compares the raw caller key misses every rewritten key: put→get

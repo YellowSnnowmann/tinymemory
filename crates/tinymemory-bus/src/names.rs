@@ -150,6 +150,12 @@ pub mod methods {
     pub const CONSOLIDATE: &str = "Consolidate";
     /// `Doctor` — doctor.
     pub const DOCTOR: &str = "Doctor";
+    /// `StoreStats` — aggregate counts over what the driver has stored.
+    pub const STORE_STATS: &str = "StoreStats";
+    /// `QueueStats` — the ingest and re-embed queue's state.
+    pub const QUEUE_STATS: &str = "QueueStats";
+    /// `LatestQueueFailure` — the most recent terminal queue failure.
+    pub const LATEST_QUEUE_FAILURE: &str = "LatestQueueFailure";
 
     // The people store: ranking, handles, scores and interactions.
     /// `ListPeople` — list people.
@@ -239,7 +245,7 @@ pub mod methods {
 /// The order matters: `tinybus`'s `Interface::members()` returns declaration
 /// order, and the module compares the two sequences directly rather than as
 /// sets, so a reordering is caught alongside an addition or a removal.
-pub const METHODS: [&str; 89] = [
+pub const METHODS: [&str; 92] = [
     methods::DRIVER_ID,
     methods::CAPABILITIES,
     methods::HEALTH,
@@ -291,6 +297,9 @@ pub const METHODS: [&str; 89] = [
     methods::COMPACT,
     methods::CONSOLIDATE,
     methods::DOCTOR,
+    methods::STORE_STATS,
+    methods::QUEUE_STATS,
+    methods::LATEST_QUEUE_FAILURE,
     methods::LIST_PEOPLE,
     methods::GET_PERSON,
     methods::RESOLVE_HANDLE,

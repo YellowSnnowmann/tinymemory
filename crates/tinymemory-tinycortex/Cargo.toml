@@ -14,6 +14,15 @@ repository = "https://github.com/tinyhumansai/tinymemory"
 [dependencies]
 # The contract this adapter targets.
 tinymemory-api = { path = "../tinymemory-api" }
+# The diagnostic reads in `MemoryMaintenance` query TinyCortex's own tables
+# directly, which is this crate's job — it exists to adapt that schema to the
+# contract, and the schema is not something the contract can describe.
+#
+# Pinned to the exact version `tinymemory-core` uses, deliberately. `rusqlite`
+# carries a `links` key through `libsqlite3-sys`, so two different versions in
+# one graph is a hard cargo error rather than a silent duplicate; matching the
+# pin makes cargo unify them onto the one bundled copy already present.
+rusqlite = { version = "=0.40.2", features = ["bundled"] }
 # The engine being adapted. A version requirement rather than a path, so a host
 # that already pins its own TinyCortex checkout unifies both onto one copy
 # through its `[patch.crates-io]`; the workspace root patches it to the nested

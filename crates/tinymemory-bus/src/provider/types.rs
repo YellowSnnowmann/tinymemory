@@ -388,6 +388,107 @@ pub struct MaintenanceReport {
     pub findings: Vec<String>,
 }
 
+/// Aggregate counts over what the driver has stored.
+///
+/// Separate from [`MaintenanceReport`] because the caller does something
+/// different with it: a report is read by an operator, these are read by code.
+/// `findings: Vec<String>` cannot answer "how far behind is the pipeline"
+/// without parsing prose back into numbers.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoreStats {
+    /// Chunks the driver holds.
+    pub chunks: u64,
+    /// Of those chunks, how many the driver has extracted structure from.
+    ///
+    /// A count rather than the ratio a caller displays, because the ratio is
+    /// only meaningful against the denominator it was measured with. Read
+    /// separately, the two can be sampled either side of a write and produce a
+    /// coverage above 1.0; read together they cannot.
+    ///
+    /// A driver that does not extract structure leaves this at zero, which
+    /// reads as "nothing extracted" — correct for it, and the reason a caller
+    /// should show the pair rather than the ratio alone.
+    pub chunks_with_structure: u64,
+    /// Timestamp of the most recently stored chunk, if any.
+    ///
+    /// `None` for an empty store — distinct from `Some(0)`, which would be a
+    /// chunk stamped at the epoch.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub most_recent_chunk_ms: Option<i64>,
+}
+
+/// The ingest and re-embed queue's state, as counts rather than rows.
+///
+/// Every field answers a question an operator or a health probe asks about
+/// throughput. A driver with no queue answers all-zero rather than refusing:
+/// "nothing is backed up" is true of a driver that cannot back up.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueueStats {
+    /// Jobs waiting, whatever their scheduled time.
+    pub ready: u64,
+    /// Jobs a worker currently holds.
+    pub running: u64,
+    /// Jobs that finished successfully.
+    pub done: u64,
+    /// Jobs that ended in a terminal failure.
+    pub failed: u64,
+    /// Of those failures, how many the driver will not retry on its own.
+    ///
+    /// The distinction is what separates an alert from a shrug: transient
+    /// failures self-heal on the next attempt, and a caller that escalates on
+    /// [`Self::failed`] alone pages someone for a queue that is already
+    /// recovering. Counted with `failed` rather than beside it, because two
+    /// reads can land either side of a retry and report more unrecoverable
+    /// failures than there are failures.
+    pub failed_unrecoverable: u64,
+    /// Ready jobs whose scheduled time has already passed.
+    ///
+    /// The difference between this and [`Self::ready`] is deferred work, and
+    /// conflating them reads a healthy backlog of future jobs as a stall.
+    pub eligible_now: u64,
+    /// When the queue last settled a job.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_completed_ms: Option<i64>,
+    /// The scheduled time of the oldest job eligible to run now.
+    ///
+    /// With [`Self::last_completed_ms`] this is what an idle-time calculation
+    /// needs: how long something runnable has been waiting.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oldest_eligible_ms: Option<i64>,
+}
+
+/// The most recent terminal queue failure.
+///
+/// Carries the driver's own words rather than a class this contract invents:
+/// the caller shows it to an operator, and a re-classification here would lose
+/// what the engine actually said.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct QueueFailure {
+    /// The failure's own message. Must carry no memory content.
+    pub reason: String,
+    /// The driver's classification, when it has one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub class: Option<String>,
+    /// When the failing job settled.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completed_at_ms: Option<i64>,
+    /// When the queue last completed a job *successfully*, read together with
+    /// the failure above rather than in a second call.
+    ///
+    /// A caller deciding whether to show this failure asks whether anything
+    /// has succeeded since it — a success after the failure means the queue
+    /// recovered and the failure is stale. Answering that from two separate
+    /// calls lets a job settle in between and flip the decision, so the two
+    /// values are read as one observation.
+    ///
+    /// This is not [`QueueStats::last_completed_ms`]: that one counts a
+    /// failure as progress, because a fast-failing queue is not a stalled
+    /// one. Supersession needs the opposite reading — only a success clears a
+    /// failure — so it takes the newest *successful* completion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_success_ms: Option<i64>,
+}
+
 #[cfg(test)]
 #[path = "types_tests.rs"]
 mod tests;

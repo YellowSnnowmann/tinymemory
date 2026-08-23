@@ -307,6 +307,9 @@ mod exports {
             "Compact",
             "Consolidate",
             "Doctor",
+            "StoreStats",
+            "QueueStats",
+            "LatestQueueFailure",
         ],
         signals = [],
         // The host's embedder is deliberately NOT declared as `requires`. That

@@ -671,6 +671,9 @@ const EXPECTED_METHODS: &[&str] = &[
     "Compact",
     "Consolidate",
     "Doctor",
+    "StoreStats",
+    "QueueStats",
+    "LatestQueueFailure",
 ];
 
 #[tokio::test]

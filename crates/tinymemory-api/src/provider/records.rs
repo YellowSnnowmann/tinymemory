@@ -18,7 +18,9 @@ use async_trait::async_trait;
 
 use crate::error::MemoryError;
 use crate::goals::GoalsDoc;
-use crate::provider::types::{IngestOutcome, MaintenanceReport, SourceItem};
+use crate::provider::types::{
+    IngestOutcome, MaintenanceReport, QueueFailure, QueueStats, SourceItem, StoreStats,
+};
 use crate::tool_memory::ToolMemoryRule;
 use crate::types::MemoryTaint;
 
@@ -164,4 +166,48 @@ pub trait MemoryMaintenance: Send + Sync {
     /// Backend failures only. A *finding* is not an error: a store with
     /// problems still returns `Ok` with the problems listed.
     async fn doctor(&self) -> Result<MaintenanceReport, MemoryError>;
+
+    /// Aggregate counts over what this driver has stored.
+    ///
+    /// Defaulted to an empty [`StoreStats`] rather than `Unsupported`, and the
+    /// difference matters: this is a diagnostic, and a caller asking "how much
+    /// is stored" can do something sensible with "nothing reported" while
+    /// having nothing to do with an error. A driver that can answer should.
+    ///
+    /// # Errors
+    ///
+    /// Backend failures only.
+    async fn store_stats(&self) -> Result<StoreStats, MemoryError> {
+        Ok(StoreStats::default())
+    }
+
+    /// The ingest and re-embed queue's state.
+    ///
+    /// `kind` narrows to one job kind (the driver's own identifier); `None`
+    /// counts every kind. A driver with no queue answers all-zero, which is
+    /// true of it rather than a refusal — and so does a kind this driver does
+    /// not have, since "no jobs of a kind I never enqueue" is the honest
+    /// count. A caller that does not know the driver's vocabulary passes
+    /// `None`; that is what the `Option` is for.
+    ///
+    /// # Errors
+    ///
+    /// Backend failures only.
+    async fn queue_stats(&self, kind: Option<&str>) -> Result<QueueStats, MemoryError> {
+        let _ = kind;
+        Ok(QueueStats::default())
+    }
+
+    /// The most recent terminal queue failure, if the driver records one.
+    ///
+    /// `Ok(None)` means "nothing has failed", which is why this is not an
+    /// error: a healthy queue and a driver that keeps no failure history give
+    /// the same answer, and neither is a fault the caller can act on.
+    ///
+    /// # Errors
+    ///
+    /// Backend failures only.
+    async fn latest_queue_failure(&self) -> Result<Option<QueueFailure>, MemoryError> {
+        Ok(None)
+    }
 }
