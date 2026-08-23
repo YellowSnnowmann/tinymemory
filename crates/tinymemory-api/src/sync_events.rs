@@ -113,8 +113,15 @@ pub fn extract_mem_src_id(composite_source_id: &str) -> Option<&str> {
     // source_id is a plain slug (no colons). item_id follows after the first colon.
     let colon_pos = rest.find(':')?;
     let source_id = &rest[..colon_pos];
-    // Ensure there's something after the colon (item_id is non-empty).
-    if colon_pos + 1 >= rest.len() {
+    // Both halves must be non-empty. `"mem_src::item"` parses structurally but
+    // names no source, and `Some("")` is not a source id any caller can use.
+    //
+    // This is a clarification, not a behaviour change: the one consumer is
+    // `source_scope::chunk_source_allowed_in`, which tests the result against
+    // an allowlist that `normalize` has already stripped empty entries from, so
+    // `Some("")` and `None` both deny. Returning `None` says so at the parse
+    // rather than relying on the allowlist to be empty-free.
+    if source_id.is_empty() || colon_pos + 1 >= rest.len() {
         return None;
     }
     Some(source_id)
