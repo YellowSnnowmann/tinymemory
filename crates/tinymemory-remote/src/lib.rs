@@ -16,6 +16,7 @@ pub mod mem0;
 mod mem0_graph;
 pub mod supermemory;
 
+pub use agentmemory::{AgentMemoryMemory, AGENTMEMORY_API_ENDPOINT, AGENTMEMORY_DRIVER_ID};
 pub use cognee::{CogneeMemory, COGNEE_DRIVER_ID};
 pub use cognee_graph::CogneeGraph;
 pub use graph_provider::GraphMemoryProvider;
@@ -43,6 +44,12 @@ pub fn mem0_provider(memory: Mem0Memory) -> MemoryTraitProvider {
 #[must_use]
 pub fn cognee_provider(memory: CogneeMemory) -> MemoryTraitProvider {
     MemoryTraitProvider::new(Arc::new(memory), COGNEE_DRIVER_ID)
+}
+
+/// Wrap an AgentMemory HTTP backend as a bound TinyMemory provider.
+#[must_use]
+pub fn agentmemory_provider(memory: AgentMemoryMemory) -> MemoryTraitProvider {
+    MemoryTraitProvider::new(Arc::new(memory), AGENTMEMORY_DRIVER_ID)
 }
 
 /// Wrap a Cognee HTTP backend as a bound TinyMemory provider that also
@@ -97,5 +104,6 @@ pub fn mem0_graph_provider(memory: Mem0Memory) -> GraphMemoryProvider {
 #[cfg(test)]
 mod failure_test;
 
+pub mod agentmemory;
 #[cfg(test)]
 mod conformance_test;

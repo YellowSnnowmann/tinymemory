@@ -77,8 +77,8 @@ composition — no storage engine, no HTTP stack, no native library.
 | Feature | Brings in |
 | --- | --- |
 | `tinycortex` | the embedded TinyCortex engine, as `tinymemory::tinycortex` |
-| `supermemory`, `mem0`, `cognee` | the matching HTTP adapter, as `tinymemory::remote` |
-| `engines` | all four of the above |
+| `supermemory`, `mem0`, `cognee`, `agentmemory` | the matching HTTP adapter, as `tinymemory::remote` |
+| `engines` | all five of the above |
 | `core` | `tinymemory::core` — the memory subsystem |
 | `sync` | `tinymemory::sync` — the Composio normalisers |
 | `sources` | `tinymemory::sources` — source contracts and local readers |
@@ -113,7 +113,7 @@ error.
 None of these crates are on crates.io yet, so you take the facade by git.
 Which patch table you need depends on the engine you pick.
 
-**Remote engines (Supermemory, Mem0, Cognee — hosted or self-hosted) — no patch table:**
+**Remote engines (Supermemory, Mem0, Cognee, AgentMemory) — no patch table:**
 
 ```toml
 [dependencies]
@@ -184,6 +184,7 @@ minimal working wiring.
 | `supermemory` | Supermemory, hosted | external | 3 (mandatory) |
 | `mem0` | Mem0, hosted (`cloud`) or self-hosted | external | 3 (mandatory) |
 | `cognee` | Cognee, hosted or self-hosted | external | 3 (mandatory) |
+| `agentmemory` | AgentMemory, self-hosted | external | 3 (mandatory) |
 | `memory-git` | add-on: git-backed diff snapshots | — | requires `tinycortex` |
 | *(none)* | `NullMemoryProvider` | null | contract + registry only, 40 crates |
 
@@ -240,9 +241,9 @@ that skips enforcement is the entire reason the policy layer exists.
 ## Remote engines
 
 The `tinymemory-remote` crate supports the managed and self-hosted native APIs
-of Supermemory, Cognee, and Mem0. Each adapter stores TinyMemory's key,
-category, session, and provenance in backend metadata (or a Cognee raw-data
-envelope), so exact CRUD and portability survive the seam while recall remains
+of Supermemory, Cognee, Mem0, and AgentMemory. Each adapter stores TinyMemory's key,
+category, session, and provenance in backend metadata or a versioned native-content
+envelope, so exact CRUD and portability survive the seam while recall remains
 engine-native. Provider-facing dataset names, container tags,
 and filenames are bounded stable hashes, so every namespace and key accepted by
 the TinyMemory contract remains valid on the remote API.
@@ -271,13 +272,23 @@ let mem0 = Mem0Memory::cloud("m0-...")?;
 # Ok::<_, anyhow::Error>((cognee, supermemory, mem0))
 ```
 
+AgentMemory is local-first. It exposes its REST API at `http://localhost:3111`
+by default; pass its optional API secret when one is configured:
+
+```rust
+use tinymemory_remote::{agentmemory_provider, AgentMemoryMemory};
+
+let provider = agentmemory_provider(AgentMemoryMemory::local(None)?);
+# Ok::<_, anyhow::Error>(provider)
+```
+
 Cognee Cloud uses `X-Api-Key`; authenticated self-hosted Cognee uses a bearer
 access token. Supermemory uses bearer API keys for both deployment modes. Mem0's
 hosted platform uses `Authorization: Token`, and self-hosted Mem0 uses
 `X-API-Key`. All constructors redact credentials from `Debug` output, from
 transport errors, and from the request's own header rendering.
 
-All three advertise the mandatory Core, Recall, and Portability families. The
+All four advertise the mandatory Core, Recall, and Portability families. The
 live Docker harness and conformance command are documented in
 [`integration/remote-engines/`](integration/remote-engines/README.md).
 

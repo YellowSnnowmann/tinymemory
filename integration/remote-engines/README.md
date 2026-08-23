@@ -22,6 +22,10 @@ cargo run -p tinymemory-remote --example conformance -- mem0 http://localhost:88
 docker compose -f integration/remote-engines/docker-compose.yml \
   --profile cognee up -d --build
 cargo run -p tinymemory-remote --example conformance -- cognee http://localhost:8001
+
+docker compose -f integration/remote-engines/docker-compose.yml \
+  --profile agentmemory up -d --build
+cargo run -p tinymemory-remote --example conformance -- agentmemory http://localhost:3111
 ```
 
 The same conformance command can target managed services. Supermemory uses the
@@ -50,6 +54,11 @@ service, which proves HTTP, persistence, embeddings, and adapter translation
 without an external credential. Set `OPENAI_API_KEY` and `OPENAI_BASE_URL` to
 exercise a real compatible provider instead. The test service is a wiring
 fixture, not a quality benchmark.
+
+AgentMemory is pinned to its `v0.9.29` source release and the compatible
+`iiidev/iii:0.11.2` engine. Its harness is deliberately zero-LLM: it verifies
+the native REST routes, persistence, and TinyMemory envelope translation
+without requiring external credentials.
 
 Stop the harness without deleting its named volumes:
 

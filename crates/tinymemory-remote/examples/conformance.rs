@@ -7,14 +7,14 @@ use tinymemory_api::provider::MemoryProvider;
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::types::{MemoryCategory, MemoryTaint};
 use tinymemory_remote::{
-    cognee_provider, mem0_provider, supermemory_provider, CogneeMemory, Mem0Memory,
-    SupermemoryMemory,
+    agentmemory_provider, cognee_provider, mem0_provider, supermemory_provider, AgentMemoryMemory,
+    CogneeMemory, Mem0Memory, SupermemoryMemory,
 };
 
 /// Builds the command-line usage error returned for invalid arguments.
 fn usage() -> anyhow::Error {
     anyhow::anyhow!(
-        "usage: conformance <supermemory|mem0|cognee|cognee-api> <endpoint> [credential]"
+        "usage: conformance <supermemory|mem0|cognee|cognee-api|agentmemory> <endpoint> [credential]"
     )
 }
 
@@ -43,6 +43,10 @@ async fn main() -> anyhow::Result<()> {
             credential
                 .as_deref()
                 .ok_or_else(|| anyhow::anyhow!("cognee-api requires a credential"))?,
+        )?)),
+        "agentmemory" => Arc::new(agentmemory_provider(AgentMemoryMemory::new(
+            &endpoint,
+            credential.as_deref(),
         )?)),
         _ => return Err(usage()),
     };
