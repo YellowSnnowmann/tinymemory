@@ -1,5 +1,13 @@
-//! The process-global [`MemoryEventSink`], and the `publish` the extracted code
-//! calls in place of the host's bus.
+//! The process-global [`MemoryEventSink`](crate::host::MemoryEventSink), and
+//! the [`publish()`] the engine calls in place of the host's own bus.
+//!
+//! # Why this is in the contract crate
+//!
+//! The event bus is **host policy, not engine substance** — `tinymemory-core`'s
+//! own ownership note (`engine/mod.rs`) lists it on the *Product (host)* side of
+//! the split. It lives here so a host that reaches memory only over the TinyBus
+//! module can install a sink and read sync stages without linking the engine.
+//! `tinymemory_core::events` re-exports it, so existing paths still resolve.
 //!
 //! # Why a global
 //!
@@ -14,7 +22,7 @@
 //! # Default is silence, not a panic
 //!
 //! Before a host installs a sink — in unit tests, in the standalone engine
-//! build, during early startup — [`publish`] drops the event. An event bus that
+//! build, during early startup — [`publish()`] drops the event. An event bus that
 //! panicked or errored when unwired would turn every emit site into an error
 //! path, and none of the call sites have anything useful to do with that error:
 //! the work they are reporting on has already happened.

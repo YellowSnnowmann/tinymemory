@@ -4,12 +4,16 @@
 //!
 //! 1. accept a manual or scheduled sync request
 //! 2. emit coarse lifecycle events for UI visibility
-//! 3. dispatch into [`crate::sync`] backends
+//! 3. dispatch into the engine's sync backends
 //! 4. rely on `memory_store` + `memory_queue` + `memory_tree` backends to
 //!    persist, enqueue, ingest, and seal the resulting data
 //!
-//! The low-level provider implementations live in `memory_sync/*`; this module
+//! The low-level provider implementations live in the engine crate; this module
 //! is the orchestration seam the `memory` domain presents to RPC/tools/UI.
+//!
+//! It sits in the contract crate for the same reason [`crate::events`] does —
+//! it is the vocabulary a host reads sync progress in, and emitting a stage is
+//! a `publish` onto that bus. `tinymemory_core::sync_events` re-exports it.
 
 use serde::{Deserialize, Serialize};
 

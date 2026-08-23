@@ -82,16 +82,8 @@
 //!   such transport, so the names cannot drift apart.
 
 pub mod drivers;
-/// The process-global memory event sink, and the `publish` the engine calls in
-/// place of the host's own bus.
-///
-/// This is **host policy, not engine substance** — `tinymemory-core`'s own
-/// ownership note lists "the event bus" on the host side of the split. It lives
-/// here so a host that talks to the memory module only over the bus can install
-/// a sink and read sync events without linking the engine.
 pub mod events;
 pub mod host;
-/// The memory-sync lifecycle vocabulary and its emit helper.
 pub mod sync_events;
 
 // The wire vocabulary, re-exported from `tinymemory-bus`.
