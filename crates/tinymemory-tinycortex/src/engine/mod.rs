@@ -1248,7 +1248,7 @@ impl MemoryMaintenance for TinycortexProvider {
             move |config| {
                 tinymemory_core::store::chunks::store::with_connection(config, |conn| {
                     use rusqlite::OptionalExtension;
-                    let row = conn
+                    let Some(mut failure) = conn
                         .query_row(
                             "SELECT failure_reason, failure_class, completed_at_ms
                            FROM mem_tree_jobs
@@ -1261,11 +1261,36 @@ impl MemoryMaintenance for TinycortexProvider {
                                     reason: row.get(0)?,
                                     class: row.get(1)?,
                                     completed_at_ms: row.get(2)?,
+                                    last_success_ms: None,
                                 })
                             },
                         )
-                        .optional()?;
-                    Ok(row)
+                        .optional()?
+                    else {
+                        return Ok(None);
+                    };
+
+                    // Still inside the same `with_connection`, which holds the
+                    // connection for the whole closure: no job can settle
+                    // between the two reads and flip a supersession decision
+                    // made from them.
+                    //
+                    // Only worth asking when the failure is timestamped —
+                    // without one there is nothing to compare a success
+                    // against, and the caller has to surface it either way.
+                    if failure.completed_at_ms.is_some() {
+                        failure.last_success_ms = conn
+                            .query_row(
+                                "SELECT MAX(completed_at_ms) FROM mem_tree_jobs
+                              WHERE status = 'done'",
+                                [],
+                                |row| row.get(0),
+                            )
+                            .optional()
+                            .map(Option::flatten)?;
+                    }
+
+                    Ok(Some(failure))
                 })
                 .map_err(|error| anyhow::anyhow!("latest queue failure: {error}"))
             },

@@ -217,6 +217,89 @@ async fn maintenance_diagnostics_read_the_store_rather_than_their_defaults() {
     );
 }
 
+/// A reported failure carries the success watermark that decides whether it is
+/// still worth showing.
+///
+/// A caller asking "has anything succeeded since this failed?" out of two
+/// separate calls lets a job settle in between and flip the answer. So the
+/// watermark rides along with the failure, and what this test pins is that it
+/// is populated from the store rather than left at `None` — the shape that
+/// would push the caller back into asking twice.
+#[tokio::test]
+async fn a_reported_failure_carries_the_success_watermark_that_supersedes_it() {
+    use tinymemory_api::provider::MemoryMaintenance;
+    use tinymemory_core::queue::store as queue_store;
+    use tinymemory_core::queue::types::{FlushStalePayload, NewJob};
+    use tinymemory_core::tree::health::{FailureCode, PipelineFailure};
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+
+    // Fail one job for real rather than writing the row by hand: the query
+    // filters on `failure_reason IS NOT NULL`, which only the typed failure
+    // path fills, and a hand-written row would not prove that filter matches
+    // what the engine actually persists.
+    let failing =
+        NewJob::flush_stale(&FlushStalePayload::default(), "2026-08-21", 1).expect("build a job");
+    let failing_id = queue_store::enqueue(&config, &failing)
+        .expect("enqueue")
+        .expect("a fresh job is not a duplicate");
+    let failing = queue_store::get_job(&config, &failing_id)
+        .expect("read the job")
+        .expect("the job exists");
+    queue_store::mark_failed_typed(
+        &config,
+        &failing,
+        "the failure the operator would see",
+        Some(&PipelineFailure::new(FailureCode::BudgetExhausted)),
+    )
+    .expect("fail the job");
+
+    let failure = provider
+        .latest_queue_failure()
+        .await
+        .expect("latest queue failure")
+        .expect("the failed job is reported");
+    assert_eq!(failure.reason, "budget_exhausted");
+    assert_eq!(
+        failure.last_success_ms, None,
+        "nothing has succeeded yet, so there is no watermark to supersede it"
+    );
+
+    // Now settle one successfully. Same queue, same connection the failure is
+    // read on.
+    let done =
+        NewJob::flush_stale(&FlushStalePayload::default(), "2026-08-22", 1).expect("build a job");
+    let done_id = queue_store::enqueue(&config, &done)
+        .expect("enqueue")
+        .expect("a fresh job is not a duplicate");
+    let done = queue_store::get_job(&config, &done_id)
+        .expect("read the job")
+        .expect("the job exists");
+    queue_store::mark_done(&config, &done).expect("settle the job");
+
+    let failure = provider
+        .latest_queue_failure()
+        .await
+        .expect("latest queue failure")
+        .expect("the failed job is still the newest failure");
+    let watermark = failure
+        .last_success_ms
+        .expect("a completed job must show up as the success watermark");
+    let failed_at = failure
+        .completed_at_ms
+        .expect("the typed failure path stamps a completion time");
+    // `>=`, not `>`: both settle from the wall clock and can land on the same
+    // millisecond. What is under test is that the two values arrive together
+    // and are comparable at all, not the resolution of the clock.
+    assert!(
+        watermark >= failed_at,
+        "the success settled after the failure; got watermark {watermark} against failure \
+         {failed_at}"
+    );
+}
+
 /// The KV write path canonicalizes identifiers (the shim in `tinymemory-core`
 /// routes every `set_*`/`delete_*` through `canonical_identifier`), so a read
 /// path that compares the raw caller key misses every rewritten key: put→get

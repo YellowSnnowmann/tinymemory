@@ -452,6 +452,21 @@ pub struct QueueFailure {
     /// When the failing job settled.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completed_at_ms: Option<i64>,
+    /// When the queue last completed a job *successfully*, read together with
+    /// the failure above rather than in a second call.
+    ///
+    /// A caller deciding whether to show this failure asks whether anything
+    /// has succeeded since it — a success after the failure means the queue
+    /// recovered and the failure is stale. Answering that from two separate
+    /// calls lets a job settle in between and flip the decision, so the two
+    /// values are read as one observation.
+    ///
+    /// This is not [`QueueStats::last_completed_ms`]: that one counts a
+    /// failure as progress, because a fast-failing queue is not a stalled
+    /// one. Supersession needs the opposite reading — only a success clears a
+    /// failure — so it takes the newest *successful* completion.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_success_ms: Option<i64>,
 }
 
 #[cfg(test)]
