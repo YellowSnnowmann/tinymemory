@@ -4,12 +4,16 @@
 //!
 //! 1. accept a manual or scheduled sync request
 //! 2. emit coarse lifecycle events for UI visibility
-//! 3. dispatch into [`crate::sync`] backends
+//! 3. dispatch into the engine's sync backends
 //! 4. rely on `memory_store` + `memory_queue` + `memory_tree` backends to
 //!    persist, enqueue, ingest, and seal the resulting data
 //!
-//! The low-level provider implementations live in `memory_sync/*`; this module
+//! The low-level provider implementations live in the engine crate; this module
 //! is the orchestration seam the `memory` domain presents to RPC/tools/UI.
+//!
+//! It sits in the contract crate for the same reason [`crate::events`] does —
+//! it is the vocabulary a host reads sync progress in, and emitting a stage is
+//! a `publish` onto that bus. `tinymemory_core::sync_events` re-exports it.
 
 use serde::{Deserialize, Serialize};
 
@@ -109,9 +113,61 @@ pub fn extract_mem_src_id(composite_source_id: &str) -> Option<&str> {
     // source_id is a plain slug (no colons). item_id follows after the first colon.
     let colon_pos = rest.find(':')?;
     let source_id = &rest[..colon_pos];
-    // Ensure there's something after the colon (item_id is non-empty).
-    if colon_pos + 1 >= rest.len() {
+    // Both halves must be non-empty. `"mem_src::item"` parses structurally but
+    // names no source, and `Some("")` is not a source id any caller can use.
+    //
+    // This is a clarification, not a behaviour change: the one consumer is
+    // `source_scope::chunk_source_allowed_in`, which tests the result against
+    // an allowlist that `normalize` has already stripped empty entries from, so
+    // `Some("")` and `None` both deny. Returning `None` says so at the parse
+    // rather than relying on the allowlist to be empty-free.
+    if source_id.is_empty() || colon_pos + 1 >= rest.len() {
         return None;
     }
     Some(source_id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_mem_src_id;
+
+    #[test]
+    fn extracts_the_registry_id_from_a_composite() {
+        assert_eq!(
+            extract_mem_src_id("mem_src:src-rss-42:https://example.com/item-7"),
+            Some("src-rss-42")
+        );
+    }
+
+    #[test]
+    fn takes_the_first_colon_so_item_ids_may_contain_colons() {
+        // RSS GUIDs are routinely URLs. Splitting on the *last* colon would
+        // return "src-rss-42:https" here.
+        assert_eq!(
+            extract_mem_src_id("mem_src:src-rss-42:https://example.com/a:b:c"),
+            Some("src-rss-42")
+        );
+    }
+
+    #[test]
+    fn rejects_a_non_composite_source_id() {
+        // Channel / Composio scopes such as `slack:#eng` are not this shape.
+        assert_eq!(extract_mem_src_id("slack:#eng"), None);
+        assert_eq!(extract_mem_src_id("gmail:alice"), None);
+    }
+
+    #[test]
+    fn rejects_a_missing_or_empty_item_id() {
+        assert_eq!(extract_mem_src_id("mem_src:src-rss-42"), None);
+        assert_eq!(extract_mem_src_id("mem_src:src-rss-42:"), None);
+    }
+
+    /// `Some("")` is not a source id. It denied anyway, because the allowlist
+    /// it is tested against has empty entries stripped — but that made the
+    /// safety a property of the *caller*, not of this parse.
+    #[test]
+    fn rejects_an_empty_source_id() {
+        assert_eq!(extract_mem_src_id("mem_src::item-7"), None);
+        assert_eq!(extract_mem_src_id("mem_src::"), None);
+    }
 }

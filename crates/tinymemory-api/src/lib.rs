@@ -89,7 +89,9 @@
 //!   such transport, so the names cannot drift apart.
 
 pub mod drivers;
+pub mod events;
 pub mod host;
+pub mod sync_events;
 
 // The wire vocabulary, re-exported from `tinymemory-bus`.
 //

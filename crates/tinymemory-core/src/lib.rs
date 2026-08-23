@@ -49,7 +49,15 @@ pub mod engine;
 /// to delete once downstream says `engine`.
 #[doc(hidden)]
 pub use engine as tinycortex;
-pub mod events;
+/// The process-global event sink — now owned by [`tinymemory_api::events`].
+///
+/// It moved with `sync_events`: both are things this
+/// crate's own ownership note (`engine/mod.rs`) lists on the **host** side of
+/// the split, and a host that reaches memory only over the TinyBus module must
+/// be able to install a sink without linking this crate. Re-exported at the
+/// historical path so existing `tinymemory_core::events::…` call sites resolve
+/// unchanged.
+pub use tinymemory_api::events;
 pub mod global;
 pub mod ingest_pipeline;
 pub mod ingestion;
@@ -68,7 +76,9 @@ pub mod source_scope;
 pub mod sources;
 pub mod store;
 pub mod sync;
-pub mod sync_events;
+/// The memory-sync lifecycle vocabulary — now owned by
+/// [`tinymemory_api::sync_events`]. See the note on [`events`].
+pub use tinymemory_api::sync_events;
 pub mod test_env_lock;
 #[cfg(test)]
 pub(crate) mod test_seams;

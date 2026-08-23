@@ -500,12 +500,24 @@ impl Memory for UnifiedMemory {
         limit: usize,
         opts: RecallOpts<'_>,
     ) -> anyhow::Result<Vec<MemoryEntry>> {
-        // Host policy seam: the exclusion the engine applies is resolved
-        // here, at the trait adapter, and handed down as a parameter. The
-        // engine itself (`recall_excluding_session`) reads no ambient state.
-        // See `store::recall_policy` for why the resolution is still ambient
-        // and what would let it be pushed further up.
-        let exclude_session_id = super::recall_policy::current_self_echo_exclusion();
+        // Host policy seam: the exclusion the engine applies is resolved here,
+        // at the trait adapter, and handed down as a parameter. The engine
+        // itself (`recall_excluding_session`) reads no ambient state.
+        //
+        // The caller's explicit `opts.exclude_session_id` wins, and the ambient
+        // task-local is only the fallback. That order is the point, not a
+        // preference: a caller reaching this engine through the loadable module
+        // is on the far side of a bus call, and a `cdylib` has its own statics,
+        // so `current_self_echo_exclusion` reads as `None` there however live
+        // the turn is. `None` means "exclude nothing", which hands the agent
+        // back what it just said — a self-echo loop that looks like recall
+        // working. This is the field `store::recall_policy`'s module docs
+        // anticipated; the ambient read stays for the in-process embedded
+        // path, which has no field to populate.
+        let exclude_session_id = opts
+            .exclude_session_id
+            .map(str::to_string)
+            .or_else(super::recall_policy::current_self_echo_exclusion);
         self.recall_excluding_session(query, limit, opts, exclude_session_id.as_deref())
             .await
     }

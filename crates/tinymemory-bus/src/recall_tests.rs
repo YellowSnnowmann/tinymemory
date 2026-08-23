@@ -22,6 +22,7 @@ fn fully_populated_owned() -> OwnedRecallOpts {
         category: Some(MemoryCategory::Custom("field_notes".to_string())),
         session_id: Some("session-42".to_string()),
         min_score: Some(0.75),
+        exclude_session_id: Some("thread-live".to_string()),
         cross_session: true,
     }
 }
@@ -38,12 +39,14 @@ fn owned_and_borrowed_recall_opts_have_identical_fields() {
         category,
         session_id,
         min_score,
+        exclude_session_id,
         cross_session,
     } = borrowed.clone();
     assert_eq!(namespace, Some("projects"));
     assert_eq!(category, Some(MemoryCategory::Custom("field_notes".into())));
     assert_eq!(session_id, Some("session-42"));
     assert_eq!(min_score, Some(0.75));
+    assert_eq!(exclude_session_id, Some("thread-live"));
     assert!(cross_session);
 
     // Borrowed → owned, and back to the value we started from. A field dropped
@@ -96,6 +99,7 @@ fn owned_recall_opts_serde_round_trips_every_field() {
             "category": "custom:field_notes",
             "session_id": "session-42",
             "min_score": 0.75,
+            "exclude_session_id": "thread-live",
             "cross_session": true
         })
     );
