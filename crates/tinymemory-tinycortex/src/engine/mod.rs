@@ -1348,6 +1348,19 @@ impl MemoryMaintenance for TinycortexProvider {
         .await
     }
 
+    async fn backfill_in_progress(&self) -> Result<bool, MemoryError> {
+        // A process-global the backfill chain owns, not a column — and not one
+        // this engine can narrow, since `tinymemory_core::queue` tracks the
+        // chain for the process rather than per workspace. No `blocking`: it is
+        // an atomic load, not a query.
+        //
+        // The contract member says process-wide in its own signature, which is
+        // the whole reason this is not a `QueueStats` field: `queue_stats` is
+        // asked of one bound provider for one store, and a global answered
+        // there would read as store-scoped to every caller.
+        Ok(tinymemory_core::queue::backfill_in_progress())
+    }
+
     async fn compact(&self) -> Result<MaintenanceReport, MemoryError> {
         let (examined, changed) =
             blocking(self.config.clone(), "compact memory queue", move |config| {

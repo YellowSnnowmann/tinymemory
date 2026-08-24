@@ -335,6 +335,60 @@ async fn retrying_moves_parked_work_back_to_ready_and_counts_it() {
     );
 }
 
+/// The backfill flag is answered through the contract, and its scope is the
+/// driver's process rather than the store.
+///
+/// Not derivable from `queue_stats`: a backfill chain has an instant between
+/// links with nothing ready and nothing running and the work unfinished, which
+/// is exactly when a caller reasoning about an empty recall needs it. What
+/// this pins is that the member reports the engine's state rather than the
+/// trait's `false` default — the failure that closes a re-embed modal while
+/// the driver is still preparing work.
+#[tokio::test]
+async fn the_backfill_flag_is_reported_through_the_contract() {
+    use tinymemory_api::provider::MemoryMaintenance;
+
+    // The flag is a process-global. A test that sets it puts it back on every
+    // path, including a failing assertion, or it leaks into whatever runs next
+    // in this process.
+    struct Restore;
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            tinymemory_core::queue::set_backfill_in_progress(false);
+        }
+    }
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+
+    assert!(
+        !provider
+            .backfill_in_progress()
+            .await
+            .expect("read the flag"),
+        "a store with no backfill running says so"
+    );
+
+    let _restore = Restore;
+    tinymemory_core::queue::set_backfill_in_progress(true);
+    assert!(
+        provider
+            .backfill_in_progress()
+            .await
+            .expect("read the flag"),
+        "the member reports the engine's state, not the trait's default"
+    );
+
+    // The pairing is the point: at this instant the counts alone would tell a
+    // caller the queue is finished.
+    let stats = provider.queue_stats(None).await.expect("queue stats");
+    assert_eq!(
+        (stats.ready, stats.running),
+        (0, 0),
+        "precondition: nothing ready and nothing running, yet a backfill is up"
+    );
+}
+
 /// A reported failure carries the success watermark that decides whether it is
 /// still worth showing.
 ///

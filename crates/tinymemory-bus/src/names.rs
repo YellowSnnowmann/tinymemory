@@ -158,6 +158,9 @@ pub mod methods {
     pub const QUEUE_STATS: &str = "QueueStats";
     /// `LatestQueueFailure` — the most recent terminal queue failure.
     pub const LATEST_QUEUE_FAILURE: &str = "LatestQueueFailure";
+    /// `BackfillInProgress` — whether a re-embedding backfill is still running
+    /// anywhere in the driver's process.
+    pub const BACKFILL_IN_PROGRESS: &str = "BackfillInProgress";
 
     // The people store: ranking, handles, scores and interactions.
     /// `ListPeople` — list people.
@@ -247,7 +250,7 @@ pub mod methods {
 /// The order matters: `tinybus`'s `Interface::members()` returns declaration
 /// order, and the module compares the two sequences directly rather than as
 /// sets, so a reordering is caught alongside an addition or a removal.
-pub const METHODS: [&str; 93] = [
+pub const METHODS: [&str; 94] = [
     methods::DRIVER_ID,
     methods::CAPABILITIES,
     methods::HEALTH,
@@ -303,6 +306,7 @@ pub const METHODS: [&str; 93] = [
     methods::STORE_STATS,
     methods::QUEUE_STATS,
     methods::LATEST_QUEUE_FAILURE,
+    methods::BACKFILL_IN_PROGRESS,
     methods::LIST_PEOPLE,
     methods::GET_PERSON,
     methods::RESOLVE_HANDLE,

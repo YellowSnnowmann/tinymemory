@@ -915,6 +915,13 @@ impl MemoryService {
             .map_err(|error| into_bus_error(&error))
     }
 
+    async fn backfill_in_progress(&self) -> BusResult<bool> {
+        require_family!(self, as_maintenance, Capability::Maintenance)
+            .backfill_in_progress()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
     // ── People ──────────────────────────────────────────────────────────────
 
     /// Known people, ranked by closeness.
