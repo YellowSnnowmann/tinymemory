@@ -57,11 +57,13 @@ pub mod methods {
     /// `ImportRecords` — import records.
     pub const IMPORT_RECORDS: &str = "ImportRecords";
 
-    // Document and chat ingestion through the summary pipeline.
+    // Document, chat and mail ingestion through the summary pipeline.
     /// `IngestDocument` — ingest document.
     pub const INGEST_DOCUMENT: &str = "IngestDocument";
     /// `IngestChat` — ingest chat.
     pub const INGEST_CHAT: &str = "IngestChat";
+    /// `IngestEmail` — ingest email.
+    pub const INGEST_EMAIL: &str = "IngestEmail";
 
     // Namespace-scoped document storage and retrieval.
     /// `PutDocument` — put document.
@@ -258,7 +260,7 @@ pub mod methods {
 /// The order matters: `tinybus`'s `Interface::members()` returns declaration
 /// order, and the module compares the two sequences directly rather than as
 /// sets, so a reordering is caught alongside an addition or a removal.
-pub const METHODS: [&str; 98] = [
+pub const METHODS: [&str; 99] = [
     methods::DRIVER_ID,
     methods::CAPABILITIES,
     methods::HEALTH,
@@ -274,6 +276,7 @@ pub const METHODS: [&str; 98] = [
     methods::IMPORT_RECORDS,
     methods::INGEST_DOCUMENT,
     methods::INGEST_CHAT,
+    methods::INGEST_EMAIL,
     methods::PUT_DOCUMENT,
     methods::GET_DOCUMENT,
     methods::LIST_DOCUMENTS,

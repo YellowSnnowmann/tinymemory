@@ -636,6 +636,7 @@ const EXPECTED_METHODS: &[&str] = &[
     "WorkflowIdentityMatches",
     "IngestDocument",
     "IngestChat",
+    "IngestEmail",
     "PutDocument",
     "GetDocument",
     "ListDocuments",
@@ -1184,15 +1185,61 @@ async fn ingest_and_chunks_round_trip(bus: &tinybus::Proxy) -> String {
         platform: None,
     };
     let outcome: IngestOutcome = bus
-        .call("IngestDocument", (ingest,))
+        .call("IngestDocument", (ingest.clone(),))
         .await
         .expect("IngestDocument");
     assert!(outcome.written > 0);
+
+    // The same source again. The gate refuses it, and the refusal has to reach
+    // the caller as itself: this is the one place the field is asserted after a
+    // real serialize/deserialize round trip, and a shape that dropped it would
+    // still answer `written: 0` here and look like an empty ingest.
+    let repeat: IngestOutcome = bus
+        .call("IngestDocument", (ingest,))
+        .await
+        .expect("repeated IngestDocument");
+    assert!(
+        repeat.already_ingested,
+        "a claimed source must say so over the bus, not just write nothing"
+    );
+    assert_eq!(repeat.written, 0, "and it must not have written anything");
+    assert_eq!(
+        repeat.skipped, 0,
+        "`skipped` counts dropped units; the no-op belongs in `already_ingested`"
+    );
+
     let empty: IngestOutcome = bus
         .call("IngestChat", (Vec::<IngestItem>::new(),))
         .await
         .expect("IngestChat");
     assert!(empty.ids.is_empty());
+
+    let mail: IngestOutcome = bus
+        .call(
+            "IngestEmail",
+            (vec![IngestItem {
+                namespace: Some("project".into()),
+                source: DataSource::Gmail,
+                source_id: "mail:thread-1".into(),
+                owner: "owner@example.com".into(),
+                source_ref: None,
+                content: "The adapter ships on Thursday, subject to the review.".into(),
+                mime: Some("text/plain".into()),
+                timestamp: chrono::DateTime::from_timestamp(1_700_000_200, 0),
+                tags: vec!["coverage".into()],
+                taint: MemoryTaint::Internal,
+                path_scope: None,
+                author: Some("alice@example.com".into()),
+                channel_label: Some("Adapter ship date".into()),
+                platform: None,
+            }],),
+        )
+        .await
+        .expect("IngestEmail");
+    assert!(
+        mail.written > 0,
+        "the mail path must reach the pipeline, not just route"
+    );
 
     let chunks: Vec<tinymemory_api::chunks::Chunk> = bus
         .call(

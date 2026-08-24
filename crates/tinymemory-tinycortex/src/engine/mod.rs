@@ -261,6 +261,27 @@ fn validate_ingest_item(item: &IngestItem) -> Result<(), MemoryError> {
     Ok(())
 }
 
+/// Maps the engine's ingest summary onto the contract's outcome.
+///
+/// Shared by all three ingest methods because everything that distinguishes
+/// them happens on the way *in* — how the source is canonicalised — and none
+/// of it on the way out.
+///
+/// The two counts stay apart. `chunks_dropped` is content the scorer declined;
+/// `already_ingested` is a call the source gate refused before any content was
+/// looked at. Folding the second into the first is what the caller then has to
+/// undo by guessing, and it cannot: one dropped chunk and a refused call
+/// produce the same number.
+fn ingest_outcome(result: tinymemory_core::ingest_pipeline::IngestResult) -> IngestOutcome {
+    IngestOutcome {
+        written: u32::try_from(result.chunks_written).unwrap_or(u32::MAX),
+        skipped: u32::try_from(result.chunks_dropped).unwrap_or(u32::MAX),
+        ids: result.chunk_ids,
+        already_ingested: result.already_ingested,
+        extract_jobs_enqueued: u32::try_from(result.extract_jobs_enqueued).unwrap_or(u32::MAX),
+    }
+}
+
 async fn blocking<T, F>(
     config: EngineRuntimeConfig,
     context: &'static str,
@@ -473,15 +494,7 @@ impl MemoryIngest for TinycortexProvider {
         )
         .await
         .map_err(|error| Self::other("ingest document", error))?;
-        Ok(IngestOutcome {
-            written: u32::try_from(result.chunks_written).unwrap_or(u32::MAX),
-            skipped: if result.already_ingested {
-                1
-            } else {
-                u32::try_from(result.chunks_dropped).unwrap_or(u32::MAX)
-            },
-            ids: result.chunk_ids,
-        })
+        Ok(ingest_outcome(result))
     }
 
     async fn ingest_chat(&self, messages: Vec<IngestItem>) -> Result<IngestOutcome, MemoryError> {
@@ -537,15 +550,73 @@ impl MemoryIngest for TinycortexProvider {
         )
         .await
         .map_err(|error| Self::other("ingest chat", error))?;
-        Ok(IngestOutcome {
-            written: u32::try_from(result.chunks_written).unwrap_or(u32::MAX),
-            skipped: if result.already_ingested {
-                1
-            } else {
-                u32::try_from(result.chunks_dropped).unwrap_or(u32::MAX)
-            },
-            ids: result.chunk_ids,
-        })
+        Ok(ingest_outcome(result))
+    }
+
+    async fn ingest_email(&self, messages: Vec<IngestItem>) -> Result<IngestOutcome, MemoryError> {
+        let Some(first) = messages.first() else {
+            return Ok(IngestOutcome::default());
+        };
+        let source_id = first.source_id.clone();
+        let owner = first.owner.clone();
+        let tags = first.tags.clone();
+        let provider = first
+            .platform
+            .clone()
+            .unwrap_or_else(|| first.source.as_str().to_string());
+        let thread_subject = first
+            .channel_label
+            .clone()
+            .unwrap_or_else(|| source_id.clone());
+        for item in &messages {
+            validate_ingest_item(item)?;
+            if item.source_id != source_id {
+                return Err(MemoryError::Invalid(
+                    "ingest_email batches must contain one thread".to_string(),
+                ));
+            }
+        }
+        let thread = tinycortex::memory::ingest::canonicalize::email::EmailThread {
+            provider,
+            thread_subject: thread_subject.clone(),
+            messages: messages
+                .into_iter()
+                .map(
+                    |item| tinycortex::memory::ingest::canonicalize::email::EmailMessage {
+                        // Same rule as the chat mapping: the speaking role when
+                        // the caller distinguishes it, the owner otherwise.
+                        from: item.author.unwrap_or(item.owner),
+                        // `IngestItem` carries no recipient list and no
+                        // per-message subject, so the rendered thread has no
+                        // `To:`/`Cc:` lines and every message repeats the
+                        // thread's subject. Those are display headers in the
+                        // canonical markdown; the bodies, their order and their
+                        // timestamps — what retrieval actually matches on —
+                        // cross intact. Carrying them would mean widening
+                        // `IngestItem`, whose literals are exhaustive at every
+                        // construction site in every host, for fields only this
+                        // path reads.
+                        to: Vec::new(),
+                        cc: Vec::new(),
+                        subject: thread_subject.clone(),
+                        sent_at: item.timestamp.unwrap_or_else(Utc::now),
+                        body: item.content,
+                        source_ref: item.source_ref.map(|source_ref| source_ref.value),
+                        list_unsubscribe: None,
+                    },
+                )
+                .collect(),
+        };
+        let result = tinymemory_core::ingest_pipeline::ingest_email(
+            &self.config,
+            &source_id,
+            &owner,
+            tags,
+            thread,
+        )
+        .await
+        .map_err(|error| Self::other("ingest email", error))?;
+        Ok(ingest_outcome(result))
     }
 }
 

@@ -224,6 +224,14 @@ impl MemoryIngest for NullMemoryProvider {
     async fn ingest_chat(&self, _messages: Vec<IngestItem>) -> Result<IngestOutcome, MemoryError> {
         unsupported(Capability::Ingest)
     }
+
+    // Spelled out rather than left to the trait's default. The default exists
+    // for drivers that predate the method; this one refuses everything on
+    // purpose, and a family here that answered by inheritance would stop
+    // refusing the day the default changes.
+    async fn ingest_email(&self, _messages: Vec<IngestItem>) -> Result<IngestOutcome, MemoryError> {
+        unsupported(Capability::Ingest)
+    }
 }
 
 #[async_trait]

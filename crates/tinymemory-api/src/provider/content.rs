@@ -53,6 +53,32 @@ pub trait MemoryIngest: Send + Sync {
     /// As [`Self::ingest_document`]. Partial success is reported through the
     /// counts in [`IngestOutcome`], not as an error.
     async fn ingest_chat(&self, messages: Vec<IngestItem>) -> Result<IngestOutcome, MemoryError>;
+
+    /// Ingest one email thread as its ordered run of messages.
+    ///
+    /// The argument shape is [`Self::ingest_chat`]'s, and the method is
+    /// separate anyway, because the difference is on the way *in*: a driver
+    /// splits an email thread at message boundaries and renders per-message
+    /// headers, where a chat batch is chunked across turns. Routing mail
+    /// through the chat method stores it as a conversation and loses the split,
+    /// which is what a citation back to a single message stands on. Flattening
+    /// it into [`Self::ingest_document`] loses the per-message structure
+    /// entirely.
+    ///
+    /// Every item must carry the same `source_id` — the thread is the
+    /// ingestion group, exactly as the conversation is for chat — and
+    /// `timestamp` is what orders the messages, so a caller that omits it gets
+    /// ingest time and a thread ordered by arrival.
+    ///
+    /// # Errors
+    ///
+    /// [`MemoryError::Unsupported`] from a driver that predates this operation
+    /// or has no mail path — it is *not* implied by the rest of the family,
+    /// and a caller must be prepared for a driver that ingests documents and
+    /// chat but not mail. Otherwise as [`Self::ingest_document`].
+    async fn ingest_email(&self, _messages: Vec<IngestItem>) -> Result<IngestOutcome, MemoryError> {
+        Err(MemoryError::unsupported(Capability::Ingest))
+    }
 }
 
 /// The namespace-document tier: whole documents addressed by `(namespace, key)`.

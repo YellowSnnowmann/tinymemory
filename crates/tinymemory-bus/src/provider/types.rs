@@ -174,17 +174,76 @@ pub struct IngestItem {
 ///
 /// Counts rather than content, so the caller can report progress and detect a
 /// silently-dropping driver without holding the written material in memory.
+///
+/// ## Why "nothing was written" takes more than one field to explain
+///
+/// A driver answers `written: 0` for two unrelated reasons: it produced units
+/// and dropped them, or it recognised the logical source as one it has already
+/// ingested and did nothing at all. [`Self::skipped`] cannot carry both — a
+/// `1` there would mean either "one unit was dropped" or "the whole call was a
+/// no-op", and no caller can tell which. That ambiguity is not academic: a
+/// source gate left claimed after the content behind it was wiped reports
+/// exactly the "0 written, 0 jobs" of a legitimate no-op, which is what made
+/// that class of bug expensive to see.
+///
+/// So the two facts are separate fields, and `skipped` counts dropped units
+/// only.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IngestOutcome {
     /// Units the driver newly persisted.
     pub written: u32,
-    /// Units the driver recognised as already present and skipped.
+    /// Units the driver produced and did not admit.
+    ///
+    /// Dropped units only. A call the driver refused outright is
+    /// [`Self::already_ingested`], not a skip of one unit.
     pub skipped: u32,
     /// Driver-assigned ids for the written units, when the driver exposes them.
     /// May be empty even when [`Self::written`] is non-zero — an external
     /// backend is not obliged to surface its internal ids.
     #[serde(default)]
     pub ids: Vec<String>,
+    /// Whether the call was a no-op because this source had been ingested
+    /// before.
+    ///
+    /// The gate is keyed on the logical source, not on the content, so
+    /// re-sending *changed* material under a claimed `source_id` still writes
+    /// nothing. A caller that re-ingests deliberately — after a wipe, after a
+    /// failed import, after clearing a gate by hand — has to tell that refusal
+    /// from an empty result, because only the first is a reason to go and
+    /// clear the gate.
+    ///
+    /// A driver with no such gate leaves this `false`, which is true of it.
+    #[serde(default, skip_serializing_if = "is_not_set")]
+    pub already_ingested: bool,
+    /// Follow-up derivation jobs this call scheduled.
+    ///
+    /// Lower than [`Self::written`] when an earlier call already queued the
+    /// same unit — the enqueue is keyed, so a duplicate is a no-op rather than
+    /// a second job — and zero on a driver that derives nothing in the
+    /// background. Read next to `written` it answers whether the material just
+    /// handed over will actually be picked up: rows can land with nothing
+    /// scheduled to derive from them, and `written` alone reports that as
+    /// success.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub extract_jobs_enqueued: u32,
+}
+
+/// Serde predicates that keep a widened struct's *empty* wire form byte-for-byte
+/// what it was before the field existed.
+///
+/// `#[serde(default)]` alone makes a new field decode on an old payload; these
+/// make the new payload decode on an old *peer*, which is the other half of an
+/// additive change and the half that is easy to forget. A field whose value is
+/// the default it would have been given anyway carries no information, so
+/// omitting it costs nothing and keeps the common case identical to what a
+/// version-skewed reader already handles.
+fn is_not_set(value: &bool) -> bool {
+    !*value
+}
+
+/// See [`is_not_set`]; the same rule for a count whose empty is zero.
+fn is_zero(value: &u32) -> bool {
+    *value == 0
 }
 
 /// One line of the portability stream.

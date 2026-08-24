@@ -555,6 +555,19 @@ impl MemoryService {
             .map_err(|error| into_bus_error(&error))
     }
 
+    /// Ingest one email thread, ordered by the items' timestamps.
+    ///
+    /// A driver that advertises `Ingest` may still refuse this one — the
+    /// method has a default that answers `Unsupported`, since it postdates the
+    /// family — so the capability check here admits the call and the driver has
+    /// the last word.
+    async fn ingest_email(&self, messages: Vec<IngestItem>) -> BusResult<IngestOutcome> {
+        require_family!(self, as_ingest, Capability::Ingest)
+            .ingest_email(messages)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
     async fn put_document(&self, input: NamespaceDocumentInput) -> BusResult<String> {
         require_family!(self, as_documents, Capability::Documents)
             .put_document(input)

@@ -165,6 +165,7 @@ impl MemoryIngest for FakeProvider {
             written: 4,
             skipped: 1,
             ids: vec!["chunk-1".to_string(), "chunk-2".to_string()],
+            ..IngestOutcome::default()
         })
     }
 
