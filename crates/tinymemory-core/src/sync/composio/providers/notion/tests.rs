@@ -194,3 +194,42 @@ fn page_normalization_covers_properties_and_fallbacks() {
     assert_eq!(page.due.as_deref(), Some("2026-08-21"));
     assert_eq!(page.priority.as_deref(), Some("High"));
 }
+
+/// The second `NOTION_FETCH_DATA` call site.
+///
+/// `fetch_tasks` falls back to this action when a Notion task source names no
+/// database, and it is reached from a shipped, user-configurable feature —
+/// OpenHuman's task-sources pipeline resolves `notion` through `get_provider`
+/// and calls `fetch_tasks`. It had the same missing `fetch_type` the periodic
+/// sync pipeline did, so it failed Composio's input-schema validation the same
+/// way on the Direct (BYOK) arm, where nothing injects the field for it.
+///
+/// Asserted on the argument builder rather than through `fetch_tasks`: the
+/// `ComposioHost` seam is installed once per process as a signed-out stub, so a
+/// test cannot observe what the request carried — only that it errored. That is
+/// exactly how this site stayed broken while the tests above passed.
+#[test]
+fn fetch_tasks_recent_pages_fallback_sends_fetch_type() {
+    let args = super::provider::fetch_data_args(25);
+    assert_eq!(
+        args["fetch_type"], "pages",
+        "NOTION_FETCH_DATA is rejected without `fetch_type`; args were {args}"
+    );
+    // The rest of the shape is unchanged — pinned so the fix cannot be
+    // "corrected" by rewriting the request into something Composio pages
+    // differently.
+    assert_eq!(args["page_size"], 25);
+    assert_eq!(args["filter"]["value"], "page");
+    assert_eq!(args["sort"]["timestamp"], "last_edited_time");
+}
+
+/// The cap `fetch_tasks` applies before the request goes out.
+#[test]
+fn fetch_tasks_recent_pages_fallback_caps_page_size_at_the_api_maximum() {
+    assert_eq!(super::provider::fetch_data_args(5_000)["page_size"], 100);
+    assert_eq!(
+        super::provider::fetch_data_args(5_000)["fetch_type"],
+        "pages",
+        "the cap must not drop the required field"
+    );
+}
