@@ -67,6 +67,16 @@ pub fn count_chunks(config: &Config) -> Result<u64> {
     crate::engine::backend::chunks::count_chunks(&engine_config(config))
 }
 
+/// How many chunks [`list_chunks`] would return for `query`, ignoring its
+/// `limit` and `offset`.
+///
+/// Filtered, unlike [`count_chunks`] above, and built from the listing's own
+/// `WHERE` clause engine-side rather than from a second copy of it — a total
+/// that disagrees with the page it accompanies is worse than no total.
+pub fn count_chunks_matching(config: &Config, query: &ListChunksQuery) -> Result<u64> {
+    crate::engine::backend::chunks::count_chunks_matching(&engine_config(config), query)
+}
+
 pub fn extraction_coverage(config: &Config) -> Result<f32> {
     crate::engine::backend::chunks::extraction_coverage(&engine_config(config))
 }

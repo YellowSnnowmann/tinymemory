@@ -166,30 +166,149 @@ pub fn count_entity_index(config: &Config) -> Result<u64> {
     index(config)?.count_entity_index()
 }
 
-/// Most frequently observed entities, with recency as the tie-breaker.
-pub fn top_entities(config: &Config, limit: usize) -> Result<Vec<TopEntity>> {
+/// One aggregated row of `mem_tree_entity_index`, named for the columns it
+/// holds rather than for what a caller might render.
+///
+/// [`TopEntity`] carries the same four values under a `name` that is really a
+/// `MAX(surface)` sample. That reading is fine where the caller only needs a
+/// label, and wrong where it crosses the driver contract, which promises a
+/// canonical name under `name`. This type keeps `surface` called `surface` so
+/// the promise is not made by accident.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EntityIndexRow {
+    /// Canonical entity id.
+    pub entity_id: String,
+    /// Stable entity kind string, as stored.
+    pub entity_kind: String,
+    /// An observed surface form — a sample of one row in the group, not a
+    /// canonical name.
+    pub surface: String,
+    /// Number of index rows aggregated into this one.
+    pub mentions: u32,
+}
+
+/// Store-wide entity rows, most-observed first, optionally one kind only.
+///
+/// Deliberately **not** tree-scoped: `namespace_entities` answers the scoped
+/// question, and this one exists for the workspace-wide view where the caller
+/// is asking what the store holds at all. Recency breaks ties, so two entities
+/// seen the same number of times order by which was seen last.
+///
+/// `kind` is matched against the stored `entity_kind` verbatim; validating it
+/// belongs to the caller, which knows the vocabulary it accepts.
+pub fn top_entity_rows(
+    config: &Config,
+    kind: Option<&str>,
+    limit: usize,
+) -> Result<Vec<EntityIndexRow>> {
+    let memory = memory_config_from(config, config.workspace_dir().clone());
+    let connection = crate::engine::backend::chunks::shared_connection(&memory)?;
+    let guard = connection.lock();
+    // The `?1 IS NULL OR` form keeps one prepared statement for both the
+    // filtered and unfiltered call, rather than concatenating SQL per call.
+    let mut statement = guard.prepare(
+        "SELECT entity_id, entity_kind, MAX(surface), COUNT(*)
+           FROM mem_tree_entity_index
+          WHERE (?1 IS NULL OR entity_kind = ?1)
+          GROUP BY entity_id, entity_kind
+          ORDER BY COUNT(*) DESC, MAX(timestamp_ms) DESC
+          LIMIT ?2",
+    )?;
+    let rows = statement
+        .query_map(
+            rusqlite::params![kind, i64::try_from(limit).unwrap_or(i64::MAX)],
+            index_row,
+        )?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// The entity rows recorded against one tree node, most-observed first.
+///
+/// Grouped by surface as well as by id: one entity seen under two forms is two
+/// rows, because the form is the evidence of how this node's text named it.
+///
+/// The count is `1` for every row under the current schema — the primary key
+/// is `(entity_id, node_id)`, so one node cannot hold two rows for the same
+/// entity — and is reported anyway: it is the same aggregate
+/// [`top_entity_rows`] returns, and an index that later keys occurrences per
+/// span would make it meaningful without a shape change here.
+pub fn node_entity_rows(config: &Config, node_id: &str) -> Result<Vec<EntityIndexRow>> {
     let memory = memory_config_from(config, config.workspace_dir().clone());
     let connection = crate::engine::backend::chunks::shared_connection(&memory)?;
     let guard = connection.lock();
     let mut statement = guard.prepare(
-        "SELECT entity_id, entity_kind, MAX(surface), COUNT(*)
+        "SELECT entity_id, entity_kind, surface, COUNT(*)
            FROM mem_tree_entity_index
-          GROUP BY entity_id, entity_kind
-          ORDER BY COUNT(*) DESC, MAX(timestamp_ms) DESC
-          LIMIT ?1",
+          WHERE node_id = ?1
+          GROUP BY entity_id, entity_kind, surface
+          ORDER BY COUNT(*) DESC, entity_id ASC",
     )?;
     let rows = statement
-        .query_map([i64::try_from(limit).unwrap_or(i64::MAX)], |row| {
-            let mentions: i64 = row.get(3)?;
-            Ok(TopEntity {
-                id: row.get(0)?,
-                kind: row.get(1)?,
-                name: row.get(2)?,
-                mentions: u32::try_from(mentions.max(0)).unwrap_or(u32::MAX),
-            })
-        })?
+        .query_map(rusqlite::params![node_id], index_row)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
+}
+
+/// Ids of the **leaf** nodes one entity was observed in, newest first.
+///
+/// `node_kind = 'leaf'` is the filter the scorer's write path defines: it
+/// stamps `leaf` for a scored chunk and `summary` for a summariser-curated
+/// node. Summary nodes are excluded because their ids are not chunk ids — a
+/// caller filtering a chunk list by them would match nothing.
+///
+/// `GROUP BY` rather than `SELECT DISTINCT` so the sort key is a selected
+/// aggregate: the primary key already makes `node_id` unique per entity, but a
+/// `DISTINCT` ordered by an unselected column is the kind of query that
+/// depends on how permissive the engine happens to be.
+pub fn entity_leaf_node_ids(config: &Config, entity_id: &str, limit: usize) -> Result<Vec<String>> {
+    let memory = memory_config_from(config, config.workspace_dir().clone());
+    let connection = crate::engine::backend::chunks::shared_connection(&memory)?;
+    let guard = connection.lock();
+    let mut statement = guard.prepare(
+        "SELECT node_id, MAX(timestamp_ms) AS seen_at
+           FROM mem_tree_entity_index
+          WHERE entity_id = ?1 AND node_kind = 'leaf'
+          GROUP BY node_id
+          ORDER BY seen_at DESC
+          LIMIT ?2",
+    )?;
+    let rows = statement
+        .query_map(
+            rusqlite::params![entity_id, i64::try_from(limit).unwrap_or(i64::MAX)],
+            |row| row.get::<_, String>(0),
+        )?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Read one aggregated row in the shape both grouped queries above select.
+fn index_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<EntityIndexRow> {
+    let mentions: i64 = row.get(3)?;
+    Ok(EntityIndexRow {
+        entity_id: row.get(0)?,
+        entity_kind: row.get(1)?,
+        surface: row.get(2)?,
+        mentions: u32::try_from(mentions.max(0)).unwrap_or(u32::MAX),
+    })
+}
+
+/// Most frequently observed entities, with recency as the tie-breaker.
+///
+/// The [`TopEntity`] view of [`top_entity_rows`], kept for callers that were
+/// written against it. New callers should take the rows: this shape puts a
+/// `MAX(surface)` sample in a field called `name`, and the two are not the
+/// same claim.
+pub fn top_entities(config: &Config, limit: usize) -> Result<Vec<TopEntity>> {
+    Ok(top_entity_rows(config, None, limit)?
+        .into_iter()
+        .map(|row| TopEntity {
+            id: row.entity_id,
+            kind: row.entity_kind,
+            name: row.surface,
+            mentions: row.mentions,
+        })
+        .collect())
 }
 
 #[cfg(test)]

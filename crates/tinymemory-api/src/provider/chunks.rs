@@ -32,6 +32,7 @@
 
 use async_trait::async_trait;
 
+use crate::capabilities::Capability;
 use crate::chunks::Chunk;
 use crate::error::MemoryError;
 use crate::provider::types::SourceScope;
@@ -66,6 +67,40 @@ pub trait MemoryChunks: Send + Sync {
         query: &ChunkQuery,
         scope: Option<&SourceScope>,
     ) -> Result<Vec<Chunk>, MemoryError>;
+
+    /// How many chunks `query` matches, ignoring its `limit` and `offset`.
+    ///
+    /// The predicate is [`Self::list_chunks`]'s, exactly: same filters, same
+    /// `scope`, same fail-closed reading of an empty allowlist. Only the page
+    /// bounds are dropped, because a total that moved as the caller paged
+    /// through it would not be a total.
+    ///
+    /// # Why this is a member and not the caller's arithmetic
+    ///
+    /// A caller rendering "showing 20 of 431" cannot derive 431 from a page: it
+    /// would have to list the whole match set unbounded, which is the query the
+    /// row limit exists to prevent, and it would still be capped by the
+    /// driver's own ceiling — silently, so 10,000 would read as the truth. The
+    /// count has to be answered where the `WHERE` clause is.
+    ///
+    /// The two must be built from one predicate driver-side. A count that
+    /// disagrees with the list beside it points the caller at pages that hold
+    /// nothing, which is worse than not offering a count at all.
+    ///
+    /// # Errors
+    ///
+    /// [`MemoryError::Unsupported`] from a driver that implements this family
+    /// but predates this member — it is deliberately not derived from
+    /// [`Self::list_chunks`] by default, because that default would silently
+    /// answer with the driver's row cap instead of the real total. Otherwise
+    /// backend failures only; no match yields `0`.
+    async fn count_chunks(
+        &self,
+        _query: &ChunkQuery,
+        _scope: Option<&SourceScope>,
+    ) -> Result<u64, MemoryError> {
+        Err(MemoryError::unsupported(Capability::Chunks))
+    }
 
     /// One chunk by id.
     ///

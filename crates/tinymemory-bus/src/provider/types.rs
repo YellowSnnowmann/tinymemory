@@ -330,6 +330,50 @@ pub struct EntityHit {
     pub mentions: u32,
 }
 
+/// One row of the entity **occurrence** index: an entity as it was actually
+/// observed, and how many observations are behind the row.
+///
+/// ## Why this is not [`EntityHit`]
+///
+/// [`EntityHit`] answers "what is this namespace about, and what is warm right
+/// now": it is namespace-scoped, ranked by a driver-computed hotness, and its
+/// [`EntityRef::name`] is a canonical display name the driver stands behind.
+/// This answers a different question — "what is in the index" — and every one
+/// of those three properties differs: it spans the whole store, it ranks by
+/// raw observation count, and it carries a [`Self::surface`], which is one of
+/// the literal forms the source text used and nothing more.
+///
+/// Folding the two together would need a field to lie. A surface placed in
+/// `name` reads as canonical to every caller that renders it, and a hotness
+/// synthesised for an index row would rank on a number no decay curve
+/// produced. Two shapes, each true about its own query, is the cheaper answer.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntityOccurrence {
+    /// Canonical, driver-stable entity id — the same id space as
+    /// [`EntityRef::id`], so an id read here can be passed straight back to an
+    /// entity-keyed call.
+    pub entity_id: String,
+    /// Entity kind as a wire string (`person`, `email`, `topic`, …), the same
+    /// open vocabulary as [`EntityRef::kind`]: a kind this build does not
+    /// recognise must still round-trip.
+    pub kind: String,
+    /// One surface form the entity was observed under — a sample, not a name.
+    ///
+    /// Which sample is the driver's choice, and it may change as rows are
+    /// added, so this is for showing a caller how the text read, never for
+    /// identity. Empty is legitimate: an index that records occurrences
+    /// without keeping the source form has nothing truthful to put here.
+    #[serde(default)]
+    pub surface: String,
+    /// How many indexed observations this row aggregates.
+    ///
+    /// The unit is the driver's occurrence row, not "times the word appeared":
+    /// an index keyed per `(entity, node)` counts a node once no matter how
+    /// often the entity is named inside it, while one keyed per span counts
+    /// every span. Compare within one driver's results only.
+    pub mentions: u32,
+}
+
 /// Identity of a captured snapshot.
 ///
 /// The engine's own snapshot type additionally carries the git commit SHA and

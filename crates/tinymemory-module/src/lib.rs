@@ -248,6 +248,7 @@ mod exports {
             "ChunkDetail",
             "StorageKinds",
             "ChunkEmbeddings",
+            "CountChunks",
             // Retrieval.
             "FastRetrieve",
             "CoverWindow",
@@ -289,6 +290,9 @@ mod exports {
             "Entities",
             "EntityEdges",
             "TouchEntities",
+            "TopEntities",
+            "ChunkEntities",
+            "EntityChunkIds",
             "KvGet",
             "KvPut",
             "KvDelete",
@@ -317,6 +321,9 @@ mod exports {
             "FlushPending",
             "ResetDerivedIndex",
             "RecallNamespaceRecent",
+            // Tree, structural: the forest walk and its leaf edge.
+            "SummaryForest",
+            "RecentLeaves",
         ],
         signals = [],
         // The host's embedder is deliberately NOT declared as `requires`. That

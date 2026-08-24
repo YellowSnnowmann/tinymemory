@@ -32,9 +32,9 @@ use tinymemory_api::host::{
 };
 use tinymemory_api::mandatory::MemoryTraitProvider;
 use tinymemory_api::provider::types::{
-    EntityHit, EntityRef, ExportPage, ExportRecord, FlushOutcome, ImportOutcome, IngestItem,
-    IngestOutcome, MaintenanceReport, QueueFailure, QueueStats, ResetOutcome, SourceItem,
-    SourceScope, StoreStats,
+    EntityHit, EntityOccurrence, EntityRef, ExportPage, ExportRecord, FlushOutcome, ImportOutcome,
+    IngestItem, IngestOutcome, MaintenanceReport, QueueFailure, QueueStats, ResetOutcome,
+    SourceItem, SourceScope, StoreStats,
 };
 // Diff-family value types, used only by the `MemoryDiff` impl below — which is
 // compiled out without the git-backed snapshot store.
@@ -52,7 +52,9 @@ use tinymemory_api::provider::{
 };
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
-use tinymemory_api::tree::{IngestRequest, QueryResult, TreeStatus};
+use tinymemory_api::tree::{
+    IngestRequest, QueryResult, SummaryForest, TreeLeaf, TreeStatus, TreeSummary,
+};
 use tinymemory_api::types::{
     GraphRelationRecord, MemoryCategory, MemoryEntry, MemoryKvRecord, MemoryTaint,
     NamespaceDocumentInput, NamespaceMemoryHit, NamespaceRetrievalContext, NamespaceSummary,
@@ -907,6 +909,243 @@ impl MemoryTree for TinycortexProvider {
         .map_err(|error| Self::other("cascade tree", error))?;
         Self::cross(&status, "convert tree status")
     }
+
+    async fn summary_forest(
+        &self,
+        limit: usize,
+        scope: Option<&SourceScope>,
+    ) -> Result<SummaryForest, MemoryError> {
+        /// This driver's own ceiling on one forest walk.
+        ///
+        /// The contract says the driver clamps, and this is where. It is not a
+        /// quota anyone should meet: it is the bound that stops a single read
+        /// from naming every summary in a store that has been ingesting for a
+        /// year, which the module would then have to refuse for overrunning a
+        /// frame.
+        const MAX_FOREST_SUMMARIES: usize = 20_000;
+
+        /// Epoch milliseconds as the contract's timestamp.
+        ///
+        /// A row outside the representable range floors at the epoch rather
+        /// than failing the whole walk: one nonsense timestamp is a bad node,
+        /// not a bad read.
+        fn at_ms(ms: i64) -> chrono::DateTime<Utc> {
+            chrono::DateTime::from_timestamp_millis(ms)
+                .unwrap_or(chrono::DateTime::<Utc>::UNIX_EPOCH)
+        }
+
+        let limit = limit.clamp(1, MAX_FOREST_SUMMARIES);
+        let scope = scope.cloned();
+        blocking(self.config.clone(), "walk summary forest", move |config| {
+            tinymemory_core::store::chunks::store::with_connection(config, |conn| {
+                // The scope predicate applies to the *tree*, not to each
+                // summary: a summary's only source attribution is the tree it
+                // sealed into. Resolving the allowed trees first and binding
+                // their ids into the row query keeps the filter inside SQL and
+                // ahead of the LIMIT — filtering afterwards would let a
+                // withheld tree eat the caller's budget.
+                let allowed_tree_ids = match &scope {
+                    None => None,
+                    Some(scope) => {
+                        // `allows_source_id` is the contract's own published
+                        // predicate. The retrieval ranker uses a looser
+                        // tree-scope variant that additionally accepts a bare
+                        // `mem_src:<id>` allow entry; this is deliberately the
+                        // stricter of the two. Over-denying hides a node from a
+                        // graph, which the user can see; under-denying leaks
+                        // one, which the user cannot.
+                        let mut stmt = conn.prepare("SELECT id, scope FROM mem_tree_trees")?;
+                        let mut ids = Vec::new();
+                        let rows = stmt.query_map([], |row| {
+                            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                        })?;
+                        for row in rows {
+                            let (id, tree_scope) = row?;
+                            if scope.allows_source_id(&tree_scope) {
+                                ids.push(id);
+                            }
+                        }
+                        Some(ids)
+                    }
+                };
+
+                // An empty allowlist denies everything — `SourceScope`'s
+                // fail-closed rule — and so does a scope that matched no tree.
+                // Both are an empty forest that is *not* truncated: nothing was
+                // withheld by a bound, so the caller must not be told to ask
+                // again with a bigger one.
+                if allowed_tree_ids.as_ref().is_some_and(Vec::is_empty) {
+                    return Ok(SummaryForest::default());
+                }
+
+                // One row over the limit, so truncation is observed rather than
+                // inferred. A store holding exactly `limit` nodes is complete,
+                // and `rows.len() == limit` alone cannot tell that apart from a
+                // store holding one more.
+                let probe = i64::try_from(limit.saturating_add(1)).unwrap_or(i64::MAX);
+                let mut sql = String::from(
+                    "SELECT s.id, s.tree_id, s.tree_kind, t.scope, s.level, s.parent_id,
+                            s.child_ids_json, s.time_range_start_ms, s.time_range_end_ms
+                       FROM mem_tree_summaries s
+                       JOIN mem_tree_trees t ON t.id = s.tree_id
+                      WHERE s.deleted = 0",
+                );
+                let mut bound: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+                if let Some(ids) = &allowed_tree_ids {
+                    sql.push_str(" AND s.tree_id IN (");
+                    for (index, id) in ids.iter().enumerate() {
+                        if index > 0 {
+                            sql.push(',');
+                        }
+                        sql.push('?');
+                        bound.push(Box::new(id.clone()));
+                    }
+                    sql.push(')');
+                }
+                // Tree-major, so a truncated walk loses whole trees off the
+                // tail rather than thinning every tree by a little. That is the
+                // honest way to cut a forest — a caller can see a source is
+                // missing, where it cannot see that every tree is short some
+                // nodes — and it is what `SummaryForest::truncated` documents.
+                sql.push_str(" ORDER BY s.tree_id, s.level, s.sealed_at_ms LIMIT ?");
+                bound.push(Box::new(probe));
+                let params = bound
+                    .iter()
+                    .map(|value| value.as_ref() as &dyn rusqlite::ToSql)
+                    .collect::<Vec<_>>();
+
+                let mut summaries = conn
+                    .prepare(&sql)?
+                    .query_map(params.as_slice(), |row| {
+                        let child_ids_json: String = row.get(6)?;
+                        Ok(TreeSummary {
+                            id: row.get(0)?,
+                            tree_id: row.get(1)?,
+                            tree_kind: row.get(2)?,
+                            tree_scope: row.get(3)?,
+                            // The column is signed and the contract is not.
+                            // The sealer never writes a negative level, so a
+                            // corrupt row floors at zero rather than wrapping
+                            // to four billion and sorting last.
+                            level: u32::try_from(row.get::<_, i64>(4)?.max(0)).unwrap_or(u32::MAX),
+                            // A node that is its tree's current root stores
+                            // NULL; the empty string is the same state written
+                            // by an older path. Both must read as "no parent"
+                            // or the caller draws an edge to a node named "".
+                            parent_id: row.get::<_, Option<String>>(5)?.filter(|id| !id.is_empty()),
+                            // A malformed blob is a broken row, not a broken
+                            // read: the node still belongs in the graph, it
+                            // just contributes no child edges.
+                            child_ids: serde_json::from_str(&child_ids_json).unwrap_or_default(),
+                            time_range_start: at_ms(row.get(7)?),
+                            time_range_end: at_ms(row.get(8)?),
+                        })
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?;
+
+                let truncated = summaries.len() > limit;
+                summaries.truncate(limit);
+                Ok(SummaryForest {
+                    summaries,
+                    truncated,
+                })
+            })
+            .map_err(|error| anyhow::anyhow!("walk summary forest: {error}"))
+        })
+        .await
+    }
+
+    async fn recent_leaves(
+        &self,
+        limit: usize,
+        scope: Option<&SourceScope>,
+    ) -> Result<Vec<TreeLeaf>, MemoryError> {
+        // Row selection delegates to `list_chunks` rather than a second
+        // hand-written `SELECT`, and that is the important part: it already
+        // applies the source allowlist in SQL ahead of the LIMIT, including the
+        // tags-aware rule that lets through content carrying no memory-source
+        // provenance at all. A second copy of that predicate here would be free
+        // to drift from the one every other chunk read goes through, and a
+        // source gate that drifts fails open.
+        let query = tinymemory_core::store::chunks::ListChunksQuery {
+            source_scope: scope.map(|scope| scope.allow.iter().cloned().collect::<HashSet<_>>()),
+            limit: Some(limit),
+            exclude_dropped: true,
+            ..Default::default()
+        };
+        let chunks = blocking(self.config.clone(), "list recent leaves", move |config| {
+            tinymemory_core::store::chunks::list_chunks(config, &query)
+        })
+        .await?;
+        if chunks.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // The parent link lives on the chunk row but not in the chunk model, so
+        // it is a second read keyed by the ids the first one returned. It
+        // cannot widen the result: every id here already passed the scope
+        // predicate above, and this query filters to exactly those ids. A leaf
+        // sealed between the two reads comes back unattached — the answer the
+        // first read was true for, and a state the caller already has to handle
+        // for content the scheduler has not reached.
+        let mut ids = Vec::with_capacity(chunks.len());
+        for chunk in &chunks {
+            ids.push(chunk.id.clone());
+        }
+        let parents = blocking(self.config.clone(), "read leaf parents", move |config| {
+            tinymemory_core::store::chunks::store::with_connection(config, |conn| {
+                // Built by hand rather than by `repeat_n(..).join(..)` so the
+                // bind order and the placeholder count come from one loop:
+                // a mismatch between them is a runtime SQL error, not a
+                // compile-time one.
+                let mut placeholders = String::with_capacity(ids.len() * 2);
+                for index in 0..ids.len() {
+                    if index > 0 {
+                        placeholders.push(',');
+                    }
+                    placeholders.push('?');
+                }
+                let sql = format!(
+                    "SELECT id, parent_summary_id FROM mem_tree_chunks WHERE id IN ({placeholders})"
+                );
+                let params = ids
+                    .iter()
+                    .map(|id| id as &dyn rusqlite::ToSql)
+                    .collect::<Vec<_>>();
+                let parents = conn
+                    .prepare(&sql)?
+                    .query_map(params.as_slice(), |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, Option<String>>(1)?.filter(|id| !id.is_empty()),
+                        ))
+                    })?
+                    .collect::<rusqlite::Result<std::collections::HashMap<String, Option<String>>>>(
+                    )?;
+                Ok(parents)
+            })
+            .map_err(|error| anyhow::anyhow!("read leaf parents: {error}"))
+        })
+        .await?;
+
+        Ok(chunks
+            .into_iter()
+            .map(|chunk| {
+                let (time_range_start, time_range_end) = chunk.metadata.time_range;
+                TreeLeaf {
+                    parent_summary_id: parents.get(&chunk.id).cloned().flatten(),
+                    source_id: chunk.metadata.source_id,
+                    // The shared helper rather than a local truncation: two
+                    // drivers disagreeing about what a preview is shows up as a
+                    // label that changes length when the driver changes.
+                    preview: tinymemory_api::tree::leaf_preview(&chunk.content),
+                    chunk_id: chunk.id,
+                    time_range_start,
+                    time_range_end,
+                }
+            })
+            .collect())
+    }
 }
 
 #[async_trait]
@@ -1022,6 +1261,73 @@ impl MemoryEntities for TinycortexProvider {
             }
             Ok(())
         })
+        .await
+    }
+
+    async fn top_entities(
+        &self,
+        kind: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<EntityOccurrence>, MemoryError> {
+        // Parsed rather than passed through, because the column stores whatever
+        // string the writer used: an unrecognised filter would match no rows and
+        // arrive as "this store knows about nothing". Same rule and same parser
+        // as `MemoryRetrieval::search_entities`, and re-emitting `as_str` keeps
+        // the comparison against the canonical spelling the index writes.
+        let kind = match kind {
+            Some(kind) => Some(
+                tinymemory_core::tree::score::extract::EntityKind::parse(kind)
+                    .map_err(|_| MemoryError::Invalid(format!("unknown entity kind: {kind}")))?
+                    .as_str()
+                    .to_string(),
+            ),
+            None => None,
+        };
+        let rows = blocking(self.config.clone(), "read top entities", move |config| {
+            tinymemory_core::store::entities::top_entity_rows(config, kind.as_deref(), limit)
+        })
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| EntityOccurrence {
+                entity_id: row.entity_id,
+                kind: row.entity_kind,
+                surface: row.surface,
+                mentions: row.mentions,
+            })
+            .collect())
+    }
+
+    async fn chunk_entities(&self, chunk_id: &str) -> Result<Vec<EntityOccurrence>, MemoryError> {
+        let node_id = chunk_id.to_string();
+        let rows = blocking(self.config.clone(), "read chunk entities", move |config| {
+            tinymemory_core::store::entities::node_entity_rows(config, &node_id)
+        })
+        .await?;
+        Ok(rows
+            .into_iter()
+            .map(|row| EntityOccurrence {
+                entity_id: row.entity_id,
+                kind: row.entity_kind,
+                surface: row.surface,
+                mentions: row.mentions,
+            })
+            .collect())
+    }
+
+    async fn entity_chunk_ids(
+        &self,
+        entity_id: &str,
+        limit: usize,
+    ) -> Result<Vec<String>, MemoryError> {
+        let entity_id = entity_id.to_string();
+        blocking(
+            self.config.clone(),
+            "read entity chunk ids",
+            move |config| {
+                tinymemory_core::store::entities::entity_leaf_node_ids(config, &entity_id, limit)
+            },
+        )
         .await
     }
 }
@@ -1965,6 +2271,44 @@ fn scope_to_engine(scope: Option<&SourceScope>) -> Option<HashSet<String>> {
     scope.map(|scope| scope.allow.iter().cloned().collect())
 }
 
+/// Convert a contract chunk query into the engine's.
+///
+/// Shared by `list_chunks` and `count_chunks` so the two ask the engine the
+/// same question. Two copies of this conversion would compile identically
+/// today and drift the first time a filter is added to one of them — and the
+/// symptom of that drift is a total that no amount of paging can reach.
+///
+/// The page bounds are carried across unchanged; dropping them for the count
+/// is the engine's job, because that is where the `LIMIT` is appended.
+fn chunk_query_to_engine(
+    query: &ChunkQuery,
+    scope: Option<&SourceScope>,
+) -> Result<tinymemory_core::store::chunks::ListChunksQuery, MemoryError> {
+    let ChunkQuery {
+        source_kind,
+        source_id,
+        owner,
+        since_ms,
+        until_ms,
+        limit,
+        offset,
+        exclude_dropped,
+    } = query.clone();
+    Ok(tinymemory_core::store::chunks::ListChunksQuery {
+        source_kind: source_kind
+            .map(|kind| TinycortexProvider::cross(&kind, "convert source kind"))
+            .transpose()?,
+        source_id,
+        owner,
+        since_ms,
+        until_ms,
+        limit,
+        offset,
+        source_scope: scope_to_engine(scope),
+        exclude_dropped,
+    })
+}
+
 #[async_trait]
 impl MemoryChunks for TinycortexProvider {
     async fn list_chunks(
@@ -1972,34 +2316,29 @@ impl MemoryChunks for TinycortexProvider {
         query: &ChunkQuery,
         scope: Option<&SourceScope>,
     ) -> Result<Vec<Chunk>, MemoryError> {
-        let ChunkQuery {
-            source_kind,
-            source_id,
-            owner,
-            since_ms,
-            until_ms,
-            limit,
-            offset,
-            exclude_dropped,
-        } = query.clone();
-        let engine_query = tinymemory_core::store::chunks::ListChunksQuery {
-            source_kind: source_kind
-                .map(|kind| Self::cross(&kind, "convert source kind"))
-                .transpose()?,
-            source_id,
-            owner,
-            since_ms,
-            until_ms,
-            limit,
-            offset,
-            source_scope: scope_to_engine(scope),
-            exclude_dropped,
-        };
+        let engine_query = chunk_query_to_engine(query, scope)?;
         let chunks = blocking(self.config.clone(), "list chunks", move |config| {
             tinymemory_core::store::chunks::list_chunks(config, &engine_query)
         })
         .await?;
         Self::cross(&chunks, "convert chunks")
+    }
+
+    async fn count_chunks(
+        &self,
+        query: &ChunkQuery,
+        scope: Option<&SourceScope>,
+    ) -> Result<u64, MemoryError> {
+        // Same conversion as the listing, then the engine's counting sibling,
+        // which builds its `WHERE` clause from the listing's own and simply
+        // never appends the `LIMIT`. The page bounds therefore travel and are
+        // ignored, rather than being cleared here where a later filter could
+        // be cleared with them by accident.
+        let engine_query = chunk_query_to_engine(query, scope)?;
+        blocking(self.config.clone(), "count chunks", move |config| {
+            tinymemory_core::store::chunks::count_chunks_matching(config, &engine_query)
+        })
+        .await
     }
 
     async fn get_chunk(&self, chunk_id: &str) -> Result<Option<Chunk>, MemoryError> {

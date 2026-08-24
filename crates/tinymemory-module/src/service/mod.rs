@@ -28,6 +28,7 @@
 //! SeedFromAddressBook()                             -> AddressBookSeedOutcome
 //!
 //! ListChunks(query, scope)                          -> [Chunk]
+//! CountChunks(query, scope)                         -> u64
 //! GetChunk(chunk_id)                                -> Option<Chunk>
 //! ChunkDetail(chunk_id)                             -> Option<ChunkDetail>
 //! ChunkEmbeddings(chunk_ids, model_signature)       -> [ChunkEmbedding]
@@ -47,6 +48,13 @@
 //! RetrieveSource(query, scope)                      -> RetrievalResponse
 //! RetrieveChildren(node_id, max_depth, query, limit, scope) -> [RetrievalHit]
 //! RetrieveLeaves(chunk_ids, scope)                   -> [RetrievalHit]
+//!
+//! SummaryForest(limit, scope)                       -> SummaryForest
+//! RecentLeaves(limit, scope)                        -> [TreeLeaf]
+//!
+//! TopEntities(kind, limit)                          -> [EntityOccurrence]
+//! ChunkEntities(chunk_id)                           -> [EntityOccurrence]
+//! EntityChunkIds(entity_id, limit)                  -> [String]
 //! ```
 //!
 //! # Source scope crosses as an argument, never as ambient state
@@ -120,9 +128,9 @@ use tinymemory_api::error::MemoryError;
 use tinymemory_api::goals::GoalsDoc;
 use tinymemory_api::health::MemoryHealth;
 use tinymemory_api::provider::types::{
-    DiffReport, EntityHit, ExportPage, ExportRecord, FlushOutcome, ImportOutcome, IngestItem,
-    IngestOutcome, MaintenanceReport, QueueFailure, QueueStats, ResetOutcome, SnapshotRef,
-    SourceItem, SourceScope, StoreStats,
+    DiffReport, EntityHit, EntityOccurrence, ExportPage, ExportRecord, FlushOutcome, ImportOutcome,
+    IngestItem, IngestOutcome, MaintenanceReport, QueueFailure, QueueStats, ResetOutcome,
+    SnapshotRef, SourceItem, SourceScope, StoreStats,
 };
 // `MemoryCore`, `MemoryRecall` and `MemoryPortability` are deliberately not
 // imported: they are supertraits of `MemoryProvider`, so their methods are
@@ -141,7 +149,7 @@ use tinymemory_api::provider::retrieval::{
 use tinymemory_api::provider::MemoryProvider;
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
-use tinymemory_api::tree::{IngestRequest, QueryResult, TreeStatus};
+use tinymemory_api::tree::{IngestRequest, QueryResult, SummaryForest, TreeLeaf, TreeStatus};
 use tinymemory_api::types::{
     GraphRelationRecord, MemoryCategory, MemoryEntry, MemoryKvRecord, MemoryTaint,
     NamespaceDocumentInput, NamespaceMemoryHit, NamespaceRetrievalContext, NamespaceSummary,
@@ -1426,6 +1434,101 @@ impl MemoryService {
             .map_err(|error| into_bus_error(&error))?;
         ensure_response_fits(&matches, "SearchEntities")?;
         Ok(matches)
+    }
+
+    /// How many chunks `ListChunks` matches, with its page bounds ignored.
+    ///
+    /// Declared here, at the end, rather than beside `ListChunks`: member order
+    /// is the wire order this module serves, and `tinymemory_bus::METHODS` is
+    /// compared against it as a sequence, so a new member is appended rather
+    /// than filed with its family.
+    ///
+    /// Not size-checked. The ceiling exists for responses that carry content;
+    /// this one is a number, and no query can make it bigger.
+    async fn count_chunks(&self, query: ChunkQuery, scope: Option<SourceScope>) -> BusResult<u64> {
+        require_family!(self, as_chunks, Capability::Chunks)
+            .count_chunks(&query, scope.as_ref())
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// The store-wide entity index, most-observed first — see `Entities` for
+    /// the namespace-scoped, hotness-ranked read these three do not replace.
+    ///
+    /// Appended here rather than filed beside `Entities` for the reason
+    /// `count_chunks` gives above: member order is wire order.
+    async fn top_entities(
+        &self,
+        kind: Option<String>,
+        limit: usize,
+    ) -> BusResult<Vec<EntityOccurrence>> {
+        let rows = require_family!(self, as_entities, Capability::Entities)
+            .top_entities(kind.as_deref(), limit)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&rows, "TopEntities")?;
+        Ok(rows)
+    }
+
+    /// Every entity indexed against one chunk.
+    ///
+    /// Size-checked even though the contract gives it no `limit`: the bound is
+    /// one chunk's extraction, which is the driver's number rather than the
+    /// caller's, and an over-large frame the host cannot decode is a worse
+    /// answer than a named refusal naming the method.
+    async fn chunk_entities(&self, chunk_id: String) -> BusResult<Vec<EntityOccurrence>> {
+        let rows = require_family!(self, as_entities, Capability::Entities)
+            .chunk_entities(&chunk_id)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&rows, "ChunkEntities")?;
+        Ok(rows)
+    }
+
+    /// The chunks one entity was observed in, as ids.
+    async fn entity_chunk_ids(&self, entity_id: String, limit: usize) -> BusResult<Vec<String>> {
+        let ids = require_family!(self, as_entities, Capability::Entities)
+            .entity_chunk_ids(&entity_id, limit)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&ids, "EntityChunkIds")?;
+        Ok(ids)
+    }
+
+    /// Every sealed summary in the store, with the tree each belongs to.
+    ///
+    /// Appended here rather than filed beside `DrillDown` for the reason
+    /// `count_chunks` gives above: member order is wire order.
+    ///
+    /// Size-checked, and it is the method most likely to hit the ceiling: the
+    /// caller's `limit` bounds *nodes*, not bytes, and a store of long-scoped
+    /// trees can put a forest-sized walk over a frame. A named refusal telling
+    /// the caller to lower the bound beats a frame the host cannot decode.
+    async fn summary_forest(
+        &self,
+        limit: usize,
+        scope: Option<SourceScope>,
+    ) -> BusResult<SummaryForest> {
+        let forest = require_family!(self, as_tree, Capability::Tree)
+            .summary_forest(limit, scope.as_ref())
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&forest, "SummaryForest")?;
+        Ok(forest)
+    }
+
+    /// The newest leaves and the summaries that sealed them.
+    async fn recent_leaves(
+        &self,
+        limit: usize,
+        scope: Option<SourceScope>,
+    ) -> BusResult<Vec<TreeLeaf>> {
+        let leaves = require_family!(self, as_tree, Capability::Tree)
+            .recent_leaves(limit, scope.as_ref())
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&leaves, "RecentLeaves")?;
+        Ok(leaves)
     }
 }
 

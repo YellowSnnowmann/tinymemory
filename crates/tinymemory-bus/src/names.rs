@@ -94,6 +94,10 @@ pub mod methods {
     pub const SEAL: &str = "Seal";
     /// `Cascade` — cascade.
     pub const CASCADE: &str = "Cascade";
+    /// `SummaryForest` — every sealed summary in the store, with its tree.
+    pub const SUMMARY_FOREST: &str = "SummaryForest";
+    /// `RecentLeaves` — the newest leaves and the summaries that sealed them.
+    pub const RECENT_LEAVES: &str = "RecentLeaves";
 
     // Entities, relations and the namespaced key/value store.
     /// `Entities` — entities.
@@ -104,6 +108,12 @@ pub mod methods {
     pub const TOUCH_ENTITIES: &str = "TouchEntities";
     /// `SearchEntities` — search entities.
     pub const SEARCH_ENTITIES: &str = "SearchEntities";
+    /// `TopEntities` — the store-wide entity index, most-observed first.
+    pub const TOP_ENTITIES: &str = "TopEntities";
+    /// `ChunkEntities` — every entity indexed against one chunk.
+    pub const CHUNK_ENTITIES: &str = "ChunkEntities";
+    /// `EntityChunkIds` — the chunks one entity was observed in.
+    pub const ENTITY_CHUNK_IDS: &str = "EntityChunkIds";
     /// `Relations` — relations.
     pub const RELATIONS: &str = "Relations";
     /// `PutRelation` — put relation.
@@ -197,6 +207,9 @@ pub mod methods {
     pub const STORAGE_KINDS: &str = "StorageKinds";
     /// `ChunkEmbeddings` — chunk embeddings.
     pub const CHUNK_EMBEDDINGS: &str = "ChunkEmbeddings";
+    /// `CountChunks` — how many chunks `ListChunks` matches, page bounds
+    /// ignored.
+    pub const COUNT_CHUNKS: &str = "CountChunks";
 
     // The scored retrieval surface.
     /// `FastRetrieve` — fast retrieve.
@@ -260,7 +273,7 @@ pub mod methods {
 /// The order matters: `tinybus`'s `Interface::members()` returns declaration
 /// order, and the module compares the two sequences directly rather than as
 /// sets, so a reordering is caught alongside an addition or a removal.
-pub const METHODS: [&str; 99] = [
+pub const METHODS: [&str; 105] = [
     methods::DRIVER_ID,
     methods::CAPABILITIES,
     methods::HEALTH,
@@ -360,6 +373,12 @@ pub const METHODS: [&str; 99] = [
     methods::RETRIEVE_LEAVES,
     methods::RECALL_NAMESPACE_SCORED,
     methods::SEARCH_ENTITIES,
+    methods::COUNT_CHUNKS,
+    methods::TOP_ENTITIES,
+    methods::CHUNK_ENTITIES,
+    methods::ENTITY_CHUNK_IDS,
+    methods::SUMMARY_FOREST,
+    methods::RECENT_LEAVES,
 ];
 
 #[cfg(test)]

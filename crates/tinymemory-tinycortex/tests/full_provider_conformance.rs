@@ -1673,6 +1673,94 @@ async fn tree_entities_and_maintenance_execute_real_workspace_transitions() {
         .expect("query touched entity");
     assert!(touched[0].hotness > 0.0);
 
+    // The occurrence-index reads.
+    //
+    // Two entities, both on `chunk-1`, both seen once. That is enough to pin
+    // every property the three members promise and the namespace-scoped
+    // `entities` above does not: no namespace argument, a count instead of a
+    // hotness, a surface instead of a name, and a join back to the chunk.
+    let store_wide = entities
+        .top_entities(None, 10)
+        .await
+        .expect("store-wide entity index");
+    assert_eq!(store_wide.len(), 2);
+    // Ordered by count, and both counts are 1 — so this asserts membership,
+    // not position. Asserting an order the SQL breaks ties on by timestamp,
+    // when both rows carry the same timestamp, would be a flaky test.
+    let alice = store_wide
+        .iter()
+        .find(|row| row.entity_id == "person:alice")
+        .expect("the seeded person is in the index");
+    assert_eq!(alice.kind, "person");
+    assert_eq!(alice.surface, "Alice");
+    assert_eq!(alice.mentions, 1);
+
+    let people_only = entities
+        .top_entities(Some("person"), 10)
+        .await
+        .expect("kind-filtered entity index");
+    assert_eq!(people_only.len(), 1);
+    assert_eq!(people_only[0].entity_id, "person:alice");
+
+    // The filter is validated, not applied blindly: an unknown kind that
+    // matched nothing would read as an empty store.
+    assert!(
+        matches!(
+            entities.top_entities(Some("not-a-kind"), 10).await,
+            Err(tinymemory_api::error::MemoryError::Invalid(_))
+        ),
+        "an unrecognised kind must be refused rather than answered with []"
+    );
+
+    let of_chunk = entities
+        .chunk_entities("chunk-1")
+        .await
+        .expect("entities of one chunk");
+    assert_eq!(of_chunk.len(), 2);
+    // Equal counts break by entity id ascending, which is deterministic here.
+    assert_eq!(of_chunk[0].entity_id, "organization:tinymemory");
+    assert_eq!(of_chunk[0].surface, "TinyMemory");
+    assert!(entities
+        .chunk_entities("no-such-chunk")
+        .await
+        .expect("an unknown chunk is not an error")
+        .is_empty());
+
+    let of_entity = entities
+        .entity_chunk_ids("person:alice", 10)
+        .await
+        .expect("chunks of one entity");
+    assert_eq!(of_entity, vec!["chunk-1".to_string()]);
+    assert!(entities
+        .entity_chunk_ids("person:nobody", 10)
+        .await
+        .expect("an unknown entity is not an error")
+        .is_empty());
+
+    // Summary nodes live in the same index and are not chunks. Indexing the
+    // same entity against one must not add its node id to the chunk list —
+    // a caller filtering a chunk list by these ids would find nothing behind
+    // it.
+    assert_eq!(
+        tinymemory_core::store::entities::index_entities(
+            &config,
+            &indexed[..1],
+            "summary-1",
+            "summary",
+            1_700_000_100_000,
+            Some("project"),
+        )
+        .expect("seed a summary-node occurrence"),
+        1
+    );
+    assert_eq!(
+        entities
+            .entity_chunk_ids("person:alice", 10)
+            .await
+            .expect("chunks of one entity, with a summary node indexed"),
+        vec!["chunk-1".to_string()],
+    );
+
     let maintenance = provider.as_maintenance().expect("Maintenance");
     let reembed = maintenance.reembed().await.expect("reembed");
     assert_eq!(reembed.operation, "reembed");
@@ -1757,4 +1845,481 @@ async fn diff_captures_and_compares_real_source_snapshots() {
     assert_eq!(report.changes.len(), 1);
     assert_eq!(report.changes[0].item_id, "item-1");
     assert_eq!(report.changes[0].kind, ChangeKind::Modified);
+}
+
+/// The count answers the same question the page does.
+///
+/// `count_chunks` exists because a caller rendering "20 of 431" cannot derive
+/// 431 from a page, and the only host-side way to get it — list everything and
+/// measure — is the unbounded query the row limit exists to prevent. So the
+/// total is computed where the `WHERE` clause is, and what has to be pinned is
+/// that it is computed from *that* `WHERE` clause.
+///
+/// Three failure shapes are each asserted apart, because the plausible wrong
+/// implementations differ:
+///
+/// - a count wired to the engine's unfiltered `count_chunks` returns the whole
+///   table and looks right until a filter is applied, so the filtered count is
+///   required to be strictly smaller than the unfiltered one;
+/// - a count that reuses the listing's SQL wholesale keeps its `LIMIT`, so the
+///   same query paged one row at a time must not move it;
+/// - a count that skips the scope clause reports rows a scoped caller is not
+///   allowed to see, which is the source gate failing open in a number.
+///
+/// The rows are seeded through the store rather than the ingest pipeline: the
+/// point here is which rows a predicate matches, and the pipeline decides
+/// chunk boundaries, which would make the expected totals a property of the
+/// chunker instead of the filter.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_chunk_count_matches_the_page_and_ignores_its_bounds() {
+    use tinymemory_api::chunks::{Chunk, Metadata, SourceKind};
+    use tinymemory_api::provider::types::SourceScope;
+    use tinymemory_api::provider::{ChunkQuery, MemoryProvider};
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+    let timestamp = chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("timestamp");
+    let seed = |id: &str, kind: SourceKind, source_id: &str, tags: Vec<String>, seq: u32| Chunk {
+        id: id.into(),
+        content: format!("Body of {id}."),
+        metadata: Metadata {
+            tags,
+            ..Metadata::point_in_time(kind, source_id, "owner", timestamp)
+        },
+        token_count: 3,
+        seq_in_source: seq,
+        created_at: timestamp,
+        partial_message: false,
+    };
+    // Four documents and one chat, so the kind filter has something to drop;
+    // one of the documents is source-attributed, so the scope does too.
+    let seeded = vec![
+        seed("count-doc-0", SourceKind::Document, "doc-source", vec![], 0),
+        seed("count-doc-1", SourceKind::Document, "doc-source", vec![], 1),
+        seed("count-doc-2", SourceKind::Document, "doc-source", vec![], 2),
+        seed(
+            "count-doc-scoped",
+            SourceKind::Document,
+            "mem_src:src-a:item-1",
+            vec!["memory_sources".into()],
+            0,
+        ),
+        seed("count-chat-0", SourceKind::Chat, "chat-source", vec![], 0),
+    ];
+    assert_eq!(
+        tinymemory_core::store::chunks::store::upsert_chunks(&config, &seeded)
+            .expect("seed chunks"),
+        seeded.len(),
+    );
+
+    let chunks = provider.as_chunks().expect("Chunks");
+    // A limit well above the seeded rows: the listing this is compared against
+    // must not be the truncated one, or the equality would hold for the wrong
+    // reason.
+    let documents = ChunkQuery {
+        source_kind: Some(SourceKind::Document),
+        limit: Some(1_000),
+        ..ChunkQuery::default()
+    };
+    let listed = chunks
+        .list_chunks(&documents, None)
+        .await
+        .expect("list documents");
+    let counted = chunks
+        .count_chunks(&documents, None)
+        .await
+        .expect("count documents");
+    assert_eq!(
+        listed.len(),
+        4,
+        "four of the five seeded rows are documents"
+    );
+    assert_eq!(counted as usize, listed.len());
+
+    let everything = ChunkQuery {
+        limit: Some(1_000),
+        ..ChunkQuery::default()
+    };
+    let all = chunks
+        .count_chunks(&everything, None)
+        .await
+        .expect("count everything");
+    assert_eq!(all as usize, seeded.len());
+    assert!(
+        counted < all,
+        "the filter must reach the count; an unfiltered count would report {all} for both"
+    );
+
+    // Same predicate, one row at a time: the page moves, the total does not.
+    let second_page = ChunkQuery {
+        limit: Some(1),
+        offset: Some(2),
+        ..documents.clone()
+    };
+    assert_eq!(
+        chunks
+            .list_chunks(&second_page, None)
+            .await
+            .expect("list one row")
+            .len(),
+        1
+    );
+    assert_eq!(
+        chunks
+            .count_chunks(&second_page, None)
+            .await
+            .expect("count with page bounds"),
+        counted,
+        "limit and offset must not change what the count reports"
+    );
+
+    // The scope is applied by both, identically. `src-b` allows nothing that
+    // was ingested under `src-a`, and the unattributed rows stay visible —
+    // the engine's fail-closed rule, which the count has to share or it
+    // reports rows the caller may not see.
+    let scope = SourceScope::new(["src-b"]);
+    let scoped = chunks
+        .list_chunks(&documents, Some(&scope))
+        .await
+        .expect("list scoped documents");
+    assert_eq!(scoped.len(), 3, "the source-attributed row is out of scope");
+    assert_eq!(
+        chunks
+            .count_chunks(&documents, Some(&scope))
+            .await
+            .expect("count scoped documents") as usize,
+        scoped.len()
+    );
+
+    // No match is a zero, not an error.
+    let unmatched = ChunkQuery {
+        source_id: Some("no-such-source".into()),
+        ..ChunkQuery::default()
+    };
+    assert!(chunks
+        .list_chunks(&unmatched, None)
+        .await
+        .expect("list nothing")
+        .is_empty());
+    assert_eq!(
+        chunks
+            .count_chunks(&unmatched, None)
+            .await
+            .expect("count nothing"),
+        0
+    );
+}
+
+/// The forest walk and its leaf edge — the two structural tree reads.
+///
+/// Nothing here can pass vacuously. Both members default to
+/// `MemoryError::Unsupported` on the trait, so every `expect` below is a
+/// claim about this engine rather than about the contract's fallback, and a
+/// build that dropped either implementation fails on the first call.
+///
+/// What is pinned: the owning tree's kind and scope arrive denormalised onto
+/// each node; the parent link survives (it is the edge a caller draws a graph
+/// from, and the one thing `retrieve_children` does not carry); the source
+/// allowlist is applied to trees *and* to leaves; an empty allowlist denies
+/// rather than waves through; a bound reports itself as `truncated` instead of
+/// erroring or lying; a tombstoned summary is invisible; and a leaf carries the
+/// summary that sealed it plus a preview capped at `LEAF_PREVIEW_CHARS`.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_summary_forest_and_its_leaves_read_through_the_contract() {
+    use chrono::{TimeZone, Utc};
+    use tinymemory_api::chunks::{chunk_id, Chunk, Metadata, SourceKind};
+    use tinymemory_api::provider::types::SourceScope;
+    use tinymemory_api::provider::MemoryProvider;
+    use tinymemory_api::tree::LEAF_PREVIEW_CHARS;
+    use tinymemory_core::store::chunks::store::{upsert_chunks, with_connection};
+    use tinymemory_core::store::trees::store::{insert_summary_tx, insert_tree};
+    use tinymemory_core::store::trees::{SummaryNode, Tree, TreeKind, TreeStatus as TreeActivity};
+
+    const BASE_MS: i64 = 1_700_000_000_000;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+
+    let at = |offset_ms: i64| {
+        Utc.timestamp_millis_opt(BASE_MS + offset_ms)
+            .single()
+            .expect("timestamp")
+    };
+
+    // Two source trees. Scoping is only testable with more than one, and the
+    // whole point of the forest walk is that it spans them.
+    for (id, scope) in [("tree-alpha", "src-alpha"), ("tree-beta", "src-beta")] {
+        insert_tree(
+            &config,
+            &Tree {
+                id: id.into(),
+                kind: TreeKind::Source,
+                scope: scope.into(),
+                root_id: None,
+                max_level: 2,
+                ask: None,
+                status: TreeActivity::Active,
+                created_at: at(0),
+                last_sealed_at: Some(at(0)),
+            },
+        )
+        .expect("insert tree");
+    }
+
+    // Leaves. The `memory_sources` tag is what makes a chunk source-attributed
+    // — without it the allowlist lets the row through by design — so the two
+    // scoped leaves carry it and the assertions below are about the predicate
+    // rather than about an exemption from it.
+    let leaves = [
+        (
+            "src-alpha",
+            0u32,
+            "Alpha leaf one\nand a second line nobody labels with",
+        ),
+        ("src-alpha", 1, "Alpha leaf two"),
+        ("src-beta", 0, "Beta leaf one"),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(index, (source, seq, content))| {
+        let ts = at(i64::try_from(index).unwrap_or(0) * 1_000);
+        Chunk {
+            id: chunk_id(SourceKind::Chat, source, seq, content),
+            content: content.to_string(),
+            metadata: Metadata {
+                source_kind: SourceKind::Chat,
+                source_id: source.into(),
+                owner: "owner".into(),
+                timestamp: ts,
+                time_range: (ts, ts),
+                tags: vec!["memory_sources".into()],
+                source_ref: None,
+                path_scope: None,
+            },
+            token_count: 8,
+            seq_in_source: seq,
+            created_at: ts,
+            partial_message: false,
+        }
+    })
+    .collect::<Vec<_>>();
+    assert_eq!(
+        upsert_chunks(&config, &leaves).expect("persist leaves"),
+        leaves.len()
+    );
+
+    // Four summaries: an L1 and its L2 parent in alpha, an L1 in beta, and a
+    // tombstone that must never surface.
+    let summary = |id: &str,
+                   tree_id: &str,
+                   level: u32,
+                   parent: Option<&str>,
+                   children: Vec<String>,
+                   deleted: bool| SummaryNode {
+        id: id.into(),
+        tree_id: tree_id.into(),
+        tree_kind: TreeKind::Source,
+        level,
+        parent_id: parent.map(str::to_string),
+        child_ids: children,
+        content: format!("seal of {id}"),
+        token_count: 32,
+        entities: Vec::new(),
+        topics: Vec::new(),
+        time_range_start: at(0),
+        time_range_end: at(2_000),
+        score: 0.5,
+        sealed_at: at(i64::from(level) * 10),
+        deleted,
+        embedding: None,
+        doc_id: None,
+        version_ms: None,
+    };
+    let alpha_leaf_ids = leaves[..2]
+        .iter()
+        .map(|chunk| chunk.id.clone())
+        .collect::<Vec<_>>();
+    let seeded = [
+        summary(
+            "s-alpha-1",
+            "tree-alpha",
+            1,
+            Some("s-alpha-2"),
+            alpha_leaf_ids.clone(),
+            false,
+        ),
+        summary(
+            "s-alpha-2",
+            "tree-alpha",
+            2,
+            None,
+            vec!["s-alpha-1".into()],
+            false,
+        ),
+        summary(
+            "s-beta-1",
+            "tree-beta",
+            1,
+            None,
+            vec![leaves[2].id.clone()],
+            false,
+        ),
+        summary("s-beta-gone", "tree-beta", 1, None, Vec::new(), true),
+    ];
+    with_connection(&config, |conn| {
+        let tx = conn.unchecked_transaction()?;
+        for node in &seeded {
+            insert_summary_tx(&tx, node, None, "test")?;
+        }
+        // The seal writes this column when it claims a leaf; written directly
+        // here because running the real sealer needs a summarisation model, and
+        // what is under test is the read, not the summariser.
+        for id in &alpha_leaf_ids {
+            tx.execute(
+                "UPDATE mem_tree_chunks SET parent_summary_id = ?1 WHERE id = ?2",
+                rusqlite::params!["s-alpha-1", id],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    })
+    .expect("seed summaries and their leaf claims");
+
+    let tree = provider.as_tree().expect("Tree");
+
+    // ── The whole forest ────────────────────────────────────────────────────
+    let forest = tree
+        .summary_forest(100, None)
+        .await
+        .expect("walk the forest");
+    assert!(
+        !forest.truncated,
+        "a walk that reached the end of the store is not truncated"
+    );
+    assert_eq!(
+        forest.summaries.len(),
+        3,
+        "the tombstoned summary is not a node a caller has to know about"
+    );
+    let alpha_1 = forest
+        .summaries
+        .iter()
+        .find(|node| node.id == "s-alpha-1")
+        .expect("the L1 node is in the walk");
+    assert_eq!(alpha_1.tree_id, "tree-alpha");
+    assert_eq!(
+        alpha_1.tree_scope, "src-alpha",
+        "the tree's scope is denormalised onto the node; a caller that had to \
+         join for it would be reading the driver's tables again"
+    );
+    assert_eq!(alpha_1.tree_kind, "source");
+    assert_eq!(alpha_1.level, 1);
+    assert_eq!(
+        alpha_1.parent_id.as_deref(),
+        Some("s-alpha-2"),
+        "the parent link is the edge; without it this is a list, not a graph"
+    );
+    assert_eq!(alpha_1.child_ids, alpha_leaf_ids);
+    assert_eq!(alpha_1.time_range_start, at(0));
+    assert_eq!(alpha_1.time_range_end, at(2_000));
+    assert!(
+        forest.summaries.iter().all(|node| node.id != "s-beta-gone"),
+        "a tombstone must not reach the caller"
+    );
+
+    // ── A bound reports itself ──────────────────────────────────────────────
+    let clipped = tree
+        .summary_forest(1, None)
+        .await
+        .expect("walk one node of the forest");
+    assert_eq!(clipped.summaries.len(), 1);
+    assert!(
+        clipped.truncated,
+        "a walk stopped by the bound says so, rather than reading as a store \
+         with one summary in it"
+    );
+
+    // ── Scope is a predicate, on trees ──────────────────────────────────────
+    let alpha_only = tree
+        .summary_forest(100, Some(&SourceScope::new(["src-alpha"])))
+        .await
+        .expect("scoped walk");
+    assert_eq!(alpha_only.summaries.len(), 2);
+    assert!(
+        alpha_only
+            .summaries
+            .iter()
+            .all(|node| node.tree_id == "tree-alpha"),
+        "a scoped walk answers for the allowed trees only"
+    );
+
+    let denied = tree
+        .summary_forest(100, Some(&SourceScope::default()))
+        .await
+        .expect("an empty allowlist is an answer, not an error");
+    assert!(
+        denied.summaries.is_empty(),
+        "an empty allowlist denies everything — it is not 'unrestricted'"
+    );
+    assert!(
+        !denied.truncated,
+        "nothing was withheld by a bound, so asking again with a bigger one \
+         would change nothing"
+    );
+
+    // ── The leaf edge ───────────────────────────────────────────────────────
+    let recent = tree.recent_leaves(100, None).await.expect("recent leaves");
+    assert_eq!(recent.len(), 3);
+    assert!(
+        recent
+            .windows(2)
+            .all(|pair| pair[0].time_range_start >= pair[1].time_range_start),
+        "newest first, as the member promises"
+    );
+    let claimed = recent
+        .iter()
+        .find(|leaf| leaf.chunk_id == alpha_leaf_ids[0])
+        .expect("the first alpha leaf is in the page");
+    assert_eq!(
+        claimed.parent_summary_id.as_deref(),
+        Some("s-alpha-1"),
+        "the summary that sealed a leaf is the fact `list_chunks` cannot report"
+    );
+    assert_eq!(claimed.source_id, "src-alpha");
+    assert_eq!(
+        claimed.preview, "Alpha leaf one",
+        "the preview is the first line, not the whole body"
+    );
+    assert!(recent
+        .iter()
+        .all(|leaf| leaf.preview.chars().count() <= LEAF_PREVIEW_CHARS));
+    let unclaimed = recent
+        .iter()
+        .find(|leaf| leaf.chunk_id == leaves[2].id)
+        .expect("the beta leaf is in the page");
+    assert!(
+        unclaimed.parent_summary_id.is_none(),
+        "a leaf nothing has sealed is unattached, which is a state and not a \
+         fault"
+    );
+
+    // ── Scope is a predicate, on leaves too ─────────────────────────────────
+    let scoped_leaves = tree
+        .recent_leaves(100, Some(&SourceScope::new(["src-alpha"])))
+        .await
+        .expect("scoped leaves");
+    assert_eq!(scoped_leaves.len(), 2);
+    assert!(
+        scoped_leaves
+            .iter()
+            .all(|leaf| leaf.source_id == "src-alpha"),
+        "the allowlist is applied inside the query, not after the limit"
+    );
+    assert!(tree
+        .recent_leaves(100, Some(&SourceScope::default()))
+        .await
+        .expect("an empty allowlist is an answer here too")
+        .is_empty());
 }

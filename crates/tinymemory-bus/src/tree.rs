@@ -1,7 +1,13 @@
-//! Domain types for the markdown time-based summary tree.
+//! Domain types for the summary trees.
 //!
-//! Organises summaries as a time hierarchy: root → year → month → day → hour
-//! (leaf). Ported from OpenHuman's `memory_tree/tree_runtime/types.rs`.
+//! Two shapes live here, and the file is ordered that way. The first is the
+//! **markdown time tree**: summaries organised as a time hierarchy, root → year
+//! → month → day → hour (leaf), ported from OpenHuman's
+//! `memory_tree/tree_runtime/types.rs`. The second, below
+//! [`node_id_to_path`], is the **sealed summary forest**: one tree per ingest
+//! source, levelled by seal generation. They are navigated by different members
+//! of the same family — see the section comment further down for why one cannot
+//! answer for the other.
 
 use chrono::{DateTime, Datelike, Timelike, Utc};
 use serde::{Deserialize, Serialize};
@@ -205,6 +211,165 @@ pub fn node_id_to_path(node_id: &str) -> PathBuf {
     } else {
         PathBuf::from(node_id).join("summary.md")
     }
+}
+
+// ── The sealed summary forest ─────────────────────────────────────────────
+//
+// Everything above describes the *markdown time tree*: one node per hour, day,
+// month and year, addressed as `2024/03/15/09`, one `.md` file each, navigated
+// by `MemoryTree::drill_down`. The types below describe a second shape — the
+// sealed summary **forest**: one tree per ingest source rather than one per
+// calendar, levelled by seal generation rather than by calendar unit, and with
+// no calendar-shaped node id for `drill_down` to address it by.
+//
+// The contract does not require a driver to keep the two apart. The embedded
+// engine happens to — the markdown tree is files, the forest is tables — and a
+// driver with a single structure answers both surfaces from it. What the
+// contract does require is that both are reachable, because a host that can
+// reach only the first has to read the second out of the driver's storage to
+// draw it, which is the split-brain this contract exists to end.
+
+/// Maximum length, in characters, of [`TreeLeaf::preview`].
+///
+/// Fixed here rather than left to each driver because the preview is a *label*
+/// and the caller lays it out: a driver that returned whole bodies would blow
+/// the frame budget on a forest-sized read, and one that returned forty
+/// characters would silently truncate a caller that had budgeted for more. A
+/// caller that wants the body asks
+/// `MemoryChunks::chunk_detail` for the one leaf it is
+/// showing, which is a single row rather than every row.
+pub const LEAF_PREVIEW_CHARS: usize = 200;
+
+/// One sealed summary node, with the tree it belongs to denormalised onto it.
+///
+/// # Why not a ranked hit
+///
+/// This overlaps `RetrievalHit` in almost every field and is deliberately not
+/// it. A hit carries a `score`, which is meaningless for a structural walk —
+/// nothing was ranked and there was no query to rank against — and it carries
+/// no `parent_id`, because a ranked list is flat and has no reason to. The
+/// parent link is the whole point here: it is the edge a caller draws a graph
+/// from, and reconstructing it from each node's `child_ids` means holding the
+/// entire forest in memory first, which is exactly what a truncated read
+/// cannot do.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TreeSummary {
+    /// Stable summary-node id, unique across the store.
+    pub id: String,
+    /// Id of the tree this node was sealed into.
+    pub tree_id: String,
+    /// The owning tree's kind — `source`, `topic`, `global`, ….
+    ///
+    /// Open vocabulary, and a plain string for the same reason
+    /// `MemorySourceSink::accept_source_items` takes
+    /// its `source_kind` as one: the set belongs to the driver and grows
+    /// without a contract change. A caller that does not recognise a kind must
+    /// still render the node.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub tree_kind: String,
+    /// The owning tree's scope — what it covers, e.g. `slack:#eng`,
+    /// `github:acme/widget`. Empty when the driver does not scope its trees.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub tree_scope: String,
+    /// Seal generation: `1` for a summary over raw leaves, `2` over `1`, and so
+    /// on. Never `0` — a leaf is a [`TreeLeaf`], not a summary at level zero.
+    pub level: u32,
+    /// Parent summary id, or `None` while this node is its tree's current root.
+    ///
+    /// A `Some` that names a node **absent from the same read** is expected
+    /// rather than a fault: the parent may sit beyond the read's bound, or the
+    /// scope may allow this node's tree and not its parent's. A caller
+    /// building edges must treat an unresolvable parent as a root, which is
+    /// what the host's Memory tab does.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    /// The children sealed under this node, fixed at seal time: leaf ids at
+    /// level 1, lower-level summary ids above it.
+    ///
+    /// Not every level-1 child id resolves to a [`TreeLeaf`]. A document tree
+    /// seals over logical units — a commit, an issue, a page — whose ids never
+    /// existed as chunk rows, so a caller must label an unresolved child from
+    /// the id itself rather than assuming a lookup will find it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub child_ids: Vec<String>,
+    /// Inclusive start of the time span this node's children cover.
+    pub time_range_start: DateTime<Utc>,
+    /// Inclusive end of the time span this node's children cover.
+    pub time_range_end: DateTime<Utc>,
+}
+
+/// One leaf and the summary it was sealed under.
+///
+/// The back-pointer is why this is not `MemoryChunks::list_chunks`: a chunk row
+/// says nothing about which summary claimed it, and that link is the edge
+/// between the forest's bottom level and the content under it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TreeLeaf {
+    /// The leaf's chunk id — the same id `MemoryChunks` addresses it by.
+    pub chunk_id: String,
+    /// The summary that sealed over this leaf, or `None` when nothing has
+    /// sealed it yet.
+    ///
+    /// `None` is the normal state of freshly-ingested content, not an error:
+    /// sealing is a scheduled step the host drives, so an unsealed leaf is one
+    /// the scheduler has not reached.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_summary_id: Option<String>,
+    /// The logical source this leaf came from.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub source_id: String,
+    /// A label for the leaf: its first non-empty line, truncated to
+    /// [`LEAF_PREVIEW_CHARS`] characters.
+    ///
+    /// Characters, not bytes — a byte cut would split a multi-byte codepoint,
+    /// and a driver that answered with invalid UTF-8 would fail to encode
+    /// rather than return a short label.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub preview: String,
+    /// Inclusive start of the leaf's time coverage.
+    pub time_range_start: DateTime<Utc>,
+    /// Inclusive end of the leaf's time coverage.
+    pub time_range_end: DateTime<Utc>,
+}
+
+/// A bounded walk of the sealed summaries in a store.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SummaryForest {
+    /// The nodes, ordered by tree, then level, then seal time.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub summaries: Vec<TreeSummary>,
+    /// Whether the walk stopped at a bound rather than at the end of the store.
+    ///
+    /// A bound is not an error — the same reading `GraphView::truncated`
+    /// takes — but it is not a uniform thinning either. The order is
+    /// tree-major, so a truncated walk drops **whole trees** off the tail
+    /// rather than sampling across them: a caller that renders this as the
+    /// complete picture is showing a store with sources missing, and one that
+    /// counts nodes from it is counting a prefix. Say so in the UI, or raise
+    /// the bound and read again.
+    ///
+    /// Always serialized, unlike the fields above: a caller that has to notice
+    /// this must not have it disappear from the payload when it is `false`,
+    /// because "absent" and "not truncated" are then the same bytes and the
+    /// only reading left is the optimistic one.
+    #[serde(default)]
+    pub truncated: bool,
+}
+
+/// First non-empty line of `content`, truncated to [`LEAF_PREVIEW_CHARS`].
+///
+/// Here rather than in each driver so two drivers cannot disagree about what a
+/// preview is, and so the host is not left re-deriving it from a body the
+/// forest read deliberately does not carry.
+pub fn leaf_preview(content: &str) -> String {
+    content
+        .lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .unwrap_or("")
+        .chars()
+        .take(LEAF_PREVIEW_CHARS)
+        .collect()
 }
 
 #[cfg(test)]

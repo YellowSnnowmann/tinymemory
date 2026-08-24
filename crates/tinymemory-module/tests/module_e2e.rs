@@ -614,6 +614,7 @@ const EXPECTED_METHODS: &[&str] = &[
     "ChunkDetail",
     "StorageKinds",
     "ChunkEmbeddings",
+    "CountChunks",
     // Retrieval.
     "FastRetrieve",
     "CoverWindow",
@@ -653,6 +654,9 @@ const EXPECTED_METHODS: &[&str] = &[
     "Entities",
     "EntityEdges",
     "TouchEntities",
+    "TopEntities",
+    "ChunkEntities",
+    "EntityChunkIds",
     "KvGet",
     "KvPut",
     "KvDelete",
@@ -681,6 +685,8 @@ const EXPECTED_METHODS: &[&str] = &[
     "FlushPending",
     "ResetDerivedIndex",
     "RecallNamespaceRecent",
+    "SummaryForest",
+    "RecentLeaves",
 ];
 
 #[tokio::test]
@@ -1163,6 +1169,10 @@ async fn query_and_maintenance_families_dispatch_typed_requests() {
     portability_and_lifecycle_round_trip(&bus).await;
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one linear bus round trip: ingest, then every chunk read it enables, asserted in call order"
+)]
 async fn ingest_and_chunks_round_trip(bus: &tinybus::Proxy) -> String {
     use tinymemory_api::chunks::DataSource;
     use tinymemory_api::provider::chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery};
@@ -1267,6 +1277,25 @@ async fn ingest_and_chunks_round_trip(bus: &tinybus::Proxy) -> String {
         .call("ChunkEmbeddings", (vec![chunk_id.clone()], "test:8"))
         .await
         .expect("ChunkEmbeddings");
+    // The count is asked over the wire with the same query the list used. This
+    // workspace holds far fewer chunks than the default page, so the two must
+    // agree exactly — a count answered from an unfiltered `SELECT COUNT(*)`,
+    // or one that let the page bounds through, would not.
+    let total: u64 = bus
+        .call(
+            "CountChunks",
+            (
+                ChunkQuery::default(),
+                Option::<tinymemory_api::provider::types::SourceScope>::None,
+            ),
+        )
+        .await
+        .expect("CountChunks");
+    assert_eq!(
+        total,
+        chunks.len() as u64,
+        "CountChunks must agree with the ListChunks page it accompanies"
+    );
 
     chunk_id
 }
@@ -1411,6 +1440,31 @@ async fn tree_and_entities_round_trip(bus: &tinybus::Proxy) {
     bus.call::<()>("TouchEntities", ("project", vec!["person:alice"]))
         .await
         .expect("TouchEntities");
+
+    // The occurrence-index reads. Shape over the wire is what is under test —
+    // an empty index is a legitimate answer to all three — so these assert the
+    // decode and the argument tuples, which is what a host gets wrong.
+    let _: Vec<tinymemory_api::provider::types::EntityOccurrence> = bus
+        .call("TopEntities", (Option::<String>::None, 8_usize))
+        .await
+        .expect("TopEntities");
+    let _: Vec<tinymemory_api::provider::types::EntityOccurrence> = bus
+        .call("ChunkEntities", ("chunk-1",))
+        .await
+        .expect("ChunkEntities");
+    let _: Vec<String> = bus
+        .call("EntityChunkIds", ("person:alice", 8_usize))
+        .await
+        .expect("EntityChunkIds");
+    // A kind the extractor's vocabulary does not hold is a caller mistake, not
+    // an empty store: the module must refuse it rather than answer with `[]`.
+    let refused: Result<Vec<tinymemory_api::provider::types::EntityOccurrence>, _> = bus
+        .call("TopEntities", (Some("not-a-kind".to_string()), 8_usize))
+        .await;
+    assert!(
+        refused.is_err(),
+        "an unknown entity kind must be refused, not answered with an empty index"
+    );
 }
 
 async fn maintenance_and_diff_round_trip(bus: &tinybus::Proxy) {
