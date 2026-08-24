@@ -1,6 +1,6 @@
 //! `Config` and transaction adapters for tinycortex chunk persistence.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::Result;
 use rusqlite::Transaction;
@@ -11,8 +11,9 @@ use crate::store::content::StagedChunk;
 use crate::Config;
 
 pub use crate::engine::backend::chunks::{
-    ListChunksQuery, RawRef, CHUNK_STATUS_ADMITTED, CHUNK_STATUS_BUFFERED, CHUNK_STATUS_DROPPED,
-    CHUNK_STATUS_PENDING_EXTRACTION, CHUNK_STATUS_SEALED, RAW_FILE_GATE_KIND,
+    ChunkDetailRow, ListChunksQuery, RawRef, SourceTotal, CHUNK_STATUS_ADMITTED,
+    CHUNK_STATUS_BUFFERED, CHUNK_STATUS_DROPPED, CHUNK_STATUS_PENDING_EXTRACTION,
+    CHUNK_STATUS_SEALED, RAW_FILE_GATE_KIND,
 };
 
 pub fn upsert_chunks(config: &Config, chunks: &[Chunk]) -> Result<usize> {
@@ -75,6 +76,40 @@ pub fn count_chunks(config: &Config) -> Result<u64> {
 /// that disagrees with the page it accompanies is worse than no total.
 pub fn count_chunks_matching(config: &Config, query: &ListChunksQuery) -> Result<u64> {
     crate::engine::backend::chunks::count_chunks_matching(&engine_config(config), query)
+}
+
+/// The same page [`list_chunks`] returns, carrying the per-row facts an
+/// inspection view renders beside each chunk.
+///
+/// One statement per page, not [`get_chunk`] plus four side-table reads per
+/// row. The caller this exists for renders pages of up to a thousand rows, and
+/// the per-row shape would make that five thousand queries — which is why the
+/// contract has a list member here and a detail member for the single-row case
+/// rather than one of them looped.
+///
+/// The predicate is [`list_chunks`]'s own, built engine-side by the same filter
+/// builder [`count_chunks_matching`] uses, so a page of details, a page of
+/// chunks and the total beside them cannot disagree about which rows match.
+pub fn list_chunk_details(config: &Config, query: &ListChunksQuery) -> Result<Vec<ChunkDetailRow>> {
+    crate::engine::backend::chunks::list_chunk_details(&engine_config(config), query)
+}
+
+/// Per-source chunk totals, most recently written source first.
+///
+/// The `GROUP BY source_kind, source_id` a source browser opens with. Derived
+/// caller-side it is a full-table listing measured in memory — the unbounded
+/// query the row limit exists to prevent — so it is answered where the
+/// aggregate is. `limit` bounds the number of *sources*, not of chunks,
+/// because the source is the row the caller renders.
+///
+/// `source_scope` is [`list_chunks`]'s allowlist, applied the same way: a
+/// scoped caller must not learn that a source exists by seeing its total.
+pub fn source_totals(
+    config: &Config,
+    limit: Option<usize>,
+    source_scope: Option<&HashSet<String>>,
+) -> Result<Vec<SourceTotal>> {
+    crate::engine::backend::chunks::source_totals(&engine_config(config), limit, source_scope)
 }
 
 pub fn extraction_coverage(config: &Config) -> Result<f32> {
@@ -155,6 +190,45 @@ pub fn delete_chunks_by_owner(config: &Config, kind: SourceKind, owner: &str) ->
 
 pub fn delete_orphaned_source_tree(config: &Config, kind: SourceKind, id: &str) -> Result<bool> {
     crate::engine::backend::chunks::delete_orphaned_source_tree(&engine_config(config), kind, id)
+}
+
+/// Delete one chunk by id, with the score, entity-index and embedding rows
+/// hanging off it and its body in the content vault.
+///
+/// The per-id sibling of [`delete_chunks_by_source`], and not expressible
+/// through it: a chunk id is not a source id, and deleting the chunk's source
+/// would take every other chunk of that source with it. A caller that removes
+/// a single row without this cascades nothing, and the orphaned side rows keep
+/// the chunk visible to entity and score reads that never look at
+/// `mem_tree_chunks`.
+///
+/// `0` means no such chunk, which is the same end state as a successful delete
+/// and is reported apart only so a caller can tell the user whether it did
+/// anything.
+pub fn delete_chunk_by_id(config: &Config, chunk_id: &str) -> Result<usize> {
+    crate::engine::backend::chunks::delete_chunk_by_id(&engine_config(config), chunk_id)
+}
+
+/// Empty the chunk tier and everything derived from it, in one transaction.
+///
+/// The opposite end of the scale from [`delete_chunks_by_source`]: no
+/// selector, no survivors. It is deliberately *not* [`delete_chunks_by_owner`]
+/// over every owner — the derived tables (summaries, trees, buffers, jobs, the
+/// ingest gates) are keyed by things a chunk-shaped delete cannot enumerate,
+/// so a per-source sweep leaves them behind and the store comes back holding a
+/// tree over chunks that no longer exist.
+///
+/// One transaction because a partial wipe is worse than no wipe: a caller that
+/// saw an error and retried against a store whose gates were cleared but whose
+/// chunks were not would re-ingest nothing and be told the source was already
+/// there.
+///
+/// Returns the number of **chunk** rows removed, the same unit the selective
+/// deletes above return — not the sum over every table emptied, which would
+/// change meaning each time the purge learns about another one. Content files
+/// on disk go with them; this count is the database half.
+pub fn purge_all(config: &Config) -> Result<usize> {
+    crate::engine::backend::chunks::purge_all(&engine_config(config))
 }
 
 #[path = "connection.rs"]

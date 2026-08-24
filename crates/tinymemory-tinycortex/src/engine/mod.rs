@@ -32,23 +32,24 @@ use tinymemory_api::host::{
 };
 use tinymemory_api::mandatory::MemoryTraitProvider;
 use tinymemory_api::provider::types::{
-    EntityHit, EntityOccurrence, EntityRef, ExportPage, ExportRecord, FlushOutcome, ImportOutcome,
-    IngestItem, IngestOutcome, MaintenanceReport, QueueFailure, QueueStats, ResetOutcome,
-    SourceItem, SourceScope, StoreStats,
+    ChunkEntityOccurrence, EntityHit, EntityOccurrence, EntityRef, ExportPage, ExportRecord,
+    FlushOutcome, ForgetOutcome, ForgetSelector, ImportOutcome, IngestItem, IngestOutcome,
+    MaintenanceReport, PurgeOutcome, QueueFailure, QueueStats, ResetOutcome, SourceItem,
+    SourceScope, StoreStats,
 };
 // Diff-family value types, used only by the `MemoryDiff` impl below — which is
 // compiled out without the git-backed snapshot store.
 #[cfg(feature = "memory-git")]
 use tinymemory_api::provider::types::{ChangeKind, DiffReport, SnapshotRef, SourceChange};
 use tinymemory_api::provider::{
-    AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, ConversationSegment,
-    CoverWindowQuery, EntityMatch, EpisodicEvent, EpisodicTurn, EventKind, FacetType,
-    FastRetrieveQuery, MemoryChunks, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities,
-    MemoryEpisodic, MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople,
-    MemoryPortability, MemoryProfile, MemoryProvider, MemoryRecall, MemoryRetrieval,
+    AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkListRow, ChunkQuery,
+    ConversationSegment, CoverWindowQuery, EntityMatch, EpisodicEvent, EpisodicTurn, EventKind,
+    FacetType, FastRetrieveQuery, MemoryChunks, MemoryCore, MemoryDiff, MemoryDocuments,
+    MemoryEntities, MemoryEpisodic, MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance,
+    MemoryPeople, MemoryPortability, MemoryProfile, MemoryProvider, MemoryRecall, MemoryRetrieval,
     MemorySourceSink, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction, PersonRecord,
     PersonScore, ProfileFacet, RankedPerson, ResolvedPerson, RetrievalHit, RetrievalResponse,
-    SourceRetrievalQuery, UserState,
+    SourceRetrievalQuery, SourceTotal, UserState,
 };
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
@@ -1144,6 +1145,25 @@ impl MemoryTree for TinycortexProvider {
     }
 }
 
+/// Validate entity-kind wire strings and re-emit them in the index's spelling.
+///
+/// The same parser and the same rule `MemoryEntities::top_entities` applies to
+/// its single kind: an unrecognised one is an error rather than a filter that
+/// matches nothing, because a misspelling and an empty index produce the same
+/// empty answer and the caller acts on it either way. Re-emitting `as_str`
+/// settles the spelling on the one the index writes, so a kind that reached
+/// the caller through some other vocabulary still matches.
+fn canonical_entity_kinds(kinds: &[String]) -> Result<Vec<String>, MemoryError> {
+    kinds
+        .iter()
+        .map(|kind| {
+            tinymemory_core::tree::score::extract::EntityKind::parse(kind)
+                .map(|parsed| parsed.as_str().to_string())
+                .map_err(|_| MemoryError::Invalid(format!("unknown entity kind: {kind}")))
+        })
+        .collect()
+}
+
 #[async_trait]
 impl MemoryEntities for TinycortexProvider {
     async fn entities(
@@ -1294,19 +1314,42 @@ impl MemoryEntities for TinycortexProvider {
             .collect())
     }
 
-    async fn chunk_entities(&self, chunk_id: &str) -> Result<Vec<EntityOccurrence>, MemoryError> {
-        let node_id = chunk_id.to_string();
+    async fn chunk_entities(
+        &self,
+        chunk_ids: &[String],
+        kinds: Option<&[String]>,
+    ) -> Result<Vec<ChunkEntityOccurrence>, MemoryError> {
+        let kinds = match kinds {
+            // No filter. The store spells that as an empty kind list, the same
+            // way every plural `ChunkQuery` filter does.
+            None => Vec::new(),
+            // A filter admitting no kind, which the contract answers with an
+            // empty vector. It has to be answered here rather than passed
+            // down, because the store would read the same empty list as
+            // *unfiltered* — the right reading there and the wrong one for an
+            // `Option` whose `None` already says "no filter". The two readings
+            // meet at this line and nowhere else.
+            Some([]) => return Ok(Vec::new()),
+            Some(kinds) => canonical_entity_kinds(kinds)?,
+        };
+        let node_ids = chunk_ids.to_vec();
         let rows = blocking(self.config.clone(), "read chunk entities", move |config| {
-            tinymemory_core::store::entities::node_entity_rows(config, &node_id)
+            tinymemory_core::store::entities::node_entity_rows(config, &node_ids, &kinds)
         })
         .await?;
         Ok(rows
             .into_iter()
-            .map(|row| EntityOccurrence {
-                entity_id: row.entity_id,
-                kind: row.entity_kind,
-                surface: row.surface,
-                mentions: row.mentions,
+            .map(|row| ChunkEntityOccurrence {
+                // The index calls this a node id because summaries live in the
+                // same table; every row here came back under an id the caller
+                // asked for, so tagging it as the chunk is not a widening.
+                chunk_id: row.node_id,
+                occurrence: EntityOccurrence {
+                    entity_id: row.entity_id,
+                    kind: row.entity_kind,
+                    surface: row.surface,
+                    mentions: row.mentions,
+                },
             })
             .collect())
     }
@@ -1418,6 +1461,20 @@ impl MemoryDiff for TinycortexProvider {
     }
 }
 
+/// Read a contract source-kind wire string in the engine's vocabulary.
+///
+/// The contract carries the kind as text because the host's sync machinery
+/// grows kinds without a contract change; this engine stores three of them and
+/// has to say so rather than match nothing. A rejected kind is
+/// [`MemoryError::Invalid`] and never an outcome of zero — on the delete paths
+/// this serves, a zero would tell an operator their content was already gone
+/// when nothing had been looked at.
+fn parse_source_kind(
+    kind: &str,
+) -> Result<tinymemory_core::store::chunks::SourceKind, MemoryError> {
+    tinymemory_core::store::chunks::SourceKind::parse(kind).map_err(MemoryError::Invalid)
+}
+
 #[async_trait]
 impl MemorySourceSink for TinycortexProvider {
     async fn accept_source_items(
@@ -1515,6 +1572,93 @@ impl MemorySourceSink for TinycortexProvider {
         })
         .await?;
         Ok(u64::try_from(documents.saturating_add(chunks)).unwrap_or(u64::MAX))
+    }
+
+    async fn forget_matching(
+        &self,
+        selector: &ForgetSelector,
+    ) -> Result<ForgetOutcome, MemoryError> {
+        // The kind arrives as a wire string and is parsed before any delete
+        // runs, rather than inside the blocking closure: that closure's error
+        // channel is `anyhow`, which would surface a kind this driver does not
+        // recognise as a store failure. On a destructive call the difference
+        // decides what an operator does next — retry, or fix the argument.
+        //
+        // `trees_cleaned` is only ever non-zero for the exact-source arm, and
+        // that is a property of the engine rather than an omission here. Its
+        // delete already cascades the trees whose scope it emptied; the extra
+        // sweep is the *legacy* cleanup for a source whose chunks went in an
+        // earlier, partial delete and left a tree behind. That question can
+        // only be asked of one source id — a prefix or an owner names a set,
+        // and there is no orphaned scope to name for a set.
+        let removed = |count: usize| u64::try_from(count).unwrap_or(u64::MAX);
+        let outcome = match selector {
+            ForgetSelector::Chunk { chunk_id } => {
+                let chunk_id = chunk_id.clone();
+                let count = blocking(self.config.clone(), "forget one chunk", move |config| {
+                    tinymemory_core::store::chunks::delete_chunk_by_id(config, &chunk_id)
+                })
+                .await?;
+                ForgetOutcome {
+                    chunks_removed: removed(count),
+                    trees_cleaned: 0,
+                }
+            }
+            ForgetSelector::Source {
+                source_kind,
+                source_id,
+            } => {
+                let kind = parse_source_kind(source_kind)?;
+                let source_id = source_id.clone();
+                blocking(self.config.clone(), "forget one source", move |config| {
+                    let count = tinymemory_core::store::chunks::delete_chunks_by_source(
+                        config, kind, &source_id,
+                    )?;
+                    let cleaned = tinymemory_core::store::chunks::delete_orphaned_source_tree(
+                        config, kind, &source_id,
+                    )?;
+                    Ok(ForgetOutcome {
+                        chunks_removed: u64::try_from(count).unwrap_or(u64::MAX),
+                        trees_cleaned: u64::from(cleaned),
+                    })
+                })
+                .await?
+            }
+            ForgetSelector::SourcePrefix {
+                source_kind,
+                source_id_prefix,
+            } => {
+                let kind = parse_source_kind(source_kind)?;
+                let prefix = source_id_prefix.clone();
+                let count = blocking(
+                    self.config.clone(),
+                    "forget a source prefix",
+                    move |config| {
+                        tinymemory_core::store::chunks::delete_chunks_by_source_prefix(
+                            config, kind, &prefix,
+                        )
+                    },
+                )
+                .await?;
+                ForgetOutcome {
+                    chunks_removed: removed(count),
+                    trees_cleaned: 0,
+                }
+            }
+            ForgetSelector::Owner { source_kind, owner } => {
+                let kind = parse_source_kind(source_kind)?;
+                let owner = owner.clone();
+                let count = blocking(self.config.clone(), "forget one owner", move |config| {
+                    tinymemory_core::store::chunks::delete_chunks_by_owner(config, kind, &owner)
+                })
+                .await?;
+                ForgetOutcome {
+                    chunks_removed: removed(count),
+                    trees_cleaned: 0,
+                }
+            }
+        };
+        Ok(outcome)
     }
 }
 
@@ -1844,6 +1988,26 @@ impl MemoryMaintenance for TinycortexProvider {
             })
         })
         .await
+    }
+
+    async fn purge_all(&self) -> Result<PurgeOutcome, MemoryError> {
+        // The opposite end of the scale from `reset_derived_index` above, and
+        // the contrast is the whole reason both exist: that one is guaranteed
+        // to keep `mem_tree_chunks`, this one is guaranteed not to. Neither is
+        // a safer spelling of the other, so a caller has to pick, and the two
+        // names say which it picked.
+        //
+        // The database is the whole of this call. Content files on disk stay
+        // the caller's — the vault root is a host path the driver is handed,
+        // and a driver deleting directories under it would be acting on
+        // filesystem policy it does not own.
+        let chunks_removed = blocking(self.config.clone(), "purge the store", move |config| {
+            tinymemory_core::store::chunks::purge_all(config)
+        })
+        .await?;
+        Ok(PurgeOutcome {
+            rows_deleted: u64::try_from(chunks_removed).unwrap_or(u64::MAX),
+        })
     }
 
     async fn backfill_in_progress(&self) -> Result<bool, MemoryError> {
@@ -2269,21 +2433,39 @@ fn scope_to_engine(scope: Option<&SourceScope>) -> Option<HashSet<String>> {
 
 /// Convert a contract chunk query into the engine's.
 ///
-/// Shared by `list_chunks` and `count_chunks` so the two ask the engine the
-/// same question. Two copies of this conversion would compile identically
-/// today and drift the first time a filter is added to one of them — and the
-/// symptom of that drift is a total that no amount of paging can reach.
+/// Shared by `list_chunks`, `count_chunks` and `list_chunk_details` so all
+/// three ask the engine the same question. Two copies of this conversion would
+/// compile identically today and drift the first time a filter is added to one
+/// of them — and the symptom of that drift is a total that no amount of paging
+/// can reach.
 ///
 /// The page bounds are carried across unchanged; dropping them for the count
 /// is the engine's job, because that is where the `LIMIT` is appended.
+///
+/// The destructure is exhaustive on purpose. A field added to [`ChunkQuery`]
+/// and forgotten here does not fail — it silently widens every query that used
+/// it, which is a wrong answer rather than an error, and the caller has no way
+/// to tell. Binding every field by name makes that a build failure instead.
+///
+/// The plural filters carry their empty form through as *no filter*, matching
+/// the engine, and that is the deliberate opposite of `source_scope`, which
+/// denies when empty. A scope is a gate and fails closed; these are
+/// narrowings, and a narrowing that failed closed on an empty list would
+/// silently blank a page a caller assembled from nothing.
 fn chunk_query_to_engine(
     query: &ChunkQuery,
     scope: Option<&SourceScope>,
 ) -> Result<tinymemory_core::store::chunks::ListChunksQuery, MemoryError> {
     let ChunkQuery {
+        ids,
         source_kind,
+        source_kinds,
         source_id,
+        source_ids,
         owner,
+        entity_ids,
+        entity_kinds,
+        content_contains,
         since_ms,
         until_ms,
         limit,
@@ -2291,11 +2473,20 @@ fn chunk_query_to_engine(
         exclude_dropped,
     } = query.clone();
     Ok(tinymemory_core::store::chunks::ListChunksQuery {
+        ids,
         source_kind: source_kind
             .map(|kind| TinycortexProvider::cross(&kind, "convert source kind"))
             .transpose()?,
+        source_kinds: source_kinds
+            .iter()
+            .map(|kind| TinycortexProvider::cross(kind, "convert source kind"))
+            .collect::<Result<Vec<_>, MemoryError>>()?,
         source_id,
+        source_ids,
         owner,
+        entity_ids,
+        entity_kinds,
+        content_contains,
         since_ms,
         until_ms,
         limit,
@@ -2335,6 +2526,65 @@ impl MemoryChunks for TinycortexProvider {
             tinymemory_core::store::chunks::count_chunks_matching(config, &engine_query)
         })
         .await
+    }
+
+    async fn list_chunk_details(
+        &self,
+        query: &ChunkQuery,
+        scope: Option<&SourceScope>,
+    ) -> Result<Vec<ChunkListRow>, MemoryError> {
+        // The same conversion the page and the total use, so a caller that
+        // renders "20 of 431" out of `count_chunks` and fills the table from
+        // here is looking at one predicate rather than three that agree today.
+        let engine_query = chunk_query_to_engine(query, scope)?;
+        let rows = blocking(self.config.clone(), "list chunk details", move |config| {
+            tinymemory_core::store::chunks::list_chunk_details(config, &engine_query)
+        })
+        .await?;
+        // The engine's row is field-for-field the contract's, body included —
+        // which is to say body-excluded: neither type carries one, for the
+        // reason `ChunkListRow`'s own docs give. Crossed rather than moved
+        // because a host that resolves the contract crate twice has two
+        // `Chunk` types with one shape, the hazard every other conversion here
+        // is written against.
+        rows.into_iter()
+            .map(|row| {
+                Ok(ChunkListRow {
+                    chunk: Self::cross(&row.chunk, "convert chunk")?,
+                    content_path: row.content_path,
+                    lifecycle_status: row.lifecycle_status,
+                    has_embedding: row.has_embedding,
+                })
+            })
+            .collect()
+    }
+
+    async fn source_totals(
+        &self,
+        limit: usize,
+        scope: Option<&SourceScope>,
+    ) -> Result<Vec<SourceTotal>, MemoryError> {
+        let allowed = scope_to_engine(scope);
+        let totals = blocking(self.config.clone(), "read source totals", move |config| {
+            // The engine takes `Option<usize>` so an internal caller can ask
+            // for its default page; the contract does not offer that spelling,
+            // and passing the caller's number through unchanged keeps the
+            // clamp in one place — the engine's, which is also the one
+            // `ChunkQuery::limit` is clamped by.
+            tinymemory_core::store::chunks::source_totals(config, Some(limit), allowed.as_ref())
+        })
+        .await?;
+        totals
+            .into_iter()
+            .map(|total| {
+                Ok(SourceTotal {
+                    source_kind: Self::cross(&total.source_kind, "convert source kind")?,
+                    source_id: total.source_id,
+                    chunk_count: total.chunk_count,
+                    most_recent_ms: total.last_timestamp_ms,
+                })
+            })
+            .collect()
     }
 
     async fn get_chunk(&self, chunk_id: &str) -> Result<Option<Chunk>, MemoryError> {

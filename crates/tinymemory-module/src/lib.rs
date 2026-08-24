@@ -78,8 +78,9 @@ pub use embedding::{
 pub use host::{RUNTIME_HOST_BUS_NAME, RUNTIME_HOST_INTERFACE, RUNTIME_HOST_OBJECT_PATH};
 pub use service::{BUS_NAME, OBJECT_PATH};
 
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use tinybus::{Connection, Error as BusError, Result as BusResult};
 
@@ -135,6 +136,12 @@ async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()
         &config,
     )));
     host::install(connection.clone());
+    // The seams no bus interface serves. Two of the four degraded in silence
+    // rather than with a named cause; see the section comment on
+    // `host::install_unserved_seams` for why they are stubbed here rather than
+    // proxied or synthesised. Installed with the rest, before the store exists,
+    // so nothing can consult a seam this process has not yet decided about.
+    host::install_unserved_seams();
 
     let client = tinymemory_core::store::factories::create_memory_client_with_local_ai(
         &config.memory,
@@ -153,8 +160,131 @@ async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()
         setup_error("create memory store")
     })?;
 
+    // After the store, never before: `queue::start` recovers stale locks as its
+    // first act, which opens the queue database, and the factory above is what
+    // creates the workspace it lives in.
+    start_queue_pool(&config);
+
     let provider = provider::provider(&config, Arc::new(client));
     service::serve(&connection, Arc::new(provider), config).await
+}
+
+/// The workspace whose queue this process's worker pool drains.
+///
+/// The pool is bound to one workspace — every `queue::store` entry point
+/// resolves its database through `engine_config`, which roots at
+/// `config.workspace_dir()` — while the `Once` inside `queue::start` is
+/// process-global. Those two facts together are the trap this cell exists for:
+/// a second `start` under a different workspace is not a second pool, it is a
+/// silent no-op leaving that store's queue with nothing draining it. Recording
+/// which workspace won makes that case loud instead of invisible.
+static QUEUE_POOL_WORKSPACE: OnceLock<PathBuf> = OnceLock::new();
+
+/// What [`claim_queue_pool`] found when asked to start a pool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum QueuePoolClaim {
+    /// Nothing had claimed the pool; this caller starts it.
+    Start,
+    /// A pool is already draining this workspace's queue, so there is nothing
+    /// to do and nothing wrong.
+    AlreadyDraining,
+    /// A pool is running, but rooted somewhere else. This store's queue has
+    /// nothing draining it and cannot be given a pool of its own.
+    Foreign,
+}
+
+/// Decide whether this caller is the one that starts the pool.
+///
+/// Split out from [`start_queue_pool`] so the decision can be asserted without
+/// spawning four job workers and a daily scheduler into a test process, and
+/// because `queue::start`'s own `Once` is not observable from here at all — a
+/// second call to it is indistinguishable from a first that worked.
+pub(crate) fn claim_queue_pool(workspace: &Path) -> QueuePoolClaim {
+    match QUEUE_POOL_WORKSPACE.set(workspace.to_path_buf()) {
+        Ok(()) => QueuePoolClaim::Start,
+        // `set` hands the rejected value back, so the comparison needs no
+        // second read and cannot race with a concurrent claim.
+        Err(rejected) => {
+            if QUEUE_POOL_WORKSPACE.get() == Some(&rejected) {
+                QueuePoolClaim::AlreadyDraining
+            } else {
+                QueuePoolClaim::Foreign
+            }
+        }
+    }
+}
+
+/// Start the engine's queue worker pool for this process.
+///
+/// # Why the module has to own this
+///
+/// Every enqueue this driver makes is inert without a pool draining it, and the
+/// enqueues are not incidental: `FlushPending` and `RetryFailed` schedule work
+/// rather than doing it, the re-embed backfill is a queued job, and the ingest
+/// path's `extract_chunk` is *how ingested content becomes retrievable at all*.
+/// Until now the only `queue::start` call in any tree was the host's, made
+/// against the second, in-process engine the host also booted. A host that
+/// deletes that engine — which is the entire point of loading this module —
+/// turns all four into permanent no-ops with no error anywhere: ingestion still
+/// reports success and the content is simply never indexed. So the pool moves
+/// in here, alongside the engine that needs it.
+///
+/// # Two things it does not get in module mode
+///
+/// Stated rather than hidden, because this is a real product degradation the
+/// host does not have today. The pool consults
+/// [`tinymemory_core::scheduler_gate`] before every claim and registers a
+/// [`tinymemory_core::shutdown`] hook to release in-flight job locks. This
+/// module serves neither seam — see the section comment on
+/// `host::install_unserved_seams` for why neither can be proxied — so both are
+/// stubs, and the consequences follow:
+///
+/// - **It runs unthrottled.** `wait_for_capacity` returns immediately, so
+///   background memory work in this process ignores the host's background-AI
+///   throttle: the user's toggle, AC power, CPU pressure, signed-out. On a
+///   laptop that means the queue drains at full tilt on battery, which the
+///   host's in-process engine would not do.
+/// - **Its shutdown hook is dropped.** A clean exit therefore leaves `running`
+///   rows locked. They are reclaimed by lease expiry at the next start —
+///   `recover_stale_locks` is the first thing `queue::start` does, and
+///   `queue::worker` documents that as the hard-kill path — so the cost is one
+///   lease of latency after a restart, not lost work.
+///
+/// Closing either properly needs a `SchedulerGate` bus interface this crate
+/// owns only one half of, which is separate work. Until then the stubs report
+/// once per process the first time the pool consults them.
+fn start_queue_pool(config: &ModuleConfig) {
+    match claim_queue_pool(&config.workspace_dir) {
+        QueuePoolClaim::Start => {
+            // Warn, not debug: it is true on every boot in module mode, and a
+            // reader of the log should not have to know which seams are stubbed
+            // to find out that the throttle is not in effect.
+            log::warn!(
+                "[tinymemory:module] starting the memory queue worker pool in this process. \
+                 It runs unthrottled — the scheduler gate is unserved here, so background \
+                 memory work ignores the host's background-AI throttle, AC power and CPU \
+                 pressure — and its graceful lock-release hook is dropped, so locks held at \
+                 exit are reclaimed by lease expiry on the next start"
+            );
+            tinymemory_core::queue::start(Arc::new(
+                tinymemory_tinycortex::engine::EngineRuntimeConfig::from(config),
+            ));
+        }
+        QueuePoolClaim::AlreadyDraining => {
+            log::debug!(
+                "[tinymemory:module] the queue worker pool for this workspace is already running"
+            );
+        }
+        QueuePoolClaim::Foreign => {
+            log::error!(
+                "[tinymemory:module] a queue worker pool is already running for a different \
+                 workspace in this process, and `queue::start` is guarded process-wide, so the \
+                 store just opened has nothing draining its queue: ingested content will not be \
+                 indexed and flushes and retries will not run. One module process serves one \
+                 workspace"
+            );
+        }
+    }
 }
 
 /// Claim this process's single setup slot.
@@ -206,10 +336,18 @@ mod exports {
     tinybus_module::module_export! {
         setup = super::setup,
         config = super::ModuleConfig,
-        // Two, not one: a recall that triggers an embed makes an outbound call
+        // Eight, derived rather than picked. Two are the floor this module has
+        // always needed: a recall that triggers an embed makes an outbound call
         // while still inside its own inbound call, so a single worker would
-        // deadlock on the first semantic query.
-        worker_threads = 2,
+        // deadlock on the first semantic query. `setup` now also starts the
+        // engine's queue pool — four job workers plus the daily scheduler — and
+        // those five run the engine's SQLite claim and settle synchronously
+        // inside their async loops, so a busy one occupies a runtime thread
+        // outright instead of yielding it. Two plus five is seven; the eighth
+        // is what drives a job's own outbound embed while the rest are busy. At
+        // two, a draining queue would starve inbound dispatch and the module
+        // would stop answering recalls until the queue emptied.
+        worker_threads = 8,
         provides = ["ai.tinyhumans.tinymemory.Memory"],
         methods = [
             "DriverId",
@@ -249,6 +387,8 @@ mod exports {
             "StorageKinds",
             "ChunkEmbeddings",
             "CountChunks",
+            "ListChunkDetails",
+            "SourceTotals",
             // Retrieval.
             "FastRetrieve",
             "CoverWindow",
@@ -309,6 +449,7 @@ mod exports {
             "DeleteToolRule",
             "AcceptSourceItems",
             "ForgetSource",
+            "ForgetMatching",
             "Reembed",
             "Compact",
             "Consolidate",
@@ -320,6 +461,7 @@ mod exports {
             "BackfillInProgress",
             "FlushPending",
             "ResetDerivedIndex",
+            "PurgeAll",
             "RecallNamespaceRecent",
             // Tree, structural: the forest walk and its leaf edge.
             "SummaryForest",

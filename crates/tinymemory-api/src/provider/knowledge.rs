@@ -16,7 +16,9 @@ use async_trait::async_trait;
 
 use crate::error::MemoryError;
 use crate::graph::{GraphEdge, GraphNode, GraphView, GraphViewQuery};
-use crate::provider::types::{DiffReport, EntityHit, EntityOccurrence, SnapshotRef};
+use crate::provider::types::{
+    ChunkEntityOccurrence, DiffReport, EntityHit, EntityOccurrence, SnapshotRef,
+};
 use crate::types::{GraphRelationRecord, MemoryKvRecord};
 
 /// How many edges the default [`MemoryGraph::graph_view`] traversal scans per
@@ -56,6 +58,21 @@ pub const INBOUND_SCAN_LIMIT: usize = 4_096;
 /// supported, and an operator reading "unsupported capability: entities" from
 /// a driver whose entity list works would be chasing the wrong thing. A driver
 /// that can answer these should override them; the embedded engine does.
+///
+/// ## `chunk_entities` changed shape after it was written, and that was allowed
+///
+/// It landed taking one `chunk_id` and returning [`EntityOccurrence`]. It now
+/// takes a batch and returns [`ChunkEntityOccurrence`]. Re-cutting a member's
+/// signature is normally out of bounds here — it breaks every driver at once,
+/// and family-granular version negotiation cannot see it — and it is
+/// legitimate exactly once, because this member has never been in a release.
+/// It was added after `v1.4.0` and ships for the first time alongside this
+/// change, so no driver anywhere implements the one-chunk form.
+///
+/// The alternative was to keep it and add a batched member beside it, leaving
+/// two ways to ask one question and a per-chunk one no caller should reach
+/// for. Correcting an unreleased shape costs nothing; carrying it costs every
+/// reader after.
 #[async_trait]
 pub trait MemoryEntities: Send + Sync {
     /// List entities in a namespace, ranked by hotness when `query` is `None`
@@ -145,40 +162,82 @@ pub trait MemoryEntities: Send + Sync {
         Err(MemoryError::unsupported_raw("entities.top_entities"))
     }
 
-    /// Every entity indexed against one chunk, most-observed first.
+    /// Every entity indexed against these chunks, most-observed first.
     ///
     /// The inverse of [`Self::entity_chunk_ids`], and the only read in this
     /// family that starts from content instead of from an entity: it is how a
-    /// caller labels a chunk it already has — a retrieval hit, a row in a
-    /// browser — without re-running extraction over the text.
+    /// caller labels chunks it already has — a page of retrieval hits, a
+    /// screen of a browser — without re-running extraction over the text.
     ///
-    /// A summary node's id is accepted too, and answered from the same index.
-    /// The parameter is named for the common case, not to exclude the other:
+    /// Summary-node ids are accepted too, and answered from the same index.
+    /// `chunk_ids` is named for the common case, not to exclude the other:
     /// refusing an id the index can answer would send the caller to raw SQL
     /// for the difference.
     ///
-    /// One entity may appear more than once, once per distinct
-    /// [`EntityOccurrence::surface`], because the two forms are the evidence a
-    /// caller has for how this chunk actually named it. Deduplicating by id
-    /// here would throw that away and leave `surface` meaning "whichever row
-    /// sorted last".
+    /// # Why this takes a batch
     ///
-    /// # Why there is no `limit`
+    /// It is asked once per rendered list, not once per chunk opened. A
+    /// caller labelling fifteen hundred rows one call at a time makes fifteen
+    /// hundred bus round trips to read one index — exactly the fan-out
+    /// [`ChunkDetail`]'s docs were written to prevent, at the scale that makes
+    /// it fatal rather than merely wasteful. The caller bounds the work by
+    /// choosing the batch, which is why there is still no `limit` (see below);
+    /// a driver that considers a batch too large refuses it with
+    /// [`MemoryError::Invalid`] rather than answering for part of it, because
+    /// a refusal is visible to the caller and a truncation is not.
+    ///
+    /// Rows are [`ChunkEntityOccurrence`] rather than [`EntityOccurrence`]
+    /// because a flat list over many chunks has no other way back to the chunk
+    /// a row describes. **Group by [`ChunkEntityOccurrence::chunk_id`]; never
+    /// index by position.** A chunk the extractor has not reached contributes
+    /// no rows at all, so the result covers fewer chunks than were asked for
+    /// and says nothing about their order.
+    ///
+    /// One entity may still appear more than once for the same chunk, once per
+    /// distinct [`EntityOccurrence::surface`], because the two forms are the
+    /// evidence a caller has for how that chunk actually named it.
+    /// Deduplicating by id here would throw that away and leave `surface`
+    /// meaning "whichever row sorted last".
+    ///
+    /// # Filtering by kind
+    ///
+    /// `None` returns every kind. `Some` narrows to the kinds listed, and the
+    /// list is **validated, not merely applied**: an unrecognised kind is
+    /// [`MemoryError::Invalid`], never an empty result, because a misspelled
+    /// filter that matched nothing is indistinguishable from a chunk nothing
+    /// was extracted from. That is [`Self::top_entities`]'s rule, kept the same
+    /// here so one filter does not behave two ways.
+    ///
+    /// `Some(&[])` is a filter admitting no kind and yields an empty vector.
+    /// It is not a second spelling of `None` — `None` is already how a caller
+    /// says "no filter", so reading an empty slice as "everything" would leave
+    /// the `Option` meaning nothing.
+    ///
+    /// # Why there is still no `limit`
     ///
     /// Every other list in this family is bounded by one, and this one is
-    /// already bounded by the thing it reads: a chunk's rows are what that
-    /// chunk's own extraction produced. There is no query for a caller to
-    /// narrow and no ranking for a cut-off to respect — a truncated answer
-    /// would simply be a wrong description of the chunk.
+    /// bounded by the thing it reads: a chunk's rows are what that chunk's own
+    /// extraction produced, and the caller chose how many chunks to ask about.
+    /// There is no ranking for a cut-off to respect — a truncated answer would
+    /// silently describe some of the batch and not the rest, with nothing on
+    /// the wire to say which.
     ///
     /// # Errors
     ///
-    /// Backend failures only. An unknown `chunk_id` yields an empty vector
-    /// rather than [`MemoryError::NotFound`], for [`Self::entity_edges`]'s
-    /// reason: "nothing was extracted from it" and "there is no such chunk"
-    /// are the same answer to this question.
-    async fn chunk_entities(&self, chunk_id: &str) -> Result<Vec<EntityOccurrence>, MemoryError> {
-        let _ = chunk_id;
+    /// [`MemoryError::Invalid`] for an unrecognised kind, or for a batch the
+    /// driver declines to answer whole. Otherwise backend failures: unknown
+    /// ids yield no rows rather than
+    /// [`MemoryError::NotFound`], for [`Self::entity_edges`]'s reason —
+    /// "nothing was extracted from it" and "there is no such chunk" are the
+    /// same answer to this question.
+    ///
+    /// [`ChunkDetail`]: crate::provider::ChunkDetail
+    async fn chunk_entities(
+        &self,
+        chunk_ids: &[String],
+        kinds: Option<&[String]>,
+    ) -> Result<Vec<ChunkEntityOccurrence>, MemoryError> {
+        let _ = (chunk_ids, kinds);
         Err(MemoryError::unsupported_raw("entities.chunk_entities"))
     }
 

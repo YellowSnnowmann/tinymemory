@@ -1791,15 +1791,18 @@ async fn tree_entities_and_maintenance_execute_real_workspace_transitions() {
     );
 
     let of_chunk = entities
-        .chunk_entities("chunk-1")
+        .chunk_entities(&["chunk-1".to_string()], None)
         .await
         .expect("entities of one chunk");
     assert_eq!(of_chunk.len(), 2);
     // Equal counts break by entity id ascending, which is deterministic here.
-    assert_eq!(of_chunk[0].entity_id, "organization:tinymemory");
-    assert_eq!(of_chunk[0].surface, "TinyMemory");
+    assert_eq!(of_chunk[0].occurrence.entity_id, "organization:tinymemory");
+    assert_eq!(of_chunk[0].occurrence.surface, "TinyMemory");
+    // The single-id call is the batched one with a slice of one, and it still
+    // has to say which chunk each row came from.
+    assert!(of_chunk.iter().all(|row| row.chunk_id == "chunk-1"));
     assert!(entities
-        .chunk_entities("no-such-chunk")
+        .chunk_entities(&["no-such-chunk".to_string()], None)
         .await
         .expect("an unknown chunk is not an error")
         .is_empty());
@@ -2400,4 +2403,980 @@ async fn the_summary_forest_and_its_leaves_read_through_the_contract() {
         .await
         .expect("an empty allowlist is an answer here too")
         .is_empty());
+}
+
+/// One chunk row, ready to be seeded straight into the store.
+///
+/// The rows in the tests below go in through the store rather than the ingest
+/// pipeline, for the reason
+/// `the_chunk_count_matches_the_page_and_ignores_its_bounds` gives: what is
+/// under test is which rows a predicate matches, and the pipeline decides chunk
+/// boundaries, which would make every expected number a property of the chunker
+/// instead of the filter.
+fn chunk_row(
+    id: &str,
+    kind: tinymemory_api::chunks::SourceKind,
+    source_id: &str,
+    timestamp_ms: i64,
+) -> tinymemory_api::chunks::Chunk {
+    let timestamp = chrono::DateTime::from_timestamp_millis(timestamp_ms).expect("timestamp");
+    tinymemory_api::chunks::Chunk {
+        id: id.into(),
+        content: format!("Body of {id}."),
+        metadata: tinymemory_api::chunks::Metadata::point_in_time(
+            kind, source_id, "owner", timestamp,
+        ),
+        token_count: 3,
+        seq_in_source: 0,
+        created_at: timestamp,
+        partial_message: false,
+    }
+}
+
+/// One canonical entity, ready to be indexed against a node.
+fn canonical_entity(
+    canonical_id: &str,
+    kind: tinymemory_core::engine::backend::store::entity_index::EntityKind,
+    surface: &str,
+) -> tinymemory_core::engine::backend::store::entity_index::CanonicalEntity {
+    tinymemory_core::engine::backend::store::entity_index::CanonicalEntity {
+        canonical_id: canonical_id.into(),
+        kind,
+        surface: surface.into(),
+        span_start: 0,
+        span_end: surface.len() as u32,
+        score: 1.0,
+    }
+}
+
+/// An entity filter matches a chunk once, however many of the asked-for
+/// entities that chunk mentions.
+///
+/// This is the one filter in the family that reaches a second table, and the
+/// obvious way to write it — `INNER JOIN mem_tree_entity_index` — multiplies
+/// the chunk row by the number of matching index rows. The host's own SQL
+/// carries a `SELECT DISTINCT` and a `COUNT(*)` over a subquery precisely to
+/// undo that, and the two are separate spellings of one predicate: drop either
+/// and the page and the total disagree, silently, and only for chunks that
+/// mention more than one of the filtered entities. A semi-join (`EXISTS`)
+/// cannot multiply in the first place, which is why the shared filter builder
+/// has to use one.
+///
+/// So the assertion is not "two rows came back" — a de-duplicating listing
+/// passes that with a multiplying count beside it. It is that the same
+/// `ChunkQuery` produces the same total through `count_chunks`, through
+/// `list_chunks`, and through `list_chunk_details`.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_entity_filter_matches_a_chunk_once_however_many_entities_it_mentions() {
+    use tinymemory_api::chunks::SourceKind;
+    use tinymemory_api::provider::{ChunkQuery, MemoryProvider};
+    use tinymemory_core::engine::backend::store::entity_index::{CanonicalEntity, EntityKind};
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+
+    let seeded = vec![
+        chunk_row(
+            "ent-both",
+            SourceKind::Document,
+            "ent-source",
+            1_700_000_003_000,
+        ),
+        chunk_row(
+            "ent-one",
+            SourceKind::Document,
+            "ent-source",
+            1_700_000_002_000,
+        ),
+        chunk_row(
+            "ent-none",
+            SourceKind::Document,
+            "ent-source",
+            1_700_000_001_000,
+        ),
+    ];
+    assert_eq!(
+        tinymemory_core::store::chunks::store::upsert_chunks(&config, &seeded).expect("seed"),
+        seeded.len()
+    );
+    // `ent-both` mentions two of the two filtered entities; `ent-one` mentions
+    // one; `ent-none` mentions an entity of a different kind, so it is in the
+    // table but out of both filters.
+    let index = |node: &str, entities: &[CanonicalEntity]| {
+        tinymemory_core::store::entities::index_entities(
+            &config,
+            entities,
+            node,
+            "leaf",
+            1_700_000_000_000,
+            Some("project"),
+        )
+        .expect("seed the entity index")
+    };
+    index(
+        "ent-both",
+        &[
+            canonical_entity("person:alice", EntityKind::Person, "Alice"),
+            canonical_entity("person:bob", EntityKind::Person, "Bob"),
+        ],
+    );
+    index(
+        "ent-one",
+        &[canonical_entity(
+            "person:alice",
+            EntityKind::Person,
+            "Alice",
+        )],
+    );
+    index(
+        "ent-none",
+        &[canonical_entity(
+            "organization:acme",
+            EntityKind::Organization,
+            "Acme",
+        )],
+    );
+
+    let chunks = provider.as_chunks().expect("Chunks");
+    let by_entity = ChunkQuery {
+        entity_ids: vec!["person:alice".into(), "person:bob".into()],
+        limit: Some(1_000),
+        ..ChunkQuery::default()
+    };
+    let listed = chunks
+        .list_chunks(&by_entity, None)
+        .await
+        .expect("list by entity");
+    assert_eq!(
+        listed.iter().filter(|chunk| chunk.id == "ent-both").count(),
+        1,
+        "a chunk mentioning two of the filtered entities is still one chunk"
+    );
+    assert_eq!(listed.len(), 2, "ent-none mentions neither");
+
+    let counted = chunks
+        .count_chunks(&by_entity, None)
+        .await
+        .expect("count by entity");
+    assert_eq!(
+        counted as usize,
+        listed.len(),
+        "the total must not multiply where the page does not"
+    );
+
+    let detailed = chunks
+        .list_chunk_details(&by_entity, None)
+        .await
+        .expect("detail rows by entity");
+    assert_eq!(
+        detailed.len() as u64,
+        counted,
+        "the detail listing and the total answer one predicate, not two that \
+         happen to agree on the unfiltered case"
+    );
+    let mut detailed_ids = detailed
+        .iter()
+        .map(|row| row.chunk.id.as_str())
+        .collect::<Vec<_>>();
+    detailed_ids.sort_unstable();
+    assert_eq!(detailed_ids, vec!["ent-both", "ent-one"]);
+
+    // The kind filter reaches the same table by the same join and is subject
+    // to the same multiplication: `ent-both` carries two `person` rows.
+    let by_kind = ChunkQuery {
+        entity_kinds: vec!["person".into()],
+        limit: Some(1_000),
+        ..ChunkQuery::default()
+    };
+    let by_kind_rows = chunks
+        .list_chunk_details(&by_kind, None)
+        .await
+        .expect("detail rows by entity kind");
+    assert_eq!(by_kind_rows.len(), 2);
+    assert_eq!(
+        chunks
+            .count_chunks(&by_kind, None)
+            .await
+            .expect("count by entity kind") as usize,
+        by_kind_rows.len()
+    );
+
+    // An id nothing was indexed under is an empty page, not every chunk: a
+    // filter dropped on the way to the engine reads exactly like no filter.
+    let unmatched = ChunkQuery {
+        entity_ids: vec!["person:nobody".into()],
+        limit: Some(1_000),
+        ..ChunkQuery::default()
+    };
+    assert!(chunks
+        .list_chunk_details(&unmatched, None)
+        .await
+        .expect("list nothing")
+        .is_empty());
+}
+
+/// The detail row reports the embedding sidecar, and the content filter
+/// matches text rather than a pattern.
+///
+/// Two failures that both look like working code:
+///
+/// - `has_embedding` read from `mem_tree_chunks.embedding` is `false` for every
+///   chunk in a live store. That column is a migration artefact nothing has
+///   written since embeddings moved to `mem_tree_chunk_embeddings`, so the
+///   host's own SQL — `CASE WHEN c.embedding IS NULL THEN 0 ELSE 1 END` — is a
+///   constant `0` wearing a `CASE`. The seeded chunk here has a sidecar row and
+///   no legacy blob, which is what every real chunk looks like.
+/// - `content_contains` handed to `LIKE` unescaped turns `%` and `_` in the
+///   caller's text into wildcards. Nobody notices until a user searches for
+///   `100%` or a `snake_case` identifier and gets rows that do not contain
+///   what they typed — a false positive, which is the failure a search box
+///   cannot recover from.
+#[tokio::test(flavor = "multi_thread")]
+async fn detail_rows_carry_the_embedding_sidecar_and_match_content_literally() {
+    use tinymemory_api::chunks::SourceKind;
+    use tinymemory_api::provider::{ChunkQuery, MemoryProvider};
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+
+    let mut embedded = chunk_row(
+        "lit-embedded",
+        SourceKind::Document,
+        "lit",
+        1_700_000_004_000,
+    );
+    embedded.content = "100% sure about this".into();
+    embedded.metadata.tags = vec!["alpha".into(), "beta".into()];
+    let mut spelled_out = chunk_row(
+        "lit-spelled",
+        SourceKind::Document,
+        "lit",
+        1_700_000_003_000,
+    );
+    spelled_out.content = "100 percent sure about this".into();
+    let mut underscored = chunk_row("lit-under", SourceKind::Document, "lit", 1_700_000_002_000);
+    underscored.content = "the snake_case identifier".into();
+    let mut single_char = chunk_row("lit-any", SourceKind::Document, "lit", 1_700_000_001_000);
+    single_char.content = "the snakeXcase identifier".into();
+
+    let seeded = vec![embedded, spelled_out, underscored, single_char];
+    assert_eq!(
+        tinymemory_core::store::chunks::store::upsert_chunks(&config, &seeded).expect("seed"),
+        seeded.len()
+    );
+    tinymemory_core::store::chunks::set_chunk_embedding(&config, "lit-embedded", &[0.5, 0.25])
+        .expect("write one embedding sidecar row");
+
+    let chunks = provider.as_chunks().expect("Chunks");
+    let everything = ChunkQuery {
+        limit: Some(1_000),
+        ..ChunkQuery::default()
+    };
+    let rows = chunks
+        .list_chunk_details(&everything, None)
+        .await
+        .expect("detail rows");
+    assert_eq!(rows.len(), seeded.len());
+    let embedded_row = rows
+        .iter()
+        .find(|row| row.chunk.id == "lit-embedded")
+        .expect("the embedded chunk is listed");
+    assert!(
+        embedded_row.has_embedding,
+        "a chunk with a row in mem_tree_chunk_embeddings has an embedding, \
+         whatever the legacy blob column says"
+    );
+    assert!(
+        rows.iter()
+            .filter(|row| row.chunk.id != "lit-embedded")
+            .all(|row| !row.has_embedding),
+        "and a chunk without one does not"
+    );
+
+    // The rest of the row is what makes this member worth a round trip at all:
+    // a caller that has to fetch these separately is back to five reads a row.
+    assert_eq!(
+        embedded_row.chunk.metadata.source_kind,
+        SourceKind::Document
+    );
+    assert_eq!(embedded_row.chunk.metadata.source_id, "lit");
+    assert_eq!(embedded_row.chunk.metadata.owner, "owner");
+    assert_eq!(
+        embedded_row.chunk.metadata.timestamp.timestamp_millis(),
+        1_700_000_004_000
+    );
+    assert_eq!(embedded_row.chunk.token_count, 3);
+    assert_eq!(embedded_row.lifecycle_status.as_deref(), Some("admitted"));
+    assert_eq!(
+        embedded_row.chunk.metadata.tags,
+        vec!["alpha".to_string(), "beta".to_string()],
+        "tags arrive decoded, not as the stored JSON text"
+    );
+    assert_eq!(embedded_row.chunk.content, "100% sure about this");
+    assert!(
+        embedded_row.content_path.is_none(),
+        "an inline chunk has no vault path, and the list must not invent one"
+    );
+
+    // `%` is a literal. Read as a wildcard it also matches "100 percent sure",
+    // which is the row a user searching for "100%" must not be shown.
+    let percent = ChunkQuery {
+        content_contains: Some("100% sure".into()),
+        limit: Some(1_000),
+        ..ChunkQuery::default()
+    };
+    let percent_rows = chunks
+        .list_chunk_details(&percent, None)
+        .await
+        .expect("literal percent");
+    assert_eq!(
+        percent_rows
+            .iter()
+            .map(|row| row.chunk.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["lit-embedded"],
+        "% must not match ' percent'"
+    );
+    assert_eq!(
+        chunks
+            .count_chunks(&percent, None)
+            .await
+            .expect("count literal percent"),
+        percent_rows.len() as u64
+    );
+
+    // `_` is a literal too. Read as a wildcard it also matches "snakeXcase".
+    let underscore = ChunkQuery {
+        content_contains: Some("snake_case".into()),
+        limit: Some(1_000),
+        ..ChunkQuery::default()
+    };
+    assert_eq!(
+        chunks
+            .list_chunk_details(&underscore, None)
+            .await
+            .expect("literal underscore")
+            .iter()
+            .map(|row| row.chunk.id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["lit-under"],
+        "_ must not match any single character"
+    );
+
+    // The id filter is the recall-hydration path: N ids in, those rows out.
+    let by_ids = ChunkQuery {
+        ids: vec!["lit-under".into(), "lit-any".into()],
+        limit: Some(1_000),
+        ..ChunkQuery::default()
+    };
+    let mut hydrated = chunks
+        .list_chunk_details(&by_ids, None)
+        .await
+        .expect("hydrate by id")
+        .into_iter()
+        .map(|row| row.chunk.id)
+        .collect::<Vec<_>>();
+    hydrated.sort();
+    assert_eq!(
+        hydrated,
+        vec!["lit-any".to_string(), "lit-under".to_string()]
+    );
+}
+
+/// Source totals bound sources, count chunks, and apply the scope.
+///
+/// Three things a caller cannot check for itself. The `limit` bounds the
+/// number of *sources* — bound to chunks instead and a store with one busy
+/// source returns one row and looks empty. The count is an aggregate over the
+/// whole source, not over the page the browser happens to be showing. And the
+/// allowlist is the same one `list_chunks` applies: a scoped caller that must
+/// not see a source's rows must not learn the source exists from its total
+/// either.
+#[tokio::test(flavor = "multi_thread")]
+async fn source_totals_bound_sources_and_apply_the_scope() {
+    use tinymemory_api::chunks::SourceKind;
+    use tinymemory_api::provider::types::SourceScope;
+    use tinymemory_api::provider::MemoryProvider;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+
+    let mut scoped = chunk_row(
+        "tot-scoped",
+        SourceKind::Document,
+        "mem_src:src-a:item-1",
+        1_700_000_500_000,
+    );
+    scoped.metadata.tags = vec!["memory_sources".into()];
+    let seeded = vec![
+        chunk_row("tot-a-0", SourceKind::Document, "doc-a", 1_700_000_100_000),
+        chunk_row("tot-a-1", SourceKind::Document, "doc-a", 1_700_000_200_000),
+        chunk_row("tot-a-2", SourceKind::Document, "doc-a", 1_700_000_300_000),
+        chunk_row("tot-b-0", SourceKind::Document, "doc-b", 1_700_000_400_000),
+        chunk_row("tot-c-0", SourceKind::Chat, "chat-a", 1_700_000_050_000),
+        scoped,
+    ];
+    assert_eq!(
+        tinymemory_core::store::chunks::store::upsert_chunks(&config, &seeded).expect("seed"),
+        seeded.len()
+    );
+
+    let chunks = provider.as_chunks().expect("Chunks");
+    let totals = chunks
+        .source_totals(1_000, None)
+        .await
+        .expect("every source total");
+    assert_eq!(totals.len(), 4, "six chunks across four distinct sources");
+    assert_eq!(
+        totals
+            .iter()
+            .map(|total| total.source_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["mem_src:src-a:item-1", "doc-b", "doc-a", "chat-a"],
+        "most recently written source first"
+    );
+    let busiest = totals
+        .iter()
+        .find(|total| total.source_id == "doc-a")
+        .expect("doc-a is a source");
+    assert_eq!(busiest.chunk_count, 3);
+    assert_eq!(busiest.most_recent_ms, 1_700_000_300_000);
+    assert_eq!(busiest.source_kind, SourceKind::Document);
+    // Same source id under two kinds would be two rows; `chat-a` proves the
+    // kind is part of the group key rather than decoration on it.
+    assert_eq!(
+        totals
+            .iter()
+            .find(|total| total.source_id == "chat-a")
+            .expect("chat-a is a source")
+            .source_kind,
+        SourceKind::Chat
+    );
+
+    let bounded = chunks
+        .source_totals(2, None)
+        .await
+        .expect("bounded source totals");
+    assert_eq!(
+        bounded.len(),
+        2,
+        "the bound is on sources; two chunks would be one source here"
+    );
+    assert_eq!(bounded[0].source_id, "mem_src:src-a:item-1");
+
+    // The engine's fail-closed rule, unchanged: `src-b` allows nothing
+    // ingested under `src-a`, and content with no source provenance at all is
+    // outside the predicate and stays visible.
+    let scoped_totals = chunks
+        .source_totals(1_000, Some(&SourceScope::new(["src-b"])))
+        .await
+        .expect("scoped source totals");
+    assert_eq!(scoped_totals.len(), 3);
+    assert!(
+        scoped_totals
+            .iter()
+            .all(|total| total.source_id != "mem_src:src-a:item-1"),
+        "a scoped caller must not learn a forbidden source exists from its total"
+    );
+}
+
+/// Each `forget_matching` selector removes what it names and nothing else.
+///
+/// Four selectors over one door, and the door is the whole reason for the
+/// shape: the alternative is four members, three of which differ from the
+/// others only by which column the predicate reads. What that buys — and what
+/// this test exists for — is that the four arms are wired to four different
+/// deletes, and a mis-wired arm is silent. An `Owner` routed to the
+/// source-prefix delete matches nothing and reports `0`, which reads exactly
+/// like "there was nothing to remove"; routed to the exact-source delete it
+/// removes the wrong rows and still reports a plausible number.
+///
+/// The per-chunk arm additionally has to cascade. A bare
+/// `DELETE FROM mem_tree_chunks` leaves the entity-index row behind, and the
+/// chunk keeps appearing in every entity read that never joins back to the
+/// chunk table — a deleted chunk that is still findable by name.
+#[tokio::test(flavor = "multi_thread")]
+async fn each_forget_selector_removes_what_it_names_and_leaves_its_siblings() {
+    use tinymemory_api::chunks::SourceKind;
+    use tinymemory_api::error::MemoryError;
+    use tinymemory_api::provider::types::ForgetSelector;
+    use tinymemory_api::provider::MemoryProvider;
+    use tinymemory_core::engine::backend::store::entity_index::EntityKind;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+
+    let mut alice = chunk_row(
+        "own-alice",
+        SourceKind::Document,
+        "owned-a",
+        1_700_000_001_000,
+    );
+    alice.metadata.owner = "alice".into();
+    let mut bob = chunk_row(
+        "own-bob",
+        SourceKind::Document,
+        "owned-b",
+        1_700_000_002_000,
+    );
+    bob.metadata.owner = "bob".into();
+    let seeded = vec![
+        chunk_row(
+            "del-0",
+            SourceKind::Document,
+            "del-source",
+            1_700_000_010_000,
+        ),
+        chunk_row(
+            "del-1",
+            SourceKind::Document,
+            "del-source",
+            1_700_000_011_000,
+        ),
+        chunk_row(
+            "del-2",
+            SourceKind::Document,
+            "del-source",
+            1_700_000_012_000,
+        ),
+        chunk_row(
+            "pfx-one",
+            SourceKind::Document,
+            "pfx:one",
+            1_700_000_020_000,
+        ),
+        chunk_row(
+            "pfx-two",
+            SourceKind::Document,
+            "pfx:two",
+            1_700_000_021_000,
+        ),
+        chunk_row(
+            "pfx-other",
+            SourceKind::Document,
+            "other",
+            1_700_000_022_000,
+        ),
+        alice,
+        bob,
+    ];
+    assert_eq!(
+        tinymemory_core::store::chunks::store::upsert_chunks(&config, &seeded).expect("seed"),
+        seeded.len()
+    );
+    assert_eq!(
+        tinymemory_core::store::entities::index_entities(
+            &config,
+            &[canonical_entity(
+                "person:carol",
+                EntityKind::Person,
+                "Carol"
+            )],
+            "del-1",
+            "leaf",
+            1_700_000_011_000,
+            Some("project"),
+        )
+        .expect("seed an occurrence on the chunk about to be deleted"),
+        1
+    );
+
+    let sources = provider.as_sources().expect("Sources");
+    let chunks = provider.as_chunks().expect("Chunks");
+    let entities = provider.as_entities().expect("Entities");
+
+    // ── One chunk ───────────────────────────────────────────────────────────
+    let one = sources
+        .forget_matching(&ForgetSelector::Chunk {
+            chunk_id: "del-1".into(),
+        })
+        .await
+        .expect("forget one chunk");
+    assert_eq!(one.chunks_removed, 1);
+    assert_eq!(
+        one.trees_cleaned, 0,
+        "a chunk id names no source scope, so there is no orphaned tree to \
+         report"
+    );
+    assert!(chunks
+        .get_chunk("del-1")
+        .await
+        .expect("read the deleted chunk")
+        .is_none());
+    for sibling in ["del-0", "del-2"] {
+        assert!(
+            chunks
+                .get_chunk(sibling)
+                .await
+                .expect("read a sibling")
+                .is_some(),
+            "{sibling} shares a source with the deleted chunk and must survive"
+        );
+    }
+    assert!(
+        entities
+            .entity_chunk_ids("person:carol", 10)
+            .await
+            .expect("read the occurrence index")
+            .is_empty(),
+        "the occurrence index must not keep naming a chunk that is gone"
+    );
+    // Deleting it again is `0`, not an error — the end state is the same.
+    assert_eq!(
+        sources
+            .forget_matching(&ForgetSelector::Chunk {
+                chunk_id: "del-1".into(),
+            })
+            .await
+            .expect("forget it twice")
+            .chunks_removed,
+        0
+    );
+
+    // ── One exact source ────────────────────────────────────────────────────
+    let source = sources
+        .forget_matching(&ForgetSelector::Source {
+            source_kind: "document".into(),
+            source_id: "del-source".into(),
+        })
+        .await
+        .expect("forget one source");
+    assert_eq!(source.chunks_removed, 2, "the two survivors of that source");
+    for gone in ["del-0", "del-2"] {
+        assert!(chunks
+            .get_chunk(gone)
+            .await
+            .expect("read a removed chunk")
+            .is_none());
+    }
+
+    // ── A source prefix ─────────────────────────────────────────────────────
+    let prefix = sources
+        .forget_matching(&ForgetSelector::SourcePrefix {
+            source_kind: "document".into(),
+            source_id_prefix: "pfx:".into(),
+        })
+        .await
+        .expect("forget a source prefix");
+    assert_eq!(prefix.chunks_removed, 2);
+    assert!(
+        chunks
+            .get_chunk("pfx-other")
+            .await
+            .expect("read the unprefixed chunk")
+            .is_some(),
+        "the prefix is a prefix, not a substring or a wildcard"
+    );
+
+    // ── One owner ───────────────────────────────────────────────────────────
+    let owner = sources
+        .forget_matching(&ForgetSelector::Owner {
+            source_kind: "document".into(),
+            owner: "alice".into(),
+        })
+        .await
+        .expect("forget one owner");
+    assert_eq!(owner.chunks_removed, 1);
+    assert!(chunks
+        .get_chunk("own-alice")
+        .await
+        .expect("read the removed owner's chunk")
+        .is_none());
+    assert!(
+        chunks
+            .get_chunk("own-bob")
+            .await
+            .expect("read the other owner's chunk")
+            .is_some(),
+        "an owner delete that reached the source column would take bob too"
+    );
+
+    // A kind this engine does not store is refused rather than answered with
+    // a zero. On a destructive call the two readings send an operator opposite
+    // ways: one says "fix the argument", the other says "it was already gone".
+    assert!(
+        matches!(
+            sources
+                .forget_matching(&ForgetSelector::Source {
+                    source_kind: "not-a-kind".into(),
+                    source_id: "del-source".into(),
+                })
+                .await,
+            Err(MemoryError::Invalid(_))
+        ),
+        "an unrecognised source kind must not read as nothing to remove"
+    );
+}
+
+/// Purging clears the chunk tier and everything keyed to it, in one call.
+///
+/// The operation exists because the caller cannot assemble it: the derived
+/// tables are keyed by tree ids and job ids a chunk-shaped delete cannot
+/// enumerate, so sweeping every source leaves summaries and trees standing over
+/// chunks that no longer exist. That half-wiped store is worse than the full
+/// one — recall walks a tree whose leaves are gone, and re-ingest is refused by
+/// gates whose content was deleted.
+///
+/// What is pinned is that one call is enough: after it, every read in the
+/// contract that touches the tier answers empty, and the reported row count
+/// covers the derived rows as well as the chunks. A caller that had to issue
+/// this table by table could stop halfway; a driver that wipes table by table
+/// outside a transaction can too.
+#[tokio::test(flavor = "multi_thread")]
+async fn purging_clears_the_chunk_tier_and_everything_keyed_to_it() {
+    use tinymemory_api::chunks::SourceKind;
+    use tinymemory_api::provider::{ChunkQuery, MemoryProvider};
+    use tinymemory_core::engine::backend::store::entity_index::EntityKind;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+
+    let seeded = vec![
+        chunk_row(
+            "purge-0",
+            SourceKind::Document,
+            "purge-source",
+            1_700_000_001_000,
+        ),
+        chunk_row(
+            "purge-1",
+            SourceKind::Document,
+            "purge-source",
+            1_700_000_002_000,
+        ),
+        chunk_row("purge-2", SourceKind::Chat, "purge-chat", 1_700_000_003_000),
+    ];
+    assert_eq!(
+        tinymemory_core::store::chunks::store::upsert_chunks(&config, &seeded).expect("seed"),
+        seeded.len()
+    );
+    assert_eq!(
+        tinymemory_core::store::entities::index_entities(
+            &config,
+            &[
+                canonical_entity("person:dave", EntityKind::Person, "Dave"),
+                canonical_entity("topic:migration", EntityKind::Topic, "migration"),
+            ],
+            "purge-0",
+            "leaf",
+            1_700_000_001_000,
+            Some("project"),
+        )
+        .expect("seed the entity index"),
+        2
+    );
+
+    let chunks = provider.as_chunks().expect("Chunks");
+    let entities = provider.as_entities().expect("Entities");
+    let maintenance = provider.as_maintenance().expect("Maintenance");
+    let everything = ChunkQuery {
+        limit: Some(1_000),
+        ..ChunkQuery::default()
+    };
+    assert_eq!(
+        chunks
+            .count_chunks(&everything, None)
+            .await
+            .expect("count before"),
+        seeded.len() as u64,
+        "nothing below means anything if the store was empty to begin with"
+    );
+
+    let outcome = maintenance.purge_all().await.expect("purge the store");
+    assert!(
+        outcome.rows_deleted >= seeded.len() as u64,
+        "a purge that reported less than it removed would let a caller tell a \
+         user their store was already empty: got {}",
+        outcome.rows_deleted
+    );
+
+    assert_eq!(
+        chunks
+            .count_chunks(&everything, None)
+            .await
+            .expect("count after"),
+        0
+    );
+    assert!(chunks
+        .list_chunks(&everything, None)
+        .await
+        .expect("list after")
+        .is_empty());
+    assert!(chunks
+        .list_chunk_details(&everything, None)
+        .await
+        .expect("detail rows after")
+        .is_empty());
+    assert!(chunks
+        .source_totals(1_000, None)
+        .await
+        .expect("source totals after")
+        .is_empty());
+    assert!(
+        entities
+            .top_entities(None, 10)
+            .await
+            .expect("entity index after")
+            .is_empty(),
+        "a purge that left the occurrence index standing would keep naming \
+         entities extracted from chunks that no longer exist"
+    );
+    assert_eq!(
+        maintenance
+            .store_stats()
+            .await
+            .expect("store stats after")
+            .chunks,
+        0
+    );
+
+    // Purging an empty store is a no-op, not a failure: the end state is the
+    // one that was asked for.
+    assert_eq!(
+        maintenance
+            .purge_all()
+            .await
+            .expect("purge again")
+            .rows_deleted,
+        0
+    );
+}
+
+/// Occurrences read for many chunks at once stay attached to their own chunk.
+///
+/// The member takes a set because its callers have one — a page of rows to
+/// label, a contacts graph of fifteen hundred nodes. Answering that by looping
+/// the single-chunk read is fifteen hundred bus messages, which is why the
+/// signature carries the set rather than the caller.
+///
+/// The regression a batched read invites is the row losing its owner. The index
+/// column is `node_id`, and the two ways to drop it are both easy to write and
+/// impossible to see afterwards: not selecting it at all and stamping every row
+/// with `chunk_ids[0]`, or concatenating per-chunk results and letting the
+/// caller assume input order survived. Either way every entity in the page
+/// appears to belong to the first chunk in it.
+#[tokio::test(flavor = "multi_thread")]
+async fn occurrences_read_in_a_batch_stay_attached_to_their_own_chunk() {
+    use tinymemory_api::error::MemoryError;
+    use tinymemory_api::provider::MemoryProvider;
+    use tinymemory_core::engine::backend::store::entity_index::{CanonicalEntity, EntityKind};
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+
+    let index = |node: &str, entities: &[CanonicalEntity], at_ms: i64| {
+        tinymemory_core::store::entities::index_entities(
+            &config,
+            entities,
+            node,
+            "leaf",
+            at_ms,
+            Some("project"),
+        )
+        .expect("seed the entity index")
+    };
+    index(
+        "batch-a",
+        &[
+            canonical_entity("person:erin", EntityKind::Person, "Erin"),
+            canonical_entity("organization:acme", EntityKind::Organization, "Acme"),
+        ],
+        1_700_000_001_000,
+    );
+    index(
+        "batch-b",
+        &[canonical_entity(
+            "person:frank",
+            EntityKind::Person,
+            "Frank",
+        )],
+        1_700_000_002_000,
+    );
+    // A third chunk nobody asks about, so "returned everything in the table"
+    // is distinguishable from "returned what was asked for".
+    index(
+        "batch-c",
+        &[canonical_entity(
+            "person:grace",
+            EntityKind::Person,
+            "Grace",
+        )],
+        1_700_000_003_000,
+    );
+
+    let entities = provider.as_entities().expect("Entities");
+    let asked = ["batch-a".to_string(), "batch-b".to_string()];
+    let rows = entities
+        .chunk_entities(&asked, None)
+        .await
+        .expect("occurrences for two chunks");
+    assert_eq!(rows.len(), 3, "two on the first chunk, one on the second");
+    // `Option` rather than an unwrap: an entity missing from the result reads
+    // as `None` against the expected chunk instead of panicking out of the
+    // closure, so the assertion below names which entity went missing.
+    let owner_of = |entity_id: &str| {
+        rows.iter()
+            .find(|row| row.occurrence.entity_id == entity_id)
+            .map(|row| row.chunk_id.as_str())
+    };
+    assert_eq!(owner_of("person:erin"), Some("batch-a"));
+    assert_eq!(owner_of("organization:acme"), Some("batch-a"));
+    assert_eq!(
+        owner_of("person:frank"),
+        Some("batch-b"),
+        "a row stamped with the first requested id would say batch-a here"
+    );
+    assert!(
+        rows.iter()
+            .all(|row| row.occurrence.entity_id != "person:grace"),
+        "only the chunks that were asked about"
+    );
+
+    // The kind filter narrows without losing the attachment.
+    let people = entities
+        .chunk_entities(&asked, Some(&["person".to_string()]))
+        .await
+        .expect("people only");
+    assert_eq!(people.len(), 2);
+    assert!(people.iter().all(|row| row.occurrence.kind == "person"));
+    assert_eq!(
+        people
+            .iter()
+            .map(|row| row.chunk_id.as_str())
+            .collect::<std::collections::HashSet<_>>(),
+        ["batch-a", "batch-b"].into_iter().collect()
+    );
+
+    // An empty request is an empty answer, not the whole index — and so is a
+    // kind filter that admits no kind, which the store would otherwise read as
+    // the unfiltered case.
+    assert!(entities
+        .chunk_entities(&[], None)
+        .await
+        .expect("no chunks asked about")
+        .is_empty());
+    assert!(
+        entities
+            .chunk_entities(&asked, Some(&[]))
+            .await
+            .expect("a filter admitting no kind is an answer, not a fault")
+            .is_empty(),
+        "Some(&[]) is not a second spelling of None"
+    );
+
+    // And the kind filter is validated rather than applied blindly, for
+    // `top_entities`' reason: a misspelled kind that matched nothing would read
+    // as "these chunks mention nobody", which is an answer the caller acts on.
+    assert!(matches!(
+        entities
+            .chunk_entities(&asked, Some(&["not-a-kind".to_string()]))
+            .await,
+        Err(MemoryError::Invalid(_))
+    ));
 }

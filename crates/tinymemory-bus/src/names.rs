@@ -138,6 +138,8 @@ pub mod methods {
     pub const ACCEPT_SOURCE_ITEMS: &str = "AcceptSourceItems";
     /// `ForgetSource` — forget source.
     pub const FORGET_SOURCE: &str = "ForgetSource";
+    /// `ForgetMatching` — forget everything one selector names.
+    pub const FORGET_MATCHING: &str = "ForgetMatching";
 
     // The long-term goals document.
     /// `Goals` — goals.
@@ -179,6 +181,8 @@ pub mod methods {
     pub const FLUSH_PENDING: &str = "FlushPending";
     /// `ResetDerivedIndex` — drop derived state and schedule its rebuild.
     pub const RESET_DERIVED_INDEX: &str = "ResetDerivedIndex";
+    /// `PurgeAll` — erase every row the driver holds.
+    pub const PURGE_ALL: &str = "PurgeAll";
 
     // The people store: ranking, handles, scores and interactions.
     /// `ListPeople` — list people.
@@ -210,6 +214,11 @@ pub mod methods {
     /// `CountChunks` — how many chunks `ListChunks` matches, page bounds
     /// ignored.
     pub const COUNT_CHUNKS: &str = "CountChunks";
+    /// `ListChunkDetails` — the metadata `ChunkDetail` returns, for a whole
+    /// page at once.
+    pub const LIST_CHUNK_DETAILS: &str = "ListChunkDetails";
+    /// `SourceTotals` — one row per source, with what it contributed.
+    pub const SOURCE_TOTALS: &str = "SourceTotals";
 
     // The scored retrieval surface.
     /// `FastRetrieve` — fast retrieve.
@@ -273,7 +282,7 @@ pub mod methods {
 /// The order matters: `tinybus`'s `Interface::members()` returns declaration
 /// order, and the module compares the two sequences directly rather than as
 /// sets, so a reordering is caught alongside an addition or a removal.
-pub const METHODS: [&str; 105] = [
+pub const METHODS: [&str; 109] = [
     methods::DRIVER_ID,
     methods::CAPABILITIES,
     methods::HEALTH,
@@ -379,6 +388,10 @@ pub const METHODS: [&str; 105] = [
     methods::ENTITY_CHUNK_IDS,
     methods::SUMMARY_FOREST,
     methods::RECENT_LEAVES,
+    methods::LIST_CHUNK_DETAILS,
+    methods::SOURCE_TOTALS,
+    methods::FORGET_MATCHING,
+    methods::PURGE_ALL,
 ];
 
 #[cfg(test)]

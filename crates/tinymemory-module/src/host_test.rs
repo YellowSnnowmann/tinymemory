@@ -11,6 +11,8 @@ struct HostSeamsRestore {
     event_sink: Option<std::sync::Arc<dyn MemoryEventSink>>,
     error_reporter: Option<std::sync::Arc<dyn ErrorReporter>>,
     nlp_host: Option<std::sync::Arc<dyn tinymemory_core::nlp_host::NlpHost>>,
+    scheduler_gate: Option<std::sync::Arc<dyn tinymemory_core::scheduler_gate::SchedulerGate>>,
+    shutdown_host: Option<std::sync::Arc<dyn tinymemory_core::shutdown::ShutdownHost>>,
 }
 
 impl HostSeamsRestore {
@@ -19,6 +21,8 @@ impl HostSeamsRestore {
             event_sink: tinymemory_core::events::event_sink(),
             error_reporter: tinymemory_core::observability::error_reporter(),
             nlp_host: tinymemory_core::nlp_host::nlp_host(),
+            scheduler_gate: tinymemory_core::scheduler_gate::scheduler_gate(),
+            shutdown_host: tinymemory_core::shutdown::shutdown_host(),
         }
     }
 }
@@ -36,6 +40,14 @@ impl Drop for HostSeamsRestore {
         match self.nlp_host.take() {
             Some(host) => tinymemory_core::nlp_host::set_nlp_host(host),
             None => tinymemory_core::nlp_host::clear_nlp_host(),
+        }
+        match self.scheduler_gate.take() {
+            Some(gate) => tinymemory_core::scheduler_gate::set_scheduler_gate(gate),
+            None => tinymemory_core::scheduler_gate::clear_scheduler_gate(),
+        }
+        match self.shutdown_host.take() {
+            Some(host) => tinymemory_core::shutdown::set_shutdown_host(host),
+            None => tinymemory_core::shutdown::clear_shutdown_host(),
         }
     }
 }
@@ -237,16 +249,44 @@ async fn runtime_callbacks_and_spacy_cross_the_bus_with_their_full_payloads() {
     assert!(expected_error);
 }
 
+/// Kept as one test rather than two on purpose: both installs write
+/// process-global seams, and a second test that captured, installed and
+/// asserted in parallel with this one could have its assertion land after this
+/// one's `HostSeamsRestore` had already put the globals back.
 #[tokio::test]
-async fn install_wires_all_three_runtime_host_seams() {
+async fn install_wires_every_seam_this_module_can_supply() {
     let _restore = HostSeamsRestore::capture();
     let (connection, _callbacks) = bus_with_runtime_host().await;
 
+    // The pair `setup` calls, in the order it calls them.
     super::install(connection);
+    super::install_unserved_seams();
 
     assert!(tinymemory_core::events::event_sink().is_some());
     assert!(tinymemory_core::observability::error_reporter().is_some());
     assert!(tinymemory_core::nlp_host::nlp_host().is_some());
+    // The two that used to be left out entirely, and so degraded in silence
+    // instead of failing with a named cause the way `config_loader` does.
+    assert!(tinymemory_core::scheduler_gate::scheduler_gate().is_some());
+    assert!(tinymemory_core::shutdown::shutdown_host().is_some());
+}
+
+#[test]
+fn the_unserved_stubs_answer_exactly_what_an_unwired_seam_answered() {
+    use tinymemory_core::scheduler_gate::SchedulerGate;
+    use tinymemory_core::shutdown::ShutdownHost;
+
+    // Loud, not different. A stub that answered anything else would change
+    // scheduling as a side effect of loading the module — and with no channel
+    // to the host's live gate, any other answer would be a guess that goes
+    // stale the moment the user toggles background AI.
+    assert_eq!(
+        super::UnservedSchedulerGate.current_policy(),
+        tinymemory_core::scheduler_gate::Policy::Normal
+    );
+    // Registering with nowhere to run reports and drops; it must never panic.
+    let hook: tinymemory_core::shutdown::ShutdownHook = Box::new(|| Box::pin(async {}));
+    super::UnservedShutdownHost.register(hook);
 }
 
 #[tokio::test]

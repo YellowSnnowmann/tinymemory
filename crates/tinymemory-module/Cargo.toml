@@ -33,10 +33,25 @@ tinymemory = { path = "../tinymemory" }
 # loads this binary compiles neither.
 tinymemory-core = { path = "../tinymemory-core", features = ["memory-git"] }
 tinymemory-tinycortex = { path = "../tinymemory-tinycortex", features = ["memory-git"] }
-# `people` is enabled here rather than inherited: the module serves the
+# `contacts` is enabled here rather than inherited: the module serves the
 # `MemoryPeople` family directly off the engine's people store, so it needs the
 # gate on even though `tinymemory-core` only re-exports the domain.
-tinycortex = { version = "0.1", features = ["people"] }
+#
+# It replaces `people` rather than joining it. Upstream declares
+# `contacts = ["people", ...]`, so naming both would state the same requirement
+# twice and invite one of them to be edited without the other.
+#
+# What the wider gate buys is `SeedFromAddressBook` actually seeding. Without
+# `contacts`, `people::address_book`'s macOS implementation compiles out and the
+# stub in its place returns an empty contact list — so a refresh reports success
+# and imports nobody, which is the failure mode that looks like an empty address
+# book rather than a missing feature. That is newly load-bearing: the shipping
+# desktop build turns `contacts` on for the in-process engine it also boots, and
+# the host's whole people domain is a glob re-export of that engine, so the day
+# it is deleted macOS address-book seeding survives only if this module carries
+# it. The four objc2 crates behind the gate sit under a macOS target table
+# upstream, so a Linux or Windows artifact still compiles none of them.
+tinycortex = { version = "0.1", features = ["contacts"] }
 tinyagents = { version = "2.1" }
 # TinyBus provides the typed service interface and the dynamic module host ABI.
 # Reached by path now that this crate is its own workspace root: the nested

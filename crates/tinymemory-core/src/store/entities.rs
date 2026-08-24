@@ -223,7 +223,35 @@ pub fn top_entity_rows(
     Ok(rows)
 }
 
-/// The entity rows recorded against one tree node, most-observed first.
+/// One aggregated occurrence row, carrying the node it was observed on.
+///
+/// [`EntityIndexRow`] deliberately has no node: it is the shape of a query
+/// that groups *across* nodes, and a node id there would have to be a sample
+/// of one row in the group. This is the shape of a query that groups *within*
+/// each node, so the node is part of the key rather than a sample, and a
+/// caller reading many nodes at once can tell whose row it is holding.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NodeEntityRow {
+    /// The tree node — a chunk id, or a summary id where the caller asked for
+    /// one.
+    pub node_id: String,
+    /// Canonical entity id.
+    pub entity_id: String,
+    /// Stable entity kind string, as stored.
+    pub entity_kind: String,
+    /// An observed surface form on this node.
+    pub surface: String,
+    /// Number of index rows aggregated into this one.
+    pub mentions: u32,
+}
+
+/// Defensive cap on ids bound into one `IN (?,?,…)`, far below SQLite's
+/// `SQLITE_MAX_VARIABLE_NUMBER` (32 766) and the same window the engine's own
+/// batched chunk read uses.
+const MAX_NODE_BATCH: usize = 500;
+
+/// The entity rows recorded against a set of tree nodes, most-observed first
+/// within each node.
 ///
 /// Grouped by surface as well as by id: one entity seen under two forms is two
 /// rows, because the form is the evidence of how this node's text named it.
@@ -233,21 +261,81 @@ pub fn top_entity_rows(
 /// entity — and is reported anyway: it is the same aggregate
 /// [`top_entity_rows`] returns, and an index that later keys occurrences per
 /// span would make it meaningful without a shape change here.
-pub fn node_entity_rows(config: &Config, node_id: &str) -> Result<Vec<EntityIndexRow>> {
+///
+/// # Why a set of nodes rather than one
+///
+/// The caller labelling a page of chunks has as many nodes as the page has
+/// rows. One node per call turns a 1 500-row contacts graph into 1 500 round
+/// trips, and across the module bus each of those is a message rather than a
+/// function call. The single-node case is this call with a slice of one.
+///
+/// `node_ids` is windowed so no single statement approaches the bound-parameter
+/// limit; the windows are read under one connection lock, so a concurrent write
+/// cannot land between them.
+///
+/// An empty `kinds` means *no kind filter*, not *no kinds*. That is the
+/// deliberate opposite of the source allowlist, which denies on empty: a scope
+/// is a gate and fails closed, while this is a narrowing and its empty form is
+/// what a caller that built the list from nothing passes. Widening here shows
+/// rows the caller could already see; failing closed would silently empty a
+/// page instead.
+pub fn node_entity_rows(
+    config: &Config,
+    node_ids: &[String],
+    kinds: &[String],
+) -> Result<Vec<NodeEntityRow>> {
+    if node_ids.is_empty() {
+        return Ok(Vec::new());
+    }
     let memory = memory_config_from(config, config.workspace_dir().clone());
     let connection = crate::engine::backend::chunks::shared_connection(&memory)?;
     let guard = connection.lock();
-    let mut statement = guard.prepare(
-        "SELECT entity_id, entity_kind, surface, COUNT(*)
-           FROM mem_tree_entity_index
-          WHERE node_id = ?1
-          GROUP BY entity_id, entity_kind, surface
-          ORDER BY COUNT(*) DESC, entity_id ASC",
-    )?;
-    let rows = statement
-        .query_map(rusqlite::params![node_id], index_row)?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+    let mut rows = Vec::with_capacity(node_ids.len());
+    for window in node_ids.chunks(MAX_NODE_BATCH) {
+        let nodes = placeholders(window.len());
+        let kind_clause = if kinds.is_empty() {
+            String::new()
+        } else {
+            format!(" AND entity_kind IN ({})", placeholders(kinds.len()))
+        };
+        // `node_id` leads the sort so a caller re-mapping the result by node
+        // sees each node's rows contiguously; within a node the order is the
+        // single-node query's, unchanged.
+        let sql = format!(
+            "SELECT node_id, entity_id, entity_kind, surface, COUNT(*)
+               FROM mem_tree_entity_index
+              WHERE node_id IN ({nodes}){kind_clause}
+              GROUP BY node_id, entity_id, entity_kind, surface
+              ORDER BY node_id ASC, COUNT(*) DESC, entity_id ASC"
+        );
+        let bound = window
+            .iter()
+            .chain(kinds.iter())
+            .map(|value| rusqlite::types::Value::Text(value.clone()))
+            .collect::<Vec<_>>();
+        let mut statement = guard.prepare(&sql)?;
+        let window_rows = statement
+            .query_map(rusqlite::params_from_iter(bound), |row| {
+                let mentions: i64 = row.get(4)?;
+                Ok(NodeEntityRow {
+                    node_id: row.get(0)?,
+                    entity_id: row.get(1)?,
+                    entity_kind: row.get(2)?,
+                    surface: row.get(3)?,
+                    mentions: u32::try_from(mentions.max(0)).unwrap_or(u32::MAX),
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        rows.extend(window_rows);
+    }
     Ok(rows)
+}
+
+/// `?,?,…` for `count` bound values.
+fn placeholders(count: usize) -> String {
+    std::iter::repeat_n("?", count)
+        .collect::<Vec<_>>()
+        .join(",")
 }
 
 /// Ids of the **leaf** nodes one entity was observed in, newest first.

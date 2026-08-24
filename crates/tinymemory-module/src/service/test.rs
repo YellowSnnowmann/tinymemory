@@ -451,6 +451,77 @@ async fn the_open_store_cap_is_reached_through_successful_opens() {
     );
 }
 
+/// The queue worker pool is claimed once per process, and a store under a
+/// second workspace is refused loudly rather than left with no pool.
+///
+/// Asserted through `claim_queue_pool` rather than `start_queue_pool` on
+/// purpose. Starting the pool for real spawns four job workers and a daily
+/// scheduler against a temporary directory the test deletes while they are
+/// still polling it; they then mark the store degraded process-wide, which
+/// every later test that reads health would inherit. The claim is the whole of
+/// the decision — what follows it is one call into `tinymemory-core`, whose own
+/// `Once` guards it a second time.
+///
+/// The three outcomes are asserted in one test because the cell behind them is
+/// a process-global `OnceLock`: split across three tests they would race, and
+/// only the first to run would see `Start`.
+#[test]
+fn the_queue_pool_is_claimed_once_and_a_foreign_workspace_is_refused() {
+    let workspace = std::path::Path::new("/tinymemory-module/queue-pool-claim");
+    let elsewhere = std::path::Path::new("/tinymemory-module/queue-pool-elsewhere");
+
+    assert_eq!(
+        crate::claim_queue_pool(workspace),
+        crate::QueuePoolClaim::Start,
+        "the first claim must be the one that starts the pool"
+    );
+    assert_eq!(
+        crate::claim_queue_pool(workspace),
+        crate::QueuePoolClaim::AlreadyDraining,
+        "a second claim for the same workspace must not start a second pool"
+    );
+    assert_eq!(
+        crate::claim_queue_pool(elsewhere),
+        crate::QueuePoolClaim::Foreign,
+        "a claim for another workspace must be named, not silently swallowed — \
+         `queue::start` would no-op and that store's queue would never drain"
+    );
+}
+
+/// A second store opens normally, and needs no pool of its own to do it.
+///
+/// The pairing with the test above is the point. `queue::start` is guarded by a
+/// process-global `Once`, so the obvious failure of moving the pool into the
+/// module is a second store silently getting no worker at all. It cannot happen
+/// here: the engine's queue is rooted at the workspace — `queue::store` resolves
+/// its database through `engine_config`, which is `memory_config_from(config,
+/// config.workspace_dir())` — while `memory_subdir` reaches only
+/// `UnifiedMemory::new_with_memory_dir`. Both stores below therefore share the
+/// one queue `setup` started a pool for.
+#[tokio::test]
+async fn a_second_store_opens_under_the_one_workspace_queue() {
+    use std::sync::Arc;
+
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let connection = test_connection().await;
+    let config = test_config(workspace.path());
+    let _embedding_host = EmbeddingHostRestore::install(connection.clone(), &config);
+    let opener = test_opener(connection, config);
+    let service = super::MemoryService::root(test_provider(), Arc::clone(&opener));
+
+    let first = service
+        .open_store("profile-one".to_string())
+        .await
+        .expect("the first store must open");
+    let second = service
+        .open_store("profile-two".to_string())
+        .await
+        .expect("a second store must open rather than panic or be refused");
+
+    assert_ne!(first, second, "each subtree gets its own object path");
+    assert_eq!(opener.served.lock().await.len(), 2);
+}
+
 /// Every method the service implements must also be declared in the manifest.
 ///
 /// The manifest's `methods` list is admission surface: the host may only call a
@@ -544,7 +615,7 @@ fn the_served_members_are_exactly_the_published_contract() {
         .map(|member| (*member).to_string())
         .collect();
 
-    // Reported as differences rather than as a 97-element inequality, so the
+    // Reported as differences rather than as a 109-element inequality, so the
     // failure names the method that moved instead of printing both lists.
     let missing: Vec<&String> = served.iter().filter(|m| !published.contains(m)).collect();
     assert!(

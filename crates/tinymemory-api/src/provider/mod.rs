@@ -74,7 +74,9 @@ pub mod retrieval;
 pub use tinymemory_bus::provider::types;
 
 pub use audit::{audit_provider, CapabilityAudit};
-pub use chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery, MemoryChunks};
+pub use chunks::{
+    ChunkDetail, ChunkEmbedding, ChunkListRow, ChunkQuery, MemoryChunks, SourceTotal,
+};
 pub use content::{MemoryDocuments, MemoryIngest, MemoryTree};
 pub use driver::MemoryProvider;
 pub use episodic::{ConversationSegment, EpisodicEvent, EpisodicTurn, EventKind, MemoryEpisodic};
@@ -91,7 +93,8 @@ pub use retrieval::{
     RetrievalNodeKind, RetrievalResponse, SourceRetrievalQuery,
 };
 pub use types::{
-    ChangeKind, DiffReport, EntityHit, EntityOccurrence, EntityRef, ExportPage, ExportRecord,
-    FlushOutcome, ImportOutcome, IngestItem, IngestOutcome, MaintenanceReport, ResetOutcome,
-    SnapshotRef, SourceChange, SourceItem, SourceScope,
+    ChangeKind, ChunkEntityOccurrence, DiffReport, EntityHit, EntityOccurrence, EntityRef,
+    ExportPage, ExportRecord, FlushOutcome, ForgetOutcome, ForgetSelector, ImportOutcome,
+    IngestItem, IngestOutcome, MaintenanceReport, PurgeOutcome, ResetOutcome, SnapshotRef,
+    SourceChange, SourceItem, SourceScope,
 };

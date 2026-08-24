@@ -132,6 +132,12 @@ impl RetrievalFacade {
             offset: None,
             source_scope: None,
             exclude_dropped: false,
+            // The six list/substring predicates the contract's filtered
+            // listing added are not part of a param-tag search: this path
+            // narrows by source, owner, time and tag only, and an empty
+            // predicate means unfiltered, so the defaults are the right
+            // answer rather than a placeholder.
+            ..Default::default()
         };
         let rows = list_chunks(config, &query)?;
         let Some(required) = filters.tags_all_of.as_ref() else {

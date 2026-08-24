@@ -398,6 +398,39 @@ pub struct EntityOccurrence {
     pub mentions: u32,
 }
 
+/// One [`EntityOccurrence`] together with the chunk it was observed in.
+///
+/// ## Why the chunk id is on the row
+///
+/// Asking one chunk what it is about needs no such field: the chunk id was the
+/// argument, and every row answers for it. Asking fifteen hundred chunks in
+/// one call returns a single flat list, and without the id on each row there
+/// is no way back from a row to the content it describes.
+///
+/// The alternative shape — a list per chunk, or a map keyed by chunk id — was
+/// rejected twice over. It encodes the grouping in the type, so every chunk
+/// the extractor has not reached yet costs an empty vector on the wire; and a
+/// map keyed by chunk id serialises as a JSON object whose keys are
+/// caller-supplied text, which is the encoding [`super::chunks::ChunkEmbedding`]
+/// is a list to avoid.
+///
+/// The occurrence is **flattened** rather than nested, so the wire form is an
+/// [`EntityOccurrence`] object carrying one extra `chunk_id` key. A caller that
+/// already decodes occurrences reads these under the same field names.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ChunkEntityOccurrence {
+    /// The chunk — or the summary node — this observation came from.
+    ///
+    /// Rows are **not** unique by this: one chunk contributes one row per
+    /// distinct `(entity, surface)` it was observed under, for
+    /// [`EntityOccurrence::surface`]'s reason. Group by it; never index by
+    /// position against the ids that were asked for.
+    pub chunk_id: String,
+    /// The observation itself.
+    #[serde(flatten)]
+    pub occurrence: EntityOccurrence,
+}
+
 /// Identity of a captured snapshot.
 ///
 /// The engine's own snapshot type additionally carries the git commit SHA and
@@ -516,6 +549,99 @@ pub struct SourceItem {
     /// Labels carried through from the source.
     #[serde(default)]
     pub tags: Vec<String>,
+}
+
+/// Which stored content a selective forget removes.
+///
+/// ## Why an enum and not a struct of options
+///
+/// The four arms are mutually exclusive and each maps 1:1 onto a delete the
+/// engine already implements — by chunk id, by exact source, by source-id
+/// prefix, by owner. A struct of `Option` fields would admit combinations none
+/// of those deletes has a meaning for (`chunk_id` *and* `owner`; a prefix *and*
+/// an exact id), and the driver would have to invent a precedence rule and
+/// document it, for a **destructive** call where guessing wrong deletes the
+/// wrong content. The enum makes the illegal combinations unrepresentable
+/// instead of merely discouraged.
+///
+/// ## Why `source_kind` is a wire string
+///
+/// The same reason `MemorySourceSink::accept_source_items` takes one: the set
+/// of source kinds belongs to the host's sync machinery and grows without a
+/// contract change. A driver parses it and answers
+/// [`MemoryError::Invalid`](crate::error::MemoryError::Invalid) for a kind it
+/// does not recognise — never an outcome of zero. On a read a silent zero is a
+/// misleading empty list; here it is an operator told their content was
+/// already gone when nothing was even looked at.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "by", rename_all = "snake_case")]
+pub enum ForgetSelector {
+    /// One chunk, by id.
+    ///
+    /// The narrowest arm, and the only one that does not name a source: a
+    /// caller removing a single row it is looking at has the id and nothing
+    /// else. An id the store does not hold removes nothing and is not an
+    /// error, matching every other idempotent delete in this contract.
+    Chunk {
+        /// The chunk to remove.
+        chunk_id: String,
+    },
+    /// Everything stored under one exact `(source_kind, source_id)`.
+    ///
+    /// Exact, never a prefix, so sibling sources sharing a leading segment are
+    /// untouched — that is what [`Self::SourcePrefix`] is for, and conflating
+    /// the two is how a single disconnect takes a workspace with it.
+    Source {
+        /// Kind of the source, as a wire string.
+        source_kind: String,
+        /// The exact logical source id.
+        source_id: String,
+    },
+    /// Everything whose source id begins with `source_id_prefix`, under one
+    /// kind.
+    ///
+    /// The disconnect path for a provider that files one logical connection
+    /// under many derived ids. The prefix is matched literally: it is not a
+    /// pattern, so `%` and `_` in a provider id mean themselves.
+    SourcePrefix {
+        /// Kind of the sources, as a wire string.
+        source_kind: String,
+        /// Literal prefix the source ids must start with.
+        source_id_prefix: String,
+    },
+    /// Everything owned by one owner, under one kind.
+    ///
+    /// Owner is the account the content came in through, so this is the arm a
+    /// caller reaches for when one connection of several is removed and the
+    /// others must survive on the same source.
+    Owner {
+        /// Kind of the sources, as a wire string.
+        source_kind: String,
+        /// The owner whose content is removed.
+        owner: String,
+    },
+}
+
+/// What a selective forget removed.
+///
+/// Two counts because they are two different deletions, not a total and a
+/// part. Chunks are what the caller asked to remove; a summary tree is
+/// *derived* from chunks and is cleaned only once every chunk under it has
+/// gone, so a forget that removes rows may clean no tree and a forget that
+/// removes none may still clean one left stranded by an earlier partial
+/// delete. Summed into one number, neither case can be told from the other.
+///
+/// A count rather than the `bool` the single-source path used before it: an
+/// exact-source delete can orphan at most one tree, but a prefix or owner
+/// selector spans many sources and can orphan several, and a `bool` would have
+/// to report three as "yes".
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ForgetOutcome {
+    /// Chunk rows removed, together with the per-chunk side rows and content
+    /// files that hang off them.
+    pub chunks_removed: u64,
+    /// Summary trees cascaded away because nothing was left under them.
+    pub trees_cleaned: u64,
 }
 
 /// Outcome of one maintenance operation.
@@ -672,6 +798,31 @@ pub struct ResetOutcome {
     /// were already queued — the enqueue is keyed, so a duplicate is a no-op
     /// rather than a second job.
     pub jobs_enqueued: u64,
+}
+
+/// What wiping the whole store deleted.
+///
+/// One field, and a struct rather than a bare `u64`, for two reasons that both
+/// only show up later. The unit is named where an integer return would leave
+/// it to a call site to remember — these are *rows*, across every table the
+/// driver owns, not chunks. And a wipe is the one operation whose reporting
+/// will want to grow: a driver that later counts the vault files it discarded,
+/// or the tables it truncated, adds a field, where a bare integer would have
+/// to be replaced and every caller changed with it.
+///
+/// Deliberately **not** a [`ResetOutcome`]. That one deletes derived rows and
+/// schedules their re-derivation, so its three counts describe work that
+/// continues; nothing continues after this.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PurgeOutcome {
+    /// Database rows the driver deleted, summed across its own tables.
+    ///
+    /// Rows only, and deliberately not a second count of files: a file count
+    /// is not comparable between drivers, and a driver that keeps bodies
+    /// in-row would report zero and read as having done less than one that
+    /// does not. What a wipe reaches beyond the database is the driver's own
+    /// question — `MemoryMaintenance::purge_all` says where that line falls.
+    pub rows_deleted: u64,
 }
 
 #[cfg(test)]

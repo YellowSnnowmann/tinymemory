@@ -33,6 +33,8 @@
 //! ChunkDetail(chunk_id)                             -> Option<ChunkDetail>
 //! ChunkEmbeddings(chunk_ids, model_signature)       -> [ChunkEmbedding]
 //! StorageKinds()                                    -> [String]
+//! ListChunkDetails(query, scope)                    -> [ChunkListRow]
+//! SourceTotals(limit, scope)                        -> [SourceTotal]
 //!
 //! ListActiveFacets() / ListAllFacets()               -> [ProfileFacet]
 //! GetFacet(key) / FacetsByType(type)                 -> facet(s)
@@ -53,8 +55,11 @@
 //! RecentLeaves(limit, scope)                        -> [TreeLeaf]
 //!
 //! TopEntities(kind, limit)                          -> [EntityOccurrence]
-//! ChunkEntities(chunk_id)                           -> [EntityOccurrence]
+//! ChunkEntities(chunk_ids, kinds)                   -> [ChunkEntityOccurrence]
 //! EntityChunkIds(entity_id, limit)                  -> [String]
+//!
+//! ForgetMatching(selector)                          -> ForgetOutcome
+//! PurgeAll()                                        -> PurgeOutcome
 //! ```
 //!
 //! # Source scope crosses as an argument, never as ambient state
@@ -128,14 +133,17 @@ use tinymemory_api::error::MemoryError;
 use tinymemory_api::goals::GoalsDoc;
 use tinymemory_api::health::MemoryHealth;
 use tinymemory_api::provider::types::{
-    DiffReport, EntityHit, EntityOccurrence, ExportPage, ExportRecord, FlushOutcome, ImportOutcome,
-    IngestItem, IngestOutcome, MaintenanceReport, QueueFailure, QueueStats, ResetOutcome,
-    SnapshotRef, SourceItem, SourceScope, StoreStats,
+    ChunkEntityOccurrence, DiffReport, EntityHit, EntityOccurrence, ExportPage, ExportRecord,
+    FlushOutcome, ForgetOutcome, ForgetSelector, ImportOutcome, IngestItem, IngestOutcome,
+    MaintenanceReport, PurgeOutcome, QueueFailure, QueueStats, ResetOutcome, SnapshotRef,
+    SourceItem, SourceScope, StoreStats,
 };
 // `MemoryCore`, `MemoryRecall` and `MemoryPortability` are deliberately not
 // imported: they are supertraits of `MemoryProvider`, so their methods are
 // already callable on the trait object.
-use tinymemory_api::provider::chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery};
+use tinymemory_api::provider::chunks::{
+    ChunkDetail, ChunkEmbedding, ChunkListRow, ChunkQuery, SourceTotal,
+};
 use tinymemory_api::provider::episodic::{ConversationSegment, EpisodicEvent, EpisodicTurn};
 use tinymemory_api::provider::people::{
     AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
@@ -411,6 +419,25 @@ impl MemoryService {
             }
         })?;
 
+        // No queue worker pool is started for this store, and that is a finding
+        // rather than an omission. The engine's queue is rooted at the
+        // workspace, not at the store subtree: every `queue::store` entry point
+        // resolves its database through `engine_config`, which is
+        // `memory_config_from(config, config.workspace_dir())`, while
+        // `memory_subdir` reaches only `UnifiedMemory::new_with_memory_dir`. One
+        // module process serves one workspace — `claim_process_setup` refuses a
+        // second `setup` — so every store opened here shares the one queue
+        // `setup` already started a pool for, and a second `queue::start` would
+        // be a silent no-op besides: its guard is a process-global `Once`.
+        //
+        // Calling `crate::start_queue_pool` here anyway would be correct and
+        // would make that invariant enforced rather than argued. It is left out
+        // because it would start a real four-worker pool inside the unit tests
+        // that exercise this method, whose workspaces are temporary directories
+        // deleted while the workers still poll them — the workers then mark the
+        // store degraded process-wide, which later tests read. The invariant is
+        // asserted instead by `crate::claim_queue_pool`, which is the same
+        // decision without the tasks.
         let provider = crate::provider::provider(&opener.config, Arc::new(client));
         opener.instrumentation.before_registration()?;
         opener
@@ -1470,15 +1497,36 @@ impl MemoryService {
         Ok(rows)
     }
 
-    /// Every entity indexed against one chunk.
+    /// Every entity indexed against a batch of chunks.
+    ///
+    /// The batch is the point. The caller this exists for is drawing a graph
+    /// over a page of chunks, and one id per call is one round trip per chunk —
+    /// a page of a thousand becomes a thousand calls for a single view.
+    /// `kinds` narrows to the kinds that caller will actually render, so the
+    /// frame carries the rows it asked for instead of the whole index of every
+    /// chunk in the page.
+    ///
+    /// Rows come back as [`ChunkEntityOccurrence`] rather than
+    /// [`EntityOccurrence`] because over a batch a flat list has no other way
+    /// back to the chunk each row describes — see the contract, which says to
+    /// group by `chunk_id` and never index by position.
+    ///
+    /// Widening the arguments is only legitimate because this member has never
+    /// shipped: it was added on this branch, so no released host calls the
+    /// single-id form. Its position in the member sequence is unchanged, which
+    /// is what the drift assertion pins.
     ///
     /// Size-checked even though the contract gives it no `limit`: the bound is
-    /// one chunk's extraction, which is the driver's number rather than the
-    /// caller's, and an over-large frame the host cannot decode is a worse
-    /// answer than a named refusal naming the method.
-    async fn chunk_entities(&self, chunk_id: String) -> BusResult<Vec<EntityOccurrence>> {
+    /// the extraction of the chunks named, which is the driver's number rather
+    /// than the caller's, and an over-large frame the host cannot decode is a
+    /// worse answer than a named refusal naming the method.
+    async fn chunk_entities(
+        &self,
+        chunk_ids: Vec<String>,
+        kinds: Option<Vec<String>>,
+    ) -> BusResult<Vec<ChunkEntityOccurrence>> {
         let rows = require_family!(self, as_entities, Capability::Entities)
-            .chunk_entities(&chunk_id)
+            .chunk_entities(&chunk_ids, kinds.as_deref())
             .await
             .map_err(|error| into_bus_error(&error))?;
         ensure_response_fits(&rows, "ChunkEntities")?;
@@ -1529,6 +1577,88 @@ impl MemoryService {
             .map_err(|error| into_bus_error(&error))?;
         ensure_response_fits(&leaves, "RecentLeaves")?;
         Ok(leaves)
+    }
+
+    /// What `ChunkDetail` returns, for a whole page in one read.
+    ///
+    /// Appended here rather than filed beside `ListChunks` for the reason
+    /// `count_chunks` gives above: member order is wire order.
+    ///
+    /// It is not `ChunkDetail` in a loop, and the difference is not stylistic.
+    /// One detail is several engine reads, so a thousand-row page done that way
+    /// is several thousand queries behind a thousand round trips. Sharing
+    /// `ListChunks`' own filter is the other half: a page and the details
+    /// describing it cannot disagree about which chunks are in it.
+    ///
+    /// Size-checked, and it is the chunk method most likely to trip the
+    /// ceiling: a row carries chunk text, so the limit that bounds rows does
+    /// not bound bytes.
+    async fn list_chunk_details(
+        &self,
+        query: ChunkQuery,
+        scope: Option<SourceScope>,
+    ) -> BusResult<Vec<ChunkListRow>> {
+        let rows = require_family!(self, as_chunks, Capability::Chunks)
+            .list_chunk_details(&query, scope.as_ref())
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&rows, "ListChunkDetails")?;
+        Ok(rows)
+    }
+
+    /// One row per source, with what that source put in the store.
+    ///
+    /// Aggregated by the driver because the alternative is listing every chunk
+    /// and grouping caller-side, which crosses the whole store to compute a
+    /// handful of counts — and crosses it as content, which is what the
+    /// response ceiling is there to stop.
+    ///
+    /// Size-checked for the same reason `TopEntities` is: `limit` bounds rows,
+    /// and the ceiling is a property of the frame rather than of the row count.
+    async fn source_totals(
+        &self,
+        limit: usize,
+        scope: Option<SourceScope>,
+    ) -> BusResult<Vec<SourceTotal>> {
+        let totals = require_family!(self, as_chunks, Capability::Chunks)
+            .source_totals(limit, scope.as_ref())
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&totals, "SourceTotals")?;
+        Ok(totals)
+    }
+
+    /// Forget everything one selector names.
+    ///
+    /// One door rather than one member per shape — a chunk, a source, a source
+    /// prefix, an owner. The four deletions differ only in which rows they
+    /// match, and four members would be four chances for one of them to leave
+    /// behind a side table the others clear.
+    ///
+    /// Not size-checked: the response counts what went, and no selector can
+    /// make a count bigger.
+    async fn forget_matching(&self, selector: ForgetSelector) -> BusResult<ForgetOutcome> {
+        require_family!(self, as_sources, Capability::Sources)
+            .forget_matching(&selector)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Erase every row this driver holds.
+    ///
+    /// Filed under maintenance rather than sources because it is scoped to no
+    /// source: it is the "wipe this store" a host offers behind a confirmation,
+    /// and the driver's half of that is every table at once. What it does not
+    /// touch is the filesystem — the content directory belongs to the host, and
+    /// a driver deleting host directories would be reaching past its own
+    /// storage into somewhere it cannot reason about.
+    ///
+    /// Not size-checked, for the reason `forget_matching` gives above.
+    async fn purge_all(&self) -> BusResult<PurgeOutcome> {
+        require_family!(self, as_maintenance, Capability::Maintenance)
+            .purge_all()
+            .await
+            .map_err(|error| into_bus_error(&error))
     }
 }
 
