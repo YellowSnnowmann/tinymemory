@@ -15,7 +15,8 @@
 //! Because that rename replaces a file the *host* also writes, this registry
 //! owes the host its permission contract as well as its contents: the temp file
 //! is created owner-only, so a source mutation cannot hand back a config that is
-//! more permissive than the one it replaced. See [`create_owner_only`].
+//! more permissive than the one it replaced. See `create_owner_only`, which is
+//! private, so this is a plain reference rather than an intra-doc link.
 //!
 //! The complete load-modify-save cycle is guarded by a process-wide mutation
 //! lock, so separate [`SourceRegistry`] handles cannot overwrite one another's
