@@ -489,6 +489,41 @@ pub struct QueueFailure {
     pub last_success_ms: Option<i64>,
 }
 
+/// What a flush of pending buffered work did, and what was pending.
+///
+/// Both numbers, because either alone misleads. `enqueued: false` with
+/// `stale_buffers: 0` means there was nothing to do; `enqueued: false` with
+/// `stale_buffers: 3` means the driver deduplicated against work it had
+/// already scheduled — the same answer for opposite reasons, and a caller
+/// showing "nothing to flush" in the second case is wrong.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FlushOutcome {
+    /// Whether this call scheduled work. `false` when an equivalent flush is
+    /// already scheduled — a deduplication, not a failure.
+    pub enqueued: bool,
+    /// Buffers old enough to be flushed, at the moment the driver looked.
+    pub stale_buffers: u64,
+}
+
+/// What resetting the derived index deleted, requeued and scheduled.
+///
+/// Three numbers rather than a `MaintenanceReport`'s two, because they are not
+/// a ratio: rows deleted, chunks put back in scope, and jobs scheduled to
+/// re-derive from them are three independent counts, and collapsing any pair
+/// loses the ability to tell "nothing to re-derive" from "re-derivation was
+/// not scheduled".
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResetOutcome {
+    /// Rows removed from the derived tables.
+    pub rows_deleted: u64,
+    /// Source chunks returned to the pool the index is derived from.
+    pub chunks_requeued: u64,
+    /// Re-derivation jobs scheduled. Lower than `chunks_requeued` when some
+    /// were already queued — the enqueue is keyed, so a duplicate is a no-op
+    /// rather than a second job.
+    pub jobs_enqueued: u64,
+}
+
 #[cfg(test)]
 #[path = "types_tests.rs"]
 mod tests;

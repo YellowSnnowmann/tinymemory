@@ -312,6 +312,8 @@ mod exports {
             "QueueStats",
             "LatestQueueFailure",
             "BackfillInProgress",
+            "FlushPending",
+            "ResetDerivedIndex",
             "RecallNamespaceRecent",
         ],
         signals = [],

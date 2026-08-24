@@ -676,6 +676,8 @@ const EXPECTED_METHODS: &[&str] = &[
     "QueueStats",
     "LatestQueueFailure",
     "BackfillInProgress",
+    "FlushPending",
+    "ResetDerivedIndex",
     "RecallNamespaceRecent",
 ];
 

@@ -544,7 +544,7 @@ fn the_served_members_are_exactly_the_published_contract() {
         .map(|member| (*member).to_string())
         .collect();
 
-    // Reported as differences rather than as a 95-element inequality, so the
+    // Reported as differences rather than as a 97-element inequality, so the
     // failure names the method that moved instead of printing both lists.
     let missing: Vec<&String> = served.iter().filter(|m| !published.contains(m)).collect();
     assert!(

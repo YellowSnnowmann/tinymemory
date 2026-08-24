@@ -1197,6 +1197,99 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
     );
 }
 
+/// Flushing twice inside one window schedules the work once, and says so.
+///
+/// The deduplication is the driver's, keyed on date and three-hour block, so a
+/// user hitting "flush now" twice does not get the work queued twice. What
+/// makes that safe to surface is the buffer count riding alongside: without
+/// it, `enqueued: false` is ambiguous between "nothing to flush" and "already
+/// scheduled", and a caller showing the first when it is the second is lying
+/// about state the user is watching.
+#[tokio::test(flavor = "multi_thread")]
+async fn flushing_twice_in_a_window_schedules_the_work_once() {
+    use tinymemory_api::provider::{MemoryMaintenance, MemoryProvider};
+    use tinymemory_api::tree::IngestRequest;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+
+    provider
+        .as_tree()
+        .expect("Tree")
+        .append(IngestRequest {
+            namespace: "project".into(),
+            content: "something buffered and waiting to be written out".into(),
+            timestamp: Some(chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("ts")),
+            metadata: None,
+        })
+        .await
+        .expect("append");
+
+    let first = provider.flush_pending().await.expect("first flush");
+    assert!(
+        first.enqueued,
+        "the first flush in a window schedules the work"
+    );
+
+    let second = provider.flush_pending().await.expect("second flush");
+    assert!(
+        !second.enqueued,
+        "the second deduplicates against the first rather than queueing it twice"
+    );
+    assert_eq!(
+        second.stale_buffers, first.stale_buffers,
+        "and still reports what is pending, so `enqueued: false` is not mistaken \
+         for an empty queue"
+    );
+}
+
+/// Resetting the derived index keeps every chunk it was derived from.
+///
+/// This is the invariant that makes the operation safe to expose at all.
+/// Summaries, buffers, entity indexes and trees are recomputable; the chunks
+/// are the source and are never deleted. A reset that took them too would be
+/// data loss wearing the word "reset".
+#[tokio::test(flavor = "multi_thread")]
+async fn resetting_the_derived_index_keeps_the_chunks_it_derives_from() {
+    use tinymemory_api::provider::{MemoryMaintenance, MemoryProvider};
+    use tinymemory_api::tree::IngestRequest;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+
+    provider
+        .as_tree()
+        .expect("Tree")
+        .append(IngestRequest {
+            namespace: "project".into(),
+            content: "content the derived index is built from".into(),
+            timestamp: Some(chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("ts")),
+            metadata: None,
+        })
+        .await
+        .expect("append");
+
+    let before = provider.store_stats().await.expect("stats before");
+
+    let outcome = provider
+        .reset_derived_index()
+        .await
+        .expect("reset the derived index");
+
+    let after = provider.store_stats().await.expect("stats after");
+    assert_eq!(
+        after.chunks, before.chunks,
+        "the reset deletes what was derived, never the source it was derived from"
+    );
+    assert!(
+        outcome.jobs_enqueued <= outcome.chunks_requeued,
+        "the enqueue is keyed, so scheduled jobs cannot exceed requeued chunks: \
+         {} jobs for {} chunks",
+        outcome.jobs_enqueued,
+        outcome.chunks_requeued
+    );
+}
+
 /// Recency recall answers when there is no query to rank against.
 ///
 /// This is the member's whole reason for existing. `recall_namespace_scored`

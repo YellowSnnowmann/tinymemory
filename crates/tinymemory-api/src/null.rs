@@ -56,8 +56,8 @@ use crate::error::MemoryError;
 use crate::goals::GoalsDoc;
 use crate::health::MemoryHealth;
 use crate::provider::types::{
-    DiffReport, EntityHit, ExportPage, ExportRecord, ImportOutcome, IngestItem, IngestOutcome,
-    MaintenanceReport, SnapshotRef, SourceItem, SourceScope,
+    DiffReport, EntityHit, ExportPage, ExportRecord, FlushOutcome, ImportOutcome, IngestItem,
+    IngestOutcome, MaintenanceReport, ResetOutcome, SnapshotRef, SourceItem, SourceScope,
 };
 use crate::provider::{
     AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, CoverWindowQuery, EntityMatch,
@@ -476,6 +476,19 @@ impl MemoryMaintenance for NullMemoryProvider {
     }
 
     async fn doctor(&self) -> Result<MaintenanceReport, MemoryError> {
+        unsupported(Capability::Maintenance)
+    }
+
+    // The trait defaults these to an empty outcome, which is the right answer
+    // for a real driver that simply has nothing buffered or nothing derived.
+    // It is the wrong answer here: both *mutate*, and this provider stores
+    // nothing, so "flushed nothing" and "reset nothing" would read as work
+    // done rather than as a driver that cannot do it.
+    async fn flush_pending(&self) -> Result<FlushOutcome, MemoryError> {
+        unsupported(Capability::Maintenance)
+    }
+
+    async fn reset_derived_index(&self) -> Result<ResetOutcome, MemoryError> {
         unsupported(Capability::Maintenance)
     }
 }

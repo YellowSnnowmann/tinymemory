@@ -91,7 +91,7 @@ pub use retrieval::{
     RetrievalNodeKind, RetrievalResponse, SourceRetrievalQuery,
 };
 pub use types::{
-    ChangeKind, DiffReport, EntityHit, EntityRef, ExportPage, ExportRecord, ImportOutcome,
-    IngestItem, IngestOutcome, MaintenanceReport, SnapshotRef, SourceChange, SourceItem,
-    SourceScope,
+    ChangeKind, DiffReport, EntityHit, EntityRef, ExportPage, ExportRecord, FlushOutcome,
+    ImportOutcome, IngestItem, IngestOutcome, MaintenanceReport, ResetOutcome, SnapshotRef,
+    SourceChange, SourceItem, SourceScope,
 };

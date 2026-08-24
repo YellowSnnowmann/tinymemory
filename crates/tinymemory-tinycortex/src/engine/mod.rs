@@ -32,8 +32,9 @@ use tinymemory_api::host::{
 };
 use tinymemory_api::mandatory::MemoryTraitProvider;
 use tinymemory_api::provider::types::{
-    EntityHit, EntityRef, ExportPage, ExportRecord, ImportOutcome, IngestItem, IngestOutcome,
-    MaintenanceReport, QueueFailure, QueueStats, SourceItem, SourceScope, StoreStats,
+    EntityHit, EntityRef, ExportPage, ExportRecord, FlushOutcome, ImportOutcome, IngestItem,
+    IngestOutcome, MaintenanceReport, QueueFailure, QueueStats, ResetOutcome, SourceItem,
+    SourceScope, StoreStats,
 };
 // Diff-family value types, used only by the `MemoryDiff` impl below — which is
 // compiled out without the git-backed snapshot store.
@@ -1345,6 +1346,116 @@ impl MemoryMaintenance for TinycortexProvider {
                 .map_err(|error| anyhow::anyhow!("latest queue failure: {error}"))
             },
         )
+        .await
+    }
+
+    async fn flush_pending(&self) -> Result<FlushOutcome, MemoryError> {
+        blocking(
+            self.config.clone(),
+            "flush pending buffers",
+            move |config| {
+                let now = chrono::Utc::now();
+                let stale = tinymemory_core::store::trees::store::list_stale_buffers(config, now)?;
+                let stale_buffers = u64::try_from(stale.len()).unwrap_or(u64::MAX);
+
+                // `max_age_secs: 0` is what "now" means here: consider every buffer
+                // rather than only those past the scheduled age.
+                let payload = tinymemory_core::queue::types::FlushStalePayload {
+                    max_age_secs: Some(0),
+                };
+                // The key is date + three-hour block, so a second flush inside the
+                // same window deduplicates against the first instead of scheduling
+                // the work twice. `enqueue` answering `None` is that deduplication,
+                // not a failure — which is why the outcome carries the buffer count
+                // beside it, so a caller can tell "nothing to do" from "already
+                // scheduled".
+                let date_iso = now.format("%Y-%m-%d").to_string();
+                let hour_block = chrono::Timelike::hour(&now) / 3;
+                let job = tinymemory_core::queue::types::NewJob::flush_stale(
+                    &payload, &date_iso, hour_block,
+                )?;
+                let enqueued = tinymemory_core::queue::store::enqueue(config, &job)?.is_some();
+                if enqueued {
+                    tinymemory_core::queue::wake_workers();
+                }
+                Ok(FlushOutcome {
+                    enqueued,
+                    stale_buffers,
+                })
+            },
+        )
+        .await
+    }
+
+    async fn reset_derived_index(&self) -> Result<ResetOutcome, MemoryError> {
+        blocking(self.config.clone(), "reset derived index", move |config| {
+            // Everything here is derived from `mem_tree_chunks`, which is NOT
+            // in the list and is never deleted. That is the invariant the
+            // contract promises: nothing a caller wrote is lost, only what was
+            // computed from it.
+            const DERIVED_TABLES: &[&str] = &[
+                "mem_tree_summaries",
+                "mem_tree_buffers",
+                "mem_tree_jobs",
+                "mem_tree_entity_index",
+                "mem_tree_trees",
+            ];
+            let rows_deleted =
+                tinymemory_core::store::chunks::store::with_connection(config, |conn| {
+                    let tx = conn.unchecked_transaction()?;
+                    let mut total: u64 = 0;
+                    for table in DERIVED_TABLES {
+                        total += tx.execute(&format!("DELETE FROM {table}"), [])? as u64;
+                    }
+                    tx.commit()?;
+                    Ok(total)
+                })?;
+
+            // Second transaction, deliberately. The delete above drops the job
+            // table, so re-enqueueing in the same one would race its own
+            // truncation.
+            let (chunks_requeued, jobs_enqueued) =
+                tinymemory_core::store::chunks::store::with_connection(config, |conn| {
+                    let tx = conn.unchecked_transaction()?;
+                    let chunks_requeued = tx.execute(
+                        "UPDATE mem_tree_chunks SET lifecycle_status = 'pending_extraction'",
+                        [],
+                    )? as u64;
+                    let chunk_ids: Vec<String> = {
+                        let mut stmt = tx.prepare("SELECT id FROM mem_tree_chunks")?;
+                        // Bound rather than returned directly: the rows borrow
+                        // `stmt`, which the block would otherwise drop first.
+                        let rows = stmt
+                            .query_map([], |row| row.get::<_, String>(0))?
+                            .collect::<rusqlite::Result<Vec<_>>>()?;
+                        rows
+                    };
+                    let mut jobs_enqueued: u64 = 0;
+                    for chunk_id in &chunk_ids {
+                        let payload = tinymemory_core::queue::types::ExtractChunkPayload {
+                            chunk_id: chunk_id.clone(),
+                        };
+                        let job = tinymemory_core::queue::types::NewJob::extract_chunk(&payload)?;
+                        // Keyed, so a chunk already queued is a no-op rather
+                        // than a duplicate job — which is why this count can be
+                        // lower than `chunks_requeued`.
+                        if tinymemory_core::queue::store::enqueue_tx(&tx, &job)?.is_some() {
+                            jobs_enqueued += 1;
+                        }
+                    }
+                    tx.commit()?;
+                    Ok((chunks_requeued, jobs_enqueued))
+                })?;
+
+            // The work is scheduled; nothing drains it until a worker is woken.
+            tinymemory_core::queue::wake_workers();
+
+            Ok(ResetOutcome {
+                rows_deleted,
+                chunks_requeued,
+                jobs_enqueued,
+            })
+        })
         .await
     }
 

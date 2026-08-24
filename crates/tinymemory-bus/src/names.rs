@@ -163,6 +163,10 @@ pub mod methods {
     pub const BACKFILL_IN_PROGRESS: &str = "BackfillInProgress";
     /// `RecallNamespaceRecent` — namespace recall ordered by recency, no query.
     pub const RECALL_NAMESPACE_RECENT: &str = "RecallNamespaceRecent";
+    /// `FlushPending` — flush buffered work old enough to be written out.
+    pub const FLUSH_PENDING: &str = "FlushPending";
+    /// `ResetDerivedIndex` — drop derived state and schedule its rebuild.
+    pub const RESET_DERIVED_INDEX: &str = "ResetDerivedIndex";
 
     // The people store: ranking, handles, scores and interactions.
     /// `ListPeople` — list people.
@@ -252,7 +256,7 @@ pub mod methods {
 /// The order matters: `tinybus`'s `Interface::members()` returns declaration
 /// order, and the module compares the two sequences directly rather than as
 /// sets, so a reordering is caught alongside an addition or a removal.
-pub const METHODS: [&str; 95] = [
+pub const METHODS: [&str; 97] = [
     methods::DRIVER_ID,
     methods::CAPABILITIES,
     methods::HEALTH,
@@ -309,6 +313,8 @@ pub const METHODS: [&str; 95] = [
     methods::QUEUE_STATS,
     methods::LATEST_QUEUE_FAILURE,
     methods::BACKFILL_IN_PROGRESS,
+    methods::FLUSH_PENDING,
+    methods::RESET_DERIVED_INDEX,
     methods::RECALL_NAMESPACE_RECENT,
     methods::LIST_PEOPLE,
     methods::GET_PERSON,
