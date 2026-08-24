@@ -270,6 +270,7 @@ mod exports {
             "WorkflowIdentityMatches",
             "IngestDocument",
             "IngestChat",
+            "IngestEmail",
             "PutDocument",
             "GetDocument",
             "ListDocuments",

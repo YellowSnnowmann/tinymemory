@@ -1202,6 +1202,34 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
         .expect("retrieve ingested leaves");
     assert!(!leaves.is_empty());
     assert!(leaves.iter().any(|hit| hit.content.contains("TinyMemory")));
+    // The provenance kind survives the engine-to-contract crossing. That
+    // crossing is a serde round-trip, not a field-by-field mapping, so a
+    // rename on either side loses the kind without failing anything: the hit
+    // still decodes, just kindless, and openhuman's four retrieval RPCs would
+    // start serving a body missing a field they have always emitted. Pinned to
+    // the engine's leaf placeholder rather than to `is_some`, because a
+    // crossing that invented a value would satisfy the weaker check.
+    assert!(leaves
+        .iter()
+        .all(|hit| hit.tree_kind.as_deref() == Some("source")));
+    // …and the field stays additive in both directions. A payload written by a
+    // peer that predates it must still decode, and a hit with no kind must
+    // encode without the key, or an older peer parsing this response sees a
+    // shape it was not built against.
+    let mut without_kind =
+        serde_json::to_value(leaves.first().expect("a leaf hit")).expect("encode a hit");
+    without_kind
+        .as_object_mut()
+        .expect("a hit encodes as a JSON object")
+        .remove("tree_kind");
+    let decoded: tinymemory_api::provider::RetrievalHit =
+        serde_json::from_value(without_kind).expect("a payload without tree_kind still decodes");
+    assert!(decoded.tree_kind.is_none());
+    assert!(!serde_json::to_value(&decoded)
+        .expect("re-encode a kindless hit")
+        .as_object()
+        .expect("a hit encodes as a JSON object")
+        .contains_key("tree_kind"));
     let source = retrieval
         .retrieve_source(
             &tinymemory_api::provider::SourceRetrievalQuery {
@@ -1242,6 +1270,161 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
             .expect("namespace recall")
             .len()
             <= 5
+    );
+}
+
+/// A second ingest of one source reports the gate, not a dropped chunk.
+///
+/// The driver refuses a document whose `source_id` it has already ingested, and
+/// does not look at the content to decide — so even completely different
+/// material writes nothing. What the contract has to carry is *why* nothing was
+/// written. A caller re-ingesting on purpose (after a wipe, after a failed
+/// import, after clearing a gate by hand) reads a refusal as "the claim is
+/// still there, go clear it" and an empty result as "there was nothing to
+/// write", and those lead to opposite actions.
+///
+/// The two facts are therefore asserted apart. `skipped` counting the refusal
+/// as one unit — the reading this replaces — is indistinguishable from a single
+/// genuinely dropped chunk, which is the whole defect.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_repeated_source_reports_its_gate_rather_than_a_dropped_chunk() {
+    use tinymemory_api::chunks::DataSource;
+    use tinymemory_api::provider::types::IngestItem;
+    use tinymemory_api::provider::MemoryProvider;
+    use tinymemory_api::types::MemoryTaint;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let ingest = provider.as_ingest().expect("Ingest");
+
+    let item = IngestItem {
+        namespace: None,
+        source: DataSource::Upload,
+        source_id: "claimed-source".into(),
+        owner: "owner".into(),
+        source_ref: None,
+        content: "The adapter is maintained from Kuwait and ships on Thursday.".into(),
+        mime: Some("text/plain".into()),
+        timestamp: Some(
+            chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("fixed timestamp"),
+        ),
+        tags: vec!["coverage".into()],
+        taint: MemoryTaint::Internal,
+        path_scope: None,
+        author: None,
+        channel_label: None,
+        platform: None,
+    };
+
+    let first = ingest
+        .ingest_document(item.clone())
+        .await
+        .expect("first ingest");
+    assert!(first.written > 0, "the first ingest of a source writes it");
+    assert!(
+        !first.already_ingested,
+        "and is not itself a refusal, or the flag would be a constant"
+    );
+    assert!(
+        first.extract_jobs_enqueued > 0,
+        "rows written with nothing scheduled to derive from them is the failure \
+         this count exists to make visible"
+    );
+
+    let second = ingest
+        .ingest_document(IngestItem {
+            // Different content under the same id: the gate is on the source,
+            // so this must still write nothing.
+            content: "Entirely different words under an id that is already claimed.".into(),
+            ..item
+        })
+        .await
+        .expect("second ingest");
+    assert!(
+        second.already_ingested,
+        "the source gate refused the call, and the outcome has to say so"
+    );
+    assert_eq!(second.written, 0, "a refused call writes nothing");
+    assert_eq!(
+        second.skipped, 0,
+        "nothing was dropped: folding the refusal in here reads as one \
+         dropped chunk and the caller cannot tell the two apart"
+    );
+    assert!(second.ids.is_empty());
+    assert_eq!(
+        second.extract_jobs_enqueued, 0,
+        "and it scheduled no follow-up work"
+    );
+}
+
+/// An email thread ingests as mail, not as a document that happens to be text.
+///
+/// The stored chunk carries the rendered `From:` header, which is what makes
+/// this assertion discriminate: routing the mail path through
+/// `ingest_document` would store the same bodies with the per-message headers
+/// gone, and a citation back to one message has nothing left to point at.
+/// It also pins the sender mapping — `author` is the speaker, and attributing
+/// every message to the owner is the failure the chat path already had.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_email_thread_keeps_its_per_message_headers() {
+    use tinymemory_api::chunks::DataSource;
+    use tinymemory_api::provider::types::IngestItem;
+    use tinymemory_api::provider::MemoryProvider;
+    use tinymemory_api::types::MemoryTaint;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let ingest = provider.as_ingest().expect("Ingest");
+
+    let message = |author: &str, text: &str, at: i64| IngestItem {
+        namespace: None,
+        source: DataSource::Gmail,
+        source_id: "mail:thread-1".into(),
+        owner: "owner@example.com".into(),
+        source_ref: None,
+        content: text.into(),
+        mime: Some("text/plain".into()),
+        timestamp: Some(chrono::DateTime::from_timestamp(at, 0).expect("fixed timestamp")),
+        tags: vec!["coverage".into()],
+        taint: MemoryTaint::Internal,
+        path_scope: None,
+        author: Some(author.into()),
+        channel_label: Some("Adapter ship date".into()),
+        platform: None,
+    };
+
+    let outcome = ingest
+        .ingest_email(vec![
+            message(
+                "alice@example.com",
+                "The adapter ships on Thursday if the review lands.",
+                1_700_000_000,
+            ),
+            message(
+                "bob@example.com",
+                "The review is done, so Thursday holds.",
+                1_700_000_100,
+            ),
+        ])
+        .await
+        .expect("email ingest");
+    assert!(outcome.written > 0, "the thread reached the pipeline");
+    assert!(
+        !outcome.ids.is_empty(),
+        "and the driver identified what it wrote"
+    );
+
+    let stored = provider
+        .as_chunks()
+        .expect("Chunks")
+        .get_chunk(&outcome.ids[0])
+        .await
+        .expect("read the first stored chunk")
+        .expect("the id the outcome reported must resolve");
+    assert!(
+        stored.content.contains("From: alice@example.com"),
+        "the sender header is what a per-message citation resolves against: {}",
+        stored.content
     );
 }
 
