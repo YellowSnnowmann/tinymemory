@@ -2039,6 +2039,25 @@ impl MemoryRetrieval for TinycortexProvider {
         Self::cross(&hits, "convert namespace hits")
     }
 
+    async fn recall_namespace_recent(
+        &self,
+        namespace: &str,
+        limit: usize,
+    ) -> Result<Vec<NamespaceMemoryHit>, MemoryError> {
+        // `recall_namespace_memories`, deliberately — NOT
+        // `query_namespace_hits_excluding_session` with an empty query. The two
+        // share `load_documents_for_scope` + `kv_records_for_scope` and diverge
+        // after it: one ranks against the query, this one scores freshness and
+        // priority. Passing "" to the scored path does not degrade to recency.
+        let hits = self
+            .client
+            .unified_handle()
+            .recall_namespace_memories(namespace, u32::try_from(limit).unwrap_or(u32::MAX))
+            .await
+            .map_err(|error| Self::other("recall namespace recent", error))?;
+        Self::cross(&hits, "convert namespace hits")
+    }
+
     async fn search_entities(
         &self,
         query: &str,

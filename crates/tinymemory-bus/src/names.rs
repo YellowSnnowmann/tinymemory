@@ -161,6 +161,8 @@ pub mod methods {
     /// `BackfillInProgress` — whether a re-embedding backfill is still running
     /// anywhere in the driver's process.
     pub const BACKFILL_IN_PROGRESS: &str = "BackfillInProgress";
+    /// `RecallNamespaceRecent` — namespace recall ordered by recency, no query.
+    pub const RECALL_NAMESPACE_RECENT: &str = "RecallNamespaceRecent";
 
     // The people store: ranking, handles, scores and interactions.
     /// `ListPeople` — list people.
@@ -250,7 +252,7 @@ pub mod methods {
 /// The order matters: `tinybus`'s `Interface::members()` returns declaration
 /// order, and the module compares the two sequences directly rather than as
 /// sets, so a reordering is caught alongside an addition or a removal.
-pub const METHODS: [&str; 94] = [
+pub const METHODS: [&str; 95] = [
     methods::DRIVER_ID,
     methods::CAPABILITIES,
     methods::HEALTH,
@@ -307,6 +309,7 @@ pub const METHODS: [&str; 94] = [
     methods::QUEUE_STATS,
     methods::LATEST_QUEUE_FAILURE,
     methods::BACKFILL_IN_PROGRESS,
+    methods::RECALL_NAMESPACE_RECENT,
     methods::LIST_PEOPLE,
     methods::GET_PERSON,
     methods::RESOLVE_HANDLE,

@@ -922,6 +922,19 @@ impl MemoryService {
             .map_err(|error| into_bus_error(&error))
     }
 
+    async fn recall_namespace_recent(
+        &self,
+        namespace: String,
+        limit: usize,
+    ) -> BusResult<Vec<NamespaceMemoryHit>> {
+        let hits = require_family!(self, as_retrieval, Capability::Retrieval)
+            .recall_namespace_recent(&namespace, limit)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&hits, "RecallNamespaceRecent")?;
+        Ok(hits)
+    }
+
     // ── People ──────────────────────────────────────────────────────────────
 
     /// Known people, ranked by closeness.

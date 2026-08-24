@@ -1197,6 +1197,65 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
     );
 }
 
+/// Recency recall answers when there is no query to rank against.
+///
+/// This is the member's whole reason for existing. `recall_namespace_scored`
+/// looks like the same call with the query left blank, and handing it `""`
+/// does not degrade to recency — it runs the ranking path against nothing. A
+/// context-assembly step that has not seen a user query yet needs the
+/// namespace's contents ordered by freshness, which is what this returns.
+///
+/// What is pinned: writes are visible through it, and an unknown namespace is
+/// an empty answer rather than an error — a true statement about that
+/// namespace, not a fault the caller can act on.
+#[tokio::test(flavor = "multi_thread")]
+async fn recency_recall_answers_without_a_query() {
+    use tinymemory_api::provider::{MemoryCore, MemoryProvider};
+    use tinymemory_api::types::{MemoryCategory, MemoryTaint};
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+
+    for (key, content) in [
+        ("first", "the earliest note in this namespace"),
+        ("second", "a later note about something else entirely"),
+    ] {
+        provider
+            .store(
+                "global",
+                key,
+                content,
+                MemoryCategory::Core,
+                None,
+                MemoryTaint::default(),
+            )
+            .await
+            .expect("store");
+    }
+
+    let retrieval = provider.as_retrieval().expect("Retrieval");
+
+    let recent = retrieval
+        .recall_namespace_recent("global", 5)
+        .await
+        .expect("recency recall");
+    assert!(
+        !recent.is_empty(),
+        "a caller with no query still gets the namespace's contents back"
+    );
+    assert!(
+        recent.len() <= 5,
+        "the limit is honoured: asked for 5, got {}",
+        recent.len()
+    );
+
+    let empty = retrieval
+        .recall_namespace_recent("a-namespace-nothing-was-written-to", 5)
+        .await
+        .expect("an unknown namespace is not an error");
+    assert!(empty.is_empty());
+}
+
 #[tokio::test(flavor = "multi_thread")]
 async fn tree_entities_and_maintenance_execute_real_workspace_transitions() {
     use tinymemory_api::provider::MemoryProvider;

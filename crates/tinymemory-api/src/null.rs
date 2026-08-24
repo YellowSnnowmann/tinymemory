@@ -612,6 +612,14 @@ impl MemoryRetrieval for NullMemoryProvider {
         unsupported(Capability::Retrieval)
     }
 
+    async fn recall_namespace_recent(
+        &self,
+        _namespace: &str,
+        _limit: usize,
+    ) -> Result<Vec<NamespaceMemoryHit>, MemoryError> {
+        unsupported(Capability::Retrieval)
+    }
+
     async fn search_entities(
         &self,
         _query: &str,

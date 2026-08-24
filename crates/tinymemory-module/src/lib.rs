@@ -312,6 +312,7 @@ mod exports {
             "QueueStats",
             "LatestQueueFailure",
             "BackfillInProgress",
+            "RecallNamespaceRecent",
         ],
         signals = [],
         // The host's embedder is deliberately NOT declared as `requires`. That
