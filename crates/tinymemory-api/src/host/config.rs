@@ -61,6 +61,10 @@ pub struct ComposioMode {
     pub api_key: Option<String>,
     /// Whether the LLM triage turn is switched off for all triggers.
     pub triage_disabled: bool,
+    /// Optional Gmail search query scoping the background Gmail sync to
+    /// matching messages only (full Gmail search syntax, e.g. `label:brain`).
+    /// `None`/empty = the whole inbox window. On-demand access is unaffected.
+    pub gmail_sync_query: Option<String>,
 }
 
 impl std::fmt::Debug for ComposioMode {

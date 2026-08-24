@@ -174,6 +174,7 @@ async fn composio_gmail_sync_completes_against_the_namespace_driver() {
         api_key: Some(SecretString::new("test-key")),
         bearer_token: None,
         entity_id: Some("entity-1".into()),
+        gmail_query: None,
     };
     let pipeline = Arc::new(GmailSyncPipeline::new(
         ComposioClient::new(composio),

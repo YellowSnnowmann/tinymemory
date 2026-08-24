@@ -1,8 +1,96 @@
-//! Tests for the Gmail message → canonical Markdown adapter.
+//! Tests for the Gmail message → canonical Markdown adapter and the
+//! query-clause composition in [`GmailSyncPipeline::arguments`].
+
+use std::sync::Arc;
 
 use serde_json::json;
 
+use super::GmailSyncPipeline;
 use super::{canonical_markdown, message_body, message_recipients, message_sent_at};
+use crate::sync::pipelines::composio::client::{ActionExecutor, ExecuteResponse};
+use crate::sync::pipelines::composio::gmail::SyncState;
+use crate::sync::pipelines::composio::orchestrator::{IncrementalSource, SyncScope};
+use crate::sync::pipelines::traits::PipelineConfig;
+
+/// Executor that must never run — `arguments` is pure argument-building.
+struct NeverExecutor;
+
+#[async_trait::async_trait]
+impl ActionExecutor for NeverExecutor {
+    async fn execute(
+        &self,
+        _action: &str,
+        _arguments: serde_json::Value,
+        _connection_id: Option<&str>,
+    ) -> anyhow::Result<ExecuteResponse> {
+        unreachable!("arguments() must not execute anything")
+    }
+}
+
+fn query_of(
+    pipeline: &GmailSyncPipeline,
+    state: &SyncState,
+    config: &PipelineConfig,
+) -> Option<String> {
+    let args = pipeline.arguments(&SyncScope::flat(), config, state, None);
+    args.get("query")
+        .and_then(|q| q.as_str())
+        .map(str::to_string)
+}
+
+/// The standing filter ANDs with the incremental `after:<cursor>` clause —
+/// scoped sync stays incremental instead of re-querying the whole label.
+#[test]
+fn filter_composes_with_the_incremental_cursor_clause() {
+    let pipeline = GmailSyncPipeline::with_executor(Arc::new(NeverExecutor), "conn-1")
+        .with_filter("label:brain");
+    let mut state = SyncState::new("gmail", "conn-1");
+    state.cursor = Some("2026-05-02T09:15:00Z".into());
+
+    let query = query_of(&pipeline, &state, &PipelineConfig::default()).expect("query set");
+    assert!(query.starts_with("label:brain after:"), "got: {query}");
+}
+
+/// Filter alone (no cursor, no depth cap): the query is exactly the filter.
+#[test]
+fn filter_alone_scopes_the_first_sync() {
+    let pipeline = GmailSyncPipeline::with_executor(Arc::new(NeverExecutor), "conn-1")
+        .with_filter("label:brain");
+    let state = SyncState::new("gmail", "conn-1");
+
+    let query = query_of(&pipeline, &state, &PipelineConfig::default()).expect("query set");
+    assert_eq!(query, "label:brain");
+}
+
+/// No filter, no cursor, no depth: no query argument at all (pre-existing
+/// behaviour, must not regress to an empty-string query).
+#[test]
+fn no_clauses_means_no_query_argument() {
+    let pipeline = GmailSyncPipeline::with_executor(Arc::new(NeverExecutor), "conn-1");
+    let state = SyncState::new("gmail", "conn-1");
+
+    assert_eq!(
+        query_of(&pipeline, &state, &PipelineConfig::default()),
+        None
+    );
+}
+
+/// `with_query` (backfill) still *replaces* the incremental clause, and a
+/// standing filter composes in front of it.
+#[test]
+fn query_override_still_replaces_cursor_and_composes_with_filter() {
+    let pipeline = GmailSyncPipeline::with_executor(Arc::new(NeverExecutor), "conn-1")
+        .with_filter("label:brain")
+        .with_query("newer_than:3d");
+    let mut state = SyncState::new("gmail", "conn-1");
+    state.cursor = Some("2026-05-02T09:15:00Z".into());
+
+    let query = query_of(&pipeline, &state, &PipelineConfig::default()).expect("query set");
+    assert_eq!(
+        query, "label:brain newer_than:3d",
+        "override wins over cursor"
+    );
+}
 
 /// One message in the shape the Gmail response reshaper emits: a slim envelope
 /// whose body is pre-rendered into `markdown`.
