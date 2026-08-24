@@ -1,6 +1,6 @@
 //! The chunks family: direct read access to the stored chunk tier.
 //!
-//! A driver advertising [`Capability::Chunks`](crate::capabilities::Capability::Chunks)
+//! A driver advertising [`Capability::Chunks`]
 //! can list and fetch individual chunks, and hand back the embedding vectors it
 //! holds for them.
 //!
