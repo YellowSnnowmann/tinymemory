@@ -1112,13 +1112,24 @@ async fn episodic_round_trip(bus: &tinybus::Proxy) {
         .expect("SessionTurns");
     bus.call::<()>(
         "CreateSegment",
-        ("seg-1", "session-1", "global", turn_id, 10.0_f64, 10.0_f64),
+        (
+            "seg-1",
+            "session-1",
+            "global",
+            turn_id,
+            Option::<u32>::None,
+            10.0_f64,
+            10.0_f64,
+        ),
     )
     .await
     .expect("CreateSegment");
-    bus.call::<()>("AppendTurn", ("seg-1", turn_id, 10.0_f64, 11.0_f64))
-        .await
-        .expect("AppendTurn");
+    bus.call::<()>(
+        "AppendTurn",
+        ("seg-1", turn_id, Option::<u32>::None, 10.0_f64, 11.0_f64),
+    )
+    .await
+    .expect("AppendTurn");
     let _: Option<tinymemory_api::provider::episodic::ConversationSegment> = bus
         .call("OpenSegment", ("session-1",))
         .await

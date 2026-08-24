@@ -1189,6 +1189,7 @@ impl MemoryService {
         session_id: String,
         namespace: String,
         start_episodic_id: i64,
+        start_seq: Option<u32>,
         start_timestamp: f64,
         now: f64,
     ) -> BusResult<()> {
@@ -1198,6 +1199,7 @@ impl MemoryService {
                 &session_id,
                 &namespace,
                 start_episodic_id,
+                start_seq,
                 start_timestamp,
                 now,
             )
@@ -1210,11 +1212,12 @@ impl MemoryService {
         &self,
         segment_id: String,
         episodic_id: i64,
+        seq: Option<u32>,
         timestamp: f64,
         now: f64,
     ) -> BusResult<()> {
         require_family!(self, as_episodic, Capability::Episodic)
-            .append_turn(&segment_id, episodic_id, timestamp, now)
+            .append_turn(&segment_id, episodic_id, seq, timestamp, now)
             .await
             .map_err(|error| into_bus_error(&error))
     }

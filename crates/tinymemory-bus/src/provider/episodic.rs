@@ -110,6 +110,16 @@ pub struct ConversationSegment {
     pub embedding: Option<Vec<f32>>,
     /// Whether the segment is still open.
     pub open: bool,
+    /// Stable per-session sequence of the first user turn, when the backing
+    /// store assigns one. The md-backed archivist store rounds timestamps to
+    /// milliseconds, so a fast turn can sort before its segment's
+    /// higher-precision start time — the sequence is the identity that
+    /// survives that, and segment selection prefers it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_seq: Option<u32>,
+    /// Sequence of the last appended user turn, likewise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_seq: Option<u32>,
 }
 
 /// What kind of durable fact an extracted event records.

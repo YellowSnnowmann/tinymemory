@@ -2470,12 +2470,17 @@ impl MemoryEpisodic for TinycortexProvider {
         Ok(segment.map(segment_to_contract))
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "trait signature; see the contract's rationale"
+    )]
     async fn create_segment(
         &self,
         segment_id: &str,
         session_id: &str,
         namespace: &str,
         start_episodic_id: i64,
+        start_seq: Option<u32>,
         start_timestamp: f64,
         now: f64,
     ) -> Result<(), MemoryError> {
@@ -2492,9 +2497,7 @@ impl MemoryEpisodic for TinycortexProvider {
                 &session_id,
                 &namespace,
                 start_episodic_id,
-                // Per-session seq numbering is the archivist store's, and it is
-                // not part of this contract; legacy rows carry `None` too.
-                None,
+                start_seq,
                 start_timestamp,
                 now,
             )
@@ -2508,6 +2511,7 @@ impl MemoryEpisodic for TinycortexProvider {
         &self,
         segment_id: &str,
         episodic_id: i64,
+        seq: Option<u32>,
         timestamp: f64,
         now: f64,
     ) -> Result<(), MemoryError> {
@@ -2518,7 +2522,7 @@ impl MemoryEpisodic for TinycortexProvider {
                 &conn,
                 &segment_id,
                 episodic_id,
-                None,
+                seq,
                 timestamp,
                 now,
             )
@@ -2620,10 +2624,15 @@ fn episodic_to_contract(entry: tinymemory_core::store::fts5::EpisodicEntry) -> E
 
 /// Engine segment row -> contract segment.
 ///
-/// Written out rather than derived: the engine row carries several fields the
-/// contract deliberately does not expose (`topic_keywords`, the seq numbers,
-/// `created_at`), and a blanket conversion would quietly start shipping them if
-/// the contract ever grew a matching name.
+/// Written out rather than derived: the engine row carries fields the contract
+/// deliberately does not expose (`topic_keywords`, `created_at`), and a
+/// blanket conversion would quietly start shipping them if the contract ever
+/// grew a matching name.
+///
+/// The seq pair used to be on that withheld list; it is contract vocabulary
+/// now, because segment selection prefers it — the md-backed archivist store
+/// rounds timestamps to milliseconds, and the sequence is the identity that
+/// survives the rounding.
 fn segment_to_contract(
     segment: tinymemory_core::store::segments::ConversationSegment,
 ) -> ConversationSegment {
@@ -2640,6 +2649,8 @@ fn segment_to_contract(
         summary: segment.summary,
         embedding: segment.embedding,
         open: matches!(segment.status, SegmentStatus::Open),
+        start_seq: segment.start_seq,
+        end_seq: segment.end_seq,
     }
 }
 

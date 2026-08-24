@@ -971,11 +971,11 @@ async fn people_profile_and_episodic_lifecycles_are_real_and_typed() {
     assert_eq!(turns[0].id, Some(turn_id));
     assert_eq!(turns[0].cost_microdollars, 0, "negative costs clamp");
     episodic
-        .create_segment("seg-1", "session-1", "global", turn_id, 10.0, 10.0)
+        .create_segment("seg-1", "session-1", "global", turn_id, Some(1), 10.0, 10.0)
         .await
         .expect("create segment");
     episodic
-        .append_turn("seg-1", turn_id, 10.0, 11.0)
+        .append_turn("seg-1", turn_id, Some(2), 10.0, 11.0)
         .await
         .expect("append turn");
     let segment = episodic
@@ -984,6 +984,12 @@ async fn people_profile_and_episodic_lifecycles_are_real_and_typed() {
         .expect("open segment")
         .expect("segment present");
     assert_eq!(segment.turn_count, 2);
+    assert_eq!(
+        (segment.start_seq, segment.end_seq),
+        (Some(1), Some(2)),
+        "the per-session sequence pair survives the contract round trip — \
+         segment selection prefers it over ms-rounded timestamps"
+    );
     episodic
         .close_segment("seg-1", 13.0)
         .await

@@ -91,12 +91,17 @@ pub trait MemoryEpisodic: Send + Sync {
     /// # Errors
     ///
     /// Backend failures only.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "mirrors the engine row it creates; a params struct would be its only caller's"
+    )]
     async fn create_segment(
         &self,
         segment_id: &str,
         session_id: &str,
         namespace: &str,
         start_episodic_id: i64,
+        start_seq: Option<u32>,
         start_timestamp: f64,
         now: f64,
     ) -> Result<(), MemoryError>;
@@ -110,6 +115,7 @@ pub trait MemoryEpisodic: Send + Sync {
         &self,
         segment_id: &str,
         episodic_id: i64,
+        seq: Option<u32>,
         timestamp: f64,
         now: f64,
     ) -> Result<(), MemoryError>;
