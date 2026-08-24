@@ -225,6 +225,7 @@ mod exports {
             "CloseSegment",
             "SetSegmentSummary",
             "UpsertSegmentEmbedding",
+            "InsertEvent",
             "Store",
             "Get",
             "Forget",

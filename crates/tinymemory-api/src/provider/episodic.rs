@@ -48,7 +48,9 @@ use crate::error::MemoryError;
 // — they cross the module boundary, and a host that only makes calls must be
 // able to name them without compiling this trait — and re-exported here so
 // every historical path keeps resolving and the types stay the same types.
-pub use tinymemory_bus::provider::episodic::{ConversationSegment, EpisodicTurn};
+pub use tinymemory_bus::provider::episodic::{
+    ConversationSegment, EpisodicEvent, EpisodicTurn, EventKind,
+};
 
 /// The turn-by-turn conversation record.
 ///
@@ -148,6 +150,16 @@ pub trait MemoryEpisodic: Send + Sync {
     /// # Errors
     ///
     /// Backend failures only.
+    /// Record one extracted event against its segment.
+    ///
+    /// Keyed on `event_id`, so re-running extraction over the same segment
+    /// replaces its own rows rather than duplicating them.
+    ///
+    /// # Errors
+    ///
+    /// Backend failures only.
+    async fn insert_event(&self, event: &EpisodicEvent) -> Result<(), MemoryError>;
+
     async fn upsert_segment_embedding(
         &self,
         segment_id: &str,

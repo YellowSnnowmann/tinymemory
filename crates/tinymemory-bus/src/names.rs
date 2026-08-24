@@ -249,6 +249,8 @@ pub mod methods {
     pub const SET_SEGMENT_SUMMARY: &str = "SetSegmentSummary";
     /// `UpsertSegmentEmbedding` — upsert segment embedding.
     pub const UPSERT_SEGMENT_EMBEDDING: &str = "UpsertSegmentEmbedding";
+    /// `InsertEvent` — record one extracted event against its segment.
+    pub const INSERT_EVENT: &str = "InsertEvent";
 }
 
 /// Every member name, in the order the module declares them.
@@ -256,7 +258,7 @@ pub mod methods {
 /// The order matters: `tinybus`'s `Interface::members()` returns declaration
 /// order, and the module compares the two sequences directly rather than as
 /// sets, so a reordering is caught alongside an addition or a removal.
-pub const METHODS: [&str; 97] = [
+pub const METHODS: [&str; 98] = [
     methods::DRIVER_ID,
     methods::CAPABILITIES,
     methods::HEALTH,
@@ -342,6 +344,7 @@ pub const METHODS: [&str; 97] = [
     methods::CLOSE_SEGMENT,
     methods::SET_SEGMENT_SUMMARY,
     methods::UPSERT_SEGMENT_EMBEDDING,
+    methods::INSERT_EVENT,
     methods::UPSERT_FACET,
     methods::UPSERT_PROVIDER_FACET,
     methods::SET_FACET_USER_STATE,

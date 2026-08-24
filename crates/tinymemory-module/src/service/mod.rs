@@ -128,7 +128,7 @@ use tinymemory_api::provider::types::{
 // imported: they are supertraits of `MemoryProvider`, so their methods are
 // already callable on the trait object.
 use tinymemory_api::provider::chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery};
-use tinymemory_api::provider::episodic::{ConversationSegment, EpisodicTurn};
+use tinymemory_api::provider::episodic::{ConversationSegment, EpisodicEvent, EpisodicTurn};
 use tinymemory_api::provider::people::{
     AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
     RankedPerson, ResolvedPerson,
@@ -1250,6 +1250,13 @@ impl MemoryService {
     ) -> BusResult<()> {
         require_family!(self, as_episodic, Capability::Episodic)
             .upsert_segment_embedding(&segment_id, &model_signature, &embedding, created_at)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn insert_event(&self, event: EpisodicEvent) -> BusResult<()> {
+        require_family!(self, as_episodic, Capability::Episodic)
+            .insert_event(&event)
             .await
             .map_err(|error| into_bus_error(&error))
     }

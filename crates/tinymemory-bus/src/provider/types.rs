@@ -137,6 +137,29 @@ pub struct IngestItem {
     /// Labels carried through from the source. Ingest does not interpret them.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Who spoke this item, when that is not [`Self::owner`].
+    ///
+    /// A chat batch from an agent session has owner = the session the memory
+    /// belongs to and author = the speaking role (`user`, `assistant`). The
+    /// previous mapping collapsed the two — every message attributed to the
+    /// owner — which destroys role attribution in the stored transcript.
+    /// Absent means "the owner spoke", which is true of the single-speaker
+    /// sources this field predates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    /// Display label for the conversation, when it is not [`Self::source_id`].
+    ///
+    /// `source_id` is the dedupe key and may be a constant ("all agent
+    /// sessions share one tree source"); the label is what a human reads in a
+    /// summary. Absent means the id is readable enough to double as the label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_label: Option<String>,
+    /// Platform string to store verbatim, when [`DataSource::as_str`] is not
+    /// it. Migrating a caller that has always written a bespoke platform value
+    /// must not silently rewrite what is on disk; absent keeps the enum's
+    /// name, which is right for every new caller.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
     /// Provenance taint. The **host** stamps this; a driver must persist what it
     /// is given and must never assign or upgrade it.
     #[serde(default)]

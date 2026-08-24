@@ -180,6 +180,9 @@ async fn maintenance_diagnostics_read_the_store_rather_than_their_defaults() {
             tags: Vec::new(),
             taint: MemoryTaint::Internal,
             path_scope: None,
+            author: None,
+            channel_label: None,
+            platform: None,
         })
         .await
         .expect("ingest a document");
@@ -993,6 +996,32 @@ async fn people_profile_and_episodic_lifecycles_are_real_and_typed() {
         .upsert_segment_embedding("seg-1", "noop:8", &[0.0; 8], 15.0)
         .await
         .expect("upsert segment embedding");
+    // An extracted event lands against its segment through the contract, and
+    // the id is an upsert key: re-recording under the same id replaces the row
+    // rather than duplicating it, so a re-run of extraction is idempotent.
+    use tinymemory_api::provider::{EpisodicEvent, EventKind};
+    let event = EpisodicEvent {
+        event_id: "evt-1".into(),
+        segment_id: "seg-1".into(),
+        session_id: "session-1".into(),
+        namespace: "global".into(),
+        kind: EventKind::Decision,
+        content: "the test decided to remember".into(),
+        subject: Some("the test".into()),
+        timestamp_ref: None,
+        confidence: 0.9,
+        embedding: None,
+        source_turn_ids: Some(turn_id.to_string()),
+        created_at: 16.0,
+    };
+    episodic.insert_event(&event).await.expect("insert event");
+    episodic
+        .insert_event(&EpisodicEvent {
+            content: "the test revised its decision".into(),
+            ..event
+        })
+        .await
+        .expect("re-insert under the same id");
     assert!(episodic
         .open_segment("session-1")
         .await
@@ -1023,6 +1052,9 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
         tags: Vec::new(),
         taint: MemoryTaint::Internal,
         path_scope: None,
+        author: None,
+        channel_label: None,
+        platform: None,
     };
     assert!(matches!(
         ingest.ingest_document(invalid).await,
@@ -1050,6 +1082,9 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
             tags: vec!["coverage".into()],
             taint: MemoryTaint::Internal,
             path_scope: None,
+            author: None,
+            channel_label: None,
+            platform: None,
         })
         .await
         .expect("successful deterministic ingest");
@@ -1070,6 +1105,13 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
             tags: vec!["chat".into()],
             taint: MemoryTaint::Internal,
             path_scope: None,
+            // The widened trio: the speaking role is not the owner, the label
+            // is not the dedupe key, and the platform string is the caller's
+            // own. Set here so the mapping that used to collapse all three is
+            // exercised by conformance rather than trusted.
+            author: Some("assistant".into()),
+            channel_label: Some("Agent session #1".into()),
+            platform: Some("agent".into()),
         }])
         .await
         .expect("successful chat ingest");

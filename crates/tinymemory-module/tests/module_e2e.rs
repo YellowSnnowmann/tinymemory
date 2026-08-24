@@ -591,6 +591,7 @@ const EXPECTED_METHODS: &[&str] = &[
     "CloseSegment",
     "SetSegmentSummary",
     "UpsertSegmentEmbedding",
+    "InsertEvent",
     "Store",
     "Get",
     "Forget",
@@ -1167,6 +1168,9 @@ async fn ingest_and_chunks_round_trip(bus: &tinybus::Proxy) -> String {
         tags: vec!["coverage".into()],
         taint: MemoryTaint::Internal,
         path_scope: None,
+        author: None,
+        channel_label: None,
+        platform: None,
     };
     let outcome: IngestOutcome = bus
         .call("IngestDocument", (ingest,))
@@ -1385,6 +1389,9 @@ async fn maintenance_and_diff_round_trip(bus: &tinybus::Proxy) {
         tags: vec!["coverage".into()],
         taint: MemoryTaint::Internal,
         path_scope: None,
+        author: None,
+        channel_label: None,
+        platform: None,
     };
     let _: IngestOutcome = bus
         .call("IngestDocument", (changed,))

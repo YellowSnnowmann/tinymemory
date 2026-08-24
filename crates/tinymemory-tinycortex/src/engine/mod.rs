@@ -42,12 +42,13 @@ use tinymemory_api::provider::types::{
 use tinymemory_api::provider::types::{ChangeKind, DiffReport, SnapshotRef, SourceChange};
 use tinymemory_api::provider::{
     AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, ConversationSegment,
-    CoverWindowQuery, EntityMatch, EpisodicTurn, FacetType, FastRetrieveQuery, MemoryChunks,
-    MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities, MemoryEpisodic, MemoryGoals,
-    MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProfile,
-    MemoryProvider, MemoryRecall, MemoryRetrieval, MemorySourceSink, MemoryToolMemory, MemoryTree,
-    PersonHandle, PersonInteraction, PersonRecord, PersonScore, ProfileFacet, RankedPerson,
-    ResolvedPerson, RetrievalHit, RetrievalResponse, SourceRetrievalQuery, UserState,
+    CoverWindowQuery, EntityMatch, EpisodicEvent, EpisodicTurn, EventKind, FacetType,
+    FastRetrieveQuery, MemoryChunks, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities,
+    MemoryEpisodic, MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople,
+    MemoryPortability, MemoryProfile, MemoryProvider, MemoryRecall, MemoryRetrieval,
+    MemorySourceSink, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction, PersonRecord,
+    PersonScore, ProfileFacet, RankedPerson, ResolvedPerson, RetrievalHit, RetrievalResponse,
+    SourceRetrievalQuery, UserState,
 };
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
@@ -490,7 +491,16 @@ impl MemoryIngest for TinycortexProvider {
         let source_id = first.source_id.clone();
         let owner = first.owner.clone();
         let tags = first.tags.clone();
-        let platform = first.source.as_str().to_string();
+        // The three widened fields default to what this mapping always did, so
+        // a caller that never sets them stores byte-identical rows.
+        let platform = first
+            .platform
+            .clone()
+            .unwrap_or_else(|| first.source.as_str().to_string());
+        let channel_label = first
+            .channel_label
+            .clone()
+            .unwrap_or_else(|| source_id.clone());
         for item in &messages {
             validate_ingest_item(item)?;
             if item.source_id != source_id {
@@ -501,12 +511,16 @@ impl MemoryIngest for TinycortexProvider {
         }
         let batch = tinycortex::memory::ingest::canonicalize::chat::ChatBatch {
             platform,
-            channel_label: source_id.clone(),
+            channel_label,
             messages: messages
                 .into_iter()
                 .map(
                     |item| tinycortex::memory::ingest::canonicalize::chat::ChatMessage {
-                        author: item.owner,
+                        // The speaking role when the caller distinguishes it;
+                        // the owner otherwise. Attributing every message to
+                        // the owner is what destroyed role attribution for
+                        // multi-speaker batches.
+                        author: item.author.unwrap_or(item.owner),
                         timestamp: item.timestamp.unwrap_or_else(Utc::now),
                         text: item.content,
                         source_ref: item.source_ref.map(|source_ref| source_ref.value),
@@ -2211,6 +2225,18 @@ impl MemoryRetrieval for TinycortexProvider {
 // handle over the client's connection, not an open — so it is fetched inside
 // the blocking closure rather than held across an await.
 
+fn event_kind_to_engine(kind: EventKind) -> tinymemory_core::store::events::EventType {
+    use tinymemory_core::store::events::EventType as Engine;
+    match kind {
+        EventKind::Fact => Engine::Fact,
+        EventKind::Decision => Engine::Decision,
+        EventKind::Commitment => Engine::Commitment,
+        EventKind::Preference => Engine::Preference,
+        EventKind::Question => Engine::Question,
+        EventKind::Foresight => Engine::Foresight,
+    }
+}
+
 fn facet_type_to_engine(
     facet_type: FacetType,
 ) -> tinymemory_core::store::namespace_store::profile::FacetType {
@@ -2527,6 +2553,30 @@ impl MemoryEpisodic for TinycortexProvider {
         .await
         .map_err(|e| Self::other("join set_segment_summary", e))?
         .map_err(|e| Self::other("set_segment_summary", e))
+    }
+
+    async fn insert_event(&self, event: &EpisodicEvent) -> Result<(), MemoryError> {
+        let conn = self.client.profile_conn();
+        let record = tinymemory_core::store::events::EventRecord {
+            event_id: event.event_id.clone(),
+            segment_id: event.segment_id.clone(),
+            session_id: event.session_id.clone(),
+            namespace: event.namespace.clone(),
+            event_type: event_kind_to_engine(event.kind),
+            content: event.content.clone(),
+            subject: event.subject.clone(),
+            timestamp_ref: event.timestamp_ref.clone(),
+            confidence: event.confidence,
+            embedding: event.embedding.clone(),
+            source_turn_ids: event.source_turn_ids.clone(),
+            created_at: event.created_at,
+        };
+        tokio::task::spawn_blocking(move || {
+            tinymemory_core::store::events::event_insert(&conn, &record)
+        })
+        .await
+        .map_err(|error| Self::other("insert event", error))?
+        .map_err(|error| Self::other("insert event", error))
     }
 
     async fn upsert_segment_embedding(
