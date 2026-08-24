@@ -180,6 +180,9 @@ async fn maintenance_diagnostics_read_the_store_rather_than_their_defaults() {
             tags: Vec::new(),
             taint: MemoryTaint::Internal,
             path_scope: None,
+            author: None,
+            channel_label: None,
+            platform: None,
         })
         .await
         .expect("ingest a document");
@@ -968,11 +971,11 @@ async fn people_profile_and_episodic_lifecycles_are_real_and_typed() {
     assert_eq!(turns[0].id, Some(turn_id));
     assert_eq!(turns[0].cost_microdollars, 0, "negative costs clamp");
     episodic
-        .create_segment("seg-1", "session-1", "global", turn_id, 10.0, 10.0)
+        .create_segment("seg-1", "session-1", "global", turn_id, Some(1), 10.0, 10.0)
         .await
         .expect("create segment");
     episodic
-        .append_turn("seg-1", turn_id, 10.0, 11.0)
+        .append_turn("seg-1", turn_id, Some(2), 10.0, 11.0)
         .await
         .expect("append turn");
     let segment = episodic
@@ -981,6 +984,12 @@ async fn people_profile_and_episodic_lifecycles_are_real_and_typed() {
         .expect("open segment")
         .expect("segment present");
     assert_eq!(segment.turn_count, 2);
+    assert_eq!(
+        (segment.start_seq, segment.end_seq),
+        (Some(1), Some(2)),
+        "the per-session sequence pair survives the contract round trip — \
+         segment selection prefers it over ms-rounded timestamps"
+    );
     episodic
         .close_segment("seg-1", 13.0)
         .await
@@ -993,6 +1002,32 @@ async fn people_profile_and_episodic_lifecycles_are_real_and_typed() {
         .upsert_segment_embedding("seg-1", "noop:8", &[0.0; 8], 15.0)
         .await
         .expect("upsert segment embedding");
+    // An extracted event lands against its segment through the contract, and
+    // the id is an upsert key: re-recording under the same id replaces the row
+    // rather than duplicating it, so a re-run of extraction is idempotent.
+    use tinymemory_api::provider::{EpisodicEvent, EventKind};
+    let event = EpisodicEvent {
+        event_id: "evt-1".into(),
+        segment_id: "seg-1".into(),
+        session_id: "session-1".into(),
+        namespace: "global".into(),
+        kind: EventKind::Decision,
+        content: "the test decided to remember".into(),
+        subject: Some("the test".into()),
+        timestamp_ref: None,
+        confidence: 0.9,
+        embedding: None,
+        source_turn_ids: Some(turn_id.to_string()),
+        created_at: 16.0,
+    };
+    episodic.insert_event(&event).await.expect("insert event");
+    episodic
+        .insert_event(&EpisodicEvent {
+            content: "the test revised its decision".into(),
+            ..event
+        })
+        .await
+        .expect("re-insert under the same id");
     assert!(episodic
         .open_segment("session-1")
         .await
@@ -1023,6 +1058,9 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
         tags: Vec::new(),
         taint: MemoryTaint::Internal,
         path_scope: None,
+        author: None,
+        channel_label: None,
+        platform: None,
     };
     assert!(matches!(
         ingest.ingest_document(invalid).await,
@@ -1050,6 +1088,9 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
             tags: vec!["coverage".into()],
             taint: MemoryTaint::Internal,
             path_scope: None,
+            author: None,
+            channel_label: None,
+            platform: None,
         })
         .await
         .expect("successful deterministic ingest");
@@ -1070,6 +1111,13 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
             tags: vec!["chat".into()],
             taint: MemoryTaint::Internal,
             path_scope: None,
+            // The widened trio: the speaking role is not the owner, the label
+            // is not the dedupe key, and the platform string is the caller's
+            // own. Set here so the mapping that used to collapse all three is
+            // exercised by conformance rather than trusted.
+            author: Some("assistant".into()),
+            channel_label: Some("Agent session #1".into()),
+            platform: Some("agent".into()),
         }])
         .await
         .expect("successful chat ingest");
@@ -1195,6 +1243,158 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
             .len()
             <= 5
     );
+}
+
+/// Flushing twice inside one window schedules the work once, and says so.
+///
+/// The deduplication is the driver's, keyed on date and three-hour block, so a
+/// user hitting "flush now" twice does not get the work queued twice. What
+/// makes that safe to surface is the buffer count riding alongside: without
+/// it, `enqueued: false` is ambiguous between "nothing to flush" and "already
+/// scheduled", and a caller showing the first when it is the second is lying
+/// about state the user is watching.
+#[tokio::test(flavor = "multi_thread")]
+async fn flushing_twice_in_a_window_schedules_the_work_once() {
+    use tinymemory_api::provider::{MemoryMaintenance, MemoryProvider};
+    use tinymemory_api::tree::IngestRequest;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+
+    provider
+        .as_tree()
+        .expect("Tree")
+        .append(IngestRequest {
+            namespace: "project".into(),
+            content: "something buffered and waiting to be written out".into(),
+            timestamp: Some(chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("ts")),
+            metadata: None,
+        })
+        .await
+        .expect("append");
+
+    let first = provider.flush_pending().await.expect("first flush");
+    assert!(
+        first.enqueued,
+        "the first flush in a window schedules the work"
+    );
+
+    let second = provider.flush_pending().await.expect("second flush");
+    assert!(
+        !second.enqueued,
+        "the second deduplicates against the first rather than queueing it twice"
+    );
+    assert_eq!(
+        second.stale_buffers, first.stale_buffers,
+        "and still reports what is pending, so `enqueued: false` is not mistaken \
+         for an empty queue"
+    );
+}
+
+/// Resetting the derived index keeps every chunk it was derived from.
+///
+/// This is the invariant that makes the operation safe to expose at all.
+/// Summaries, buffers, entity indexes and trees are recomputable; the chunks
+/// are the source and are never deleted. A reset that took them too would be
+/// data loss wearing the word "reset".
+#[tokio::test(flavor = "multi_thread")]
+async fn resetting_the_derived_index_keeps_the_chunks_it_derives_from() {
+    use tinymemory_api::provider::{MemoryMaintenance, MemoryProvider};
+    use tinymemory_api::tree::IngestRequest;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+
+    provider
+        .as_tree()
+        .expect("Tree")
+        .append(IngestRequest {
+            namespace: "project".into(),
+            content: "content the derived index is built from".into(),
+            timestamp: Some(chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("ts")),
+            metadata: None,
+        })
+        .await
+        .expect("append");
+
+    let before = provider.store_stats().await.expect("stats before");
+
+    let outcome = provider
+        .reset_derived_index()
+        .await
+        .expect("reset the derived index");
+
+    let after = provider.store_stats().await.expect("stats after");
+    assert_eq!(
+        after.chunks, before.chunks,
+        "the reset deletes what was derived, never the source it was derived from"
+    );
+    assert!(
+        outcome.jobs_enqueued <= outcome.chunks_requeued,
+        "the enqueue is keyed, so scheduled jobs cannot exceed requeued chunks: \
+         {} jobs for {} chunks",
+        outcome.jobs_enqueued,
+        outcome.chunks_requeued
+    );
+}
+
+/// Recency recall answers when there is no query to rank against.
+///
+/// This is the member's whole reason for existing. `recall_namespace_scored`
+/// looks like the same call with the query left blank, and handing it `""`
+/// does not degrade to recency — it runs the ranking path against nothing. A
+/// context-assembly step that has not seen a user query yet needs the
+/// namespace's contents ordered by freshness, which is what this returns.
+///
+/// What is pinned: writes are visible through it, and an unknown namespace is
+/// an empty answer rather than an error — a true statement about that
+/// namespace, not a fault the caller can act on.
+#[tokio::test(flavor = "multi_thread")]
+async fn recency_recall_answers_without_a_query() {
+    use tinymemory_api::provider::{MemoryCore, MemoryProvider};
+    use tinymemory_api::types::{MemoryCategory, MemoryTaint};
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+
+    for (key, content) in [
+        ("first", "the earliest note in this namespace"),
+        ("second", "a later note about something else entirely"),
+    ] {
+        provider
+            .store(
+                "global",
+                key,
+                content,
+                MemoryCategory::Core,
+                None,
+                MemoryTaint::default(),
+            )
+            .await
+            .expect("store");
+    }
+
+    let retrieval = provider.as_retrieval().expect("Retrieval");
+
+    let recent = retrieval
+        .recall_namespace_recent("global", 5)
+        .await
+        .expect("recency recall");
+    assert!(
+        !recent.is_empty(),
+        "a caller with no query still gets the namespace's contents back"
+    );
+    assert!(
+        recent.len() <= 5,
+        "the limit is honoured: asked for 5, got {}",
+        recent.len()
+    );
+
+    let empty = retrieval
+        .recall_namespace_recent("a-namespace-nothing-was-written-to", 5)
+        .await
+        .expect("an unknown namespace is not an error");
+    assert!(empty.is_empty());
 }
 
 #[tokio::test(flavor = "multi_thread")]

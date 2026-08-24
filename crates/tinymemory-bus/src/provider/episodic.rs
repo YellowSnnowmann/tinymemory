@@ -110,4 +110,73 @@ pub struct ConversationSegment {
     pub embedding: Option<Vec<f32>>,
     /// Whether the segment is still open.
     pub open: bool,
+    /// Stable per-session sequence of the first user turn, when the backing
+    /// store assigns one. The md-backed archivist store rounds timestamps to
+    /// milliseconds, so a fast turn can sort before its segment's
+    /// higher-precision start time — the sequence is the identity that
+    /// survives that, and segment selection prefers it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_seq: Option<u32>,
+    /// Sequence of the last appended user turn, likewise.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_seq: Option<u32>,
+}
+
+/// What kind of durable fact an extracted event records.
+///
+/// Mirrors the engine's `event_log.event_type` vocabulary; the wire carries
+/// the same lowercase identifiers.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EventKind {
+    /// A stated fact about the world or the user.
+    Fact,
+    /// A decision that was made.
+    Decision,
+    /// A commitment somebody took on.
+    Commitment,
+    /// A preference the user expressed.
+    Preference,
+    /// A question left open.
+    Question,
+    /// Something anticipated to happen.
+    Foresight,
+}
+
+/// One extracted event, ready to be recorded against its segment.
+///
+/// Events are segment-derived episodic artifacts — a summariser or heuristic
+/// reads a closed segment and records the durable facts it found. The driver
+/// owns the table; the caller owns the extraction policy, which is why the
+/// record arrives fully formed rather than as text to extract from.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EpisodicEvent {
+    /// Caller-assigned id; an upsert key, so a re-run replaces its own rows.
+    pub event_id: String,
+    /// Segment the event was extracted from.
+    pub segment_id: String,
+    /// Session that segment belongs to.
+    pub session_id: String,
+    /// Namespace the event is scoped to.
+    pub namespace: String,
+    /// What kind of fact this is.
+    pub kind: EventKind,
+    /// The event, in prose.
+    pub content: String,
+    /// Who or what the event is about, when extraction identified one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    /// A time the prose refers to, verbatim, when extraction found one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp_ref: Option<String>,
+    /// Extraction confidence in `[0, 1]`.
+    pub confidence: f64,
+    /// Embedding for the content, when the caller computed one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding: Option<Vec<f32>>,
+    /// Turn ids the event was derived from, encoded by the caller.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_turn_ids: Option<String>,
+    /// When the event was recorded, seconds since the epoch.
+    pub created_at: f64,
 }

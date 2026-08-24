@@ -120,14 +120,15 @@ use tinymemory_api::error::MemoryError;
 use tinymemory_api::goals::GoalsDoc;
 use tinymemory_api::health::MemoryHealth;
 use tinymemory_api::provider::types::{
-    DiffReport, EntityHit, ExportPage, ExportRecord, ImportOutcome, IngestItem, IngestOutcome,
-    MaintenanceReport, QueueFailure, QueueStats, SnapshotRef, SourceItem, SourceScope, StoreStats,
+    DiffReport, EntityHit, ExportPage, ExportRecord, FlushOutcome, ImportOutcome, IngestItem,
+    IngestOutcome, MaintenanceReport, QueueFailure, QueueStats, ResetOutcome, SnapshotRef,
+    SourceItem, SourceScope, StoreStats,
 };
 // `MemoryCore`, `MemoryRecall` and `MemoryPortability` are deliberately not
 // imported: they are supertraits of `MemoryProvider`, so their methods are
 // already callable on the trait object.
 use tinymemory_api::provider::chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery};
-use tinymemory_api::provider::episodic::{ConversationSegment, EpisodicTurn};
+use tinymemory_api::provider::episodic::{ConversationSegment, EpisodicEvent, EpisodicTurn};
 use tinymemory_api::provider::people::{
     AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
     RankedPerson, ResolvedPerson,
@@ -922,6 +923,33 @@ impl MemoryService {
             .map_err(|error| into_bus_error(&error))
     }
 
+    async fn flush_pending(&self) -> BusResult<FlushOutcome> {
+        require_family!(self, as_maintenance, Capability::Maintenance)
+            .flush_pending()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn reset_derived_index(&self) -> BusResult<ResetOutcome> {
+        require_family!(self, as_maintenance, Capability::Maintenance)
+            .reset_derived_index()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn recall_namespace_recent(
+        &self,
+        namespace: String,
+        limit: usize,
+    ) -> BusResult<Vec<NamespaceMemoryHit>> {
+        let hits = require_family!(self, as_retrieval, Capability::Retrieval)
+            .recall_namespace_recent(&namespace, limit)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&hits, "RecallNamespaceRecent")?;
+        Ok(hits)
+    }
+
     // ── People ──────────────────────────────────────────────────────────────
 
     /// Known people, ranked by closeness.
@@ -1161,6 +1189,7 @@ impl MemoryService {
         session_id: String,
         namespace: String,
         start_episodic_id: i64,
+        start_seq: Option<u32>,
         start_timestamp: f64,
         now: f64,
     ) -> BusResult<()> {
@@ -1170,6 +1199,7 @@ impl MemoryService {
                 &session_id,
                 &namespace,
                 start_episodic_id,
+                start_seq,
                 start_timestamp,
                 now,
             )
@@ -1182,11 +1212,12 @@ impl MemoryService {
         &self,
         segment_id: String,
         episodic_id: i64,
+        seq: Option<u32>,
         timestamp: f64,
         now: f64,
     ) -> BusResult<()> {
         require_family!(self, as_episodic, Capability::Episodic)
-            .append_turn(&segment_id, episodic_id, timestamp, now)
+            .append_turn(&segment_id, episodic_id, seq, timestamp, now)
             .await
             .map_err(|error| into_bus_error(&error))
     }
@@ -1222,6 +1253,13 @@ impl MemoryService {
     ) -> BusResult<()> {
         require_family!(self, as_episodic, Capability::Episodic)
             .upsert_segment_embedding(&segment_id, &model_signature, &embedding, created_at)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn insert_event(&self, event: EpisodicEvent) -> BusResult<()> {
+        require_family!(self, as_episodic, Capability::Episodic)
+            .insert_event(&event)
             .await
             .map_err(|error| into_bus_error(&error))
     }

@@ -591,6 +591,7 @@ const EXPECTED_METHODS: &[&str] = &[
     "CloseSegment",
     "SetSegmentSummary",
     "UpsertSegmentEmbedding",
+    "InsertEvent",
     "Store",
     "Get",
     "Forget",
@@ -676,6 +677,9 @@ const EXPECTED_METHODS: &[&str] = &[
     "QueueStats",
     "LatestQueueFailure",
     "BackfillInProgress",
+    "FlushPending",
+    "ResetDerivedIndex",
+    "RecallNamespaceRecent",
 ];
 
 #[tokio::test]
@@ -1108,13 +1112,24 @@ async fn episodic_round_trip(bus: &tinybus::Proxy) {
         .expect("SessionTurns");
     bus.call::<()>(
         "CreateSegment",
-        ("seg-1", "session-1", "global", turn_id, 10.0_f64, 10.0_f64),
+        (
+            "seg-1",
+            "session-1",
+            "global",
+            turn_id,
+            Option::<u32>::None,
+            10.0_f64,
+            10.0_f64,
+        ),
     )
     .await
     .expect("CreateSegment");
-    bus.call::<()>("AppendTurn", ("seg-1", turn_id, 10.0_f64, 11.0_f64))
-        .await
-        .expect("AppendTurn");
+    bus.call::<()>(
+        "AppendTurn",
+        ("seg-1", turn_id, Option::<u32>::None, 10.0_f64, 11.0_f64),
+    )
+    .await
+    .expect("AppendTurn");
     let _: Option<tinymemory_api::provider::episodic::ConversationSegment> = bus
         .call("OpenSegment", ("session-1",))
         .await
@@ -1164,6 +1179,9 @@ async fn ingest_and_chunks_round_trip(bus: &tinybus::Proxy) -> String {
         tags: vec!["coverage".into()],
         taint: MemoryTaint::Internal,
         path_scope: None,
+        author: None,
+        channel_label: None,
+        platform: None,
     };
     let outcome: IngestOutcome = bus
         .call("IngestDocument", (ingest,))
@@ -1382,6 +1400,9 @@ async fn maintenance_and_diff_round_trip(bus: &tinybus::Proxy) {
         tags: vec!["coverage".into()],
         taint: MemoryTaint::Internal,
         path_scope: None,
+        author: None,
+        channel_label: None,
+        platform: None,
     };
     let _: IngestOutcome = bus
         .call("IngestDocument", (changed,))

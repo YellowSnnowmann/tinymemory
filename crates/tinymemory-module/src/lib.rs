@@ -225,6 +225,7 @@ mod exports {
             "CloseSegment",
             "SetSegmentSummary",
             "UpsertSegmentEmbedding",
+            "InsertEvent",
             "Store",
             "Get",
             "Forget",
@@ -312,6 +313,9 @@ mod exports {
             "QueueStats",
             "LatestQueueFailure",
             "BackfillInProgress",
+            "FlushPending",
+            "ResetDerivedIndex",
+            "RecallNamespaceRecent",
         ],
         signals = [],
         // The host's embedder is deliberately NOT declared as `requires`. That

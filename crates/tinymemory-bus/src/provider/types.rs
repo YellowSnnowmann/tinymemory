@@ -137,6 +137,29 @@ pub struct IngestItem {
     /// Labels carried through from the source. Ingest does not interpret them.
     #[serde(default)]
     pub tags: Vec<String>,
+    /// Who spoke this item, when that is not [`Self::owner`].
+    ///
+    /// A chat batch from an agent session has owner = the session the memory
+    /// belongs to and author = the speaking role (`user`, `assistant`). The
+    /// previous mapping collapsed the two — every message attributed to the
+    /// owner — which destroys role attribution in the stored transcript.
+    /// Absent means "the owner spoke", which is true of the single-speaker
+    /// sources this field predates.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub author: Option<String>,
+    /// Display label for the conversation, when it is not [`Self::source_id`].
+    ///
+    /// `source_id` is the dedupe key and may be a constant ("all agent
+    /// sessions share one tree source"); the label is what a human reads in a
+    /// summary. Absent means the id is readable enough to double as the label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub channel_label: Option<String>,
+    /// Platform string to store verbatim, when [`DataSource::as_str`] is not
+    /// it. Migrating a caller that has always written a bespoke platform value
+    /// must not silently rewrite what is on disk; absent keeps the enum's
+    /// name, which is right for every new caller.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub platform: Option<String>,
     /// Provenance taint. The **host** stamps this; a driver must persist what it
     /// is given and must never assign or upgrade it.
     #[serde(default)]
@@ -487,6 +510,41 @@ pub struct QueueFailure {
     /// failure — so it takes the newest *successful* completion.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_success_ms: Option<i64>,
+}
+
+/// What a flush of pending buffered work did, and what was pending.
+///
+/// Both numbers, because either alone misleads. `enqueued: false` with
+/// `stale_buffers: 0` means there was nothing to do; `enqueued: false` with
+/// `stale_buffers: 3` means the driver deduplicated against work it had
+/// already scheduled — the same answer for opposite reasons, and a caller
+/// showing "nothing to flush" in the second case is wrong.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FlushOutcome {
+    /// Whether this call scheduled work. `false` when an equivalent flush is
+    /// already scheduled — a deduplication, not a failure.
+    pub enqueued: bool,
+    /// Buffers old enough to be flushed, at the moment the driver looked.
+    pub stale_buffers: u64,
+}
+
+/// What resetting the derived index deleted, requeued and scheduled.
+///
+/// Three numbers rather than a `MaintenanceReport`'s two, because they are not
+/// a ratio: rows deleted, chunks put back in scope, and jobs scheduled to
+/// re-derive from them are three independent counts, and collapsing any pair
+/// loses the ability to tell "nothing to re-derive" from "re-derivation was
+/// not scheduled".
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ResetOutcome {
+    /// Rows removed from the derived tables.
+    pub rows_deleted: u64,
+    /// Source chunks returned to the pool the index is derived from.
+    pub chunks_requeued: u64,
+    /// Re-derivation jobs scheduled. Lower than `chunks_requeued` when some
+    /// were already queued — the enqueue is keyed, so a duplicate is a no-op
+    /// rather than a second job.
+    pub jobs_enqueued: u64,
 }
 
 #[cfg(test)]

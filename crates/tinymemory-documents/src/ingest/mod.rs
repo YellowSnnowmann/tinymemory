@@ -133,6 +133,9 @@ impl<'a> DocumentIntake<'a> {
                     tags: request.tags.clone(),
                     taint: request.taint,
                     path_scope: None,
+                    author: None,
+                    channel_label: None,
+                    platform: None,
                 };
                 let outcome = ingest.ingest_document(item).await?;
                 Ok(IntakeReceipt {

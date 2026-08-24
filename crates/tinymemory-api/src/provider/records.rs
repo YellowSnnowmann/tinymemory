@@ -19,7 +19,8 @@ use async_trait::async_trait;
 use crate::error::MemoryError;
 use crate::goals::GoalsDoc;
 use crate::provider::types::{
-    IngestOutcome, MaintenanceReport, QueueFailure, QueueStats, SourceItem, StoreStats,
+    FlushOutcome, IngestOutcome, MaintenanceReport, QueueFailure, QueueStats, ResetOutcome,
+    SourceItem, StoreStats,
 };
 use crate::tool_memory::ToolMemoryRule;
 use crate::types::MemoryTaint;
@@ -262,5 +263,53 @@ pub trait MemoryMaintenance: Send + Sync {
     /// Backend failures only.
     async fn backfill_in_progress(&self) -> Result<bool, MemoryError> {
         Ok(false)
+    }
+
+    /// Flush buffered work that is old enough to be written out.
+    ///
+    /// The caller is a "flush now" control: a user who does not want to wait
+    /// for the scheduled window. Whether a flush is *scheduled* is the
+    /// driver's business — this asks it to consider the buffers now, and
+    /// reports what it found and whether it acted.
+    ///
+    /// Deduplication is the driver's, not the caller's. Two flushes inside one
+    /// window must not schedule the work twice, and the second reports
+    /// `enqueued: false` with a truthful `stale_buffers` — which is why both
+    /// numbers are on [`FlushOutcome`] rather than a bare bool.
+    ///
+    /// Defaulted to an empty outcome: a driver with nothing buffered has
+    /// nothing to flush, which is true of it rather than a refusal.
+    ///
+    /// # Errors
+    ///
+    /// Backend failures only.
+    async fn flush_pending(&self) -> Result<FlushOutcome, MemoryError> {
+        Ok(FlushOutcome::default())
+    }
+
+    /// Drop everything derived from stored content and schedule its
+    /// re-derivation.
+    ///
+    /// Summaries, buffers, entity indexes and the trees over them are all
+    /// *derived* — recomputable from the chunks they were built from. This
+    /// discards them and queues the work to build them again. **Nothing a
+    /// caller wrote is deleted**, which is the invariant that makes it safe to
+    /// offer as an operator control at all; a driver that cannot promise that
+    /// must refuse rather than implement this.
+    ///
+    /// Necessarily one operation. Deleting the derived rows without scheduling
+    /// re-derivation leaves a store that answers structural queries with
+    /// nothing and looks healthy doing it, and the two halves are not
+    /// separately useful.
+    ///
+    /// Defaulted to an empty outcome, for a driver with nothing derived.
+    ///
+    /// # Errors
+    ///
+    /// Backend failures only. A driver that keeps derived state it cannot
+    /// rebuild should answer [`MemoryError::Unsupported`] rather than delete
+    /// it.
+    async fn reset_derived_index(&self) -> Result<ResetOutcome, MemoryError> {
+        Ok(ResetOutcome::default())
     }
 }

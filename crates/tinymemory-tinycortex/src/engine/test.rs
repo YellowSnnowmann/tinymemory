@@ -40,6 +40,9 @@ fn ingest_item(content: &str, mime: Option<&str>, taint: MemoryTaint) -> IngestI
         tags: Vec::new(),
         taint,
         path_scope: None,
+        author: None,
+        channel_label: None,
+        platform: None,
     }
 }
 

@@ -32,8 +32,9 @@ use tinymemory_api::host::{
 };
 use tinymemory_api::mandatory::MemoryTraitProvider;
 use tinymemory_api::provider::types::{
-    EntityHit, EntityRef, ExportPage, ExportRecord, ImportOutcome, IngestItem, IngestOutcome,
-    MaintenanceReport, QueueFailure, QueueStats, SourceItem, SourceScope, StoreStats,
+    EntityHit, EntityRef, ExportPage, ExportRecord, FlushOutcome, ImportOutcome, IngestItem,
+    IngestOutcome, MaintenanceReport, QueueFailure, QueueStats, ResetOutcome, SourceItem,
+    SourceScope, StoreStats,
 };
 // Diff-family value types, used only by the `MemoryDiff` impl below — which is
 // compiled out without the git-backed snapshot store.
@@ -41,12 +42,13 @@ use tinymemory_api::provider::types::{
 use tinymemory_api::provider::types::{ChangeKind, DiffReport, SnapshotRef, SourceChange};
 use tinymemory_api::provider::{
     AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, ConversationSegment,
-    CoverWindowQuery, EntityMatch, EpisodicTurn, FacetType, FastRetrieveQuery, MemoryChunks,
-    MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities, MemoryEpisodic, MemoryGoals,
-    MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProfile,
-    MemoryProvider, MemoryRecall, MemoryRetrieval, MemorySourceSink, MemoryToolMemory, MemoryTree,
-    PersonHandle, PersonInteraction, PersonRecord, PersonScore, ProfileFacet, RankedPerson,
-    ResolvedPerson, RetrievalHit, RetrievalResponse, SourceRetrievalQuery, UserState,
+    CoverWindowQuery, EntityMatch, EpisodicEvent, EpisodicTurn, EventKind, FacetType,
+    FastRetrieveQuery, MemoryChunks, MemoryCore, MemoryDiff, MemoryDocuments, MemoryEntities,
+    MemoryEpisodic, MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople,
+    MemoryPortability, MemoryProfile, MemoryProvider, MemoryRecall, MemoryRetrieval,
+    MemorySourceSink, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction, PersonRecord,
+    PersonScore, ProfileFacet, RankedPerson, ResolvedPerson, RetrievalHit, RetrievalResponse,
+    SourceRetrievalQuery, UserState,
 };
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
@@ -489,7 +491,16 @@ impl MemoryIngest for TinycortexProvider {
         let source_id = first.source_id.clone();
         let owner = first.owner.clone();
         let tags = first.tags.clone();
-        let platform = first.source.as_str().to_string();
+        // The three widened fields default to what this mapping always did, so
+        // a caller that never sets them stores byte-identical rows.
+        let platform = first
+            .platform
+            .clone()
+            .unwrap_or_else(|| first.source.as_str().to_string());
+        let channel_label = first
+            .channel_label
+            .clone()
+            .unwrap_or_else(|| source_id.clone());
         for item in &messages {
             validate_ingest_item(item)?;
             if item.source_id != source_id {
@@ -500,12 +511,16 @@ impl MemoryIngest for TinycortexProvider {
         }
         let batch = tinycortex::memory::ingest::canonicalize::chat::ChatBatch {
             platform,
-            channel_label: source_id.clone(),
+            channel_label,
             messages: messages
                 .into_iter()
                 .map(
                     |item| tinycortex::memory::ingest::canonicalize::chat::ChatMessage {
-                        author: item.owner,
+                        // The speaking role when the caller distinguishes it;
+                        // the owner otherwise. Attributing every message to
+                        // the owner is what destroyed role attribution for
+                        // multi-speaker batches.
+                        author: item.author.unwrap_or(item.owner),
                         timestamp: item.timestamp.unwrap_or_else(Utc::now),
                         text: item.content,
                         source_ref: item.source_ref.map(|source_ref| source_ref.value),
@@ -1348,6 +1363,116 @@ impl MemoryMaintenance for TinycortexProvider {
         .await
     }
 
+    async fn flush_pending(&self) -> Result<FlushOutcome, MemoryError> {
+        blocking(
+            self.config.clone(),
+            "flush pending buffers",
+            move |config| {
+                let now = chrono::Utc::now();
+                let stale = tinymemory_core::store::trees::store::list_stale_buffers(config, now)?;
+                let stale_buffers = u64::try_from(stale.len()).unwrap_or(u64::MAX);
+
+                // `max_age_secs: 0` is what "now" means here: consider every buffer
+                // rather than only those past the scheduled age.
+                let payload = tinymemory_core::queue::types::FlushStalePayload {
+                    max_age_secs: Some(0),
+                };
+                // The key is date + three-hour block, so a second flush inside the
+                // same window deduplicates against the first instead of scheduling
+                // the work twice. `enqueue` answering `None` is that deduplication,
+                // not a failure — which is why the outcome carries the buffer count
+                // beside it, so a caller can tell "nothing to do" from "already
+                // scheduled".
+                let date_iso = now.format("%Y-%m-%d").to_string();
+                let hour_block = chrono::Timelike::hour(&now) / 3;
+                let job = tinymemory_core::queue::types::NewJob::flush_stale(
+                    &payload, &date_iso, hour_block,
+                )?;
+                let enqueued = tinymemory_core::queue::store::enqueue(config, &job)?.is_some();
+                if enqueued {
+                    tinymemory_core::queue::wake_workers();
+                }
+                Ok(FlushOutcome {
+                    enqueued,
+                    stale_buffers,
+                })
+            },
+        )
+        .await
+    }
+
+    async fn reset_derived_index(&self) -> Result<ResetOutcome, MemoryError> {
+        blocking(self.config.clone(), "reset derived index", move |config| {
+            // Everything here is derived from `mem_tree_chunks`, which is NOT
+            // in the list and is never deleted. That is the invariant the
+            // contract promises: nothing a caller wrote is lost, only what was
+            // computed from it.
+            const DERIVED_TABLES: &[&str] = &[
+                "mem_tree_summaries",
+                "mem_tree_buffers",
+                "mem_tree_jobs",
+                "mem_tree_entity_index",
+                "mem_tree_trees",
+            ];
+            let rows_deleted =
+                tinymemory_core::store::chunks::store::with_connection(config, |conn| {
+                    let tx = conn.unchecked_transaction()?;
+                    let mut total: u64 = 0;
+                    for table in DERIVED_TABLES {
+                        total += tx.execute(&format!("DELETE FROM {table}"), [])? as u64;
+                    }
+                    tx.commit()?;
+                    Ok(total)
+                })?;
+
+            // Second transaction, deliberately. The delete above drops the job
+            // table, so re-enqueueing in the same one would race its own
+            // truncation.
+            let (chunks_requeued, jobs_enqueued) =
+                tinymemory_core::store::chunks::store::with_connection(config, |conn| {
+                    let tx = conn.unchecked_transaction()?;
+                    let chunks_requeued = tx.execute(
+                        "UPDATE mem_tree_chunks SET lifecycle_status = 'pending_extraction'",
+                        [],
+                    )? as u64;
+                    let chunk_ids: Vec<String> = {
+                        let mut stmt = tx.prepare("SELECT id FROM mem_tree_chunks")?;
+                        // Bound rather than returned directly: the rows borrow
+                        // `stmt`, which the block would otherwise drop first.
+                        let rows = stmt
+                            .query_map([], |row| row.get::<_, String>(0))?
+                            .collect::<rusqlite::Result<Vec<_>>>()?;
+                        rows
+                    };
+                    let mut jobs_enqueued: u64 = 0;
+                    for chunk_id in &chunk_ids {
+                        let payload = tinymemory_core::queue::types::ExtractChunkPayload {
+                            chunk_id: chunk_id.clone(),
+                        };
+                        let job = tinymemory_core::queue::types::NewJob::extract_chunk(&payload)?;
+                        // Keyed, so a chunk already queued is a no-op rather
+                        // than a duplicate job — which is why this count can be
+                        // lower than `chunks_requeued`.
+                        if tinymemory_core::queue::store::enqueue_tx(&tx, &job)?.is_some() {
+                            jobs_enqueued += 1;
+                        }
+                    }
+                    tx.commit()?;
+                    Ok((chunks_requeued, jobs_enqueued))
+                })?;
+
+            // The work is scheduled; nothing drains it until a worker is woken.
+            tinymemory_core::queue::wake_workers();
+
+            Ok(ResetOutcome {
+                rows_deleted,
+                chunks_requeued,
+                jobs_enqueued,
+            })
+        })
+        .await
+    }
+
     async fn backfill_in_progress(&self) -> Result<bool, MemoryError> {
         // A process-global the backfill chain owns, not a column — and not one
         // this engine can narrow, since `tinymemory_core::queue` tracks the
@@ -2039,6 +2164,25 @@ impl MemoryRetrieval for TinycortexProvider {
         Self::cross(&hits, "convert namespace hits")
     }
 
+    async fn recall_namespace_recent(
+        &self,
+        namespace: &str,
+        limit: usize,
+    ) -> Result<Vec<NamespaceMemoryHit>, MemoryError> {
+        // `recall_namespace_memories`, deliberately — NOT
+        // `query_namespace_hits_excluding_session` with an empty query. The two
+        // share `load_documents_for_scope` + `kv_records_for_scope` and diverge
+        // after it: one ranks against the query, this one scores freshness and
+        // priority. Passing "" to the scored path does not degrade to recency.
+        let hits = self
+            .client
+            .unified_handle()
+            .recall_namespace_memories(namespace, u32::try_from(limit).unwrap_or(u32::MAX))
+            .await
+            .map_err(|error| Self::other("recall namespace recent", error))?;
+        Self::cross(&hits, "convert namespace hits")
+    }
+
     async fn search_entities(
         &self,
         query: &str,
@@ -2080,6 +2224,18 @@ impl MemoryRetrieval for TinycortexProvider {
 // being awaited on the runtime thread. The store is cheap to obtain — it is a
 // handle over the client's connection, not an open — so it is fetched inside
 // the blocking closure rather than held across an await.
+
+fn event_kind_to_engine(kind: EventKind) -> tinymemory_core::store::events::EventType {
+    use tinymemory_core::store::events::EventType as Engine;
+    match kind {
+        EventKind::Fact => Engine::Fact,
+        EventKind::Decision => Engine::Decision,
+        EventKind::Commitment => Engine::Commitment,
+        EventKind::Preference => Engine::Preference,
+        EventKind::Question => Engine::Question,
+        EventKind::Foresight => Engine::Foresight,
+    }
+}
 
 fn facet_type_to_engine(
     facet_type: FacetType,
@@ -2314,12 +2470,17 @@ impl MemoryEpisodic for TinycortexProvider {
         Ok(segment.map(segment_to_contract))
     }
 
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "trait signature; see the contract's rationale"
+    )]
     async fn create_segment(
         &self,
         segment_id: &str,
         session_id: &str,
         namespace: &str,
         start_episodic_id: i64,
+        start_seq: Option<u32>,
         start_timestamp: f64,
         now: f64,
     ) -> Result<(), MemoryError> {
@@ -2336,9 +2497,7 @@ impl MemoryEpisodic for TinycortexProvider {
                 &session_id,
                 &namespace,
                 start_episodic_id,
-                // Per-session seq numbering is the archivist store's, and it is
-                // not part of this contract; legacy rows carry `None` too.
-                None,
+                start_seq,
                 start_timestamp,
                 now,
             )
@@ -2352,6 +2511,7 @@ impl MemoryEpisodic for TinycortexProvider {
         &self,
         segment_id: &str,
         episodic_id: i64,
+        seq: Option<u32>,
         timestamp: f64,
         now: f64,
     ) -> Result<(), MemoryError> {
@@ -2362,7 +2522,7 @@ impl MemoryEpisodic for TinycortexProvider {
                 &conn,
                 &segment_id,
                 episodic_id,
-                None,
+                seq,
                 timestamp,
                 now,
             )
@@ -2397,6 +2557,30 @@ impl MemoryEpisodic for TinycortexProvider {
         .await
         .map_err(|e| Self::other("join set_segment_summary", e))?
         .map_err(|e| Self::other("set_segment_summary", e))
+    }
+
+    async fn insert_event(&self, event: &EpisodicEvent) -> Result<(), MemoryError> {
+        let conn = self.client.profile_conn();
+        let record = tinymemory_core::store::events::EventRecord {
+            event_id: event.event_id.clone(),
+            segment_id: event.segment_id.clone(),
+            session_id: event.session_id.clone(),
+            namespace: event.namespace.clone(),
+            event_type: event_kind_to_engine(event.kind),
+            content: event.content.clone(),
+            subject: event.subject.clone(),
+            timestamp_ref: event.timestamp_ref.clone(),
+            confidence: event.confidence,
+            embedding: event.embedding.clone(),
+            source_turn_ids: event.source_turn_ids.clone(),
+            created_at: event.created_at,
+        };
+        tokio::task::spawn_blocking(move || {
+            tinymemory_core::store::events::event_insert(&conn, &record)
+        })
+        .await
+        .map_err(|error| Self::other("insert event", error))?
+        .map_err(|error| Self::other("insert event", error))
     }
 
     async fn upsert_segment_embedding(
@@ -2440,10 +2624,15 @@ fn episodic_to_contract(entry: tinymemory_core::store::fts5::EpisodicEntry) -> E
 
 /// Engine segment row -> contract segment.
 ///
-/// Written out rather than derived: the engine row carries several fields the
-/// contract deliberately does not expose (`topic_keywords`, the seq numbers,
-/// `created_at`), and a blanket conversion would quietly start shipping them if
-/// the contract ever grew a matching name.
+/// Written out rather than derived: the engine row carries fields the contract
+/// deliberately does not expose (`topic_keywords`, `created_at`), and a
+/// blanket conversion would quietly start shipping them if the contract ever
+/// grew a matching name.
+///
+/// The seq pair used to be on that withheld list; it is contract vocabulary
+/// now, because segment selection prefers it — the md-backed archivist store
+/// rounds timestamps to milliseconds, and the sequence is the identity that
+/// survives the rounding.
 fn segment_to_contract(
     segment: tinymemory_core::store::segments::ConversationSegment,
 ) -> ConversationSegment {
@@ -2460,6 +2649,8 @@ fn segment_to_contract(
         summary: segment.summary,
         embedding: segment.embedding,
         open: matches!(segment.status, SegmentStatus::Open),
+        start_seq: segment.start_seq,
+        end_seq: segment.end_seq,
     }
 }
 

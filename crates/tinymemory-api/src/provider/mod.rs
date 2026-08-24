@@ -77,7 +77,7 @@ pub use audit::{audit_provider, CapabilityAudit};
 pub use chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery, MemoryChunks};
 pub use content::{MemoryDocuments, MemoryIngest, MemoryTree};
 pub use driver::MemoryProvider;
-pub use episodic::{ConversationSegment, EpisodicTurn, MemoryEpisodic};
+pub use episodic::{ConversationSegment, EpisodicEvent, EpisodicTurn, EventKind, MemoryEpisodic};
 pub use knowledge::{MemoryDiff, MemoryEntities, MemoryGraph, INBOUND_SCAN_LIMIT};
 pub use mandatory::{MemoryCore, MemoryPortability, MemoryRecall};
 pub use people::{
@@ -91,7 +91,7 @@ pub use retrieval::{
     RetrievalNodeKind, RetrievalResponse, SourceRetrievalQuery,
 };
 pub use types::{
-    ChangeKind, DiffReport, EntityHit, EntityRef, ExportPage, ExportRecord, ImportOutcome,
-    IngestItem, IngestOutcome, MaintenanceReport, SnapshotRef, SourceChange, SourceItem,
-    SourceScope,
+    ChangeKind, DiffReport, EntityHit, EntityRef, ExportPage, ExportRecord, FlushOutcome,
+    ImportOutcome, IngestItem, IngestOutcome, MaintenanceReport, ResetOutcome, SnapshotRef,
+    SourceChange, SourceItem, SourceScope,
 };

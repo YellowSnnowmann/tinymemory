@@ -251,6 +251,9 @@ fn every_optional_method_fails_with_its_advertised_family_name() {
         tags: Vec::new(),
         taint: MemoryTaint::Internal,
         path_scope: None,
+        author: None,
+        channel_label: None,
+        platform: None,
     };
     assert_unsupported(block_on(driver.ingest_document(ingest)), Capability::Ingest);
 
