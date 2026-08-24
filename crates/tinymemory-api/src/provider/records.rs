@@ -233,4 +233,34 @@ pub trait MemoryMaintenance: Send + Sync {
     async fn latest_queue_failure(&self) -> Result<Option<QueueFailure>, MemoryError> {
         Ok(None)
     }
+
+    /// Whether a re-embedding backfill is still working through its rows.
+    ///
+    /// **Driver-process-wide, and deliberately not store-scoped.** A driver
+    /// serving several stores in one process answers the same for all of them:
+    /// `true` means "a backfill is running somewhere in this driver", not "in
+    /// the store you asked about". That is why this is a member of its own
+    /// rather than a field on [`Self::queue_stats`] — a per-store snapshot is
+    /// asked of one bound provider, so a global sitting inside it reads as
+    /// per-store, and a caller has no way to find out otherwise. A global
+    /// behind a signature that says so is coarse; a global behind one that
+    /// does not is wrong.
+    ///
+    /// Not derivable from the queue counts. A backfill runs as a chain that
+    /// re-enqueues itself, so between one link settling and the next being
+    /// written there is an instant with nothing ready, nothing running, and
+    /// the backfill nevertheless unfinished. The consumer is
+    /// absence-reasoning — deciding whether an empty semantic recall means
+    /// "nothing remembered" or "not embedded yet" — and it gets that wrong at
+    /// exactly that instant without this.
+    ///
+    /// Defaulted to `false`: a driver that never backfills is not backfilling,
+    /// which is true of it rather than a refusal.
+    ///
+    /// # Errors
+    ///
+    /// Backend failures only.
+    async fn backfill_in_progress(&self) -> Result<bool, MemoryError> {
+        Ok(false)
+    }
 }

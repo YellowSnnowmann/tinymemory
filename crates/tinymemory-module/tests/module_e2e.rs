@@ -675,6 +675,7 @@ const EXPECTED_METHODS: &[&str] = &[
     "StoreStats",
     "QueueStats",
     "LatestQueueFailure",
+    "BackfillInProgress",
 ];
 
 #[tokio::test]
