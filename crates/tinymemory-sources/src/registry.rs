@@ -12,6 +12,11 @@
 //! Each on-disk write (`SourceRegistry::atomic_write`) is atomic (temp file +
 //! rename), so a crash mid-write cannot leave a truncated `config.toml`.
 //!
+//! Because that rename replaces a file the *host* also writes, this registry
+//! owes the host its permission contract as well as its contents: the temp file
+//! is created owner-only, so a source mutation cannot hand back a config that is
+//! more permissive than the one it replaced. See [`create_owner_only`].
+//!
 //! The complete load-modify-save cycle is guarded by a process-wide mutation
 //! lock, so separate [`SourceRegistry`] handles cannot overwrite one another's
 //! in-process updates. Atomic rename protects each individual disk write.
@@ -66,6 +71,35 @@ pub fn memory_sync_defaults_for_toolkit(toolkit: &str) -> (Option<u32>, Option<u
 #[derive(Debug, Clone)]
 pub struct SourceRegistry {
     path: PathBuf,
+}
+
+/// Create `path` for writing, restricted to the owner on platforms that have
+/// file modes, and refusing to reuse anything already at that path.
+///
+/// The mode is part of the `open(2)` call rather than a `chmod` afterwards, so
+/// the file is never even momentarily group- or world-readable. That matters
+/// because [`SourceRegistry::atomic_write`] renames this temp file over the
+/// host's `config.toml`, and a rename carries the *source* file's mode onto the
+/// destination: a temp file created at the default `0o666 & ~umask` (0644 under
+/// the usual 022) silently re-widens the live config on every source mutation,
+/// undoing any hardening the host applied when it wrote that file itself.
+///
+/// `create_new` is deliberate too. The caller already names the temp file with a
+/// fresh UUID, so a collision means something else put a file — or a symlink —
+/// where this one was about to go, and failing is the safe answer.
+///
+/// Note that `mode` is masked by the process umask, so a pathological umask can
+/// make the result *narrower* than `0o600`. That is not a weakening, and it is
+/// the same property every other umask-respecting create in the tree has.
+fn create_owner_only(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)
 }
 
 impl SourceRegistry {
@@ -125,7 +159,8 @@ impl SourceRegistry {
     /// Writes are atomic: the new TOML is written to a same-directory temp file
     /// and then renamed over the config. This keeps a failed/crashed write from
     /// leaving a truncated `config.toml`, matching the OpenHuman source
-    /// registry contract.
+    /// registry contract. The temp file is created owner-only so the rename
+    /// cannot widen the live config — see [`create_owner_only`].
     ///
     /// Mutation callers hold [`REGISTRY_MUTATION_LOCK`] across their initial
     /// read and this preserving re-read, keeping the two snapshots ordered with
@@ -163,7 +198,7 @@ impl SourceRegistry {
 
         let write_result = (|| -> Result<()> {
             {
-                let mut file = std::fs::File::create(&tmp_path)
+                let mut file = create_owner_only(&tmp_path)
                     .with_context(|| format!("failed to create {}", tmp_path.display()))?;
                 use std::io::Write;
                 file.write_all(bytes)
