@@ -160,6 +160,30 @@ pub struct IngestItem {
     /// name, which is right for every new caller.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform: Option<String>,
+    /// Recipients, for a mail item. Rendered as the `To:` line.
+    ///
+    /// Empty for every non-mail source, which is why this is a plain `Vec`
+    /// rather than an `Option` — "no recipients" and "not mail" are the same
+    /// statement to every reader of it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub to: Vec<String>,
+    /// Carbon copies, rendered as the `Cc:` line. Empty as above.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cc: Vec<String>,
+    /// This message's own subject, when it differs from the thread's.
+    ///
+    /// Absent means the thread subject stands, which is the common case: a
+    /// reply carries the thread's subject and only a renamed thread differs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subject: Option<String>,
+    /// The `List-Unsubscribe` header, verbatim.
+    ///
+    /// Not decoration: it is the input an unsubscribe flow reads back out of
+    /// stored mail, so a pipeline that drops it makes that flow impossible
+    /// rather than merely less pretty. Absent for mail that carries no such
+    /// header, and for everything that is not mail.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub list_unsubscribe: Option<String>,
     /// Provenance taint. The **host** stamps this; a driver must persist what it
     /// is given and must never assign or upgrade it.
     #[serde(default)]

@@ -1193,6 +1193,10 @@ async fn ingest_and_chunks_round_trip(bus: &tinybus::Proxy) -> String {
         author: None,
         channel_label: None,
         platform: None,
+        to: Vec::new(),
+        cc: Vec::new(),
+        subject: None,
+        list_unsubscribe: None,
     };
     let outcome: IngestOutcome = bus
         .call("IngestDocument", (ingest.clone(),))
@@ -1242,6 +1246,10 @@ async fn ingest_and_chunks_round_trip(bus: &tinybus::Proxy) -> String {
                 author: Some("alice@example.com".into()),
                 channel_label: Some("Adapter ship date".into()),
                 platform: None,
+                to: vec!["carol@example.com".into()],
+                cc: vec!["dave@example.com".into()],
+                subject: Some("Re: adapter, renamed".into()),
+                list_unsubscribe: Some("<https://lists.example.com/u/9>".into()),
             }],),
         )
         .await
@@ -1250,6 +1258,29 @@ async fn ingest_and_chunks_round_trip(bus: &tinybus::Proxy) -> String {
         mail.written > 0,
         "the mail path must reach the pipeline, not just route"
     );
+
+    // The mail headers, asserted after a real serialize/deserialize across the
+    // loaded module rather than only against the driver. `List-Unsubscribe` is
+    // the one that matters most: it is the input an unsubscribe flow reads back
+    // out of stored mail, so a shape that dropped it in transit would still
+    // answer `written > 0` above and look like a healthy ingest.
+    let stored: Option<tinymemory_api::chunks::Chunk> = bus
+        .call("GetChunk", (mail.ids[0].clone(),))
+        .await
+        .expect("GetChunk for the stored mail");
+    let stored = stored.expect("the id `IngestEmail` reported must resolve");
+    for header in [
+        "To: carol@example.com",
+        "Cc: dave@example.com",
+        "Subject: Re: adapter, renamed",
+        "List-Unsubscribe: <https://lists.example.com/u/9>",
+    ] {
+        assert!(
+            stored.content.contains(header),
+            "`{header}` must survive the crossing: {}",
+            stored.content
+        );
+    }
 
     let chunks: Vec<tinymemory_api::chunks::Chunk> = bus
         .call(
@@ -1504,6 +1535,10 @@ async fn maintenance_and_diff_round_trip(bus: &tinybus::Proxy) {
         author: None,
         channel_label: None,
         platform: None,
+        to: Vec::new(),
+        cc: Vec::new(),
+        subject: None,
+        list_unsubscribe: None,
     };
     let _: IngestOutcome = bus
         .call("IngestDocument", (changed,))

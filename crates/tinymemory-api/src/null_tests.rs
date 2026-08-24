@@ -254,6 +254,10 @@ fn every_optional_method_fails_with_its_advertised_family_name() {
         author: None,
         channel_label: None,
         platform: None,
+        to: Vec::new(),
+        cc: Vec::new(),
+        subject: None,
+        list_unsubscribe: None,
     };
     assert_unsupported(block_on(driver.ingest_document(ingest)), Capability::Ingest);
 

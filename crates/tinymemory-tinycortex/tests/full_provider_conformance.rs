@@ -183,6 +183,10 @@ async fn maintenance_diagnostics_read_the_store_rather_than_their_defaults() {
             author: None,
             channel_label: None,
             platform: None,
+            to: Vec::new(),
+            cc: Vec::new(),
+            subject: None,
+            list_unsubscribe: None,
         })
         .await
         .expect("ingest a document");
@@ -1061,6 +1065,10 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
         author: None,
         channel_label: None,
         platform: None,
+        to: Vec::new(),
+        cc: Vec::new(),
+        subject: None,
+        list_unsubscribe: None,
     };
     assert!(matches!(
         ingest.ingest_document(invalid).await,
@@ -1091,6 +1099,10 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
             author: None,
             channel_label: None,
             platform: None,
+            to: Vec::new(),
+            cc: Vec::new(),
+            subject: None,
+            list_unsubscribe: None,
         })
         .await
         .expect("successful deterministic ingest");
@@ -1118,6 +1130,10 @@ async fn ingest_chunks_and_retrieval_cover_success_and_validation_without_networ
             author: Some("assistant".into()),
             channel_label: Some("Agent session #1".into()),
             platform: Some("agent".into()),
+            to: Vec::new(),
+            cc: Vec::new(),
+            subject: None,
+            list_unsubscribe: None,
         }])
         .await
         .expect("successful chat ingest");
@@ -1314,6 +1330,10 @@ async fn a_repeated_source_reports_its_gate_rather_than_a_dropped_chunk() {
         author: None,
         channel_label: None,
         platform: None,
+        to: Vec::new(),
+        cc: Vec::new(),
+        subject: None,
+        list_unsubscribe: None,
     };
 
     let first = ingest
@@ -1391,6 +1411,10 @@ async fn an_email_thread_keeps_its_per_message_headers() {
         author: Some(author.into()),
         channel_label: Some("Adapter ship date".into()),
         platform: None,
+        to: Vec::new(),
+        cc: Vec::new(),
+        subject: None,
+        list_unsubscribe: None,
     };
 
     let outcome = ingest
@@ -1405,6 +1429,17 @@ async fn an_email_thread_keeps_its_per_message_headers() {
                 "The review is done, so Thursday holds.",
                 1_700_000_100,
             ),
+            IngestItem {
+                to: vec!["carol@example.com".into()],
+                cc: vec!["dave@example.com".into()],
+                subject: Some("Re: adapter, renamed".into()),
+                list_unsubscribe: Some("<https://lists.example.com/u/9>".into()),
+                ..message(
+                    "carol@example.com",
+                    "Renaming the thread so the ship date is findable.",
+                    1_700_000_200,
+                )
+            },
         ])
         .await
         .expect("email ingest");
@@ -1426,6 +1461,49 @@ async fn an_email_thread_keeps_its_per_message_headers() {
         "the sender header is what a per-message citation resolves against: {}",
         stored.content
     );
+
+    // The headers the third message carries are not decoration. `To:`/`Cc:`
+    // are what "who else saw this" resolves against, a per-message `Subject:`
+    // is how a renamed thread stays findable under its new name, and
+    // `List-Unsubscribe:` is the input an unsubscribe flow reads back out of
+    // stored mail — a pipeline that drops it makes that flow impossible, not
+    // merely less complete. So this asserts they survive the crossing rather
+    // than trusting that they do.
+    let thread = stored_thread_text(&provider, &outcome.ids).await;
+    for header in [
+        "To: carol@example.com",
+        "Cc: dave@example.com",
+        "Subject: Re: adapter, renamed",
+        "List-Unsubscribe: <https://lists.example.com/u/9>",
+    ] {
+        assert!(
+            thread.contains(header),
+            "`{header}` must survive the crossing: {thread}"
+        );
+    }
+    // And a message that names no subject of its own still inherits the
+    // thread's, so the field being optional does not leave mail unlabelled.
+    assert!(
+        thread.contains("Subject: Adapter ship date"),
+        "a message with no subject of its own keeps the thread's: {thread}"
+    );
+}
+
+/// Every chunk the outcome named, concatenated, so a header assertion does not
+/// depend on which chunk the splitter happened to put it in.
+async fn stored_thread_text(
+    provider: &impl tinymemory_api::provider::MemoryProvider,
+    ids: &[String],
+) -> String {
+    let chunks = provider.as_chunks().expect("Chunks");
+    let mut text = String::new();
+    for id in ids {
+        if let Some(chunk) = chunks.get_chunk(id).await.expect("read stored chunk") {
+            text.push_str(&chunk.content);
+            text.push('\n');
+        }
+    }
+    text
 }
 
 /// Flushing twice inside one window schedules the work once, and says so.

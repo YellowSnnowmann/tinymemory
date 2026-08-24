@@ -588,23 +588,19 @@ impl MemoryIngest for TinycortexProvider {
                         // Same rule as the chat mapping: the speaking role when
                         // the caller distinguishes it, the owner otherwise.
                         from: item.author.unwrap_or(item.owner),
-                        // `IngestItem` carries no recipient list and no
-                        // per-message subject, so the rendered thread has no
-                        // `To:`/`Cc:` lines and every message repeats the
-                        // thread's subject. Those are display headers in the
-                        // canonical markdown; the bodies, their order and their
-                        // timestamps — what retrieval actually matches on —
-                        // cross intact. Carrying them would mean widening
-                        // `IngestItem`, whose literals are exhaustive at every
-                        // construction site in every host, for fields only this
-                        // path reads.
-                        to: Vec::new(),
-                        cc: Vec::new(),
-                        subject: thread_subject.clone(),
+                        to: item.to,
+                        cc: item.cc,
+                        // A reply carries the thread's subject; only a renamed
+                        // thread differs, which is what the per-item field is
+                        // for.
+                        subject: item.subject.unwrap_or_else(|| thread_subject.clone()),
                         sent_at: item.timestamp.unwrap_or_else(Utc::now),
                         body: item.content,
                         source_ref: item.source_ref.map(|source_ref| source_ref.value),
-                        list_unsubscribe: None,
+                        // Carried verbatim: an unsubscribe flow reads this back
+                        // out of stored mail, so dropping it makes that flow
+                        // impossible rather than merely less complete.
+                        list_unsubscribe: item.list_unsubscribe,
                     },
                 )
                 .collect(),
