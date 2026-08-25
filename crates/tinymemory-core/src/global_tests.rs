@@ -131,12 +131,18 @@ async fn bind_publishes_a_caller_built_client_to_both_resolution_paths() {
 
     let bound = bind_in_slot(&slot, workspace.clone(), Arc::clone(&client)).unwrap();
 
-    assert!(Arc::ptr_eq(&bound, &client), "bind must not swap the client");
+    assert!(
+        Arc::ptr_eq(&bound, &client),
+        "bind must not swap the client"
+    );
     assert!(Arc::ptr_eq(&client_from(&slot).unwrap(), &client));
     // The per-workspace cache is the half a slot-only bind would miss, and
     // missing it lets `client_for_workspace` build a second engine over the
     // same store.
-    assert!(Arc::ptr_eq(&client_for_workspace(&workspace).unwrap(), &client));
+    assert!(Arc::ptr_eq(
+        &client_for_workspace(&workspace).unwrap(),
+        &client
+    ));
 }
 
 /// Re-binding the same client is what a retried setup produces, and must not
@@ -179,7 +185,10 @@ async fn binding_a_different_client_for_one_workspace_is_refused() {
     // And the refusal leaves the binding alone rather than repointing it at a
     // client the caller that owns the slot is not the one using.
     assert!(Arc::ptr_eq(&client_from(&slot).unwrap(), &first));
-    assert!(Arc::ptr_eq(&client_for_workspace(&workspace).unwrap(), &first));
+    assert!(Arc::ptr_eq(
+        &client_for_workspace(&workspace).unwrap(),
+        &first
+    ));
 }
 
 /// A bind for another workspace is the active-user-switch shape `init` already
