@@ -695,6 +695,7 @@ const EXPECTED_METHODS: &[&str] = &[
     "Diagnose",
     "RunConnectionSync",
     "RunSourceSync",
+    "BootstrapConnection",
     "SourceSyncState",
     "SyncAuditLog",
     "EstimateSyncCostUsd",
@@ -1670,4 +1671,47 @@ async fn portability_and_lifecycle_round_trip(bus: &tinybus::Proxy) {
     .await
     .expect("Shutdown timed out")
     .expect("Shutdown");
+}
+
+#[tokio::test]
+#[ignore = "drives a real dlopen'ed module; must be the only such test in the process — see the module docs"]
+async fn bootstrap_connection_finds_its_provider_registry_inside_the_module() {
+    // The Composio provider registry is a process-global that the *host's* boot
+    // used to fill. This module is a `cdylib` with its own statics, so unless
+    // its startup calls `init_default_providers` the registry here is empty —
+    // and `get_provider` answers `None` rather than erroring, so every
+    // `BootstrapConnection` would report "no composio provider registered" over
+    // a perfectly good connection. Nothing in a build, a type check or a unit
+    // test in the module's own workspace sees that, because they all run in a
+    // process the host has already initialised.
+    //
+    // So this asserts against the *loaded artifact*, and it asserts the
+    // distinction rather than the outcome. `Ok` means the provider resolved
+    // and its bootstrap ran; any other error means it resolved and the run
+    // failed on its own terms. Exactly one result says the registry was never
+    // populated, and that is the regression.
+    //
+    // An earlier revision required failure here, on the assumption that a temp
+    // workspace has no Composio — and the call succeeded, because the module's
+    // proxied `ComposioHost` answers through the test harness and the default
+    // bootstrap is content with that. Asserting the symptom instead of the
+    // mechanism made the test wrong about the one thing it exists to pin.
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let (client, _host, _task) = admit_module(workspace.path()).await;
+
+    let result: Result<(), _> = proxy(&client)
+        .call(
+            "BootstrapConnection",
+            ("gmail".to_string(), "conn-1".to_string()),
+        )
+        .await;
+
+    if let Err(error) = result {
+        let rendered = format!("{error:?}");
+        assert!(
+            !rendered.contains("no composio provider registered"),
+            "the module's provider registry is empty — its startup did not call \
+             init_default_providers. Error was: {rendered}"
+        );
+    }
 }

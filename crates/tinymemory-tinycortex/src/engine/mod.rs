@@ -2502,6 +2502,50 @@ impl MemorySourceSync for TinycortexProvider {
         })
     }
 
+    async fn bootstrap_connection(
+        &self,
+        toolkit: &str,
+        connection_id: &str,
+    ) -> Result<(), MemoryError> {
+        use tinymemory_core::sync::composio::providers::{get_provider, ProviderContext};
+
+        // Same gate as `run_connection_sync`, and deliberately before the
+        // provider lookup: a toolkit with no pipeline cannot bootstrap into
+        // anything a later sync would read, so reporting it here names the
+        // real problem rather than "no provider".
+        ensure_syncable_toolkit(toolkit)?;
+
+        let provider = get_provider(toolkit).ok_or_else(|| {
+            MemoryError::Invalid(format!("no composio provider registered for '{toolkit}'"))
+        })?;
+
+        // `from_config` answers `None` when no Composio client resolves in
+        // either mode — the not-signed-in case. That is `Invalid` rather than a
+        // silent `Ok`: a caller that just authorised a connection and gets a
+        // success back would believe the profile was fetched.
+        let ctx = ProviderContext::from_config(
+            self.config.to_arc(),
+            toolkit,
+            Some(connection_id.to_string()),
+        )
+        .ok_or_else(|| {
+            MemoryError::Invalid(format!(
+                "no viable composio client for '{toolkit}'; connection {connection_id} \
+                 cannot bootstrap"
+            ))
+        })?;
+
+        // `max_items` / `sync_depth_days` are left at their defaults on
+        // purpose. They cap how much a *sync* walks; a bootstrap fetches one
+        // profile and registers what the provider needs, and giving it a walk
+        // budget would imply it walks.
+        provider.on_connection_created(&ctx).await.map_err(|error| {
+            MemoryError::Other(anyhow::anyhow!(
+                "bootstrap {toolkit} connection {connection_id}: {error}"
+            ))
+        })
+    }
+
     async fn source_sync_state(
         &self,
         toolkit: &str,

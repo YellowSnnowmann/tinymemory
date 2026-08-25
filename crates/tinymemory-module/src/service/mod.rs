@@ -65,6 +65,7 @@
 //! Diagnose()                                        -> Diagnosis
 //!
 //! RunConnectionSync(toolkit, connection_id)         -> SyncRunOutcome
+//! BootstrapConnection(toolkit, connection_id)       -> ()
 //! RunSourceSync(source_id)                          -> SyncRunOutcome
 //! SourceSyncState(toolkit, connection_id)           -> Option<SourceSyncState>
 //! SyncAuditLog(limit)                               -> [SyncAuditEntry]
@@ -1746,6 +1747,19 @@ impl MemoryService {
     async fn run_source_sync(&self, source_id: String) -> BusResult<SyncRunOutcome> {
         require_family!(self, as_source_sync, Capability::SourceSync)
             .run_source_sync(&source_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Run one connection's first-time bootstrap.
+    ///
+    /// Beside `RunConnectionSync` rather than inside it: a sync moves items and
+    /// runs many times, a bootstrap establishes what a sync then assumes and
+    /// runs once. They also fail differently, and a caller can only decline to
+    /// stop syncing over a failed bootstrap if it can tell the two apart.
+    async fn bootstrap_connection(&self, toolkit: String, connection_id: String) -> BusResult<()> {
+        require_family!(self, as_source_sync, Capability::SourceSync)
+            .bootstrap_connection(&toolkit, &connection_id)
             .await
             .map_err(|error| into_bus_error(&error))
     }

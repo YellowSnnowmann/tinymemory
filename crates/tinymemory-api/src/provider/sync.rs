@@ -155,6 +155,50 @@ pub trait MemorySourceSync: Send + Sync {
         Err(MemoryError::unsupported(Capability::SourceSync))
     }
 
+    /// Run one connection's first-time bootstrap.
+    ///
+    /// What a host's "this connection was just authorised" event reaches. The
+    /// driver resolves the provider for `toolkit` and runs its bootstrap: at
+    /// minimum fetching and persisting the account profile, and for providers
+    /// that override it, registering triggers or seeding labels as well.
+    ///
+    /// # Why this is not part of [`Self::run_connection_sync`]
+    ///
+    /// A sync moves items and is expected to run many times; a bootstrap
+    /// establishes the things a sync then assumes and is expected to run once.
+    /// Folding them together would either re-register triggers on every sync
+    /// or leave a connection whose first sync silently has no profile behind
+    /// it — and the two also fail differently, which is the more practical
+    /// reason: a bootstrap that fails should not stop items from syncing, and
+    /// a caller can only make that choice if it can tell the two apart.
+    ///
+    /// # Not idempotent, and the caller owns that
+    ///
+    /// Calling it twice runs the provider's bootstrap twice. Providers whose
+    /// bootstrap is a trigger registration should make that registration
+    /// idempotent themselves; the contract does not promise it, because a
+    /// driver cannot know whether a second call means "retry the one that
+    /// failed" or "the connection was re-authorised".
+    ///
+    /// # Errors
+    ///
+    /// [`MemoryError::Invalid`] for a toolkit the driver has no provider for,
+    /// or a connection it cannot resolve — the same rule
+    /// [`Self::run_connection_sync`] follows, and for the same reason: a
+    /// silent success over a connection that can never bootstrap is worse than
+    /// an error.
+    ///
+    /// [`MemoryError::Unsupported`] from a driver that serves this family but
+    /// not this member. Otherwise the provider's own failure.
+    async fn bootstrap_connection(
+        &self,
+        toolkit: &str,
+        connection_id: &str,
+    ) -> Result<(), MemoryError> {
+        let _ = (toolkit, connection_id);
+        Err(MemoryError::unsupported(Capability::SourceSync))
+    }
+
     async fn source_sync_state(
         &self,
         toolkit: &str,
