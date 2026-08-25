@@ -43,6 +43,15 @@
 //! [`config::ModuleConfig::strip_host_credentials`], not merely asserted about a
 //! field list. "Carried verbatim" carries credentials verbatim too.
 //!
+//! The claim is about *configuration*, and there is exactly one place it stops
+//! there: [`composio`]'s `ApiKey` fetches the user's direct-mode Composio key
+//! from the host for the duration of one call. It is stated here rather than
+//! buried because the difference matters — the engine's `composio_config`
+//! builds its own HTTP client from that key, so unlike an embed there is no
+//! host-side call to route the work through, and refusing it would mean
+//! direct-mode memory sync simply cannot run. Nothing stores it; there is still
+//! no field it could be stored in.
+//!
 //! # Scope: the complete TinyMemory API
 //!
 //! The module boundary mirrors every capability family in `tinymemory_api`.
@@ -63,14 +72,21 @@
 )]
 
 pub mod chat;
+pub mod composio;
 pub mod config;
+pub mod config_loader;
 pub mod embedding;
 mod host;
 mod provider;
 mod service;
 
 pub use chat::{CHAT_HOST_BUS_NAME, CHAT_HOST_INTERFACE, CHAT_HOST_OBJECT_PATH};
+pub use composio::{
+    BusComposioHost, API_KEY_METHOD, COMPOSIO_HOST_BUS_NAME, COMPOSIO_HOST_INTERFACE,
+    COMPOSIO_HOST_OBJECT_PATH, EXECUTE_METHOD, IS_AVAILABLE_METHOD, LIST_CONNECTIONS_METHOD,
+};
 pub use config::ModuleConfig;
+pub use config_loader::ModuleConfigLoader;
 pub use embedding::{
     BusEmbeddingHost, BusEmbeddingProvider, EMBEDDING_HOST_BUS_NAME, EMBEDDING_HOST_INTERFACE,
     EMBEDDING_HOST_OBJECT_PATH,
@@ -135,12 +151,27 @@ async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()
         connection.clone(),
         &config,
     )));
+    // Composio is host state end to end — the connection list, the direct key,
+    // and whether any client resolves at all change on an OAuth completion or a
+    // `set_api_key` RPC with nothing restarting — so this one is a proxy and
+    // holds no snapshot. See `composio` for why the direct-mode key is the one
+    // credential that does cross.
+    tinymemory_core::composio_host::set_composio_host(Arc::new(composio::BusComposioHost::new(
+        connection.clone(),
+    )));
+    // The config loader is the opposite call, and deliberately: it is answered
+    // from `config` — which is this line's whole argument — rather than asking
+    // the host to re-read what it already handed over. It goes *after* the
+    // credential strip above, because this is the seam that hands the config
+    // back out to the engine repeatedly.
+    tinymemory_core::config_loader::set_config_loader(Arc::new(ModuleConfigLoader::new(&config)));
     host::install(connection.clone());
-    // The seams no bus interface serves. Two of the four degraded in silence
-    // rather than with a named cause; see the section comment on
-    // `host::install_unserved_seams` for why they are stubbed here rather than
-    // proxied or synthesised. Installed with the rest, before the store exists,
-    // so nothing can consult a seam this process has not yet decided about.
+    // The two seams no bus interface serves, and no local answer can honestly
+    // stand in for. Both degraded in silence rather than with a named cause;
+    // see the section comment on `host::install_unserved_seams` for why they
+    // are stubbed here rather than proxied or synthesised. Installed with the
+    // rest, before the store exists, so nothing can consult a seam this process
+    // has not yet decided about.
     host::install_unserved_seams();
 
     let client = tinymemory_core::store::factories::create_memory_client_with_local_ai(
@@ -164,6 +195,49 @@ async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()
     // first act, which opens the queue database, and the factory above is what
     // creates the workspace it lives in.
     start_queue_pool(&config);
+
+    // ── The periodic sync loops are deliberately NOT started here ───────────
+    //
+    // This is the obvious next line to write — the queue pool moved in here for
+    // exactly the reason the sync loops would, and `composio_host` and
+    // `config_loader` are now installed above, which is what a reader would
+    // check first. It does not work yet, and it would fail *quietly*, so the
+    // reasons are written down rather than left to be rediscovered.
+    //
+    // `tinymemory_core::sync::composio::start_periodic_sync` dispatches through
+    // `sync::pipelines::host::run_composio_connection_with_caps`, and three
+    // separate things in that path have no answer in this process:
+    //
+    // 1. **The pipeline reads credentials off the `Config`, not off the seam.**
+    //    `composio_config` takes the direct-mode branch only when
+    //    `config.composio().mode == "direct"` and otherwise needs
+    //    `config.session_token()`. `EngineRuntimeConfig` answers
+    //    `ComposioMode::default()` (mode `""`) and `Ok(None)`, so backend mode
+    //    fails with "backend bearer token is not configured" and direct mode is
+    //    never selected at all. `ComposioHost::api_key` cannot rescue this: the
+    //    seam is consulted *inside* the direct branch that is not taken. The
+    //    real fix is to route the pipeline's own HTTP client through
+    //    `ComposioHost::execute`, which is a change to the engine's contract.
+    //
+    // 2. **`crate::global::client_if_ready()` is `None` here.** That is the
+    //    first line of every pipeline run. This module builds its store through
+    //    `create_memory_client_with_local_ai`, which does not touch the global
+    //    slot, and calling `global::init` would build a *second* client via
+    //    `MemoryClient::from_workspace_dir` — different embedding routes, a
+    //    second ingestion worker over the same SQLite file.
+    //
+    // 3. **The cadence reads as "manual only".**
+    //    `EngineRuntimeConfig::memory_sync_interval_secs()` is `Some(0)`, which
+    //    the contract defines as manual-only, so both loops would skip every
+    //    source on every tick. This is the one that would be invisible: no
+    //    error, no warning, just a sync that never fires. See
+    //    `config_loader`'s module docs for why the loader does not invent a
+    //    different number.
+    //
+    // A fourth consequence is worth knowing even once those are fixed: this
+    // module's scheduler gate is a stub that always reads `Normal`, so a sync
+    // loop in here would not honour the "signed out" and "user disabled" pauses
+    // that `periodic_pause_reason` exists to apply.
 
     let provider = provider::provider(&config, Arc::new(client));
     service::serve(&connection, Arc::new(provider), config).await

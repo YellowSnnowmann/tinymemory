@@ -127,30 +127,23 @@ pub(crate) fn install(connection: Connection) {
 
 // ── Seams no bus interface serves ───────────────────────────────────────────
 //
-// This module serves five of the host's seams: the embedder and the chat model
-// have host interfaces of their own, and the event sink, the error reporter and
-// spaCy cross the bus through `BusRuntimeHost` above. The other four —
-// `composio_host`, `config_loader`, and the two stubbed below — have no callback
-// channel at all.
+// This module serves seven of the host's nine seams. Six cross the bus: the
+// embedder and the chat model have host interfaces of their own, `composio_host`
+// has one too (see `crate::composio`), and the event sink, the error reporter
+// and spaCy share `BusRuntimeHost` above. The seventh, `config_loader`, is
+// answered locally from the `ModuleConfig` this module was handed, for the
+// reason its own module docs give: proxying it would ask the host to re-read a
+// config the module already has, and the interesting case is the one where the
+// two answers disagree.
 //
-// `config_loader` survives that honestly: every path returns
-// `Err("no ConfigLoader installed …")`, so a module-mode loop fails with a named
-// cause instead of quietly keeping a stale snapshot. `composio_host` is loud on
-// the two paths that do work — `list_connections` and `execute` — and quiet on
-// its two probes: unwired, `api_key` reads `None` and `is_available` reads
-// `false`, which a caller cannot tell apart from "the user has no Composio
-// connections".
-//
-// **The two below were quiet on every path.** With nothing installed,
-// `scheduler_gate::current_policy()` reads `Normal` and `wait_for_capacity()`
-// returns instantly — background LLM work runs flat out no matter what the user
-// asked for — and `shutdown::register` drops the ingest queue's lock-release
-// hook behind a `log::debug!`. That is precisely the outcome the host's own
-// `install_memory_host_seams` comment says the seams exist to prevent: a sync
-// run that looks empty rather than broken. Silence is the bug; these stubs are
-// the fix. The two `composio_host` probes are the same bug one size down, and
-// are left alone here only because closing them means inventing a bus interface
-// this crate owns one half of.
+// The two below are what is left, and both were quiet on every path. With
+// nothing installed, `scheduler_gate::current_policy()` reads `Normal` and
+// `wait_for_capacity()` returns instantly — background LLM work runs flat out no
+// matter what the user asked for — and `shutdown::register` drops the ingest
+// queue's lock-release hook behind a `log::debug!`. That is precisely the
+// outcome the host's own `install_memory_host_seams` comment says the seams
+// exist to prevent: a sync run that looks empty rather than broken. Silence is
+// the bug; these stubs are the fix.
 //
 // # Why stubs and not bus proxies
 //
@@ -176,11 +169,11 @@ pub(crate) fn install(connection: Connection) {
 //
 // Each stub returns exactly what the unwired path returned, so installing them
 // changes no scheduling and wedges nothing, and each reports once per process
-// the first time anything actually consults it. Nothing in this process consults
-// them today — the module starts none of the background loops (`queue::start`,
-// `start_periodic_sync` and `start_workspace_periodic_sync` are all called
-// host-side) — so the report fires on the day someone moves one in here, which
-// is the day the gap stops being theoretical.
+// the first time anything actually consults it. The queue worker pool now runs
+// in here (`crate::start_queue_pool`) and consults both, so the scheduler-gate
+// report fires on every boot that drains a job — which is the honest signal that
+// the throttle is not in effect. The two periodic sync loops are still started
+// host-side, so nothing in this process reaches them through that path yet.
 //
 // Note also what is deliberately *not* built here: a module-local registry that
 // banked shutdown hooks and drained them on the module's own `Shutdown` method.
@@ -207,17 +200,27 @@ const SHUTDOWN_UNSERVED: &str = "shutdown host unserved in module mode: a memory
                                  was dropped, so in-flight queue job locks are not released on a \
                                  clean exit and the next launch waits out the lease instead";
 
-/// Log and report an unserved seam once per process.
-fn report_unserved_once(latch: &AtomicBool, message: &'static str, operation: &'static str) {
+/// Log and report a seam degradation once per process.
+///
+/// Shared with [`crate::composio`] and [`crate::config_loader`], which have
+/// their own latches and their own messages but need exactly this behaviour:
+/// one `log::error!` unconditionally, one classified report when a runtime
+/// exists to send it on, and nothing at all on every later call. Each caller
+/// owns its latch so one seam going quiet never silences another.
+pub(crate) fn report_unserved_once(
+    latch: &AtomicBool,
+    message: &'static str,
+    operation: &'static str,
+) {
     if latch.swap(true, Ordering::SeqCst) {
         return;
     }
     log::error!("[tinymemory:module] {message}");
     // The error reporter reaches the host by spawning onto the module runtime,
-    // and two of the three call sites below are sync methods a future caller
-    // could reach from a plain thread. The log line above is unconditional;
-    // only the telemetry needs a runtime to exist, so the gap is never silent
-    // even when the report cannot be sent.
+    // and several call sites are sync methods a caller could reach from a plain
+    // thread — the scheduler-gate stub below and both Composio probes. The log
+    // line above is unconditional; only the telemetry needs a runtime to exist,
+    // so the gap is never silent even when the report cannot be sent.
     if tokio::runtime::Handle::try_current().is_ok() {
         tinymemory_core::observability::report_error_or_expected(
             message,
@@ -290,9 +293,8 @@ pub(crate) fn install_unserved_seams() {
     // boot, and a reader of the log should not have to diff seam lists to find
     // out that the throttle and the graceful lock release are not in effect.
     log::warn!(
-        "[tinymemory:module] four host seams are unserved in module mode: composio_host and \
-         config_loader are absent and their work paths fail with a named cause; scheduler_gate \
-         and shutdown are stubs that keep the unwired behaviour and report once when consulted. \
+        "[tinymemory:module] two host seams are unserved in module mode: scheduler_gate and \
+         shutdown are stubs that keep the unwired behaviour and report once when consulted. \
          Background-AI throttling and graceful queue-lock release are not honoured inside this \
          process"
     );
