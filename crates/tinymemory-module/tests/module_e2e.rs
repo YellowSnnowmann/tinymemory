@@ -1686,10 +1686,16 @@ async fn bootstrap_connection_finds_its_provider_registry_inside_the_module() {
     // process the host has already initialised.
     //
     // So this asserts against the *loaded artifact*, and it asserts the
-    // distinction rather than success: with no Composio configured in a temp
-    // workspace the call is expected to fail, but it must fail because no
-    // client resolves, never because the registry is empty. Those two are one
-    // line apart in the engine and worlds apart in what they mean.
+    // distinction rather than the outcome. `Ok` means the provider resolved
+    // and its bootstrap ran; any other error means it resolved and the run
+    // failed on its own terms. Exactly one result says the registry was never
+    // populated, and that is the regression.
+    //
+    // An earlier revision required failure here, on the assumption that a temp
+    // workspace has no Composio — and the call succeeded, because the module's
+    // proxied `ComposioHost` answers through the test harness and the default
+    // bootstrap is content with that. Asserting the symptom instead of the
+    // mechanism made the test wrong about the one thing it exists to pin.
     let workspace = tempfile::tempdir().expect("tempdir");
     let (client, _host, _task) = admit_module(workspace.path()).await;
 
@@ -1700,11 +1706,12 @@ async fn bootstrap_connection_finds_its_provider_registry_inside_the_module() {
         )
         .await;
 
-    let error = result.expect_err("no Composio is configured in a temp workspace");
-    let rendered = format!("{error:?}");
-    assert!(
-        !rendered.contains("no composio provider registered"),
-        "the module's provider registry is empty — its startup did not call \
-         init_default_providers. Error was: {rendered}"
-    );
+    if let Err(error) = result {
+        let rendered = format!("{error:?}");
+        assert!(
+            !rendered.contains("no composio provider registered"),
+            "the module's provider registry is empty — its startup did not call \
+             init_default_providers. Error was: {rendered}"
+        );
+    }
 }
