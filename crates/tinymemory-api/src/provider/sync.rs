@@ -43,6 +43,7 @@
 
 use async_trait::async_trait;
 
+use crate::capabilities::Capability;
 use crate::error::MemoryError;
 
 // The value types this family exchanges. They are defined in `tinymemory-bus`
@@ -114,6 +115,46 @@ pub trait MemorySourceSync: Send + Sync {
     /// # Errors
     ///
     /// Backend failures only.
+    /// Run one configured memory source through its pipeline, whatever kind it
+    /// is — a folder, a repository, an RSS feed, a web page, or a Composio
+    /// connection.
+    ///
+    /// # Why this exists beside [`Self::run_connection_sync`]
+    ///
+    /// That member is Composio-shaped: it takes a toolkit and a connection id,
+    /// which the other source kinds do not have. A host with a folder source
+    /// and a "sync now" button had nothing to call, and the engine function
+    /// behind it reaches a process-global memory client — so a host that stopped
+    /// embedding an engine lost source sync entirely, for every kind, with the
+    /// failure landing as "memory client is not ready" inside a spawned task.
+    ///
+    /// # A source id, not a source
+    ///
+    /// The driver already reads the source registry — it has to, to know the
+    /// per-source budgets the pipeline applies — so passing the whole entry
+    /// would put a second copy on the wire and invite the two to disagree about
+    /// caps that cost money when they are wrong. The id is the smaller and the
+    /// more honest argument.
+    ///
+    /// # This is the manual path, and it is not idempotent
+    ///
+    /// Same contract as [`Self::run_connection_sync`]: calling it twice runs the
+    /// pipeline twice, the cursor making the second run cheap rather than free,
+    /// and both runs append an audit row.
+    ///
+    /// # Errors
+    ///
+    /// [`MemoryError::NotFound`] when no source is registered under `source_id`
+    /// — deliberately distinct from a sync that ran and found nothing, because
+    /// a caller retrying a deleted source should learn that rather than see an
+    /// empty success. [`MemoryError::Unsupported`] from a driver that serves
+    /// this family but not this member. Otherwise the pipeline's own failure,
+    /// with whatever usage it incurred named in the message.
+    async fn run_source_sync(&self, source_id: &str) -> Result<SyncRunOutcome, MemoryError> {
+        let _ = source_id;
+        Err(MemoryError::unsupported(Capability::SourceSync))
+    }
+
     async fn source_sync_state(
         &self,
         toolkit: &str,

@@ -694,6 +694,7 @@ const EXPECTED_METHODS: &[&str] = &[
     "FlushSourceTree",
     "Diagnose",
     "RunConnectionSync",
+    "RunSourceSync",
     "SourceSyncState",
     "SyncAuditLog",
     "EstimateSyncCostUsd",

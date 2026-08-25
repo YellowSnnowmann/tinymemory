@@ -290,6 +290,10 @@ pub mod methods {
     // and what past runs cost.
     /// `RunConnectionSync` — run one connection's sync now.
     pub const RUN_CONNECTION_SYNC: &str = "RunConnectionSync";
+
+    /// `RunSourceSync` — run one configured memory source's sync now,
+    /// whatever kind it is.
+    pub const RUN_SOURCE_SYNC: &str = "RunSourceSync";
     /// `SourceSyncState` — the persisted cursor and budget for one connection.
     pub const SOURCE_SYNC_STATE: &str = "SourceSyncState";
     /// `SyncAuditLog` — past sync runs, newest first.
@@ -315,7 +319,7 @@ pub mod methods {
 /// The order matters: `tinybus`'s `Interface::members()` returns declaration
 /// order, and the module compares the two sequences directly rather than as
 /// sets, so a reordering is caught alongside an addition or a removal.
-pub const METHODS: [&str; 120] = [
+pub const METHODS: [&str; 121] = [
     methods::DRIVER_ID,
     methods::CAPABILITIES,
     methods::HEALTH,
@@ -428,6 +432,7 @@ pub const METHODS: [&str; 120] = [
     methods::FLUSH_SOURCE_TREE,
     methods::DIAGNOSE,
     methods::RUN_CONNECTION_SYNC,
+    methods::RUN_SOURCE_SYNC,
     methods::SOURCE_SYNC_STATE,
     methods::SYNC_AUDIT_LOG,
     methods::ESTIMATE_SYNC_COST_USD,

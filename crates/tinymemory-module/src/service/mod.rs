@@ -65,6 +65,7 @@
 //! Diagnose()                                        -> Diagnosis
 //!
 //! RunConnectionSync(toolkit, connection_id)         -> SyncRunOutcome
+//! RunSourceSync(source_id)                          -> SyncRunOutcome
 //! SourceSyncState(toolkit, connection_id)           -> Option<SourceSyncState>
 //! SyncAuditLog(limit)                               -> [SyncAuditEntry]
 //! EstimateSyncCostUsd(input_tokens, output_tokens)  -> f64
@@ -1732,6 +1733,19 @@ impl MemoryService {
     ) -> BusResult<SyncRunOutcome> {
         require_family!(self, as_source_sync, Capability::SourceSync)
             .run_connection_sync(&toolkit, &connection_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Run one configured memory source through its pipeline, whatever kind.
+    ///
+    /// Beside `RunConnectionSync` rather than replacing it: that member is
+    /// Composio-shaped and this one covers every kind, including the folder,
+    /// repository, feed and web-page sources that have no toolkit or connection
+    /// id to name.
+    async fn run_source_sync(&self, source_id: String) -> BusResult<SyncRunOutcome> {
+        require_family!(self, as_source_sync, Capability::SourceSync)
+            .run_source_sync(&source_id)
             .await
             .map_err(|error| into_bus_error(&error))
     }
