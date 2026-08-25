@@ -15,6 +15,13 @@
 //! let client = memory::global::client()?;
 //! client.put_doc(input).await?;
 //! ```
+//!
+//! There are two ways in, and which one a caller wants depends on whether it
+//! already holds a client. [`init`] builds one from a workspace directory;
+//! [`bind`] publishes a client the caller built itself, which is what a host
+//! that constructs its store through `store::factories` needs — calling [`init`]
+//! there would put a second client, and a second ingestion worker, over the same
+//! SQLite file.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -291,6 +298,126 @@ pub fn client_if_ready() -> Option<MemoryClientRef> {
         .ok()?
         .as_ref()
         .map(|entry| Arc::clone(&entry.client))
+}
+
+/// Register an **already-built** client as the one for `workspace_dir`.
+///
+/// # Why this exists beside [`init`]
+///
+/// [`init`] *constructs* the client, which is right for a caller that owns the
+/// workspace and wants whatever client it implies. It is wrong for a caller
+/// that has already built one, and that caller now exists: the loadable
+/// TinyMemory module builds its store through
+/// `store::factories::create_memory_client_with_local_ai` — it has to, because
+/// only that entry point takes the module's own embedding routes, storage
+/// provider and workspace — and *then* finds that every runner in
+/// `sync::pipelines::host` begins with [`client_if_ready`].
+///
+/// Reaching for [`init`] there would build a **second** [`MemoryClient`] over
+/// the same SQLite file: two ingestion workers, duplicate graph extraction and
+/// duplicate embedding work, which is precisely the hazard the per-workspace
+/// cache and [`init`]'s reuse checks exist to prevent. The fix is to publish the
+/// client that already exists rather than to construct another one.
+///
+/// Writes into **both** resolution paths — the global slot and the
+/// per-workspace cache — so [`client_if_ready`], [`client`] and
+/// [`client_for_workspace`] converge on the one client. That convergence is the
+/// invariant [`init`] already works to preserve; a `bind` that wrote only the
+/// slot would leave `client_for_workspace` free to build a second client for the
+/// same workspace, which is the same hazard by another route.
+///
+/// A workspace that differs from the one currently bound *rebinds*, with the
+/// same log [`init`] emits, because a caller that hands over a client for
+/// another workspace is making the same active-user-switch statement.
+///
+/// # A different client for the same workspace is refused
+///
+/// The one case that must not pass silently. `cache_client`'s rule is that a
+/// racing caller's client wins and the loser uses the returned handle — free for
+/// [`init`], whose caller only wanted *a* client. A `bind` caller is different:
+/// it is already using the client it passed, so quietly handing back somebody
+/// else's would neither retire the caller's client nor stop its worker. Two
+/// clients already exist at that point; the honest report is an error naming it,
+/// and the global slot is left as it was rather than repointed at a client the
+/// caller is not the one using.
+///
+/// # Errors
+///
+/// Lock poisoning, or a *different* client already bound for `workspace_dir`.
+pub fn bind(workspace_dir: PathBuf, client: MemoryClientRef) -> Result<MemoryClientRef, String> {
+    bind_in_slot(global_slot(), workspace_dir, client)
+}
+
+/// Implementation backing [`bind`] — extracted for the same reason
+/// [`client_from`] is, so the refusal and the rebind can be asserted against a
+/// local slot instead of racing the process-global singleton.
+fn bind_in_slot(
+    slot: &GlobalClientSlot,
+    workspace_dir: PathBuf,
+    client: MemoryClientRef,
+) -> Result<MemoryClientRef, String> {
+    // Global slot first, then the workspace cache. `init` and
+    // `client_for_workspace` both take the two in that order — `init` calls
+    // `cache_client` while holding the slot's write guard — and a third entry
+    // point taking them the other way round is an ABBA deadlock against a
+    // concurrent init.
+    let mut guard = slot
+        .write()
+        .map_err(|e| format!("[memory:global] write lock poisoned: {e}"))?;
+
+    let published = cache_client(&workspace_dir, &client)?;
+    if !Arc::ptr_eq(&published, &client) {
+        return Err(already_bound(&workspace_dir));
+    }
+
+    if let Some(existing) = guard.as_ref() {
+        if existing.workspace_dir == workspace_dir {
+            // The same client bound twice: idempotent, and the shape a retried
+            // setup produces.
+            if Arc::ptr_eq(&existing.client, &published) {
+                log::debug!(
+                    "[memory:global] MemoryClient already bound for {}",
+                    workspace_dir.display()
+                );
+                return Ok(published);
+            }
+            // Reachable only if something published to the slot without
+            // publishing to the cache — no path in this module does — so this is
+            // a contract violation rather than a race. It is the double-client
+            // hazard either way, so it gets the same refusal.
+            return Err(already_bound(&workspace_dir));
+        }
+
+        log::info!(
+            "[memory:global] rebinding MemoryClient workspace {} -> {}",
+            existing.workspace_dir.display(),
+            workspace_dir.display()
+        );
+    }
+
+    log::info!(
+        "[memory:global] binding a caller-built MemoryClient workspace={}",
+        workspace_dir.display()
+    );
+    *guard = Some(GlobalMemoryClient {
+        workspace_dir,
+        client: Arc::clone(&published),
+    });
+    Ok(published)
+}
+
+/// The refusal [`bind`] returns when a second client already owns a workspace.
+///
+/// Names the hazard rather than the symptom: the caller's next question is
+/// always "so which client is the store actually using?", and the answer is that
+/// two of them are.
+fn already_bound(workspace_dir: &Path) -> String {
+    format!(
+        "[memory:global] a different MemoryClient is already bound for {} — binding this one \
+         would leave two clients, and two ingestion workers, over the same store; build the \
+         client once and bind that",
+        workspace_dir.display()
+    )
 }
 
 #[cfg(test)]

@@ -64,6 +64,9 @@ fn runtime_config() -> EngineRuntimeConfig {
         default_temperature: 0.3,
         output_language: Some("en".to_string()),
         memory_sources: serde_json::json!([{"id": "source-1"}]),
+        memory_sync_interval_secs: Some(14_400),
+        composio_mode: tinymemory_api::host::COMPOSIO_MODE_DIRECT.to_string(),
+        composio_entity_id: "entity-1".to_string(),
     }
 }
 
@@ -182,11 +185,20 @@ async fn runtime_config_routes_models_and_round_trips_source_configuration() {
     assert!(config.to_arc().as_any().is::<EngineRuntimeConfig>());
     assert_eq!(config.api_url(), None);
     assert!(config.effective_backend_api_url().is_empty());
-    assert_eq!(config.session_token().expect("session token"), None);
-    assert_eq!(config.memory_sync_interval_secs(), Some(0));
+    // Not `Ok(None)`: see the accessor's own doc. `Ok(None)` reads as "signed
+    // out" and sends a reader after a sign-in that cannot help.
+    let session = config
+        .session_token()
+        .expect_err("a module-side config must refuse rather than report signed-out");
+    assert!(session.contains("no backend session token"), "{session}");
+    assert_eq!(config.memory_sync_interval_secs(), Some(14_400));
     assert!(config.onboarding_completed());
     assert!(!config.secrets_encrypt());
-    assert!(!config.composio().is_direct());
+    assert!(config.composio().is_direct());
+    assert_eq!(config.composio().entity_id, "entity-1");
+    // The key never rides in the config — `composio_config` resolves it through
+    // the `ComposioHost` seam, per call.
+    assert!(config.composio().api_key.is_none());
     assert_eq!(config.composio_source_caps_migration_version(), 0);
     config.set_composio_source_caps_migration_version(2);
     config.apply_env_overrides();
@@ -206,6 +218,72 @@ async fn runtime_config_routes_models_and_round_trips_source_configuration() {
         .save()
         .await
         .expect("the in-memory adapter save is a no-op");
+}
+
+/// The cadence is answered from the field, including the two values that mean
+/// something other than a number of seconds.
+///
+/// This is the blocker the periodic loops could not see past: the accessor used
+/// to answer the constant `Some(0)`, which
+/// `sync::composio::periodic::effective_interval_secs` maps to `None` — the
+/// contract's manual-only — so every source was skipped on every tick with
+/// nothing logged. A cadence that reads as a *setting* has to come from the
+/// host, and the only wrong answer that is silent is this one.
+#[test]
+fn the_sync_cadence_is_answered_from_the_host_and_not_from_a_constant() {
+    let mut config = runtime_config();
+
+    // No explicit user choice: callers fall back to the 24h default.
+    config.memory_sync_interval_secs = None;
+    assert_eq!(config.memory_sync_interval_secs(), None);
+
+    // "Manual only", which the host can now actually express.
+    config.memory_sync_interval_secs = Some(0);
+    assert_eq!(config.memory_sync_interval_secs(), Some(0));
+
+    config.memory_sync_interval_secs = Some(3_600);
+    assert_eq!(config.memory_sync_interval_secs(), Some(3_600));
+}
+
+/// A host that states no Composio mode reads as "not direct", which is what an
+/// unconfigured integration should look like — and is exactly what the accessor
+/// answered before the field existed, so an older host's behaviour is unchanged.
+#[test]
+fn an_unstated_composio_mode_is_not_direct() {
+    let config = EngineRuntimeConfig {
+        composio_mode: String::new(),
+        composio_entity_id: String::new(),
+        ..runtime_config()
+    };
+
+    assert!(!config.composio().is_direct());
+    assert!(config.composio().entity_id.is_empty());
+}
+
+/// Backend mode fails with the structural cause, not with a sign-in prompt.
+///
+/// `composio_config` reaches `session_token` only on its backend branch, so this
+/// is the message a backend-mode Composio sync inside a module actually
+/// produces. It has to say *why* — no sign-in fixes a config that has no field
+/// for a bearer.
+#[test]
+fn the_backend_branch_names_why_a_module_cannot_serve_it() {
+    let config = EngineRuntimeConfig {
+        composio_mode: tinymemory_api::host::COMPOSIO_MODE_BACKEND.to_string(),
+        ..runtime_config()
+    };
+
+    let error = config
+        .session_token()
+        .expect_err("backend mode must fail, and say why");
+
+    assert!(error.contains("no backend session token"), "{error}");
+    assert!(
+        error.contains("ComposioHost::execute"),
+        "the message must name what would close the gap: {error}"
+    );
+    // The old wording sent readers to a sign-in that cannot help.
+    assert!(!error.contains("not configured"), "{error}");
 }
 
 #[test]

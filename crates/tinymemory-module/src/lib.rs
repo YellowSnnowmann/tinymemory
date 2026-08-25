@@ -99,6 +99,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 
 use tinybus::{Connection, Error as BusError, Result as BusResult};
+// The trait, not only its methods: `composio` is reached as a method on
+// `EngineRuntimeConfig` in `composio_sync_can_run`, and without the trait in
+// scope rustc points at the struct's `composio_mode` field instead.
+use tinymemory_api::host::MemoryHostConfig;
+use tinymemory_core::store::MemoryClientRef;
 
 /// The module refused its configuration or could not bring up a store.
 const SETUP_FAILED_ERROR: &str = "ai.tinyhumans.tinymemory.Error.SetupFailed";
@@ -190,57 +195,218 @@ async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()
         log::error!("[tinymemory:module] create memory store failed: {error}");
         setup_error("create memory store")
     })?;
+    let client: MemoryClientRef = Arc::new(client);
 
     // After the store, never before: `queue::start` recovers stale locks as its
     // first act, which opens the queue database, and the factory above is what
     // creates the workspace it lives in.
     start_queue_pool(&config);
 
-    // ── The periodic sync loops are deliberately NOT started here ───────────
-    //
-    // This is the obvious next line to write — the queue pool moved in here for
-    // exactly the reason the sync loops would, and `composio_host` and
-    // `config_loader` are now installed above, which is what a reader would
-    // check first. It does not work yet, and it would fail *quietly*, so the
-    // reasons are written down rather than left to be rediscovered.
-    //
-    // `tinymemory_core::sync::composio::start_periodic_sync` dispatches through
-    // `sync::pipelines::host::run_composio_connection_with_caps`, and three
-    // separate things in that path have no answer in this process:
-    //
-    // 1. **The pipeline reads credentials off the `Config`, not off the seam.**
-    //    `composio_config` takes the direct-mode branch only when
-    //    `config.composio().mode == "direct"` and otherwise needs
-    //    `config.session_token()`. `EngineRuntimeConfig` answers
-    //    `ComposioMode::default()` (mode `""`) and `Ok(None)`, so backend mode
-    //    fails with "backend bearer token is not configured" and direct mode is
-    //    never selected at all. `ComposioHost::api_key` cannot rescue this: the
-    //    seam is consulted *inside* the direct branch that is not taken. The
-    //    real fix is to route the pipeline's own HTTP client through
-    //    `ComposioHost::execute`, which is a change to the engine's contract.
-    //
-    // 2. **`crate::global::client_if_ready()` is `None` here.** That is the
-    //    first line of every pipeline run. This module builds its store through
-    //    `create_memory_client_with_local_ai`, which does not touch the global
-    //    slot, and calling `global::init` would build a *second* client via
-    //    `MemoryClient::from_workspace_dir` — different embedding routes, a
-    //    second ingestion worker over the same SQLite file.
-    //
-    // 3. **The cadence reads as "manual only".**
-    //    `EngineRuntimeConfig::memory_sync_interval_secs()` is `Some(0)`, which
-    //    the contract defines as manual-only, so both loops would skip every
-    //    source on every tick. This is the one that would be invisible: no
-    //    error, no warning, just a sync that never fires. See
-    //    `config_loader`'s module docs for why the loader does not invent a
-    //    different number.
-    //
-    // A fourth consequence is worth knowing even once those are fixed: this
-    // module's scheduler gate is a stub that always reads `Normal`, so a sync
-    // loop in here would not honour the "signed out" and "user disabled" pauses
-    // that `periodic_pause_reason` exists to apply.
+    // Also after the store, and for a second reason on top of that one: what is
+    // published is the client just built, and there is nothing to publish until
+    // it exists. The sync loops follow the bind rather than the other way round
+    // — every runner in `sync::pipelines::host` opens with
+    // `global::client_if_ready()`, so a loop started before this would fail
+    // every run.
+    if bind_memory_client(&config, &client) {
+        start_sync_loops(&config);
+    }
 
-    let provider = provider::provider(&config, Arc::new(client));
+    let provider = provider::provider(&config, client);
     service::serve(&connection, Arc::new(provider), config).await
+}
+
+/// Publish the store this process just built as the client for its workspace.
+///
+/// # Why this is a `bind` and not `global::init`
+///
+/// Everything in `tinymemory_core::sync` resolves its store through
+/// `global::client_if_ready()`, which is `None` in this process: the module
+/// builds its store through `create_memory_client_with_local_ai` — the only
+/// entry point that takes this module's embedding routes, storage provider and
+/// workspace — and that factory never touches the global slot.
+///
+/// The obvious repair, `global::init(workspace)`, is the wrong one and quietly
+/// so. It constructs a *second* `MemoryClient` over the same SQLite file, with
+/// the host's default routes rather than this module's, and each client owns an
+/// ingestion worker: duplicate graph extraction and duplicate embedding work
+/// against one store, which `global`'s own comments call out as the hazard its
+/// per-workspace cache exists to prevent. `global::bind` publishes the client
+/// that already exists instead, into both the global slot and the per-workspace
+/// cache, so all three resolution paths converge on it.
+///
+/// # Which slot this writes
+///
+/// This module's own. The `cdylib` carries its own compiled copy of
+/// `tinymemory-core`, so the slot filled here is the static that *this
+/// process's module-side* loops read through `client_if_ready`, and not the one
+/// a host still booting an in-process engine fills with `global::init`. That is
+/// what makes binding safe to do before that host's engine is deleted: this
+/// cannot repoint the host's engine at this client, and the host's `init`
+/// cannot make this bind refuse.
+///
+/// The refusal below therefore means one specific thing — a second
+/// `MemoryClient` was built for this workspace *inside this module* — which is
+/// the hazard the whole function exists to keep from happening quietly.
+///
+/// # Returns
+///
+/// Whether the client is bound. A failure is reported and the caller starts no
+/// sync loops: with no client resolvable, every run in both loops would fail on
+/// its first line with "memory client is not ready" — a named cause, but a loop
+/// that can only fail is not worth the ticks, the Composio list call every 20
+/// minutes, or the failed-sync audit rows it would append forever.
+fn bind_memory_client(config: &ModuleConfig, client: &MemoryClientRef) -> bool {
+    match tinymemory_core::global::bind(config.workspace_dir.clone(), Arc::clone(client)) {
+        Ok(_) => true,
+        Err(error) => {
+            // The path in `error` stays in this module's log, like the factory
+            // failure above; nothing here crosses the bus.
+            log::error!(
+                "[tinymemory:module] could not publish the memory client for this workspace, so \
+                 periodic memory sync will not run in this process: {error}"
+            );
+            false
+        }
+    }
+}
+
+/// Start the engine's two periodic sync loops for this process.
+///
+/// # Why the module has to own these
+///
+/// The same reason [`start_queue_pool`] does. Both loops are engine code —
+/// `tinymemory_core::sync::composio::periodic` and
+/// `tinymemory_core::sync::workspace::periodic` — and until now the only calls
+/// to them in any tree were the host's, made against the second, in-process
+/// engine the host also booted. A host that deletes that engine, which is the
+/// entire point of loading this module, is left with two loops it can no longer
+/// start and a memory that stops updating: Composio connections stop pulling
+/// mail, issues and documents, and registered repos, folders, RSS feeds and web
+/// pages go stale. The sync layer reports "no connections", which is
+/// indistinguishable from a user who has none.
+///
+/// # The host must stop starting them in the same change
+///
+/// Not "should" — this is the one part the module cannot guard. The `cdylib`
+/// carries its own copy of `tinymemory-core`, so the `OnceLock` each loop
+/// guards itself with is a *different* static from the host's: a host that
+/// still calls `start_periodic_sync` while loading this module gets two pairs
+/// of loops, neither of which can see the other, both walking the same source
+/// registry into the same store. [`claim_sync_loops`] catches only the
+/// in-process case. So the host's call site goes in the same change that
+/// deletes the engine it was calling against.
+///
+/// # What they do not get in module mode
+///
+/// Stated rather than hidden, in the same terms [`start_queue_pool`] states its
+/// own two:
+///
+/// - **Neither loop honours the scheduler-gate pauses.** Both call
+///   `periodic_pause_reason` as step 0 of every tick, precisely so a user who
+///   switched Memory Tree off, or who is signed out, gets no background fetch.
+///   This module serves no scheduler gate — see the section comment on
+///   `host::install_unserved_seams` for why it cannot — and the stub in its
+///   place always answers `Policy::Normal`, so `periodic_pause_reason` is always
+///   `None` and both loops tick straight through both pauses. The per-source
+///   `enabled` toggle still applies; the two *global* pauses do not.
+/// - **Their resume wake never fires.** The stub's `resume_notify` hands back a
+///   `Notify` nobody signals, so a user who re-enables sync waits out the
+///   remaining 20-minute tick instead of syncing within seconds. That is the
+///   benign half of the same gap.
+///
+/// # Backend-mode Composio sync cannot run here, so it is not started
+///
+/// `composio_config` takes its direct branch on `config.composio().mode` and
+/// otherwise needs a backend session bearer, which this module holds no field
+/// for and refuses to hold — see `ModuleConfig::composio_mode` and
+/// `EngineRuntimeConfig::session_token` for that decision in full. Starting the
+/// Composio loop under any other mode would list the user's connections every 20
+/// minutes and fail every due one with the same named cause, appending a failed
+/// row to the sync audit each time, forever. So it is gated, and the gate says
+/// so out loud once instead.
+///
+/// The workspace loop is started either way: it drives repos, folders, RSS and
+/// web pages through `sources::sync::sync_source`, which never touches Composio.
+///
+/// Both the gate and the pipeline read the load-time snapshot, so a user who
+/// switches Composio mode after this module loaded is not picked up until the
+/// host reloads it — `config_loader`'s documented staleness, and not new here.
+/// The gate itself is [`start_composio_periodic_sync`].
+fn start_sync_loops(config: &ModuleConfig) {
+    match claim_sync_loops(&config.workspace_dir) {
+        WorkspaceClaim::Start => {
+            // Warn, not debug: it is true on every boot in module mode, and a
+            // reader of the log should not have to know which seams are stubbed
+            // to find out that the pauses are not in effect.
+            log::warn!(
+                "[tinymemory:module] starting the periodic memory sync loops in this process. \
+                 They do not honour the scheduler gate — it is unserved here, so the \
+                 \"Memory Tree off\" and \"signed out\" pauses are ignored and a re-enable is \
+                 not woken early — though each source's own enabled toggle still applies"
+            );
+            // Workspace sources first, because this one runs in every mode.
+            tinymemory_core::sync::workspace::start_workspace_periodic_sync();
+            start_composio_periodic_sync(config);
+        }
+        WorkspaceClaim::AlreadyRunning => {
+            log::debug!(
+                "[tinymemory:module] the periodic memory sync loops for this workspace are \
+                 already running"
+            );
+        }
+        WorkspaceClaim::Foreign => {
+            log::error!(
+                "[tinymemory:module] the periodic memory sync loops are already running for a \
+                 different workspace in this process, and both guard themselves process-wide, \
+                 so this store gets no periodic sync: Composio connections and registered \
+                 sources will not update. One module process serves one workspace"
+            );
+        }
+    }
+}
+
+/// Start the Composio half of [`start_sync_loops`], if this host's mode allows.
+///
+/// Split out so the gate is one readable decision rather than a conditional
+/// buried in a match arm, and so the refusal branch has somewhere to explain
+/// itself. The decision itself is [`composio_sync_can_run`].
+fn start_composio_periodic_sync(config: &ModuleConfig) {
+    if composio_sync_can_run(config) {
+        tinymemory_core::sync::composio::start_periodic_sync();
+        return;
+    }
+
+    log::warn!(
+        "[tinymemory:module] periodic Composio sync is NOT started: this host did not resolve \
+         Composio to direct mode, and backend mode needs a session bearer this module holds no \
+         field for and will not carry. Composio-connected sources will not update in this \
+         process until the sync client routes through `ComposioHost::execute`"
+    );
+}
+
+/// Whether the Composio pipelines can resolve a credential in this process.
+///
+/// True only for direct mode, which is the whole of the gate: the other branch
+/// of `sync::pipelines::host::composio_config` needs a backend session bearer,
+/// and `EngineRuntimeConfig::session_token` refuses to answer one by design.
+///
+/// Asked of the *same* `EngineRuntimeConfig` the loop's own ticks will be handed
+/// and through the same `MemoryHostConfig::composio` accessor `composio_config`
+/// reads, so the two cannot disagree about which host this is. What is left that
+/// could drift is the comparison — this side calls `ComposioMode::is_direct`,
+/// the pipeline inlines the same case-insensitive test against
+/// `COMPOSIO_MODE_DIRECT` — so a host that spells its mode `"Direct"` is either
+/// started and served or neither, never started and then failed on every tick.
+///
+/// A predicate rather than a condition inside its one caller, for the reason
+/// [`claim_workspace`] is one: this is the whole of what is worth asserting, and
+/// asserting it through the caller would spawn a real 20-minute tick loop into
+/// the test binary.
+pub(crate) fn composio_sync_can_run(config: &ModuleConfig) -> bool {
+    tinymemory_tinycortex::engine::EngineRuntimeConfig::from(config)
+        .composio()
+        .is_direct()
 }
 
 /// The workspace whose queue this process's worker pool drains.
@@ -254,38 +420,60 @@ async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()
 /// which workspace won makes that case loud instead of invisible.
 static QUEUE_POOL_WORKSPACE: OnceLock<PathBuf> = OnceLock::new();
 
-/// What [`claim_queue_pool`] found when asked to start a pool.
+/// The workspace whose periodic sync loops this process drives.
+///
+/// A separate cell from [`QUEUE_POOL_WORKSPACE`] because they are separate
+/// services that can each be claimed or not, but the trap is identical and so
+/// is the reasoning: `start_periodic_sync` and `start_workspace_periodic_sync`
+/// each guard themselves with a process-global `OnceLock<()>`, which makes a
+/// second call a no-op that is indistinguishable from a first that worked, while
+/// what each loop actually syncs is rooted at whatever workspace the installed
+/// `config_loader` answers for.
+static SYNC_LOOPS_WORKSPACE: OnceLock<PathBuf> = OnceLock::new();
+
+/// What a claim on one of this process's workspace-bound background services
+/// found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum QueuePoolClaim {
-    /// Nothing had claimed the pool; this caller starts it.
+pub(crate) enum WorkspaceClaim {
+    /// Nothing had claimed the service; this caller starts it.
     Start,
-    /// A pool is already draining this workspace's queue, so there is nothing
-    /// to do and nothing wrong.
-    AlreadyDraining,
-    /// A pool is running, but rooted somewhere else. This store's queue has
-    /// nothing draining it and cannot be given a pool of its own.
+    /// It is already running for this workspace, so there is nothing to do and
+    /// nothing wrong.
+    AlreadyRunning,
+    /// It is running, but rooted somewhere else. This store cannot be given one
+    /// of its own, and goes without.
     Foreign,
 }
 
-/// Decide whether this caller is the one that starts the pool.
+/// Decide whether this caller is the one that starts `cell`'s service.
 ///
-/// Split out from [`start_queue_pool`] so the decision can be asserted without
-/// spawning four job workers and a daily scheduler into a test process, and
-/// because `queue::start`'s own `Once` is not observable from here at all — a
-/// second call to it is indistinguishable from a first that worked.
-pub(crate) fn claim_queue_pool(workspace: &Path) -> QueuePoolClaim {
-    match QUEUE_POOL_WORKSPACE.set(workspace.to_path_buf()) {
-        Ok(()) => QueuePoolClaim::Start,
+/// Split out from the two `start_*` functions so each decision can be asserted
+/// without spawning real workers and tick loops into a test process, and because
+/// the guards inside `tinymemory-core` are not observable from here at all — a
+/// second call to any of them is indistinguishable from a first that worked.
+fn claim_workspace(cell: &OnceLock<PathBuf>, workspace: &Path) -> WorkspaceClaim {
+    match cell.set(workspace.to_path_buf()) {
+        Ok(()) => WorkspaceClaim::Start,
         // `set` hands the rejected value back, so the comparison needs no
         // second read and cannot race with a concurrent claim.
         Err(rejected) => {
-            if QUEUE_POOL_WORKSPACE.get() == Some(&rejected) {
-                QueuePoolClaim::AlreadyDraining
+            if cell.get() == Some(&rejected) {
+                WorkspaceClaim::AlreadyRunning
             } else {
-                QueuePoolClaim::Foreign
+                WorkspaceClaim::Foreign
             }
         }
     }
+}
+
+/// Claim the queue worker pool for `workspace`. See [`start_queue_pool`].
+pub(crate) fn claim_queue_pool(workspace: &Path) -> WorkspaceClaim {
+    claim_workspace(&QUEUE_POOL_WORKSPACE, workspace)
+}
+
+/// Claim the periodic sync loops for `workspace`. See [`start_sync_loops`].
+pub(crate) fn claim_sync_loops(workspace: &Path) -> WorkspaceClaim {
+    claim_workspace(&SYNC_LOOPS_WORKSPACE, workspace)
 }
 
 /// Start the engine's queue worker pool for this process.
@@ -329,7 +517,7 @@ pub(crate) fn claim_queue_pool(workspace: &Path) -> QueuePoolClaim {
 /// once per process the first time the pool consults them.
 fn start_queue_pool(config: &ModuleConfig) {
     match claim_queue_pool(&config.workspace_dir) {
-        QueuePoolClaim::Start => {
+        WorkspaceClaim::Start => {
             // Warn, not debug: it is true on every boot in module mode, and a
             // reader of the log should not have to know which seams are stubbed
             // to find out that the throttle is not in effect.
@@ -344,12 +532,12 @@ fn start_queue_pool(config: &ModuleConfig) {
                 tinymemory_tinycortex::engine::EngineRuntimeConfig::from(config),
             ));
         }
-        QueuePoolClaim::AlreadyDraining => {
+        WorkspaceClaim::AlreadyRunning => {
             log::debug!(
                 "[tinymemory:module] the queue worker pool for this workspace is already running"
             );
         }
-        QueuePoolClaim::Foreign => {
+        WorkspaceClaim::Foreign => {
             log::error!(
                 "[tinymemory:module] a queue worker pool is already running for a different \
                  workspace in this process, and `queue::start` is guarded process-wide, so the \
@@ -421,6 +609,13 @@ mod exports {
         // is what drives a job's own outbound embed while the rest are busy. At
         // two, a draining queue would starve inbound dispatch and the module
         // would stop answering recalls until the queue emptied.
+        //
+        // The two periodic sync loops `setup` also starts do not move the
+        // number. They sleep on a 20-minute `interval` and yield across every
+        // fetch, so they hold no worker between ticks; the one moment they do is
+        // `BusComposioHost::probe`, which blocks its caller for one bus round
+        // trip and is bounded at twice per tick — see the note on `probe` for
+        // why that bridge blocks at all.
         worker_threads = 8,
         provides = ["ai.tinyhumans.tinymemory.Memory"],
         methods = [

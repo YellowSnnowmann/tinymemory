@@ -112,6 +112,13 @@ fn provider_config(
         default_temperature: 0.2,
         output_language: None,
         memory_sources,
+        // No cadence and no Composio mode: the conformance suite drives the
+        // provider directly and starts no periodic loop, so the values that
+        // matter to those loops are left at what a host that states nothing
+        // sends.
+        memory_sync_interval_secs: None,
+        composio_mode: String::new(),
+        composio_entity_id: String::new(),
     }
 }
 

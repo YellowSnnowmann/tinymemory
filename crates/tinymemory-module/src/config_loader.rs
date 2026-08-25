@@ -42,21 +42,27 @@
 //! `signals = []`), not a bus *pull*: a pull would re-introduce the two-answers
 //! problem above while still being stale between ticks.
 //!
-//! # One gap this loader cannot paper over
+//! # The gap this loader used to have, and how it was closed
 //!
-//! `EngineRuntimeConfig::memory_sync_interval_secs` answers `Some(0)`, and
-//! the contract reads `Some(0)` as **manual only**. So a periodic sync loop
-//! started inside this process would consider every source manual and skip it —
-//! silently, which is the failure class this migration keeps producing.
+//! `EngineRuntimeConfig::memory_sync_interval_secs` answered the constant
+//! `Some(0)`, and the contract reads `Some(0)` as **manual only**. A periodic
+//! sync loop started inside this process therefore considered every source
+//! manual and skipped it — silently, which is the failure class this migration
+//! keeps producing.
 //!
-//! It is left as it is on purpose. `ModuleConfig` carries no cadence field, so
-//! answering anything else would mean this module *guessing* at a user setting
-//! it was never told — the same argument `crate::host` gives for refusing to
-//! synthesise a scheduler-gate policy from `ModuleConfig::scheduler_gate`, and
-//! the same conclusion: guessing is worse than not answering. The honest fix is
-//! for the host to send the cadence in `ModuleConfig`, at which point this
-//! loader answers it without further change. Until then, nothing in this
-//! process starts a periodic sync loop, and this note is why.
+//! The fix was not for this loader to invent a better number. Guessing at a user
+//! setting the module was never told is the same thing `crate::host` refuses to
+//! do when it declines to synthesise a scheduler-gate policy from
+//! `ModuleConfig::scheduler_gate`, and it has the same answer: guessing is worse
+//! than not answering. So the *host* now sends the cadence, as
+//! `ModuleConfig::memory_sync_interval_secs`, and this loader hands it back
+//! along with everything else. Nothing here needed changing, which is the point
+//! — the snapshot answers whatever the host put in it.
+//!
+//! What is left is the staleness above, and it now bites one more setting: a
+//! user who changes their sync cadence, or switches Composio between backend and
+//! direct mode, after this module loaded keeps the old value in this process
+//! until the host reloads the module.
 
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;

@@ -93,7 +93,51 @@ pub struct EngineRuntimeConfig {
     pub output_language: Option<String>,
     /// Opaque source configuration, passed through verbatim.
     pub memory_sources: serde_json::Value,
+    /// The user's global memory-sync cadence in seconds, as the host resolved
+    /// it.
+    ///
+    /// `None` is "no explicit choice" and callers fall back to
+    /// [`DEFAULT_MEMORY_SYNC_INTERVAL_SECS`](tinymemory_api::host::DEFAULT_MEMORY_SYNC_INTERVAL_SECS);
+    /// `Some(0)` is manual-only.
+    ///
+    /// Carried rather than answered with a constant because both periodic sync
+    /// loops read it as their gate, and the constant they used to get was
+    /// `Some(0)` — manual-only, which skips every source on every tick with no
+    /// error, no warning and nothing in the log. A cadence a host cannot state
+    /// is the one field where a wrong constant is invisible.
+    pub memory_sync_interval_secs: Option<u64>,
+    /// Composio routing mode:
+    /// [`COMPOSIO_MODE_BACKEND`](tinymemory_api::host::COMPOSIO_MODE_BACKEND) or
+    /// [`COMPOSIO_MODE_DIRECT`](tinymemory_api::host::COMPOSIO_MODE_DIRECT).
+    ///
+    /// Empty means the host stated no mode, and reads as "not direct" — the same
+    /// answer backend mode gets, which is what an unset Composio integration
+    /// should look like.
+    pub composio_mode: String,
+    /// The Composio entity the host authenticates as.
+    ///
+    /// An identifier, not a credential: it selects whose connected accounts a
+    /// direct-mode call addresses. Empty is sent as no entity at all rather than
+    /// as an empty one — see `ComposioClient::execute_direct`.
+    pub composio_entity_id: String,
 }
+
+/// Why a module-side engine configuration can never answer a backend session
+/// token, said once so every path that hits it reports the same cause.
+///
+/// The bare "not configured" this used to produce is the wrong story. It reads
+/// as "the user is signed out", which a reader then tries to fix by signing in;
+/// the truth is structural and no sign-in changes it. This configuration is
+/// built from a `ModuleConfig`, which has no field for a bearer and deliberately
+/// never will — and even if it did, a load-time snapshot could not follow a
+/// token the host refreshes mid-session, so the module would authenticate with
+/// an expired bearer until the next module load.
+const NO_BACKEND_SESSION: &str =
+    "this engine configuration carries no backend session token, by design: a loaded memory \
+     module holds no credentials, and a bearer the host refreshes mid-session could not be \
+     answered from a load-time snapshot anyway. Backend-mode Composio memory sync therefore \
+     cannot run inside the module — only direct mode resolves here — and closing that means \
+     routing the sync client through `ComposioHost::execute`, not handing the module a token";
 
 #[async_trait]
 impl MemoryHostConfig for EngineRuntimeConfig {
@@ -155,8 +199,17 @@ impl MemoryHostConfig for EngineRuntimeConfig {
     fn effective_backend_api_url(&self) -> String {
         String::new()
     }
+    /// Always the named refusal, never `Ok(None)`.
+    ///
+    /// The contract distinguishes the two: `Ok(None)` is "read fine, not signed
+    /// in", `Err` is "could not be read". This configuration is neither — there
+    /// is no store to read, and there never will be. `Ok(None)` would send
+    /// `sync::pipelines::host::composio_config` down its backend branch to fail
+    /// with "OpenHuman backend bearer token is not configured", which points a
+    /// reader at a sign-in that would not help. See `NO_BACKEND_SESSION`,
+    /// which is where the whole reason is written down.
     fn session_token(&self) -> Result<Option<String>, String> {
-        Ok(None)
+        Err(NO_BACKEND_SESSION.to_string())
     }
     fn default_model(&self) -> Option<&str> {
         self.default_model.as_deref()
@@ -168,7 +221,7 @@ impl MemoryHostConfig for EngineRuntimeConfig {
         self.output_language.as_deref()
     }
     fn memory_sync_interval_secs(&self) -> Option<u64> {
-        Some(0)
+        self.memory_sync_interval_secs
     }
     fn onboarding_completed(&self) -> bool {
         true
@@ -176,8 +229,28 @@ impl MemoryHostConfig for EngineRuntimeConfig {
     fn secrets_encrypt(&self) -> bool {
         false
     }
+    /// The routing mode and entity the host resolved, and nothing else.
+    ///
+    /// Rebuilt from two scalar fields rather than stored as a [`ComposioMode`]
+    /// so the two remaining members can only ever hold what this type promises:
+    ///
+    /// - `api_key` stays `None` because the direct-mode key is not configuration
+    ///   here. `composio_config` asks the `ComposioHost` seam for it first and
+    ///   falls back to this field second, so leaving it empty routes the key
+    ///   through the seam — fetched for the duration of one call, held in no
+    ///   field, which is the property that lets this struct call itself
+    ///   credential-free.
+    /// - `triage_disabled` stays `false` because nothing in the memory layer
+    ///   reads it; it gates the host's LLM triage of Composio *triggers*, a path
+    ///   that never enters this crate. Carrying a value nobody reads would
+    ///   invite a reader to believe it does something here.
     fn composio(&self) -> ComposioMode {
-        ComposioMode::default()
+        ComposioMode {
+            mode: self.composio_mode.clone(),
+            entity_id: self.composio_entity_id.clone(),
+            api_key: None,
+            triage_disabled: false,
+        }
     }
     fn memory_sources_json(&self) -> anyhow::Result<serde_json::Value> {
         Ok(self.memory_sources.clone())

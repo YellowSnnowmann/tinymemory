@@ -472,19 +472,102 @@ fn the_queue_pool_is_claimed_once_and_a_foreign_workspace_is_refused() {
 
     assert_eq!(
         crate::claim_queue_pool(workspace),
-        crate::QueuePoolClaim::Start,
+        crate::WorkspaceClaim::Start,
         "the first claim must be the one that starts the pool"
     );
     assert_eq!(
         crate::claim_queue_pool(workspace),
-        crate::QueuePoolClaim::AlreadyDraining,
+        crate::WorkspaceClaim::AlreadyRunning,
         "a second claim for the same workspace must not start a second pool"
     );
     assert_eq!(
         crate::claim_queue_pool(elsewhere),
-        crate::QueuePoolClaim::Foreign,
+        crate::WorkspaceClaim::Foreign,
         "a claim for another workspace must be named, not silently swallowed — \
          `queue::start` would no-op and that store's queue would never drain"
+    );
+}
+
+/// The periodic sync loops are claimed the same way, and for the same reason.
+///
+/// Asserted through `claim_sync_loops` rather than `start_sync_loops` for the
+/// reason above and one more: starting them for real spawns two 20-minute tick
+/// loops that reload config and walk the source registry for the rest of the
+/// test binary's life.
+///
+/// This also pins that the two services claim *independent* cells, without a
+/// fourth test that would have to assume an execution order. The workspace here
+/// differs from the queue pool's, so a single shared cell would make whichever
+/// of these two tests ran second read `Foreign` where it expects `Start`.
+///
+/// The `Foreign` outcome is what a second module setup in one process would hit.
+/// `claim_process_setup` already refuses that, so this is a second guard on a
+/// case the first one covers — kept because the cost is one `OnceLock` and the
+/// failure it guards is a store that silently never syncs.
+#[test]
+fn the_sync_loops_are_claimed_once_and_a_foreign_workspace_is_refused() {
+    let workspace = std::path::Path::new("/tinymemory-module/sync-loops-claim");
+    let elsewhere = std::path::Path::new("/tinymemory-module/sync-loops-elsewhere");
+
+    assert_eq!(
+        crate::claim_sync_loops(workspace),
+        crate::WorkspaceClaim::Start,
+        "the first claim must be the one that starts the loops"
+    );
+    assert_eq!(
+        crate::claim_sync_loops(workspace),
+        crate::WorkspaceClaim::AlreadyRunning,
+        "a second claim for the same workspace must not start a second pair"
+    );
+    assert_eq!(
+        crate::claim_sync_loops(elsewhere),
+        crate::WorkspaceClaim::Foreign,
+        "a claim for another workspace must be named, not silently swallowed — \
+         both loops guard themselves process-wide and that store would never sync"
+    );
+}
+
+/// The Composio gate answers for exactly the branch the pipeline would take.
+///
+/// Worth pinning because the two ways it can be wrong are both quiet. A gate
+/// that started the loop in backend mode would list the user's connections
+/// every 20 minutes and fail every due one on `session_token`'s refusal,
+/// appending a failed row to the sync audit each time; a gate that refused
+/// direct mode would leave a host that could sync perfectly well with Composio
+/// sources that simply stop updating, and one line at boot to explain it.
+///
+/// Asserted through `composio_sync_can_run` rather than
+/// `start_composio_periodic_sync` for the reason the claim tests above give:
+/// the decision is the whole of what is worth checking, and the call after it
+/// spawns a real 20-minute tick loop for the life of the test binary.
+#[test]
+fn composio_periodic_sync_starts_only_when_the_host_resolved_direct_mode() {
+    let mut config = test_config(std::path::Path::new("/tinymemory-module/composio-gate"));
+
+    assert!(
+        !crate::composio_sync_can_run(&config),
+        "a host that states no mode is not direct — and has no bearer either"
+    );
+
+    config.composio_mode = tinymemory_api::host::COMPOSIO_MODE_BACKEND.to_string();
+    assert!(
+        !crate::composio_sync_can_run(&config),
+        "backend mode needs a session bearer this module refuses to hold"
+    );
+
+    config.composio_mode = tinymemory_api::host::COMPOSIO_MODE_DIRECT.to_string();
+    assert!(
+        crate::composio_sync_can_run(&config),
+        "direct mode is the one branch that resolves its credential in here"
+    );
+
+    // The pipeline's own branch test is case-insensitive. If the gate were not,
+    // this host would be started and would then fail every tick — the exact
+    // shape the gate exists to prevent.
+    config.composio_mode = "Direct".to_string();
+    assert!(
+        crate::composio_sync_can_run(&config),
+        "the gate must match `composio_config` on case, or it starts a loop that cannot work"
     );
 }
 
