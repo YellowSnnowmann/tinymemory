@@ -696,6 +696,7 @@ const EXPECTED_METHODS: &[&str] = &[
     "RunConnectionSync",
     "RunSourceSync",
     "BootstrapConnection",
+    "IsToolkitSyncable",
     "SourceSyncState",
     "SyncAuditLog",
     "EstimateSyncCostUsd",

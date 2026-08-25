@@ -2546,6 +2546,13 @@ impl MemorySourceSync for TinycortexProvider {
         })
     }
 
+    async fn is_toolkit_syncable(&self, toolkit: &str) -> Result<bool, MemoryError> {
+        // The same predicate `ensure_syncable_toolkit` gates on, exposed rather
+        // than inferred: a caller that learned this from a failed sync would
+        // already have registered the source it should not have.
+        Ok(tinymemory_core::sync::pipelines::host::is_composio_toolkit_syncable(toolkit))
+    }
+
     async fn source_sync_state(
         &self,
         toolkit: &str,

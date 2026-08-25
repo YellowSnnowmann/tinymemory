@@ -773,6 +773,7 @@ mod exports {
             "RunConnectionSync",
             "RunSourceSync",
             "BootstrapConnection",
+            "IsToolkitSyncable",
             "SourceSyncState",
             "SyncAuditLog",
             "EstimateSyncCostUsd",

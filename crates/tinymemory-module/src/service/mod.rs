@@ -66,6 +66,7 @@
 //!
 //! RunConnectionSync(toolkit, connection_id)         -> SyncRunOutcome
 //! BootstrapConnection(toolkit, connection_id)       -> ()
+//! IsToolkitSyncable(toolkit)                      -> bool
 //! RunSourceSync(source_id)                          -> SyncRunOutcome
 //! SourceSyncState(toolkit, connection_id)           -> Option<SourceSyncState>
 //! SyncAuditLog(limit)                               -> [SyncAuditEntry]
@@ -1760,6 +1761,18 @@ impl MemoryService {
     async fn bootstrap_connection(&self, toolkit: String, connection_id: String) -> BusResult<()> {
         require_family!(self, as_source_sync, Capability::SourceSync)
             .bootstrap_connection(&toolkit, &connection_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Whether this driver has a sync pipeline for one toolkit.
+    ///
+    /// Asked rather than answered from a list the caller holds, so the
+    /// normalisation the driver applies never has to be reimplemented on the
+    /// far side of the bus.
+    async fn is_toolkit_syncable(&self, toolkit: String) -> BusResult<bool> {
+        require_family!(self, as_source_sync, Capability::SourceSync)
+            .is_toolkit_syncable(&toolkit)
             .await
             .map_err(|error| into_bus_error(&error))
     }
