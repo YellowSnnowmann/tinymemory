@@ -199,6 +199,36 @@ pub trait MemorySourceSync: Send + Sync {
         Err(MemoryError::unsupported(Capability::SourceSync))
     }
 
+    /// Whether this driver has a sync pipeline for `toolkit`.
+    ///
+    /// # Why a predicate and not the list
+    ///
+    /// The answer depends on a normalisation rule — the driver trims and
+    /// lower-cases before matching — and a caller given the list would have to
+    /// reimplement that rule to use it. It would then be right until the day
+    /// the driver's rule changed, and wrong silently after. Asking the question
+    /// keeps the rule on the side that owns it.
+    ///
+    /// # What a caller does with `false`
+    ///
+    /// Not "refuse the connection". A toolkit with no pipeline is still a
+    /// perfectly good agent-tool integration; what it cannot do is become a
+    /// *memory source*. A host that registers one anyway ships a source that
+    /// reports healthy and then fails every sync, which is a worse answer than
+    /// not offering it — so this is the question to ask before registering,
+    /// not after a sync fails.
+    ///
+    /// # Errors
+    ///
+    /// [`MemoryError::Unsupported`] from a driver that serves this family but
+    /// cannot enumerate its pipelines. Deliberately not `Ok(false)`: "I have no
+    /// pipeline for this" and "I cannot tell you" are different answers, and a
+    /// caller that conflated them would silently stop registering every source.
+    async fn is_toolkit_syncable(&self, toolkit: &str) -> Result<bool, MemoryError> {
+        let _ = toolkit;
+        Err(MemoryError::unsupported(Capability::SourceSync))
+    }
+
     async fn source_sync_state(
         &self,
         toolkit: &str,

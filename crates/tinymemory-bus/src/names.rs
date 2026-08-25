@@ -296,6 +296,8 @@ pub mod methods {
     pub const RUN_SOURCE_SYNC: &str = "RunSourceSync";
     /// `BootstrapConnection` — run one connection's first-time bootstrap.
     pub const BOOTSTRAP_CONNECTION: &str = "BootstrapConnection";
+    /// `IsToolkitSyncable` — whether this driver has a pipeline for a toolkit.
+    pub const IS_TOOLKIT_SYNCABLE: &str = "IsToolkitSyncable";
     /// `SourceSyncState` — the persisted cursor and budget for one connection.
     pub const SOURCE_SYNC_STATE: &str = "SourceSyncState";
     /// `SyncAuditLog` — past sync runs, newest first.
@@ -321,7 +323,7 @@ pub mod methods {
 /// The order matters: `tinybus`'s `Interface::members()` returns declaration
 /// order, and the module compares the two sequences directly rather than as
 /// sets, so a reordering is caught alongside an addition or a removal.
-pub const METHODS: [&str; 122] = [
+pub const METHODS: [&str; 123] = [
     methods::DRIVER_ID,
     methods::CAPABILITIES,
     methods::HEALTH,
@@ -436,6 +438,7 @@ pub const METHODS: [&str; 122] = [
     methods::RUN_CONNECTION_SYNC,
     methods::RUN_SOURCE_SYNC,
     methods::BOOTSTRAP_CONNECTION,
+    methods::IS_TOOLKIT_SYNCABLE,
     methods::SOURCE_SYNC_STATE,
     methods::SYNC_AUDIT_LOG,
     methods::ESTIMATE_SYNC_COST_USD,
