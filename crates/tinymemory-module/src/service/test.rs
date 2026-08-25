@@ -530,18 +530,24 @@ fn the_sync_loops_are_claimed_once_and_a_foreign_workspace_is_refused() {
 /// The Composio gate answers for exactly the branch the pipeline would take.
 ///
 /// Worth pinning because the two ways it can be wrong are both quiet. A gate
-/// that started the loop in backend mode would list the user's connections
-/// every 20 minutes and fail every due one on `session_token`'s refusal,
-/// appending a failed row to the sync audit each time; a gate that refused
-/// direct mode would leave a host that could sync perfectly well with Composio
-/// sources that simply stop updating, and one line at boot to explain it.
+/// that started the loop for a mode with no credential path would list the
+/// user's connections every 20 minutes and fail every due one, appending a
+/// failed row to the sync audit each time; a gate that refused a mode that CAN
+/// resolve one would leave a host whose Composio sources simply stop updating,
+/// with a single line at boot to explain it.
+///
+/// Backend mode moved from the second category to the first when
+/// `ComposioHost::session_bearer` landed. It used to be excluded because
+/// `EngineRuntimeConfig::session_token` refuses by design — which meant the
+/// loop did not start for a host whose default mode is backend, and neither the
+/// host nor the module reported it, because neither thought it was responsible.
 ///
 /// Asserted through `composio_sync_can_run` rather than
 /// `start_composio_periodic_sync` for the reason the claim tests above give:
 /// the decision is the whole of what is worth checking, and the call after it
 /// spawns a real 20-minute tick loop for the life of the test binary.
 #[test]
-fn composio_periodic_sync_starts_only_when_the_host_resolved_direct_mode() {
+fn composio_periodic_sync_starts_for_any_mode_that_can_resolve_a_credential() {
     let mut config = test_config(std::path::Path::new("/tinymemory-module/composio-gate"));
 
     assert!(
@@ -551,14 +557,14 @@ fn composio_periodic_sync_starts_only_when_the_host_resolved_direct_mode() {
 
     config.composio_mode = tinymemory_api::host::COMPOSIO_MODE_BACKEND.to_string();
     assert!(
-        !crate::composio_sync_can_run(&config),
-        "backend mode needs a session bearer this module refuses to hold"
+        crate::composio_sync_can_run(&config),
+        "backend mode resolves its bearer through ComposioHost::session_bearer"
     );
 
     config.composio_mode = tinymemory_api::host::COMPOSIO_MODE_DIRECT.to_string();
     assert!(
         crate::composio_sync_can_run(&config),
-        "direct mode is the one branch that resolves its credential in here"
+        "direct mode resolves its key through ComposioHost::api_key"
     );
 
     // The pipeline's own branch test is case-insensitive. If the gate were not,

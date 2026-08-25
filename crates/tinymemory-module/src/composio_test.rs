@@ -30,6 +30,7 @@ struct Executed {
 struct FakeComposioHost {
     executed: tokio::sync::mpsc::UnboundedSender<Executed>,
     api_key: Option<String>,
+    session_bearer: Option<String>,
     available: bool,
 }
 
@@ -76,6 +77,11 @@ impl FakeComposioHost {
         Ok(self.api_key.clone())
     }
 
+    async fn session_bearer(&self) -> BusResult<Option<String>> {
+        std::future::ready(()).await;
+        Ok(self.session_bearer.clone())
+    }
+
     async fn is_available(&self) -> BusResult<bool> {
         std::future::ready(()).await;
         Ok(self.available)
@@ -98,6 +104,7 @@ async fn bus_with_composio_host(
         FakeComposioHost {
             executed,
             api_key: api_key.map(str::to_string),
+            session_bearer: Some("bearer-from-the-host".to_string()),
             available,
         },
     )
@@ -262,4 +269,33 @@ fn only_the_nobody_is_listening_family_reads_as_unserved() {
     assert!(!unserved("ai.tinyhumans.tinymemory.Error.Host"));
     assert!(!unserved("ai.tinyhumans.tinybus.Error.Failed"));
     assert!(!unserved("ai.tinyhumans.tinybus.Error.Timeout"));
+}
+
+/// The proxied-mode bearer crosses the bus, and an unreachable host answers
+/// `None` rather than guessing.
+///
+/// The second half is the half worth pinning. `is_available` deliberately
+/// answers `true` when it cannot reach the host, because a wrong `false` there
+/// reads as "not signed in" and hides a sync that is actually broken. This
+/// member must not copy that: a credential is not something to be optimistic
+/// about, and `None` is what lets `composio_config` refuse by name instead of
+/// sending an empty bearer at the backend.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn the_session_bearer_crosses_the_bus_and_is_never_guessed() {
+    let (connection, _executed) = bus_with_composio_host(None, true).await;
+    let bridge = BusComposioHost::new(connection);
+    let config = tinymemory_tinycortex::engine::EngineRuntimeConfig::from(&ModuleConfig::default());
+
+    assert_eq!(
+        bridge.session_bearer(&config).as_deref(),
+        Some("bearer-from-the-host"),
+        "the host's live session must reach the engine unchanged"
+    );
+
+    let unserved = BusComposioHost::new(bus_without_composio_host().await);
+    assert_eq!(
+        unserved.session_bearer(&config),
+        None,
+        "an unreachable host must not be optimistic about a credential"
+    );
 }

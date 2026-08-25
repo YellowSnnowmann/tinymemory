@@ -84,6 +84,13 @@ pub const API_KEY_METHOD: &str = "ApiKey";
 /// Whether *some* viable Composio client resolves host-side right now.
 pub const IS_AVAILABLE_METHOD: &str = "IsAvailable";
 
+/// The OpenHuman backend bearer for proxied mode, or `None` when signed out.
+///
+/// Asked per call rather than carried in `ModuleConfig` because it is a session
+/// JWT the host refreshes: a snapshot works until it expires and then reads as
+/// a signed-out user on every subsequent sync.
+pub const SESSION_BEARER_METHOD: &str = "SessionBearer";
+
 /// Latched so the gap is reported once per process rather than once per sync
 /// tick — the periodic scheduler consults this seam on every tick, and an
 /// unlatched report would page on every one of them. Same guard the scheduler
@@ -351,6 +358,18 @@ impl ComposioHost for BusComposioHost {
     /// `probe`, so the log distinguishes what the return value cannot.
     fn api_key(&self, _config: &tinymemory_core::Config) -> Option<String> {
         self.probe::<Option<String>>(API_KEY_METHOD).flatten()
+    }
+
+    /// The proxied-mode bearer, fetched per call for the reason on
+    /// [`SESSION_BEARER_METHOD`].
+    ///
+    /// An unreachable host flattens to `None`, which the caller turns into a
+    /// named refusal rather than silence — the opposite of `is_available`'s
+    /// optimistic answer below, and deliberately so: a bearer this process
+    /// cannot obtain is not a credential it may guess at.
+    fn session_bearer(&self, _config: &tinymemory_core::Config) -> Option<String> {
+        self.probe::<Option<String>>(SESSION_BEARER_METHOD)
+            .flatten()
     }
 
     /// Whether the sync layer should treat the user as signed in.

@@ -75,6 +75,27 @@ pub trait ComposioHost: Send + Sync + std::fmt::Debug {
     /// `None` when direct mode is not configured.
     fn api_key(&self, config: &Config) -> Option<String>;
 
+    /// The OpenHuman backend bearer for proxied ("backend") mode.
+    ///
+    /// A seam rather than a config field, and that is the whole point of it.
+    /// The bearer is an app-session JWT the host refreshes; a value captured
+    /// once — at module load, say — works until it expires and then makes every
+    /// sync fail with an auth error that reads as the user being signed out.
+    /// Asking per call means the answer is always the one that is valid now.
+    ///
+    /// `None` means the host has no session to lend, which is a signed-out user
+    /// rather than a broken one. The caller must not read that as "nothing to
+    /// sync": [`composio_config`](crate::sync::pipelines::host::composio_config)
+    /// turns it into a named refusal instead.
+    ///
+    /// Defaulted to `None` so a host that predates this member still compiles
+    /// and simply falls back to whatever `Config::session_token` answers, which
+    /// is exactly the behaviour it had before the member existed.
+    fn session_bearer(&self, config: &Config) -> Option<String> {
+        let _ = config;
+        None
+    }
+
     /// Whether *some* viable client resolves for the current config.
     ///
     /// The sync layer uses this as its "is the user signed in?" probe. It must
@@ -144,6 +165,17 @@ pub async fn execute(
 #[must_use]
 pub fn api_key(config: &Config) -> Option<String> {
     composio_host()?.api_key(config)
+}
+
+/// The backend bearer from the installed host, or `None` when no host is
+/// installed or the host has no session.
+///
+/// The two are deliberately not distinguished here: both mean "this process
+/// cannot authenticate a proxied Composio call right now", and the caller's
+/// fallback and error message are the same either way.
+#[must_use]
+pub fn session_bearer(config: &Config) -> Option<String> {
+    composio_host()?.session_bearer(config)
 }
 
 /// Whether a viable Composio client resolves. `false` when unwired.
