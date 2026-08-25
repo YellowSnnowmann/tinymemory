@@ -132,6 +132,85 @@ fn stripping_is_idempotent() {
     assert!(!config.strip_host_credentials());
 }
 
+/// The older-host case, stated as a test rather than as a hope.
+///
+/// The host and the module are compiled and released separately, so a host that
+/// predates these three fields sends JSON without them. The struct's
+/// `#[serde(default)]` fills them from [`ModuleConfig::default`], and what that
+/// resolves to is a product decision argued on each field — so it is pinned
+/// here, where changing it fails a test instead of changing behaviour quietly.
+#[test]
+fn a_host_that_predates_the_sync_fields_gets_the_documented_defaults() {
+    // Every other key present, the three new ones absent: exactly the payload an
+    // older host sends.
+    let json = serde_json::json!({
+        "workspace_dir": "/tmp/w",
+        "driver_id": "tinymemory",
+    });
+    let config: ModuleConfig = serde_json::from_value(json).expect("an older host's config loads");
+
+    // `None`, not `Some(0)`. `Some(0)` is manual-only, which skips every source
+    // on every tick with nothing logged; `None` is "no explicit choice" and
+    // lands on the same 24h default the host applies to a user who set none.
+    assert_eq!(
+        config.memory_sync_interval_secs, None,
+        "an absent cadence must not read as manual-only"
+    );
+    // Not direct, which is what an unconfigured Composio integration should look
+    // like, and exactly what the engine answered before this field existed.
+    assert!(config.composio_mode.is_empty());
+    assert!(config.composio_entity_id.is_empty());
+}
+
+/// The cadence is a wire value with three meanings, and all three have to
+/// survive the trip.
+#[test]
+fn every_cadence_the_host_can_state_round_trips() {
+    for cadence in [None, Some(0), Some(86_400)] {
+        let config = ModuleConfig {
+            workspace_dir: "/tmp/w".into(),
+            memory_sync_interval_secs: cadence,
+            ..ModuleConfig::default()
+        };
+        let json = serde_json::to_string(&config).expect("serializes");
+        let back: ModuleConfig = serde_json::from_str(&json).expect("deserializes");
+
+        assert_eq!(
+            back.memory_sync_interval_secs, cadence,
+            "the host's cadence must reach the module unchanged"
+        );
+    }
+}
+
+/// Routing crosses; access does not.
+///
+/// The Composio fields are the closest this struct comes to the credential line,
+/// so the distinction is asserted rather than described: a mode and an entity
+/// travel, and neither the direct-mode key nor a backend bearer has anywhere to
+/// travel in.
+#[test]
+fn the_composio_fields_carry_routing_and_not_access() {
+    let config = ModuleConfig {
+        workspace_dir: "/tmp/w".into(),
+        composio_mode: "direct".to_string(),
+        composio_entity_id: "entity-42".to_string(),
+        ..ModuleConfig::default()
+    };
+
+    let json = serde_json::to_string(&config).expect("serializes");
+    let back: ModuleConfig = serde_json::from_str(&json).expect("deserializes");
+
+    assert_eq!(back.composio_mode, "direct");
+    assert_eq!(back.composio_entity_id, "entity-42");
+    // The structural credential check above scans field *names*; this is the
+    // other half — there is no key at all for either Composio secret, so a
+    // direct key or a session bearer has nowhere to be put.
+    let value: serde_json::Value = serde_json::from_str(&json).expect("valid json");
+    let object = value.as_object().expect("config is a json object");
+    assert!(!object.contains_key("composio_api_key"));
+    assert!(!object.contains_key("session_token"));
+}
+
 #[test]
 fn a_populated_config_round_trips() {
     let config = ModuleConfig {

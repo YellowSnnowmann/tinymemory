@@ -172,8 +172,30 @@ pub(crate) fn install(connection: Connection) {
 // the first time anything actually consults it. The queue worker pool now runs
 // in here (`crate::start_queue_pool`) and consults both, so the scheduler-gate
 // report fires on every boot that drains a job — which is the honest signal that
-// the throttle is not in effect. The two periodic sync loops are still started
-// host-side, so nothing in this process reaches them through that path yet.
+// the throttle is not in effect.
+//
+// # The scheduler-gate stub now also silences two user-visible pauses
+//
+// `crate::start_sync_loops` moved the two periodic sync loops in here as well,
+// and they consult this gate for something the queue pool does not: not a
+// throttle but a *stop*. Step 0 of every tick in both loops is
+// `sync::composio::periodic::periodic_pause_reason`, which exists to honour two
+// states — `PauseReason::UserDisabled`, the user switching Memory Tree off in
+// Settings, and `PauseReason::SignedOut`, no live session. It reads them off
+// `current_policy()`, which is the stub, which always answers `Policy::Normal`.
+// So in module mode both loops tick straight through both pauses: a user who
+// switched memory off still gets background fetches, and a signed-out user still
+// gets a Composio connection walk every 20 minutes.
+//
+// The per-source `enabled` toggle is unaffected — that is read from the source
+// registry inside the tick, not from the gate — so switching off one source
+// still works. It is the two *global* pauses that do not.
+//
+// The same stub's `resume_notify` hands back a `Notify` nobody fires, so the
+// other half of that design is gone too: re-enabling sync no longer wakes the
+// loops early, and the user waits out the remaining 20-minute tick instead of
+// syncing within seconds. That half is benign; the paragraph above is not, and
+// closing it needs the same `SchedulerGate` bus interface named below.
 //
 // Note also what is deliberately *not* built here: a module-local registry that
 // banked shutdown hooks and drained them on the module's own `Shutdown` method.
@@ -193,7 +215,9 @@ static SHUTDOWN_REPORTED: AtomicBool = AtomicBool::new(false);
 /// What the missing scheduler gate costs, in the terms a reader of the log needs.
 const GATE_UNSERVED: &str = "scheduler gate unserved in module mode: background memory work in \
                              this process runs ungated, ignoring the host's background-AI \
-                             throttle (user toggle, AC power, CPU pressure, signed-out)";
+                             throttle (user toggle, AC power, CPU pressure, signed-out) — and \
+                             the periodic sync loops here therefore also ignore the \
+                             \"Memory Tree off\" and \"signed out\" pauses that would stop them";
 
 /// What the missing shutdown host costs.
 const SHUTDOWN_UNSERVED: &str = "shutdown host unserved in module mode: a memory shutdown hook \
@@ -295,8 +319,8 @@ pub(crate) fn install_unserved_seams() {
     log::warn!(
         "[tinymemory:module] two host seams are unserved in module mode: scheduler_gate and \
          shutdown are stubs that keep the unwired behaviour and report once when consulted. \
-         Background-AI throttling and graceful queue-lock release are not honoured inside this \
-         process"
+         Background-AI throttling, the \"Memory Tree off\" and \"signed out\" pauses on periodic \
+         sync, and graceful queue-lock release are not honoured inside this process"
     );
 }
 

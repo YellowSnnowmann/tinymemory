@@ -44,6 +44,50 @@ async fn load_answers_from_the_module_config() {
     assert_eq!(sources[0]["id"], "gmail:1");
 }
 
+/// The two settings the periodic sync loops gate on reach them through here.
+///
+/// This is the end-to-end shape of the first two blockers: both loops reload
+/// config on every tick through this loader, and both used to receive constants
+/// instead of the host's answers — a cadence of `Some(0)`, which the contract
+/// reads as manual-only and which skips every source with nothing logged, and an
+/// empty Composio mode, which never selects the one branch a module can serve.
+/// A regression here is invisible at runtime, so it is pinned at the seam.
+#[tokio::test]
+async fn the_loader_answers_the_hosts_cadence_and_composio_mode() {
+    let mut config = module_config("/tmp/module-workspace");
+    config.memory_sync_interval_secs = Some(3_600);
+    config.composio_mode = "direct".to_string();
+    config.composio_entity_id = "entity-7".to_string();
+
+    let answered = ModuleConfigLoader::new(&config)
+        .load()
+        .await
+        .expect("the module always has a config");
+
+    assert_eq!(answered.memory_sync_interval_secs(), Some(3_600));
+    assert!(answered.composio().is_direct());
+    assert_eq!(answered.composio().entity_id, "entity-7");
+}
+
+/// "Manual only" has to survive as itself.
+///
+/// The cadence is the one field where two different values produce the same
+/// observable behaviour — a loop that fires nothing — so a bug that turned a
+/// user's `Some(0)` into a default cadence, or a default into `Some(0)`, would
+/// be found only by a user noticing their data was wrong weeks later.
+#[tokio::test]
+async fn a_manual_only_cadence_survives_the_loader_intact() {
+    let mut config = module_config("/tmp/module-workspace");
+    config.memory_sync_interval_secs = Some(0);
+
+    let answered = ModuleConfigLoader::new(&config)
+        .load()
+        .await
+        .expect("the module always has a config");
+
+    assert_eq!(answered.memory_sync_interval_secs(), Some(0));
+}
+
 /// The one field that would smuggle a credential back out.
 #[tokio::test]
 async fn the_loader_hands_back_no_carried_credential() {

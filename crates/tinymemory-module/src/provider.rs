@@ -27,6 +27,13 @@ impl From<&ModuleConfig> for EngineRuntimeConfig {
             default_temperature: config.default_temperature,
             output_language: config.output_language.clone(),
             memory_sources: config.memory_sources.clone(),
+            // The three the periodic sync loops read. They cross as data rather
+            // than being answered by the engine config's own constants, because
+            // the constants were `Some(0)` — manual-only — and an empty Composio
+            // mode, and both of those skip work rather than fail it.
+            memory_sync_interval_secs: config.memory_sync_interval_secs,
+            composio_mode: config.composio_mode.clone(),
+            composio_entity_id: config.composio_entity_id.clone(),
         }
     }
 }

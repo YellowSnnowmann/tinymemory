@@ -118,6 +118,119 @@ async fn client_returns_a_handle_after_explicit_init() {
     let _arc: Arc<MemoryClient> = c;
 }
 
+/// The whole point of `bind`: the client the caller already built becomes the
+/// one every resolution path answers with, without a second one being built.
+#[tokio::test]
+async fn bind_publishes_a_caller_built_client_to_both_resolution_paths() {
+    crate::test_seams::init();
+    let slot = GlobalClientSlot::default();
+    let tmp = TempDir::new().unwrap();
+    let workspace = tmp.path().join("ws-bound");
+    let client: MemoryClientRef =
+        Arc::new(MemoryClient::from_workspace_dir(workspace.clone()).unwrap());
+
+    let bound = bind_in_slot(&slot, workspace.clone(), Arc::clone(&client)).unwrap();
+
+    assert!(
+        Arc::ptr_eq(&bound, &client),
+        "bind must not swap the client"
+    );
+    assert!(Arc::ptr_eq(&client_from(&slot).unwrap(), &client));
+    // The per-workspace cache is the half a slot-only bind would miss, and
+    // missing it lets `client_for_workspace` build a second engine over the
+    // same store.
+    assert!(Arc::ptr_eq(
+        &client_for_workspace(&workspace).unwrap(),
+        &client
+    ));
+}
+
+/// Re-binding the same client is what a retried setup produces, and must not
+/// read as the double-client hazard.
+#[tokio::test]
+async fn binding_the_same_client_twice_is_idempotent() {
+    crate::test_seams::init();
+    let slot = GlobalClientSlot::default();
+    let tmp = TempDir::new().unwrap();
+    let workspace = tmp.path().join("ws-bound-twice");
+    let client: MemoryClientRef =
+        Arc::new(MemoryClient::from_workspace_dir(workspace.clone()).unwrap());
+
+    let first = bind_in_slot(&slot, workspace.clone(), Arc::clone(&client)).unwrap();
+    let second = bind_in_slot(&slot, workspace, Arc::clone(&client)).unwrap();
+
+    assert!(Arc::ptr_eq(&first, &second));
+}
+
+/// The case that would reintroduce the hazard `bind` exists to avoid: a second
+/// client over one workspace must be named, not absorbed.
+#[tokio::test]
+async fn binding_a_different_client_for_one_workspace_is_refused() {
+    crate::test_seams::init();
+    let slot = GlobalClientSlot::default();
+    let tmp = TempDir::new().unwrap();
+    let workspace = tmp.path().join("ws-two-clients");
+    let first: MemoryClientRef =
+        Arc::new(MemoryClient::from_workspace_dir(workspace.clone()).unwrap());
+    let second: MemoryClientRef =
+        Arc::new(MemoryClient::from_workspace_dir(workspace.clone()).unwrap());
+
+    bind_in_slot(&slot, workspace.clone(), Arc::clone(&first)).unwrap();
+    let error = match bind_in_slot(&slot, workspace.clone(), Arc::clone(&second)) {
+        Ok(_) => panic!("a second client over one workspace must not bind"),
+        Err(error) => error,
+    };
+
+    assert!(error.contains("already bound"), "{error}");
+    // And the refusal leaves the binding alone rather than repointing it at a
+    // client the caller that owns the slot is not the one using.
+    assert!(Arc::ptr_eq(&client_from(&slot).unwrap(), &first));
+    assert!(Arc::ptr_eq(
+        &client_for_workspace(&workspace).unwrap(),
+        &first
+    ));
+}
+
+/// A bind for another workspace is the active-user-switch shape `init` already
+/// handles, so it rebinds rather than refusing.
+#[tokio::test]
+async fn bind_rebinds_when_the_workspace_changes() {
+    crate::test_seams::init();
+    let slot = GlobalClientSlot::default();
+    let tmp = TempDir::new().unwrap();
+    let workspace_a = tmp.path().join("ws-bind-a");
+    let workspace_b = tmp.path().join("ws-bind-b");
+    let client_a: MemoryClientRef =
+        Arc::new(MemoryClient::from_workspace_dir(workspace_a.clone()).unwrap());
+    let client_b: MemoryClientRef =
+        Arc::new(MemoryClient::from_workspace_dir(workspace_b.clone()).unwrap());
+
+    bind_in_slot(&slot, workspace_a, Arc::clone(&client_a)).unwrap();
+    bind_in_slot(&slot, workspace_b, Arc::clone(&client_b)).unwrap();
+
+    assert!(Arc::ptr_eq(&client_from(&slot).unwrap(), &client_b));
+}
+
+/// `init` and `bind` must not disagree about which client owns a workspace,
+/// whichever ran first.
+#[tokio::test]
+async fn init_after_bind_reuses_the_bound_client() {
+    crate::test_seams::init();
+    let slot = GlobalClientSlot::default();
+    let tmp = TempDir::new().unwrap();
+    let workspace = tmp.path().join("ws-bind-then-init");
+    let client: MemoryClientRef =
+        Arc::new(MemoryClient::from_workspace_dir(workspace.clone()).unwrap());
+
+    bind_in_slot(&slot, workspace.clone(), Arc::clone(&client)).unwrap();
+    let from_init = init_in_slot(&slot, workspace).unwrap();
+
+    assert!(
+        Arc::ptr_eq(&from_init, &client),
+        "init must reuse the bound client rather than construct a second one"
+    );
+}
+
 #[tokio::test]
 async fn client_errs_clearly_when_not_initialised() {
     crate::test_seams::init();
