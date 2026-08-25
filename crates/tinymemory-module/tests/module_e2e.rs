@@ -42,7 +42,7 @@
 use tinybus::broker::Broker;
 use tinybus::module::ModuleHost;
 use tinybus::transport::memory::MemoryBus;
-use tinybus::{Connection, Result as BusResult};
+use tinybus::{Connection, Error as BusError, Result as BusResult};
 use tinymemory_api::capabilities::{Capabilities, Capability};
 use tinymemory_api::types::{MemoryCategory, MemoryEntry, MemoryTaint};
 use tinymemory_module::{
@@ -614,6 +614,9 @@ const EXPECTED_METHODS: &[&str] = &[
     "ChunkDetail",
     "StorageKinds",
     "ChunkEmbeddings",
+    "CountChunks",
+    "ListChunkDetails",
+    "SourceTotals",
     // Retrieval.
     "FastRetrieve",
     "CoverWindow",
@@ -653,6 +656,9 @@ const EXPECTED_METHODS: &[&str] = &[
     "Entities",
     "EntityEdges",
     "TouchEntities",
+    "TopEntities",
+    "ChunkEntities",
+    "EntityChunkIds",
     "KvGet",
     "KvPut",
     "KvDelete",
@@ -669,6 +675,7 @@ const EXPECTED_METHODS: &[&str] = &[
     "DeleteToolRule",
     "AcceptSourceItems",
     "ForgetSource",
+    "ForgetMatching",
     "Reembed",
     "Compact",
     "Consolidate",
@@ -680,7 +687,10 @@ const EXPECTED_METHODS: &[&str] = &[
     "BackfillInProgress",
     "FlushPending",
     "ResetDerivedIndex",
+    "PurgeAll",
     "RecallNamespaceRecent",
+    "SummaryForest",
+    "RecentLeaves",
 ];
 
 #[tokio::test]
@@ -1041,10 +1051,31 @@ async fn people_and_profile_round_trip(bus: &tinybus::Proxy) {
         .call("ListPeople", (Some(8_usize),))
         .await
         .expect("ListPeople");
-    let _: tinymemory_api::provider::people::AddressBookSeedOutcome = bus
-        .call("SeedFromAddressBook", ())
+    // `SeedFromAddressBook` is the one member here that reaches outside the
+    // process for its answer: with `contacts` on it opens the platform address
+    // book, and on macOS that is a per-application privacy grant the test
+    // runner may not hold. A denial is the address book answering, not the
+    // module failing to route, so the assertion is that the call reaches the
+    // driver and comes back under a contract error — never that this host
+    // happens to have granted Contacts access.
+    match bus
+        .call::<tinymemory_api::provider::people::AddressBookSeedOutcome>("SeedFromAddressBook", ())
         .await
-        .expect("SeedFromAddressBook");
+    {
+        Ok(_) => {}
+        Err(BusError::MethodFailed { name, message })
+            if message.contains("contacts access denied") =>
+        {
+            assert!(
+                name.starts_with("ai.tinyhumans.tinymemory.Error."),
+                "a denial must still come back under a contract error name, got {name}"
+            );
+            eprintln!(
+                "SeedFromAddressBook: address book access not granted on this host — {message}"
+            );
+        }
+        Err(error) => panic!("SeedFromAddressBook: {error:?}"),
+    }
 
     bus.call::<()>(
         "UpsertProviderFacet",
@@ -1163,9 +1194,15 @@ async fn query_and_maintenance_families_dispatch_typed_requests() {
     portability_and_lifecycle_round_trip(&bus).await;
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one linear bus round trip: ingest, then every chunk read it enables, asserted in call order"
+)]
 async fn ingest_and_chunks_round_trip(bus: &tinybus::Proxy) -> String {
     use tinymemory_api::chunks::DataSource;
-    use tinymemory_api::provider::chunks::{ChunkDetail, ChunkEmbedding, ChunkQuery};
+    use tinymemory_api::provider::chunks::{
+        ChunkDetail, ChunkEmbedding, ChunkListRow, ChunkQuery, SourceTotal,
+    };
     use tinymemory_api::provider::types::{IngestItem, IngestOutcome};
 
     let ingest = IngestItem {
@@ -1183,6 +1220,10 @@ async fn ingest_and_chunks_round_trip(bus: &tinybus::Proxy) -> String {
         author: None,
         channel_label: None,
         platform: None,
+        to: Vec::new(),
+        cc: Vec::new(),
+        subject: None,
+        list_unsubscribe: None,
     };
     let outcome: IngestOutcome = bus
         .call("IngestDocument", (ingest.clone(),))
@@ -1232,6 +1273,10 @@ async fn ingest_and_chunks_round_trip(bus: &tinybus::Proxy) -> String {
                 author: Some("alice@example.com".into()),
                 channel_label: Some("Adapter ship date".into()),
                 platform: None,
+                to: vec!["carol@example.com".into()],
+                cc: vec!["dave@example.com".into()],
+                subject: Some("Re: adapter, renamed".into()),
+                list_unsubscribe: Some("<https://lists.example.com/u/9>".into()),
             }],),
         )
         .await
@@ -1240,6 +1285,29 @@ async fn ingest_and_chunks_round_trip(bus: &tinybus::Proxy) -> String {
         mail.written > 0,
         "the mail path must reach the pipeline, not just route"
     );
+
+    // The mail headers, asserted after a real serialize/deserialize across the
+    // loaded module rather than only against the driver. `List-Unsubscribe` is
+    // the one that matters most: it is the input an unsubscribe flow reads back
+    // out of stored mail, so a shape that dropped it in transit would still
+    // answer `written > 0` above and look like a healthy ingest.
+    let stored: Option<tinymemory_api::chunks::Chunk> = bus
+        .call("GetChunk", (mail.ids[0].clone(),))
+        .await
+        .expect("GetChunk for the stored mail");
+    let stored = stored.expect("the id `IngestEmail` reported must resolve");
+    for header in [
+        "To: carol@example.com",
+        "Cc: dave@example.com",
+        "Subject: Re: adapter, renamed",
+        "List-Unsubscribe: <https://lists.example.com/u/9>",
+    ] {
+        assert!(
+            stored.content.contains(header),
+            "`{header}` must survive the crossing: {}",
+            stored.content
+        );
+    }
 
     let chunks: Vec<tinymemory_api::chunks::Chunk> = bus
         .call(
@@ -1267,6 +1335,58 @@ async fn ingest_and_chunks_round_trip(bus: &tinybus::Proxy) -> String {
         .call("ChunkEmbeddings", (vec![chunk_id.clone()], "test:8"))
         .await
         .expect("ChunkEmbeddings");
+    // The count is asked over the wire with the same query the list used. This
+    // workspace holds far fewer chunks than the default page, so the two must
+    // agree exactly — a count answered from an unfiltered `SELECT COUNT(*)`,
+    // or one that let the page bounds through, would not.
+    let total: u64 = bus
+        .call(
+            "CountChunks",
+            (
+                ChunkQuery::default(),
+                Option::<tinymemory_api::provider::types::SourceScope>::None,
+            ),
+        )
+        .await
+        .expect("CountChunks");
+    assert_eq!(
+        total,
+        chunks.len() as u64,
+        "CountChunks must agree with the ListChunks page it accompanies"
+    );
+
+    // The detail list answers the page's own filter in one read rather than in
+    // a `ChunkDetail` loop, so it has to describe exactly the page `ListChunks`
+    // returned. A detail list built on a second predicate would not.
+    let details: Vec<ChunkListRow> = bus
+        .call(
+            "ListChunkDetails",
+            (
+                ChunkQuery::default(),
+                Option::<tinymemory_api::provider::types::SourceScope>::None,
+            ),
+        )
+        .await
+        .expect("ListChunkDetails");
+    assert_eq!(
+        details.len(),
+        chunks.len(),
+        "ListChunkDetails must describe the same page ListChunks returned"
+    );
+
+    // Shape over the wire is what is under test here — a workspace with one
+    // source is a legitimate answer — so this asserts the decode and the
+    // argument tuple, which is what a host gets wrong.
+    let _: Vec<SourceTotal> = bus
+        .call(
+            "SourceTotals",
+            (
+                16_usize,
+                Option::<tinymemory_api::provider::types::SourceScope>::None,
+            ),
+        )
+        .await
+        .expect("SourceTotals");
 
     chunk_id
 }
@@ -1411,6 +1531,34 @@ async fn tree_and_entities_round_trip(bus: &tinybus::Proxy) {
     bus.call::<()>("TouchEntities", ("project", vec!["person:alice"]))
         .await
         .expect("TouchEntities");
+
+    // The occurrence-index reads. Shape over the wire is what is under test —
+    // an empty index is a legitimate answer to all three — so these assert the
+    // decode and the argument tuples, which is what a host gets wrong.
+    let _: Vec<tinymemory_api::provider::types::EntityOccurrence> = bus
+        .call("TopEntities", (Option::<String>::None, 8_usize))
+        .await
+        .expect("TopEntities");
+    let _: Vec<tinymemory_api::provider::types::ChunkEntityOccurrence> = bus
+        .call(
+            "ChunkEntities",
+            (vec!["chunk-1".to_string()], Option::<Vec<String>>::None),
+        )
+        .await
+        .expect("ChunkEntities");
+    let _: Vec<String> = bus
+        .call("EntityChunkIds", ("person:alice", 8_usize))
+        .await
+        .expect("EntityChunkIds");
+    // A kind the extractor's vocabulary does not hold is a caller mistake, not
+    // an empty store: the module must refuse it rather than answer with `[]`.
+    let refused: Result<Vec<tinymemory_api::provider::types::EntityOccurrence>, _> = bus
+        .call("TopEntities", (Some("not-a-kind".to_string()), 8_usize))
+        .await;
+    assert!(
+        refused.is_err(),
+        "an unknown entity kind must be refused, not answered with an empty index"
+    );
 }
 
 async fn maintenance_and_diff_round_trip(bus: &tinybus::Proxy) {
@@ -1450,6 +1598,10 @@ async fn maintenance_and_diff_round_trip(bus: &tinybus::Proxy) {
         author: None,
         channel_label: None,
         platform: None,
+        to: Vec::new(),
+        cc: Vec::new(),
+        subject: None,
+        list_unsubscribe: None,
     };
     let _: IngestOutcome = bus
         .call("IngestDocument", (changed,))

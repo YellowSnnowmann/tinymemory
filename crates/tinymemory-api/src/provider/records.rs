@@ -9,18 +9,19 @@
 //!
 //! [`MemorySourceSink`] receives already-fetched items — the host owns
 //! credentials, OAuth, rate limits, and the schedule. [`MemoryMaintenance`]
-//! exposes four operations the host's existing scheduler calls; no driver
+//! exposes the operations the host's existing scheduler calls; no driver
 //! installs a background task of its own. Both follow the same rule as the
 //! engine's `queue::run_once`, and both are why a driver never needs to see
 //! configuration or a keychain.
 
 use async_trait::async_trait;
 
+use crate::capabilities::Capability;
 use crate::error::MemoryError;
 use crate::goals::GoalsDoc;
 use crate::provider::types::{
-    FlushOutcome, IngestOutcome, MaintenanceReport, QueueFailure, QueueStats, ResetOutcome,
-    SourceItem, StoreStats,
+    FlushOutcome, ForgetOutcome, ForgetSelector, IngestOutcome, MaintenanceReport, PurgeOutcome,
+    QueueFailure, QueueStats, ResetOutcome, SourceItem, StoreStats,
 };
 use crate::tool_memory::ToolMemoryRule;
 use crate::types::MemoryTaint;
@@ -118,14 +119,63 @@ pub trait MemorySourceSink: Send + Sync {
     ///
     /// Backend failures only.
     async fn forget_source(&self, source_id: &str) -> Result<u64, MemoryError>;
+
+    /// Remove whatever [`ForgetSelector`] names, and report what went with it.
+    ///
+    /// # How this differs from [`Self::forget_source`]
+    ///
+    /// [`Self::forget_source`] is the whole-source disconnect: one logical id,
+    /// every kind it appears under, one number back. This is the selective
+    /// path, and each of its arms is something that call cannot express — a
+    /// single chunk, a kind-qualified source, a family of derived source ids
+    /// under one prefix, everything one owner brought in. Widening
+    /// `forget_source` to cover them would mean four `Option` arguments where
+    /// at most one may ever be set, on a call that deletes.
+    ///
+    /// A driver implementing both must keep them consistent: a
+    /// [`ForgetSelector::Source`] naming the only kind a source has must
+    /// remove exactly what `forget_source` would.
+    ///
+    /// # Why the outcome is not a count
+    ///
+    /// Deleting chunks can strand the summary trees derived from them, and
+    /// cleaning a stranded tree is work that happens with no chunk removed at
+    /// all. [`ForgetOutcome`] keeps the two counts apart so a caller can tell
+    /// "nothing matched" from "nothing was left but the summaries".
+    ///
+    /// # Errors
+    ///
+    /// [`MemoryError::Unsupported`] from a driver that implements this family
+    /// but not this member — deliberately not defaulted onto
+    /// [`Self::forget_source`] for the [`ForgetSelector::Source`] arm, because
+    /// a default that quietly ignored `source_kind` would delete across kinds
+    /// a caller had narrowed away from.
+    ///
+    /// [`MemoryError::Invalid`] for a `source_kind` the driver does not
+    /// recognise, never an outcome of zero: on a delete, a zero the caller
+    /// reads as "already gone" is worse than a refusal.
+    ///
+    /// Otherwise backend failures. Idempotent — a selector that matches
+    /// nothing removes nothing and returns an all-zero [`ForgetOutcome`].
+    async fn forget_matching(
+        &self,
+        selector: &ForgetSelector,
+    ) -> Result<ForgetOutcome, MemoryError> {
+        let _ = selector;
+        Err(MemoryError::unsupported(Capability::Sources))
+    }
 }
 
 /// Periodic upkeep the host's scheduler drives.
 ///
-/// All four operations must be safe to call repeatedly and safe to interrupt:
+/// Every operation here must be safe to call repeatedly and safe to interrupt:
 /// the scheduler may invoke them on a timer, and a desktop process can exit at
 /// any point. A driver that cannot bound the work should do a slice per call
 /// and report progress in [`MaintenanceReport`].
+///
+/// [`Self::purge_all`] is the one member no scheduler may drive. It sits here
+/// because this is where the optional operator-triggered mutations live, not
+/// because it is upkeep; its own docs say why no other family could hold it.
 #[async_trait]
 pub trait MemoryMaintenance: Send + Sync {
     /// Recompute embeddings for content whose embedding is missing or stale.
@@ -311,5 +361,59 @@ pub trait MemoryMaintenance: Send + Sync {
     /// it.
     async fn reset_derived_index(&self) -> Result<ResetOutcome, MemoryError> {
         Ok(ResetOutcome::default())
+    }
+
+    /// Delete everything this driver has stored.
+    ///
+    /// The operator's factory reset: every chunk, every derived row, every
+    /// queue entry. The inverse of [`Self::reset_derived_index`], which is
+    /// safe precisely because it deletes only what it can rebuild. Nothing
+    /// here is rebuildable, and a caller reaching it has already asked a
+    /// human.
+    ///
+    /// # Where the wipe stops
+    ///
+    /// At the storage the driver owns. A driver that keeps content outside its
+    /// database in a place of its own choosing clears that too: leaving it
+    /// behind orphans bytes nothing will ever reference again. A directory the
+    /// *host* created, configured, and hands the driver a path into is the
+    /// host's to remove, and a driver deleting host-owned directories is
+    /// reaching past its own storage into somewhere it cannot reason about.
+    /// The embedded driver's content vault is the second kind.
+    ///
+    /// # Why this is on maintenance and not on portability
+    ///
+    /// A wipe reads like the companion of import and export, and that is the
+    /// wrong home for it: [`crate::provider::MemoryPortability`] is a
+    /// **mandatory** supertrait, so putting it there would oblige every driver
+    /// that compiles to implement a destructive whole-store delete — including
+    /// the ones with nothing to wipe, and the ones fronting a store that must
+    /// never be wiped through this contract at all. This family is optional
+    /// and already holds the operator-triggered mutations
+    /// ([`Self::reset_derived_index`], [`Self::flush_pending`]), so a driver
+    /// declines by not advertising rather than by implementing a stub.
+    ///
+    /// # Why this defaults to a refusal
+    ///
+    /// The rest of this family defaults to an empty result, and that is honest
+    /// for a *read* that under-claims: "nothing to report" is true of a driver
+    /// with no queue. A `purge_all` defaulting to `rows_deleted: 0` would
+    /// report a completed wipe from a driver that deleted nothing, to a caller
+    /// whose next act is telling the user their memory is gone. It is the same
+    /// distinction [`crate::null::NullMemoryProvider`] draws when it overrides
+    /// the two mutating defaults above rather than inheriting them.
+    ///
+    /// # Errors
+    ///
+    /// [`MemoryError::Unsupported`] from a driver that cannot — or must not —
+    /// destroy its store on request; that is the correct answer for one
+    /// fronting a shared or externally-owned backend.
+    ///
+    /// Otherwise backend failures. A partial wipe is a failure and not a
+    /// smaller success: a driver that cannot make this atomic reports what it
+    /// managed in the error, rather than returning `Ok` over a store that is
+    /// now half there.
+    async fn purge_all(&self) -> Result<PurgeOutcome, MemoryError> {
+        Err(MemoryError::unsupported(Capability::Maintenance))
     }
 }

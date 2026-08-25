@@ -136,6 +136,10 @@ impl<'a> DocumentIntake<'a> {
                     author: None,
                     channel_label: None,
                     platform: None,
+                    to: Vec::new(),
+                    cc: Vec::new(),
+                    subject: None,
+                    list_unsubscribe: None,
                 };
                 let outcome = ingest.ingest_document(item).await?;
                 Ok(IntakeReceipt {

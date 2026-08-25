@@ -43,6 +43,10 @@ fn ingest_item(content: &str, mime: Option<&str>, taint: MemoryTaint) -> IngestI
         author: None,
         channel_label: None,
         platform: None,
+        to: Vec::new(),
+        cc: Vec::new(),
+        subject: None,
+        list_unsubscribe: None,
     }
 }
 
