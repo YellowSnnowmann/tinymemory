@@ -779,6 +779,9 @@ async fn notion_and_slack_cover_secondary_fetch_and_per_scope_cursor_contracts()
     );
     assert_eq!(notion_args["page_size"], 25);
     assert_eq!(notion_args["start_cursor"], "page-2");
+    // Composio rejects `NOTION_FETCH_DATA` without `fetch_type` ("Following
+    // fields are missing"), which broke every periodic Notion sync tick.
+    assert_eq!(notion_args["fetch_type"], "pages");
     let notion_page = notion.extract_page(
         &json!({"data":{"results":[{"pageId":"page-1"}],"next_cursor":"next"}}),
         None,
