@@ -744,6 +744,12 @@ async fn the_two_new_families_are_gated_on_their_own_capability() {
     assert_eq!(refusal(error), wire::UNSUPPORTED);
 
     let error = service
+        .bootstrap_connection("gmail".to_string(), "conn-1".to_string())
+        .await
+        .expect_err("a driver without the source-sync family must refuse");
+    assert_eq!(refusal(error), wire::UNSUPPORTED);
+
+    let error = service
         .coding_session_status()
         .await
         .expect_err("a driver without the coding-sessions family must refuse");
@@ -762,4 +768,36 @@ async fn the_two_new_families_are_gated_on_their_own_capability() {
         .await
         .expect_err("a driver without the maintenance family must refuse");
     assert_eq!(refusal(error), wire::UNSUPPORTED);
+}
+
+/// The Composio provider registry is filled by this process, not by the host.
+///
+/// It is a process-global, and before the memory engine moved into a module the
+/// host's own boot was what called `init_default_providers`. A `cdylib` has its
+/// own statics, so that call does nothing for this process — and the failure is
+/// silent in the worst way: `get_provider` answers `None` rather than erroring,
+/// so `BootstrapConnection` would report "no composio provider registered for
+/// 'gmail'" on a perfectly good connection, and nothing in a build or a type
+/// check would have said so.
+///
+/// This pins the call the module's startup makes. It is deliberately asserting
+/// a toolkit the registry's own `init_default_providers` registers rather than
+/// an arbitrary string, so that a rename upstream fails here instead of in the
+/// field.
+#[test]
+fn the_default_composio_providers_populate_the_registry() {
+    use tinymemory_core::sync::composio::providers::{get_provider, init_default_providers};
+
+    init_default_providers();
+
+    assert!(
+        get_provider("gmail").is_some(),
+        "init_default_providers must register the gmail provider; BootstrapConnection \
+         resolves through this registry and answers Invalid when it is empty"
+    );
+    assert!(
+        get_provider("__definitely_not_a_real_toolkit__").is_none(),
+        "an unregistered toolkit must stay unregistered — otherwise the assertion above \
+         would pass against a registry that returns something for everything"
+    );
 }

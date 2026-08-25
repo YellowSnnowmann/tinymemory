@@ -515,6 +515,10 @@ fn every_optional_method_fails_with_its_advertised_family_name() {
         Capability::SourceSync,
     );
     assert_unsupported(
+        block_on(driver.bootstrap_connection("gmail", "conn-1")),
+        Capability::SourceSync,
+    );
+    assert_unsupported(
         block_on(driver.source_sync_state("gmail", "conn-1")),
         Capability::SourceSync,
     );

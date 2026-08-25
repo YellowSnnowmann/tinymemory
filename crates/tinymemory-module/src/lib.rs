@@ -170,6 +170,15 @@ async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()
     // credential strip above, because this is the seam that hands the config
     // back out to the engine repeatedly.
     tinymemory_core::config_loader::set_config_loader(Arc::new(ModuleConfigLoader::new(&config)));
+    // The Composio provider registry is a process-global too, and it is the one
+    // the host used to fill on its own boot. This process has its own statics,
+    // so without this line `get_provider` answers `None` for every toolkit
+    // inside the module — and it answers `None` rather than failing to build,
+    // which is why nothing above catches it. `BootstrapConnection` is the
+    // member that reads it; the sync pipeline resolves its provider a different
+    // way and is unaffected either way. Idempotent by the registry's own
+    // contract, so a second call from a host that also inits is harmless.
+    tinymemory_core::sync::composio::providers::init_default_providers();
     host::install(connection.clone());
     // The two seams no bus interface serves, and no local answer can honestly
     // stand in for. Both degraded in silence rather than with a named cause;
@@ -763,6 +772,7 @@ mod exports {
             // live here; these are the on-demand half plus what past runs cost.
             "RunConnectionSync",
             "RunSourceSync",
+            "BootstrapConnection",
             "SourceSyncState",
             "SyncAuditLog",
             "EstimateSyncCostUsd",
