@@ -10,7 +10,7 @@
 //! `stub.rs` files with one generic answer.
 //!
 //! It is also the fixture the capability-degradation tests bind: with it in the
-//! slot, the fifteen optional families are unadvertised, so their RPC methods are
+//! slot, the optional families are unadvertised, so their RPC methods are
 //! unregistered and their agent tools are absent — and the core still boots.
 //!
 //! And it is the existence proof for the mandatory set: if
@@ -32,9 +32,9 @@
 //! driver that failed to bind — **that** case falls back to the embedded
 //! default, never to this. Do not wire it as a general-purpose failure mode.
 //!
-//! ## Why it implements all eighteen families but advertises three
+//! ## Why it implements the optional families but advertises three
 //!
-//! The fifteen optional families are implemented and every method returns
+//! The optional families are implemented and every method returns
 //! [`crate::error::MemoryError::Unsupported`] naming its family, but the
 //! `as_*` accessors return `None` and
 //! [`crate::provider::MemoryProvider::capabilities`] lists only the mandatory
@@ -60,13 +60,15 @@ use crate::provider::types::{
     IngestOutcome, MaintenanceReport, ResetOutcome, SnapshotRef, SourceItem, SourceScope,
 };
 use crate::provider::{
-    AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, CoverWindowQuery, EntityMatch,
-    FacetType, FastRetrieveQuery, MemoryChunks, MemoryCore, MemoryDiff, MemoryDocuments,
+    AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, CodingSessionIngestReport,
+    CodingSessionIngestRequest, CodingSessionSource, CoverWindowQuery, EntityMatch, FacetType,
+    FastRetrieveQuery, MemoryChunks, MemoryCodingSessions, MemoryCore, MemoryDiff, MemoryDocuments,
     MemoryEntities, MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople,
     MemoryPortability, MemoryProfile, MemoryProvider, MemoryRecall, MemoryRetrieval,
-    MemorySourceSink, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction, PersonRecord,
-    PersonScore, ProfileFacet, RankedPerson, ResolvedPerson, RetrievalHit, RetrievalResponse,
-    SourceRetrievalQuery, UserState,
+    MemorySourceSink, MemorySourceSync, MemoryToolMemory, MemoryTree, PersonHandle,
+    PersonInteraction, PersonRecord, PersonScore, ProfileFacet, RankedPerson, RawArchiveCoverage,
+    RawRebuildOutcome, ResolvedPerson, RetrievalHit, RetrievalResponse, SourceRetrievalQuery,
+    SourceSyncState, SourceSyncStatus, SyncAuditEntry, SyncRunOutcome, UserState,
 };
 use crate::recall::OwnedRecallOpts;
 use crate::tool_memory::ToolMemoryRule;
@@ -106,7 +108,7 @@ impl MemoryProvider for NullMemoryProvider {
         NULL_DRIVER_ID
     }
 
-    /// Exactly the mandatory three. The fifteen optional families are implemented
+    /// Exactly the mandatory three. The optional families are implemented
     /// below but deliberately not advertised, so they stay unreachable through
     /// the trait object.
     fn capabilities(&self) -> Capabilities {
@@ -702,6 +704,84 @@ impl MemoryProfile for NullMemoryProvider {
     /// `false`, matching the trait's documented "an error reads as no".
     async fn workflow_identity_matches(&self, _pattern: &str, _value: &str) -> bool {
         false
+    }
+}
+
+#[async_trait]
+impl MemorySourceSync for NullMemoryProvider {
+    async fn run_connection_sync(
+        &self,
+        _toolkit: &str,
+        _connection_id: &str,
+    ) -> Result<SyncRunOutcome, MemoryError> {
+        unsupported(Capability::SourceSync)
+    }
+
+    async fn source_sync_state(
+        &self,
+        _toolkit: &str,
+        _connection_id: &str,
+    ) -> Result<Option<SourceSyncState>, MemoryError> {
+        // Not `Ok(None)`, which the trait defines as "this connection has never
+        // synced". This driver cannot sync at all, and answering "never synced"
+        // would put a connection with a plausible empty state in front of a
+        // caller that would then offer to sync it.
+        unsupported(Capability::SourceSync)
+    }
+
+    async fn sync_audit_log(
+        &self,
+        _limit: Option<usize>,
+    ) -> Result<Vec<SyncAuditEntry>, MemoryError> {
+        unsupported(Capability::SourceSync)
+    }
+
+    async fn estimate_sync_cost_usd(
+        &self,
+        _input_tokens: u64,
+        _output_tokens: u64,
+    ) -> Result<f64, MemoryError> {
+        // The trait lets a driver whose sync is free answer `0.0`. This one has
+        // no sync to price, and quoting a free one would be a price rather than
+        // an absence — the same distinction the state read above draws.
+        unsupported(Capability::SourceSync)
+    }
+
+    async fn sync_statuses(&self) -> Result<Vec<SourceSyncStatus>, MemoryError> {
+        unsupported(Capability::SourceSync)
+    }
+
+    async fn raw_archive_coverage(
+        &self,
+        _tree_scope: &str,
+        _archive_source_id: &str,
+    ) -> Result<RawArchiveCoverage, MemoryError> {
+        unsupported(Capability::SourceSync)
+    }
+
+    async fn rebuild_from_raw_archive(
+        &self,
+        _tree_scope: &str,
+        _archive_source_id: &str,
+    ) -> Result<RawRebuildOutcome, MemoryError> {
+        unsupported(Capability::SourceSync)
+    }
+}
+
+#[async_trait]
+impl MemoryCodingSessions for NullMemoryProvider {
+    async fn coding_session_status(&self) -> Result<Vec<CodingSessionSource>, MemoryError> {
+        // Not an empty list. The trait defines one row per agent the driver
+        // knows about, so an empty answer is "I looked and found no agents
+        // installed" — which this driver did not do.
+        unsupported(Capability::CodingSessions)
+    }
+
+    async fn ingest_coding_sessions(
+        &self,
+        _request: CodingSessionIngestRequest,
+    ) -> Result<CodingSessionIngestReport, MemoryError> {
+        unsupported(Capability::CodingSessions)
     }
 }
 

@@ -8,7 +8,7 @@ use super::common::{checked_execute, document, first_array, pick_str};
 use super::slack_parse::{
     decode_cursors, next_cursor, parse_ts, replace_mentions, search_matches, search_total_pages,
 };
-use crate::sync::composio::providers::sync_state::SyncState;
+use crate::sync::composio::providers::sync_state::{PersistedSyncState, SyncState};
 use crate::sync::pipelines::composio::{
     run_incremental_sync, ActionExecutor, ComposioClient, IncrementalSource, PageFetch, SyncItem,
     SyncScope,

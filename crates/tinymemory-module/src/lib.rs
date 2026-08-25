@@ -616,6 +616,16 @@ mod exports {
         // `BusComposioHost::probe`, which blocks its caller for one bus round
         // trip and is bounded at twice per tick — see the note on `probe` for
         // why that bridge blocks at all.
+        //
+        // Nor do the long-running on-demand members. `RunConnectionSync` and
+        // `RebuildFromRawArchive` await network and inference, so they yield
+        // their worker between every step; every synchronous read behind
+        // `SyncAuditLog`, `SyncStatuses` and `RawArchiveCoverage` hops to
+        // `spawn_blocking`, which draws on the blocking pool rather than on
+        // these eight. `IngestCodingSessions` is the one that occupies a thread
+        // outright for its whole run — the persona pipeline is not `Send`, so
+        // the driver drives it from a blocking worker — and that is again the
+        // blocking pool, not a runtime worker.
         worker_threads = 8,
         provides = ["ai.tinyhumans.tinymemory.Memory"],
         methods = [
@@ -735,6 +745,23 @@ mod exports {
             // Tree, structural: the forest walk and its leaf edge.
             "SummaryForest",
             "RecentLeaves",
+            // Tree, by source scope: the flush a user triggers on one source.
+            "FlushSourceTree",
+            // Maintenance, typed: the diagnosis an operator or an agent reads,
+            // beside the uniform report a scheduler reads.
+            "Diagnose",
+            // Source sync this process runs itself. The periodic loops already
+            // live here; these are the on-demand half plus what past runs cost.
+            "RunConnectionSync",
+            "SourceSyncState",
+            "SyncAuditLog",
+            "EstimateSyncCostUsd",
+            "SyncStatuses",
+            "RawArchiveCoverage",
+            "RebuildFromRawArchive",
+            // Local coding-agent transcripts.
+            "CodingSessionStatus",
+            "IngestCodingSessions",
         ],
         signals = [],
         // The host's embedder is deliberately NOT declared as `requires`. That

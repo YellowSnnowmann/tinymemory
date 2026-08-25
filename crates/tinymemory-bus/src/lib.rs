@@ -2,7 +2,7 @@
 //! the members that carry them.
 //!
 //! TinyMemory ships as a loadable `TinyBus` module: `crates/tinymemory-module`
-//! exports one object with 109 members on it, built as a `cdylib`. A host that
+//! exports one object with 120 members on it, built as a `cdylib`. A host that
 //! loads it — OpenHuman — can call into it but cannot `use` anything out of it,
 //! so the payload vocabulary has to be published as an ordinary library. This
 //! is that library.
@@ -12,6 +12,13 @@
 //! - [`names`] — the bus name, the object path, and one constant per member.
 //! - [`types`], [`chunks`], [`recall`], [`tree`], [`goals`], [`tool_memory`],
 //!   [`health`], [`capabilities`], [`evidence`] — the value vocabulary.
+//! - [`learning`] — the learning-candidate taxonomy ([`learning::FacetClass`],
+//!   [`learning::CueFamily`], [`learning::LearningCandidate`]), whose producer
+//!   and consumer sit on opposite sides of the module boundary.
+//! - [`composio`] — the connector-sync vocabulary: what a provider run
+//!   produces ([`composio::SyncOutcome`], [`composio::NormalizedTask`]), what
+//!   it remembers between runs ([`composio::SyncState`]) and what the user has
+//!   allowed it to do ([`composio::UserScopePref`]).
 //! - [`graph`] — the bounded graph-view model ([`graph::GraphView`],
 //!   [`graph::GraphViewQuery`]), the graph counterpart of [`tree`].
 //! - [`namespace`] — the `<section>:<scope>` namespace convention
@@ -24,7 +31,7 @@
 //!
 //! ## What is deliberately not here
 //!
-//! **No traits.** `MemoryProvider` and the eighteen capability-family traits
+//! **No traits.** `MemoryProvider` and the twenty capability-family traits
 //! are driver obligations: they describe what an engine must implement, not
 //! what a frame carries. They stay in `tinymemory-api`, which depends on this
 //! crate.
@@ -73,11 +80,13 @@
 
 pub mod capabilities;
 pub mod chunks;
+pub mod composio;
 pub mod error;
 pub mod evidence;
 pub mod goals;
 pub mod graph;
 pub mod health;
+pub mod learning;
 pub mod names;
 pub mod namespace;
 pub mod provider;

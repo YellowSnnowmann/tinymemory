@@ -275,6 +275,39 @@ pub mod methods {
     pub const UPSERT_SEGMENT_EMBEDDING: &str = "UpsertSegmentEmbedding";
     /// `InsertEvent` — record one extracted event against its segment.
     pub const INSERT_EVENT: &str = "InsertEvent";
+
+    // The summary tree's flush door, addressed by source scope rather than by
+    // a tree handle.
+    /// `FlushSourceTree` — seal and cascade one source's tree now.
+    pub const FLUSH_SOURCE_TREE: &str = "FlushSourceTree";
+
+    // The typed pipeline diagnosis, beside the maintenance family's uniform
+    // report.
+    /// `Diagnose` — the typed, per-stage pipeline diagnosis.
+    pub const DIAGNOSE: &str = "Diagnose";
+
+    // Syncs the driver runs itself: the manual trigger, the persisted state,
+    // and what past runs cost.
+    /// `RunConnectionSync` — run one connection's sync now.
+    pub const RUN_CONNECTION_SYNC: &str = "RunConnectionSync";
+    /// `SourceSyncState` — the persisted cursor and budget for one connection.
+    pub const SOURCE_SYNC_STATE: &str = "SourceSyncState";
+    /// `SyncAuditLog` — past sync runs, newest first.
+    pub const SYNC_AUDIT_LOG: &str = "SyncAuditLog";
+    /// `EstimateSyncCostUsd` — price a token count at the driver's own rate.
+    pub const ESTIMATE_SYNC_COST_USD: &str = "EstimateSyncCostUsd";
+    /// `SyncStatuses` — per-provider progress, derived from stored content.
+    pub const SYNC_STATUSES: &str = "SyncStatuses";
+    /// `RawArchiveCoverage` — how much of a raw archive its tree covers.
+    pub const RAW_ARCHIVE_COVERAGE: &str = "RawArchiveCoverage";
+    /// `RebuildFromRawArchive` — re-derive a tree from its raw archive.
+    pub const REBUILD_FROM_RAW_ARCHIVE: &str = "RebuildFromRawArchive";
+
+    // The local coding-agent transcripts the driver distils.
+    /// `CodingSessionStatus` — what each agent's session store holds.
+    pub const CODING_SESSION_STATUS: &str = "CodingSessionStatus";
+    /// `IngestCodingSessions` — distil coding sessions into observations.
+    pub const INGEST_CODING_SESSIONS: &str = "IngestCodingSessions";
 }
 
 /// Every member name, in the order the module declares them.
@@ -282,7 +315,7 @@ pub mod methods {
 /// The order matters: `tinybus`'s `Interface::members()` returns declaration
 /// order, and the module compares the two sequences directly rather than as
 /// sets, so a reordering is caught alongside an addition or a removal.
-pub const METHODS: [&str; 109] = [
+pub const METHODS: [&str; 120] = [
     methods::DRIVER_ID,
     methods::CAPABILITIES,
     methods::HEALTH,
@@ -392,6 +425,17 @@ pub const METHODS: [&str; 109] = [
     methods::SOURCE_TOTALS,
     methods::FORGET_MATCHING,
     methods::PURGE_ALL,
+    methods::FLUSH_SOURCE_TREE,
+    methods::DIAGNOSE,
+    methods::RUN_CONNECTION_SYNC,
+    methods::SOURCE_SYNC_STATE,
+    methods::SYNC_AUDIT_LOG,
+    methods::ESTIMATE_SYNC_COST_USD,
+    methods::SYNC_STATUSES,
+    methods::RAW_ARCHIVE_COVERAGE,
+    methods::REBUILD_FROM_RAW_ARCHIVE,
+    methods::CODING_SESSION_STATUS,
+    methods::INGEST_CODING_SESSIONS,
 ];
 
 #[cfg(test)]

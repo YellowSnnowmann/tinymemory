@@ -19,6 +19,7 @@ use async_trait::async_trait;
 use crate::capabilities::Capability;
 use crate::error::MemoryError;
 use crate::goals::GoalsDoc;
+use crate::provider::diagnosis::Diagnosis;
 use crate::provider::types::{
     FlushOutcome, ForgetOutcome, ForgetSelector, IngestOutcome, MaintenanceReport, PurgeOutcome,
     QueueFailure, QueueStats, ResetOutcome, SourceItem, StoreStats,
@@ -414,6 +415,59 @@ pub trait MemoryMaintenance: Send + Sync {
     /// managed in the error, rather than returning `Ok` over a store that is
     /// now half there.
     async fn purge_all(&self) -> Result<PurgeOutcome, MemoryError> {
+        Err(MemoryError::unsupported(Capability::Maintenance))
+    }
+
+    /// The typed, per-stage diagnosis of the driver's ingest pipeline.
+    ///
+    /// Read-only in exactly the sense [`Self::doctor`] is, and driven by the
+    /// same pass. What differs is who reads the answer.
+    ///
+    /// # Why this is not [`Self::doctor`] widened
+    ///
+    /// [`MaintenanceReport`] is deliberately one shape across `reembed`,
+    /// `compact`, `consolidate` and `doctor`, so a scheduler running all four
+    /// on a timer does not special-case one. That is the right shape for a
+    /// scheduler and the wrong one for an operator: it flattens a classified
+    /// cause into a line of prose, and a caller that wants to *act* on the
+    /// cause — localise the remediation, decide whether a retry could help,
+    /// tell "nothing ingested" apart from "ingested, not yet embedded" — has
+    /// to parse that prose back into the structure it was flattened from.
+    ///
+    /// Adding those fields to [`MaintenanceReport`] was the alternative. Four
+    /// of its five producers would leave every one of them empty, so the type
+    /// would stop describing what any single call returns; and changing
+    /// `doctor`'s return type instead is a breaking change to a member drivers
+    /// already implement.
+    ///
+    /// So the two coexist and a driver derives both from one pass:
+    /// [`Self::doctor`] is the lossy projection a scheduler reads,
+    /// [`Self::diagnose`] the full one a human or an agent reads.
+    ///
+    /// # Why a caller cannot compute this itself
+    ///
+    /// Two of the four parts of a [`Diagnosis`] exist only inside the driver's
+    /// process. [`crate::provider::diagnosis::DegradedCapabilities`] is set by
+    /// the embed and extract stages as they run, and
+    /// [`crate::provider::diagnosis::DiagnosisCounters`] is a read of the
+    /// driver's own storage. A caller that hosts no engine has neither, and
+    /// what it would produce is not a stale diagnosis but a confident
+    /// all-clear over counters of zero.
+    ///
+    /// # Errors
+    ///
+    /// [`MemoryError::Unsupported`] from a driver that cannot diagnose itself
+    /// — deliberately, and unlike the reads above, which default to an empty
+    /// answer. An empty [`Diagnosis`] is not "nothing to report": its
+    /// `healthy` flag would have to say something, and both answers are lies.
+    /// `false` with no stages sends a user hunting a fault that was never
+    /// found; `true` reports a clean bill of health from a driver that never
+    /// looked.
+    ///
+    /// Backend failures otherwise. A *finding* is not an error, for the reason
+    /// [`Self::doctor`] gives: a pipeline with problems still returns `Ok`
+    /// with the problems in it.
+    async fn diagnose(&self) -> Result<Diagnosis, MemoryError> {
         Err(MemoryError::unsupported(Capability::Maintenance))
     }
 }

@@ -16,8 +16,27 @@
 //! `fetch_user_profile` call — from `on_connection_created`, periodic syncs,
 //! and the `composio_get_user_profile` / `composio_refresh_all_identities`
 //! RPC ops.
+//!
+//! # Where the vocabulary lives (#5560)
+//!
+//! [`IdentityKind`], [`canonicalize`], [`ConnectedIdentity`],
+//! [`render_connected_identities_section`] and
+//! [`normalize_connection_identifier`] are defined in
+//! [`tinymemory_api::composio::profile`] and re-exported here.
+//!
+//! Canonicalisation had to go down because equality of canonical forms is the
+//! matcher's *only* test, and the two calls it compares are on opposite sides
+//! of the module boundary: the value is canonicalised here when a profile is
+//! persisted, and again in OpenHuman when a candidate identifier is checked
+//! against it. Two implementations would fail open — a user's own messages
+//! would quietly stop being recognised as theirs. The same argument covers the
+//! identifier normalisation, which produces the key segment a row is *stored*
+//! under: a delete that spelled it differently would leave rows behind and keep
+//! treating a disconnected account as the user.
+//!
+//! Everything that touches the facet store stayed here, because the contract
+//! crate holds no storage.
 
-use super::ProviderUserProfile;
 use crate::learning_candidate::{
     self as learning_candidate, CueFamily, EvidenceRef, FacetClass, LearningCandidate,
 };
@@ -25,100 +44,17 @@ use crate::store::profile::FacetType;
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-// ────────────────────────────────────────────────────────────────────────
-// IdentityKind — the matching axis
-// ────────────────────────────────────────────────────────────────────────
+use tinymemory_api::composio::profile::normalize_connection_identifier as normalize_token;
 
-/// Shape of an identifier persisted against a connection. Mirrors the
-/// matching dimensions of the memory tree's
-/// `crate::tree::score::extract::EntityKind` so the
-/// self-check is a direct `(toolkit, kind, value)` lookup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum IdentityKind {
-    /// Platform-canonical immutable id — Slack `U123ABC`, Notion UUID.
-    UserId,
-    Email,
-    /// `@`-style screen name, canonicalised without the leading `@`.
-    Handle,
-    /// E.164 phone number.
-    Phone,
-    /// Human display label. Weak signal — never auto-promotes to is_self.
-    DisplayName,
-    /// Not for matching; kept for UI / prompt rendering.
-    AvatarUrl,
-    /// Not for matching; kept for UI / prompt rendering.
-    ProfileUrl,
-}
-
-impl IdentityKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::UserId => "user_id",
-            Self::Email => "email",
-            Self::Handle => "handle",
-            Self::Phone => "phone",
-            Self::DisplayName => "display_name",
-            Self::AvatarUrl => "avatar_url",
-            Self::ProfileUrl => "profile_url",
-        }
-    }
-
-    pub fn parse(s: &str) -> Option<Self> {
-        Some(match s {
-            "user_id" => Self::UserId,
-            "email" => Self::Email,
-            "handle" => Self::Handle,
-            "phone" => Self::Phone,
-            "display_name" => Self::DisplayName,
-            "avatar_url" => Self::AvatarUrl,
-            "profile_url" => Self::ProfileUrl,
-            _ => return None,
-        })
-    }
-
-    /// Confidence the matcher records on the row. Hard kinds auto-promote
-    /// a chunk to `is_self`; weak kinds require corroboration.
-    pub fn confidence(self) -> f64 {
-        match self {
-            Self::UserId | Self::Phone => 1.00,
-            Self::Email => 0.95,
-            Self::Handle => 0.70,
-            Self::DisplayName => 0.40,
-            Self::AvatarUrl | Self::ProfileUrl => 0.50,
-        }
-    }
-
-    /// True if this kind is a real identity signal worth running through
-    /// the matcher (vs. UI-only fields).
-    pub fn is_matchable(self) -> bool {
-        matches!(
-            self,
-            Self::UserId | Self::Email | Self::Handle | Self::Phone | Self::DisplayName
-        )
-    }
-}
-
-/// Canonicalize a raw value for storage and lookup. The same routine runs
-/// on the entity side at match time, so equality of canonical forms is the
-/// matcher's only test — no `COLLATE NOCASE`, no per-call lowercasing.
-pub fn canonicalize(kind: IdentityKind, raw: &str) -> Option<String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    Some(match kind {
-        IdentityKind::Email => trimmed.to_lowercase(),
-        IdentityKind::Handle => trimmed.trim_start_matches('@').to_lowercase(),
-        IdentityKind::Phone => trimmed
-            .chars()
-            .filter(|c| c.is_ascii_digit() || *c == '+')
-            .collect(),
-        IdentityKind::DisplayName => trimmed.split_whitespace().collect::<Vec<_>>().join(" "),
-        IdentityKind::UserId | IdentityKind::AvatarUrl | IdentityKind::ProfileUrl => {
-            trimmed.to_string()
-        }
-    })
-}
+/// The identity vocabulary, defined in the contract crate.
+///
+/// Re-exported at this path so every historical
+/// `providers::profile::IdentityKind` reference keeps resolving. See the module
+/// docs for why the shapes went down and the store access stayed.
+pub use tinymemory_api::composio::profile::{
+    canonicalize, normalize_connection_identifier, render_connected_identities_section,
+    ConnectedIdentity, IdentityKind, ProviderUserProfile,
+};
 
 // ────────────────────────────────────────────────────────────────────────
 // Persist
@@ -261,19 +197,6 @@ fn json_str<'a>(v: &'a Value, key: &str) -> Option<&'a str> {
 // Read paths
 // ────────────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ConnectedIdentity {
-    pub source: String,
-    pub identifier: String,
-    pub display_name: Option<String>,
-    pub email: Option<String>,
-    pub handle: Option<String>,
-    pub phone: Option<String>,
-    pub user_id: Option<String>,
-    pub avatar_url: Option<String>,
-    pub profile_url: Option<String>,
-}
-
 /// Load all provider-sourced identities, grouped by `(source, conn_id)`.
 /// Rows whose last segment is not a known [`IdentityKind`] are silently
 /// skipped — that includes legacy `username` rows from before the rewrite.
@@ -361,56 +284,6 @@ pub fn is_self_identity_any_toolkit(kind: IdentityKind, raw_value: &str) -> bool
         .skill_identity_matches(&key_pattern, &canonical)
 }
 
-/// Render a compact section for prompt injection. Skips `user_id` (not
-/// human-readable), prefixes `handle` with `@`.
-pub fn render_connected_identities_section(identities: &[ConnectedIdentity]) -> String {
-    if identities.is_empty() {
-        return String::new();
-    }
-    let mut out = String::from("## Connected Identities\n\n");
-    for id in identities {
-        let mut fields = Vec::<String>::new();
-        if let Some(v) = id.display_name.as_deref() {
-            let v = sanitize_prompt_value(v);
-            if !v.is_empty() {
-                fields.push(v);
-            }
-        }
-        if let Some(v) = id.email.as_deref() {
-            let v = sanitize_prompt_value(v);
-            if !v.is_empty() {
-                fields.push(v);
-            }
-        }
-        if let Some(v) = id.handle.as_deref() {
-            let v = sanitize_prompt_value(v);
-            if !v.is_empty() {
-                fields.push(format!("@{v}"));
-            }
-        }
-        if let Some(v) = id.profile_url.as_deref() {
-            let v = sanitize_prompt_value(v);
-            if !v.is_empty() {
-                fields.push(v);
-            }
-        }
-        if fields.is_empty() {
-            continue;
-        }
-        let identifier = sanitize_prompt_value(&id.identifier);
-        out.push_str(&format!(
-            "- {} ({}): {}\n",
-            title_case(&id.source),
-            identifier,
-            fields.join(" | ")
-        ));
-    }
-    if out.trim() == "## Connected Identities" {
-        return String::new();
-    }
-    out
-}
-
 /// Delete every row for a `(source, conn_id)` pair — used on disconnect.
 pub fn delete_connected_identity_facets(source: &str, identifier: &str) -> usize {
     // `persist_provider_profile` writes keys with `normalize_token`-applied
@@ -462,36 +335,6 @@ fn parse_skill_identity_key(key: &str) -> Option<(String, String, String)> {
         return None;
     }
     Some((source.to_string(), identifier.to_string(), kind.to_string()))
-}
-
-fn normalize_token(raw: &str) -> String {
-    let mut out = String::with_capacity(raw.len());
-    for ch in raw.chars() {
-        let lower = ch.to_ascii_lowercase();
-        if lower.is_ascii_alphanumeric() || lower == '-' || lower == '_' {
-            out.push(lower);
-        } else {
-            out.push('_');
-        }
-    }
-    out.trim_matches('_').to_string()
-}
-
-pub fn normalize_connection_identifier(raw: &str) -> String {
-    normalize_token(raw)
-}
-
-fn title_case(raw: &str) -> String {
-    let mut chars = raw.chars();
-    match chars.next() {
-        Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
-        None => String::new(),
-    }
-}
-
-fn sanitize_prompt_value(raw: &str) -> String {
-    let replaced = raw.replace(['\n', '\r', '\t'], " ").replace('|', "/");
-    replaced.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 fn now_secs() -> f64 {

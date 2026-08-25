@@ -23,8 +23,9 @@ use tinymemory_api::provider::types::IngestItem;
 use tinymemory_api::types::MemoryTaint;
 
 use super::{
-    advertised_capabilities, facet_type_to_engine, handle_to_contract, handle_to_engine,
-    parse_person_id, scope_to_engine, validate_ingest_item, EngineRuntimeConfig,
+    advertised_capabilities, audit_entry, diagnosis_failure, ensure_syncable_toolkit,
+    facet_type_to_engine, handle_to_contract, handle_to_engine, parse_person_id, scope_to_engine,
+    validate_ingest_item, EngineRuntimeConfig,
 };
 
 fn ingest_item(content: &str, mime: Option<&str>, taint: MemoryTaint) -> IngestItem {
@@ -332,4 +333,93 @@ fn people_profile_and_scope_boundary_conversions_are_total_and_fail_closed() {
             .len(),
         2
     );
+}
+
+#[test]
+fn an_unsyncable_toolkit_is_refused_before_anything_is_dispatched() {
+    // The pipeline builder refuses these too, but as a message inside a
+    // `PipelineFailure` — by which point this adapter can no longer tell
+    // "there is no such provider" from "the provider failed". On a call that
+    // spends money, the caller acts differently on each.
+    let error = ensure_syncable_toolkit("definitely-not-a-provider")
+        .expect_err("a toolkit with no pipeline must be refused");
+    assert!(
+        matches!(error, MemoryError::Invalid(_)),
+        "expected Invalid, got {error:?}"
+    );
+
+    // Every toolkit the engine-free pipelines actually build, and the
+    // case/whitespace forms a caller may send: the gate normalises, so a
+    // padded slug must not be refused here and then accepted downstream.
+    for toolkit in ["gmail", "Slack", " github ", "notion", "linear", "clickup"] {
+        assert!(
+            ensure_syncable_toolkit(toolkit).is_ok(),
+            "`{toolkit}` has a native pipeline and must not be refused"
+        );
+    }
+}
+
+#[test]
+fn a_pipeline_failure_crosses_with_the_engines_own_wire_strings() {
+    // The frontend resolves `remediation_key` to localised text and compares
+    // `code` for equality, so a re-spelling on this side stops matching keys
+    // that already exist. Pinned against the engine's own `as_str`.
+    use tinymemory_core::tree::health::{FailureCode, PipelineFailure};
+
+    let failure = PipelineFailure::new(FailureCode::EmbeddingsUnconfigured);
+    let crossed = diagnosis_failure(&failure);
+    assert_eq!(crossed.code, FailureCode::EmbeddingsUnconfigured.as_str());
+    assert_eq!(
+        crossed.class.as_deref(),
+        Some(FailureCode::EmbeddingsUnconfigured.class().as_str())
+    );
+    assert_eq!(
+        crossed.remediation_key,
+        FailureCode::EmbeddingsUnconfigured.remediation_key()
+    );
+    assert_eq!(crossed.detail, None);
+}
+
+#[test]
+fn an_audit_row_crosses_field_for_field_and_keeps_its_price() {
+    // The row was priced when it was written. Carrying `estimated_cost_usd`
+    // verbatim — rather than re-deriving it from the token counts on this side
+    // — is what keeps a historical total summed at the rate it was recorded at.
+    let entry = tinymemory_core::sync::audit::SyncAuditEntry {
+        timestamp: chrono::DateTime::<chrono::Utc>::from_timestamp(1_700_000_000, 0)
+            .expect("valid timestamp"),
+        source_id: "composio:gmail:conn-1".to_string(),
+        source_kind: "composio".to_string(),
+        scope: "gmail:conn-1".to_string(),
+        items_fetched: 12,
+        batches: 2,
+        input_tokens: 1_000,
+        output_tokens: 100,
+        estimated_cost_usd: 0.42,
+        composio_actions_called: 4,
+        composio_cost_usd: 0.02,
+        actual_charged_usd: None,
+        duration_ms: 4_200,
+        success: true,
+        error: None,
+    };
+    let crossed = audit_entry(entry);
+    assert_eq!(crossed.source_id, "composio:gmail:conn-1");
+    assert_eq!(crossed.items_fetched, 12);
+    assert!((crossed.estimated_cost_usd - 0.42).abs() < 1e-9);
+    // The contract's own arithmetic, over the same fields the engine's copy
+    // uses: estimate when nothing was charged, plus Composio's action cost.
+    assert!((crossed.effective_cost_usd() - 0.44).abs() < 1e-9);
+    assert!(crossed.success);
+    assert_eq!(crossed.error, None);
+}
+
+#[test]
+fn the_two_new_families_are_advertised_by_the_full_engine() {
+    // The families exist because the driver serves them; advertising is what
+    // makes a host register their RPC surface, and `audit_provider` fails the
+    // bind if the accessor and the advertisement disagree.
+    let caps = advertised_capabilities();
+    assert!(caps.contains(Capability::SourceSync));
+    assert!(caps.contains(Capability::CodingSessions));
 }

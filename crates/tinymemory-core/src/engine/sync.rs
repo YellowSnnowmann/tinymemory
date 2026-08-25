@@ -465,6 +465,10 @@ pub async fn load_composio_sync_state(
     toolkit: &str,
     connection_id: &str,
 ) -> anyhow::Result<crate::sync::composio::providers::sync_state::SyncState> {
+    // `load` is an extension-trait method since the state shape moved to the
+    // contract crate (#5560); the trait has to be in scope to call it.
+    use crate::sync::composio::providers::sync_state::PersistedSyncState;
+
     let memory = crate::global::client_if_ready()
         .ok_or_else(|| anyhow::anyhow!("memory client is not ready"))?;
     let host = crate::sync::pipelines::host::PipelineHost::without_tree_ingest(memory);

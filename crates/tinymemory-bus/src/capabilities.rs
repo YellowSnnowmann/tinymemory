@@ -51,7 +51,7 @@ use crate::error::MemoryError;
 
 /// One capability family a memory driver may advertise.
 ///
-/// The variants are exactly the sixteen families of the memory contract. Each
+/// The variants are exactly the twenty families of the memory contract. Each
 /// maps to a trait family in the contract, a group of RPC methods, and a group
 /// of agent tools; a driver that does not advertise a family simply has that
 /// surface absent.
@@ -96,6 +96,23 @@ pub enum Capability {
     Profile,
     /// The turn-by-turn conversation record and its segment lifecycle.
     Episodic,
+    /// Running a source sync on demand, and reporting what past runs cost.
+    ///
+    /// The counterpart of [`Self::Sources`], not a widening of it. That family
+    /// is the *sink* — the driver accepts items a caller fetched — and it stays
+    /// true of every driver that can store a batch. This one says the driver
+    /// owns the pipelines: it walks the connection itself, holds the cursor and
+    /// the budget, and can price what it spent. A driver may serve either
+    /// without the other.
+    SourceSync,
+    /// Distilling the user's local coding-agent transcripts into observations.
+    ///
+    /// Separate from [`Self::SourceSync`] because the two fail independently: a
+    /// driver running server-side has no local transcript store to read, and a
+    /// driver fronting a local vault has no authorised remote connection to
+    /// walk. Advertising them together would put a dead control in front of
+    /// whichever half is absent.
+    CodingSessions,
 }
 
 impl Capability {
@@ -104,7 +121,7 @@ impl Capability {
     /// Declaration order is also bit order in [`Capabilities`] and iteration
     /// order in its serialized form, so this slice is the single ordering
     /// authority for the whole module.
-    pub const ALL: [Capability; 18] = [
+    pub const ALL: [Capability; 20] = [
         Capability::Core,
         Capability::Recall,
         Capability::Ingest,
@@ -126,6 +143,8 @@ impl Capability {
         Capability::Retrieval,
         Capability::Profile,
         Capability::Episodic,
+        Capability::SourceSync,
+        Capability::CodingSessions,
     ];
 
     /// The families a driver must advertise to be bindable at all.
@@ -169,6 +188,8 @@ impl Capability {
             Self::Retrieval => "retrieval",
             Self::Profile => "profile",
             Self::Episodic => "episodic",
+            Self::SourceSync => "source_sync",
+            Self::CodingSessions => "coding_sessions",
         }
     }
 
@@ -216,6 +237,8 @@ impl Capability {
             Self::Retrieval => 15,
             Self::Profile => 16,
             Self::Episodic => 17,
+            Self::SourceSync => 18,
+            Self::CodingSessions => 19,
         }
     }
 

@@ -1,124 +1,57 @@
 //! Learning candidate buffer — Phase 1 of issue #566.
 //!
-//! Defines the taxonomy types ([`FacetClass`], [`CueFamily`], [`EvidenceRef`]),
-//! the unit-of-work [`LearningCandidate`], and a thread-safe ring-buffer
-//! [`Buffer`] that collects candidates emitted by producers (Phase 2) before
-//! they are consumed by the stability detector (Phase 3).
+//! The taxonomy ([`FacetClass`], [`CueFamily`], [`EvidenceRef`]) and the
+//! unit-of-work [`LearningCandidate`] are defined in the contract crate; this
+//! module re-exports them and owns the thread-safe ring-buffer [`Buffer`] that
+//! collects candidates emitted by producers (Phase 2) before the stability
+//! detector consumes them (Phase 3).
 //!
 //! The buffer is bounded: when full it evicts the oldest entry (FIFO overflow).
 //! A global singleton is exposed via [`global()`]; individual tests may
 //! construct their own [`Buffer`] with `Buffer::new(capacity)`.
+//!
+//! # Why the types moved out and the buffer did not (#5560)
+//!
+//! The types moved to [`tinymemory_api::learning`] because a *host* names them:
+//! the stability detector, the facet cache and the reflection hooks all live in
+//! OpenHuman, and reaching them through this crate is one of the compile-time
+//! links #5560 removes. They are inert serde data, so the contract crate is the
+//! right floor for them — same argument, and the same destination, as
+//! [`EvidenceRef`], which went there first.
+//!
+//! The buffer stayed because a **`static` is not a payload**. This crate is
+//! compiled into the module `cdylib`; the contract crate is compiled into both
+//! that and the host binary. Moving [`global()`] down would not give the two
+//! sides one queue, it would give them two, and the producer would push into
+//! the copy the consumer never drains.
+//!
+//! **That split is already live, and moving the types does not close it.** The
+//! one producer in this workspace is
+//! `crate::sync::composio::providers::profile`, which pushes an identity
+//! candidate on every provider-profile sync — and that code runs inside the
+//! module. The host's detector drains the host's buffer. Delivering a candidate
+//! across that boundary needs a bus member (or an event), which is contract
+//! work rather than a re-export, and is called out in the upstream gap notes
+//! rather than papered over here.
 
 use std::collections::VecDeque;
 use std::sync::OnceLock;
 
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
 
-// ── Taxonomy ────────────────────────────────────────────────────────────────
-
-/// Six-class taxonomy of what the cache can hold.
+/// The learning-candidate taxonomy, defined in the contract crate.
 ///
-/// Keys are stored with a class prefix, e.g. `style/verbosity` or
-/// `tooling/package_manager`. The class determines the half-life and
-/// class budget used by the stability detector (Phase 3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FacetClass {
-    /// Communication style preferences — verbosity, formality, code format.
-    Style,
-    /// Stable biographical facts — timezone, name, language, role.
-    Identity,
-    /// Developer toolchain preferences — package manager, editor, OS, language.
-    Tooling,
-    /// Hard user vetoes — things the user has explicitly rejected or forbidden.
-    Veto,
-    /// Active user goals or ongoing projects.
-    Goal,
-    /// Preferred communication channel or platform.
-    Channel,
-}
+/// Re-exported at this path because ~30 call sites in this crate and in
+/// OpenHuman already spell it `learning_candidate::FacetClass`, and the move
+/// delivers the decoupling without spending that churn.
+pub use tinymemory_api::learning::{CueFamily, FacetClass, LearningCandidate};
 
-/// How a candidate signal was produced — determines the weight multiplier
-/// applied in the stability formula.
-///
-/// Higher-weight families contribute more strongly per evidence item.
-/// The weights here are the canonical values from the Phase 1 plan:
-/// `Explicit=1.0`, `Structural=0.9`, `Behavioral=0.7`, `Recurrence=0.6`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CueFamily {
-    /// Direct declaration of intent by the user (highest weight — 1.0).
-    ///
-    /// Examples: "I prefer pnpm", "my timezone is PST", "always use terse replies".
-    Explicit,
-    /// Inferred from structured file or provider metadata (weight 0.9).
-    ///
-    /// Examples: `package.json#packageManager`, Gmail display name, Slack workspace.
-    Structural,
-    /// Inferred by heuristics or LLM from observed behaviour (weight 0.7).
-    ///
-    /// Examples: rolling edit-window ratio, correction-repeat signal, reflection hook output.
-    Behavioral,
-    /// Materialized from recurrence statistics in the memory tree (weight 0.6).
-    ///
-    /// Examples: tree-topic hotness, source_weight per channel.
-    Recurrence,
-}
-
-impl CueFamily {
-    /// Weight multiplier for this cue family in the stability formula.
-    ///
-    /// Phase 1 canonical values (matches the plan):
-    /// `Explicit=1.0`, `Structural=0.9`, `Behavioral=0.7`, `Recurrence=0.6`.
-    pub fn weight(self) -> f64 {
-        match self {
-            CueFamily::Explicit => 1.0,
-            CueFamily::Structural => 0.9,
-            CueFamily::Behavioral => 0.7,
-            CueFamily::Recurrence => 0.6,
-        }
-    }
-}
-
-// ── Evidence reference ───────────────────────────────────────────────────────
+// ── Evidence reference ──────────────────────────────────────────
 
 /// Where a candidate's evidence points. Defined in the contract crate — the
 /// memory store persists it, so both sides must name one type. See
 /// [`tinymemory_api::host::EvidenceRef`].
 pub use tinymemory_api::host::EvidenceRef;
-
-// ── Learning candidate ───────────────────────────────────────────────────────
-
-/// A single unit of learning evidence emitted by a producer and queued in the
-/// [`Buffer`].
-///
-/// Each candidate asserts a specific `(class, key, value)` triple alongside
-/// the evidence that backs it. The stability detector (Phase 3) aggregates
-/// competing candidates for the same `(class, key)` pair and resolves them
-/// into a single cache entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LearningCandidate {
-    /// Which facet class this evidence touches.
-    pub class: FacetClass,
-    /// Canonical slug key within the class, e.g. `"verbosity"`, `"package_manager"`.
-    ///
-    /// Convention: `snake_case`, lowercase, no class prefix (the class carries that).
-    pub key: String,
-    /// Canonical value string, e.g. `"terse"`, `"pnpm"`, `"UTC+5:30"`.
-    pub value: String,
-    /// How this candidate was produced.
-    pub cue_family: CueFamily,
-    /// Pointer to the backing evidence in the memory substrate.
-    pub evidence: EvidenceRef,
-    /// Source-provided confidence hint, `0.0..=1.0`.
-    ///
-    /// This is an initial hint; the stability detector will reweight it using
-    /// the cue-family weight and recency decay.
-    pub initial_confidence: f64,
-    /// When this candidate was observed, as seconds since the Unix epoch.
-    pub observed_at: f64,
-}
 
 // ── Buffer ───────────────────────────────────────────────────────────────────
 

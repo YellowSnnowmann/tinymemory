@@ -2,6 +2,14 @@
 //!
 //! The registry itself moved to `tinymemory-sources` (#18 §B4); this layer adds
 //! the host's config path and the lock that serialises writes to it.
+//!
+//! [`apply_kind_defaults`] followed the registry down in #5560. It is pure
+//! policy over a [`MemorySourceEntry`] — it fills caps that are still `None`
+//! and nothing else — and OpenHuman calls it when a user adds a source, so it
+//! had to be reachable without a compile-time link to this crate. It now sits
+//! beside `memory_sync_defaults_for_toolkit`, the Composio half of the same
+//! decision, which is where it should have been all along: creation-time and
+//! migration-time defaults only stay in step while the policy has one address.
 
 use std::sync::OnceLock;
 
@@ -9,7 +17,7 @@ use crate::config_loader as config_rpc;
 use crate::sources::types::{MemorySourceEntry, SourceKind};
 
 pub use tinymemory_sources::{
-    memory_sync_defaults_for_toolkit, ComposioUpsertTarget, MemorySourcePatch,
+    apply_kind_defaults, memory_sync_defaults_for_toolkit, ComposioUpsertTarget, MemorySourcePatch,
 };
 
 static MEMORY_SOURCES_WRITE_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
@@ -134,39 +142,6 @@ pub async fn apply_all_in() -> Result<Vec<MemorySourceEntry>, String> {
         .await?
         .apply_all_in()
         .map_err(|error| error.to_string())
-}
-
-/// Apply conservative per-kind cap defaults to a new source entry.
-///
-/// Only fills fields that are still `None` — never overwrites a
-/// caller-supplied value. This mirrors the retroactive migration logic in
-/// `reconcile::apply_composio_source_caps_migration` so the same defaults
-/// are applied consistently at creation time and during migration.
-pub fn apply_kind_defaults(entry: &mut MemorySourceEntry) {
-    match entry.kind {
-        SourceKind::GithubRepo => {
-            if entry.max_prs.is_none() {
-                entry.max_prs = Some(10);
-            }
-            if entry.max_issues.is_none() {
-                entry.max_issues = Some(10);
-            }
-            if entry.max_commits.is_none() {
-                entry.max_commits = Some(50);
-            }
-        }
-        SourceKind::RssFeed => {
-            if entry.max_items.is_none() {
-                entry.max_items = Some(20);
-            }
-        }
-        SourceKind::TwitterQuery if entry.since_days.is_none() => {
-            entry.since_days = Some(7);
-        }
-        // Folder / WebPage / Composio: no defaults to apply here.
-        // Composio defaults are set at upsert time in registry::upsert_composio_source.
-        _ => {}
-    }
 }
 
 /// Decode the source registry a host config carries.

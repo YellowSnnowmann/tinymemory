@@ -229,51 +229,15 @@ pub fn catalog_for_toolkit(toolkit: &str) -> Option<&'static [CuratedTool]> {
 
 /// All toolkit slugs that have a curated agent-ready catalog.
 ///
-/// Source of truth for the UI "preview / agent integration coming
-/// soon" badge: any connected toolkit whose slug is NOT in this list
-/// can be authorized but lacks a curated tool surface, so the agent
-/// can't use it productively.
+/// Source of truth for the UI "preview / agent integration coming soon" badge:
+/// any connected toolkit whose slug is NOT in this list can be authorized but
+/// lacks a curated tool surface, so the agent can't use it productively.
 ///
-/// Returned in sorted order to keep the RPC response stable across
-/// builds.
-pub fn agent_ready_toolkits() -> Vec<&'static str> {
-    let mut slugs: Vec<&'static str> = vec![
-        // Native providers
-        "gmail",
-        "notion",
-        "github",
-        // Catalog-only toolkits
-        "slack",
-        "discord",
-        "googlecalendar",
-        "googledrive",
-        "googledocs",
-        "googlesheets",
-        "outlook",
-        "microsoft_teams",
-        "linear",
-        "jira",
-        "trello",
-        "asana",
-        "dropbox",
-        "twitter",
-        "spotify",
-        "telegram",
-        "whatsapp",
-        "shopify",
-        "stripe",
-        "hubspot",
-        "salesforce",
-        "airtable",
-        "figma",
-        "youtube",
-        "one_drive",
-        "excel",
-        "todoist",
-    ];
-    slugs.sort_unstable();
-    slugs
-}
+/// Defined in the contract crate (#5560) because the *host* renders that badge
+/// and reaching this crate to spell the list is one of the compile-time links
+/// the issue removes. Re-exported here so every historical
+/// `providers::agent_ready_toolkits()` call keeps resolving.
+pub use tinymemory_api::composio::scopes::agent_ready_toolkits;
 
 pub use descriptions::toolkit_description;
 pub(crate) use helpers::{first_array_str, merge_extra};

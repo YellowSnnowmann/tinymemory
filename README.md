@@ -97,7 +97,7 @@ is deliberately outside `full`: "give me the whole workspace" is not the same
 request as "give me the test doubles".
 
 This table says which crate each feature brings in. For what each *engine*
-feature actually serves — driver class, and how many of the eighteen capability
+feature actually serves — driver class, and how many of the twenty capability
 families answer — see the engine table under
 [Using from your project](#using-from-your-project).
 
@@ -173,7 +173,7 @@ let provider = Arc::new(provider(Arc::new(InMemoryMemoryStore::new())));
 ```
 
 That is a complete embedded setup for the mandatory three families. The full
-eighteen-family engine (`TinycortexProvider`) additionally needs the host
+twenty-family engine (`TinycortexProvider`) additionally needs the host
 seams (`EmbeddingHost` et al.) installed — see
 `crates/tinymemory-tinycortex/tests/full_provider_conformance.rs` for the
 minimal working wiring.
@@ -200,10 +200,10 @@ for assistant-memory workloads; wrong for high-volume keyed storage.
 ## The contract
 
 `MemoryProvider` is an object-safe trait with **three mandatory** capability
-families and **fifteen optional** ones. The mandatory three are supertraits, so a
-driver missing any of them cannot be constructed; the optional fifteen are reached
-through `as_ingest()` / `as_tree()` / … accessors that default to `None`, so a
-minimal driver implements what it supports and inherits correct absence for
+families and **seventeen optional** ones. The mandatory three are supertraits, so
+a driver missing any of them cannot be constructed; the optional seventeen are
+reached through `as_ingest()` / `as_tree()` / … accessors that default to `None`,
+so a minimal driver implements what it supports and inherits correct absence for
 everything else.
 
 A driver's advertised set and its reachable accessors must agree.

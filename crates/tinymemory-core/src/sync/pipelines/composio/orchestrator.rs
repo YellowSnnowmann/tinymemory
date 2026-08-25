@@ -5,7 +5,7 @@ use serde_json::Value;
 
 use super::client::ActionExecutor;
 use super::page_size::{apply_page_size, is_payload_too_large, shrink_page_size};
-use crate::sync::composio::providers::sync_state::SyncState;
+use crate::sync::composio::providers::sync_state::{PersistedSyncState, SyncState};
 use crate::sync::pipelines::traits::PipelineConfig;
 use crate::sync::pipelines::traits::{
     SkillDocument, SyncContext, SyncEvent, SyncOutcome, SyncRunError, SyncStage,

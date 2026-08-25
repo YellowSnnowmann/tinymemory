@@ -43,13 +43,17 @@ use tinymemory_api::provider::types::{
 use tinymemory_api::provider::types::{ChangeKind, DiffReport, SnapshotRef, SourceChange};
 use tinymemory_api::provider::{
     AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkListRow, ChunkQuery,
-    ConversationSegment, CoverWindowQuery, EntityMatch, EpisodicEvent, EpisodicTurn, EventKind,
-    FacetType, FastRetrieveQuery, MemoryChunks, MemoryCore, MemoryDiff, MemoryDocuments,
-    MemoryEntities, MemoryEpisodic, MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance,
-    MemoryPeople, MemoryPortability, MemoryProfile, MemoryProvider, MemoryRecall, MemoryRetrieval,
-    MemorySourceSink, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction, PersonRecord,
-    PersonScore, ProfileFacet, RankedPerson, ResolvedPerson, RetrievalHit, RetrievalResponse,
-    SourceRetrievalQuery, SourceTotal, UserState,
+    CodingSessionIngestReport, CodingSessionIngestRequest, CodingSessionSource,
+    ConversationSegment, CoverWindowQuery, DegradedCapabilities, Diagnosis, DiagnosisCounters,
+    DiagnosisFailure, DiagnosisStage, EntityMatch, EpisodicEvent, EpisodicTurn, EventKind,
+    FacetType, FastRetrieveQuery, MemoryChunks, MemoryCodingSessions, MemoryCore, MemoryDiff,
+    MemoryDocuments, MemoryEntities, MemoryEpisodic, MemoryGoals, MemoryGraph, MemoryIngest,
+    MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProfile, MemoryProvider,
+    MemoryRecall, MemoryRetrieval, MemorySourceSink, MemorySourceSync, MemoryToolMemory,
+    MemoryTree, PersonHandle, PersonInteraction, PersonRecord, PersonScore, ProfileFacet,
+    RankedPerson, RawArchiveCoverage, RawRebuildOutcome, ResolvedPerson, RetrievalHit,
+    RetrievalResponse, SourceRetrievalQuery, SourceSyncState, SourceSyncStatus, SourceTotal,
+    SyncAuditEntry, SyncFreshness, SyncRunOutcome, UserState,
 };
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
@@ -1216,6 +1220,42 @@ impl MemoryTree for TinycortexProvider {
             })
             .collect())
     }
+
+    async fn flush_source_tree(&self, source_scope: &str) -> Result<u64, MemoryError> {
+        let scope = source_scope.to_string();
+        // The lookup is synchronous SQLite and it also (re)writes the source's
+        // `_source.md` mirror, so it goes to a blocking thread like every other
+        // synchronous read in this file. It creates the tree when the scope has
+        // none, which is what makes the member idempotent rather than a probe
+        // for which scopes exist.
+        let tree = blocking(self.config.clone(), "open the source tree", move |config| {
+            tinymemory_core::tree_source::get_or_create_source_tree(config, &scope)
+        })
+        .await?;
+
+        // The labelling policy comes from the tree's own kind and scope, which
+        // is the reason the contract passes a scope rather than a namespace:
+        // the caller has no way to make this choice and should not be making
+        // it. `from_tree` reads the kind off the row just fetched, so a topic
+        // or global tree reached through this member still gets its own
+        // policy rather than the source default.
+        let strategy =
+            tinymemory_core::tree::tree::TreeFactory::from_tree(&tree).label_strategy(&self.config);
+
+        // Seal *and* cascade, in one call: `force_flush_tree` cascades from
+        // level zero, so the leaves it seals are rolled up in the same pass.
+        // Stopping after the seal would leave a tier of leaves under no
+        // summary, which every structural query reads as an empty tree.
+        let sealed = tinymemory_core::tree::tree::flush::force_flush_tree(
+            &self.config,
+            &tree.id,
+            None,
+            &strategy,
+        )
+        .await
+        .map_err(|error| Self::other("flush the source tree", error))?;
+        Ok(u64::try_from(sealed.len()).unwrap_or(u64::MAX))
+    }
 }
 
 /// Validate entity-kind wire strings and re-emit them in the index's spelling.
@@ -2153,6 +2193,68 @@ impl MemoryMaintenance for TinycortexProvider {
                 .collect(),
         })
     }
+
+    /// The same pass [`MemoryMaintenance::doctor`] runs, reported in full.
+    ///
+    /// Both members call `async_run_doctor` and neither runs it twice for the
+    /// other: `doctor` throws away the classification, the degradation flags
+    /// and the counters to fit the family's uniform report, and this one keeps
+    /// them. That is the whole difference, and it is why the pair is not a
+    /// duplicate — the engine work is one call, and the two projections have
+    /// different readers.
+    ///
+    /// It cannot fail. `async_run_doctor` is best-effort by construction —
+    /// counter reads that error degrade to zero, and a panicking blocking task
+    /// still yields a shaped report with a transient cause — so there is no
+    /// error path to map. `Ok` is the honest return, not a swallowed failure.
+    async fn diagnose(&self) -> Result<Diagnosis, MemoryError> {
+        let report = tinymemory_core::tree::health::async_run_doctor(&self.config).await;
+        Ok(Diagnosis {
+            healthy: report.healthy,
+            stages: report
+                .stages
+                .into_iter()
+                .map(|stage| DiagnosisStage {
+                    stage: stage.stage,
+                    ok: stage.ok,
+                    failure: stage.failure.as_ref().map(diagnosis_failure),
+                    note: stage.note,
+                })
+                .collect(),
+            first_blocking_cause: report.first_blocking_cause.as_ref().map(diagnosis_failure),
+            degraded: DegradedCapabilities {
+                semantic_recall: report.degraded.semantic_recall,
+                structure: report.degraded.structure,
+                storage: report.degraded.storage,
+                cause: report.degraded.cause.as_ref().map(diagnosis_failure),
+            },
+            counters: DiagnosisCounters {
+                total_chunks: report.counters.total_chunks,
+                jobs_ready: report.counters.jobs_ready,
+                jobs_running: report.counters.jobs_running,
+                jobs_failed: report.counters.jobs_failed,
+                extraction_coverage: report.counters.extraction_coverage,
+            },
+        })
+    }
+}
+
+/// Carry one engine pipeline failure across as the contract's own shape.
+///
+/// The codes and classes cross as **strings**, and the strings are the
+/// engine's own `as_str` rather than anything invented here: the frontend
+/// resolves `remediation_key` to localised text and compares `code` for
+/// equality, so a re-spelling on this side would silently stop matching the
+/// keys that already exist. `class` is always `Some` because this engine always
+/// derives one from the code; the contract keeps it optional for an engine that
+/// classifies a cause without deciding a retry policy for it.
+fn diagnosis_failure(failure: &tinymemory_core::tree::health::PipelineFailure) -> DiagnosisFailure {
+    DiagnosisFailure {
+        code: failure.code.as_str().to_string(),
+        class: Some(failure.class.as_str().to_string()),
+        remediation_key: failure.remediation_key.clone(),
+        detail: failure.detail.clone(),
+    }
 }
 
 #[async_trait]
@@ -2223,6 +2325,363 @@ impl MemoryProvider for TinycortexProvider {
     }
     fn as_episodic(&self) -> Option<&dyn MemoryEpisodic> {
         Some(self)
+    }
+    fn as_source_sync(&self) -> Option<&dyn MemorySourceSync> {
+        Some(self)
+    }
+    fn as_coding_sessions(&self) -> Option<&dyn MemoryCodingSessions> {
+        Some(self)
+    }
+}
+
+// ── Source sync ──────────────────────────────────────────────────────────────
+//
+// Everything below delegates to `tinymemory_core`'s sync layer, which is where
+// the pipelines, the cursor store and the audit log already live. Nothing here
+// re-implements a fetch; this file's whole job is to say the same things in the
+// contract's vocabulary.
+//
+// The conversions destructure rather than round-trip through `Self::cross`, for
+// the reason the People section below gives at length: a serde round-trip
+// agrees only while the field *names* agree on both sides, and it fails at
+// runtime rather than at compile time when they stop.
+
+/// Toolkits with no native pipeline are refused before anything is dispatched.
+///
+/// The pipeline builder refuses them too, but as a `PipelineFailure` carrying a
+/// message — and by the time it does, this adapter can no longer tell "you
+/// asked for a provider that does not exist" apart from "the provider failed".
+/// The contract promises [`MemoryError::Invalid`] for the first, and on a call
+/// that costs money the difference decides whether a caller retries.
+fn ensure_syncable_toolkit(toolkit: &str) -> Result<(), MemoryError> {
+    if tinymemory_core::sync::pipelines::host::is_composio_toolkit_syncable(toolkit) {
+        return Ok(());
+    }
+    Err(MemoryError::Invalid(format!(
+        "memory sync has no pipeline for toolkit '{toolkit}'"
+    )))
+}
+
+/// Carry one audit row across as the contract's own shape.
+///
+/// Field-for-field, and the field names are identical on both sides because
+/// the contract copied the driver's on-disk format deliberately — see
+/// `tinymemory_bus::provider::sync::SyncAuditEntry`. The `estimated_cost_usd`
+/// this carries was priced when the row was written, which is why
+/// `estimate_sync_cost_usd` has to answer from the same constants rather than
+/// letting a caller re-derive it.
+fn audit_entry(entry: tinymemory_core::sync::audit::SyncAuditEntry) -> SyncAuditEntry {
+    let tinymemory_core::sync::audit::SyncAuditEntry {
+        timestamp,
+        source_id,
+        source_kind,
+        scope,
+        items_fetched,
+        batches,
+        input_tokens,
+        output_tokens,
+        estimated_cost_usd,
+        composio_actions_called,
+        composio_cost_usd,
+        actual_charged_usd,
+        duration_ms,
+        success,
+        error,
+    } = entry;
+    SyncAuditEntry {
+        timestamp,
+        source_id,
+        source_kind,
+        scope,
+        items_fetched,
+        batches,
+        input_tokens,
+        output_tokens,
+        estimated_cost_usd,
+        composio_actions_called,
+        composio_cost_usd,
+        actual_charged_usd,
+        duration_ms,
+        success,
+        error,
+    }
+}
+
+/// How many audit rows one read may return when the caller names no limit.
+///
+/// The log is append-only for the life of a workspace, so "all of it" is not a
+/// bound. A thousand rows is far more than any surface renders and still fits a
+/// frame with room to spare; a caller wanting a longer history asks for it and
+/// is refused by the module's size check rather than by silence.
+const DEFAULT_AUDIT_ROWS: usize = 1_000;
+
+/// The ceiling a caller's own `limit` is clamped to.
+const MAX_AUDIT_ROWS: usize = 10_000;
+
+#[async_trait]
+impl MemorySourceSync for TinycortexProvider {
+    async fn run_connection_sync(
+        &self,
+        toolkit: &str,
+        connection_id: &str,
+    ) -> Result<SyncRunOutcome, MemoryError> {
+        ensure_syncable_toolkit(toolkit)?;
+        // The registry lookup, the per-source budgets and the pipeline dispatch
+        // all happen inside this call — which is why the contract carries no
+        // budget arguments: they are already recorded against the source.
+        let outcome = tinymemory_core::tinycortex::run_composio_connection(
+            toolkit,
+            connection_id,
+            &self.config,
+        )
+        .await
+        .map_err(|failure| {
+            // The usage travels in the message rather than being dropped: a run
+            // that failed after calling four provider actions and spending real
+            // money has to say so somewhere, and `IngestOutcome`-style partial
+            // success is not available on an error path.
+            MemoryError::Other(anyhow::anyhow!(
+                "sync {toolkit} connection: {} (actions_called={}, provider_cost_usd={})",
+                failure.message,
+                failure.actions_called,
+                failure.provider_cost_usd
+            ))
+        })?;
+        Ok(SyncRunOutcome {
+            records_ingested: outcome.records_ingested,
+            more_pending: outcome.more_pending,
+            actions_called: outcome.actions_called,
+            provider_cost_usd: outcome.provider_cost_usd,
+            note: outcome.note,
+        })
+    }
+
+    async fn source_sync_state(
+        &self,
+        toolkit: &str,
+        connection_id: &str,
+    ) -> Result<Option<SourceSyncState>, MemoryError> {
+        use tinymemory_core::sync::composio::providers::sync_state::{SyncState, STATE_NAMESPACE};
+
+        // Read the row rather than calling `SyncState::load`, which materialises
+        // a fresh default when nothing is persisted. That default is right for a
+        // *run* — it is the state a first sync starts from — and wrong here: the
+        // contract distinguishes "never synced" from "synced and holding no
+        // cursor", and `load` cannot.
+        //
+        // The namespace and the key come from the engine's own constant and its
+        // own `key`, so this read cannot address a different row than the writes
+        // do; a literal here would be a second spelling of a durable key.
+        let key = SyncState::key(toolkit, connection_id);
+        let stored = self
+            .client
+            .kv_get(Some(STATE_NAMESPACE), &key)
+            .await
+            .map_err(|error| Self::other("read composio sync state", error))?;
+        let Some(stored) = stored else {
+            return Ok(None);
+        };
+        let state: SyncState = serde_json::from_value(stored)
+            .map_err(|error| Self::other("decode composio sync state", error))?;
+
+        // `remaining()` applies the engine's own day-rollover rule, so a budget
+        // last written yesterday reads as fully available today. Deriving the
+        // used count from it rather than from `requests_used` keeps that rule in
+        // one place — a second date comparison here would show yesterday's spend
+        // as today's the moment the two disagreed about what a day is.
+        let limit = state.daily_budget.limit;
+        let used = limit.saturating_sub(state.daily_budget.remaining());
+        Ok(Some(SourceSyncState {
+            toolkit: state.toolkit,
+            connection_id: state.connection_id,
+            cursor: state.cursor,
+            synced_item_count: u64::try_from(state.synced_ids.len()).unwrap_or(u64::MAX),
+            last_seen_id: state.last_seen_id,
+            last_sync_at_ms: state.last_sync_at_ms,
+            daily_requests_used: used,
+            daily_request_limit: limit,
+        }))
+    }
+
+    async fn sync_audit_log(
+        &self,
+        limit: Option<usize>,
+    ) -> Result<Vec<SyncAuditEntry>, MemoryError> {
+        // Clamped rather than trusted: `limit` reaches this from an RPC
+        // argument, and the log grows without bound, so an unclamped read is a
+        // response size a caller chooses.
+        let take = limit.unwrap_or(DEFAULT_AUDIT_ROWS).min(MAX_AUDIT_ROWS);
+        let entries = blocking(
+            self.config.clone(),
+            "read the sync audit log",
+            move |config| {
+                // Already newest-first: the reader reverses the append-only file.
+                Ok(tinymemory_core::tinycortex::read_audit_log(config))
+            },
+        )
+        .await?;
+        Ok(entries.into_iter().take(take).map(audit_entry).collect())
+    }
+
+    async fn estimate_sync_cost_usd(
+        &self,
+        input_tokens: u64,
+        output_tokens: u64,
+    ) -> Result<f64, MemoryError> {
+        // The one place these constants are read from outside the audit writer.
+        // Pure arithmetic, so no blocking hop and no failure path.
+        Ok(tinymemory_core::tinycortex::estimate_cost_usd(
+            input_tokens,
+            output_tokens,
+        ))
+    }
+
+    async fn sync_statuses(&self) -> Result<Vec<SourceSyncStatus>, MemoryError> {
+        let statuses = blocking(self.config.clone(), "list sync statuses", move |config| {
+            // `engine_config` is the engine's `MemoryConfig` built from the host
+            // config this driver already holds. It is built *here*, inside the
+            // driver, which is the whole point: the caller used to build it and
+            // pass it in, which meant the caller had to name an engine type.
+            let engine = tinymemory_core::tinycortex::engine_config(config);
+            tinycortex::memory::sync::list_sync_statuses(&engine)
+        })
+        .await?;
+        Ok(statuses
+            .into_iter()
+            .map(|status| SourceSyncStatus {
+                provider: status.provider,
+                chunks_synced: status.chunks_synced,
+                chunks_pending: status.chunks_pending,
+                batch_total: status.batch_total,
+                batch_processed: status.batch_processed,
+                last_chunk_at_ms: status.last_chunk_at_ms,
+                freshness: match status.freshness {
+                    tinycortex::memory::sync::FreshnessLabel::Active => SyncFreshness::Active,
+                    tinycortex::memory::sync::FreshnessLabel::Recent => SyncFreshness::Recent,
+                    tinycortex::memory::sync::FreshnessLabel::Idle => SyncFreshness::Idle,
+                },
+            })
+            .collect())
+    }
+
+    async fn raw_archive_coverage(
+        &self,
+        tree_scope: &str,
+        archive_source_id: &str,
+    ) -> Result<RawArchiveCoverage, MemoryError> {
+        let tree_scope = tree_scope.to_string();
+        let archive_source_id = archive_source_id.to_string();
+        let coverage = blocking(
+            self.config.clone(),
+            "scan raw archive coverage",
+            move |config| {
+                tinymemory_core::tinycortex::raw_coverage(config, &tree_scope, &archive_source_id)
+            },
+        )
+        .await?;
+        // The engine's scan carries each pending file's absolute path inside
+        // this driver's content vault. Only the count crosses — a path describes
+        // storage layout no caller may depend on, and the repair takes the same
+        // scope rather than a file list, so nothing downstream can use one.
+        Ok(RawArchiveCoverage {
+            total: u64::try_from(coverage.total).unwrap_or(u64::MAX),
+            covered: u64::try_from(coverage.covered).unwrap_or(u64::MAX),
+            pending: u64::try_from(coverage.pending.len()).unwrap_or(u64::MAX),
+        })
+    }
+
+    async fn rebuild_from_raw_archive(
+        &self,
+        tree_scope: &str,
+        archive_source_id: &str,
+    ) -> Result<RawRebuildOutcome, MemoryError> {
+        // Async rather than `blocking`: the rebuild summarises through the host
+        // summariser, so it awaits inference between batches.
+        let outcome = tinymemory_core::tinycortex::rebuild_tree_from_raw(
+            &self.config,
+            tree_scope,
+            archive_source_id,
+        )
+        .await
+        .map_err(|error| Self::other("rebuild the tree from its raw archive", error))?;
+        Ok(RawRebuildOutcome {
+            files_read: u64::try_from(outcome.files_read).unwrap_or(u64::MAX),
+            batches: u64::try_from(outcome.batches).unwrap_or(u64::MAX),
+            input_tokens: outcome.input_tokens,
+            output_tokens: outcome.output_tokens,
+            estimated_cost_usd: outcome.estimated_cost_usd,
+            actual_charged_usd: outcome.actual_charged_usd,
+        })
+    }
+}
+
+// ── Coding sessions ──────────────────────────────────────────────────────────
+
+#[async_trait]
+impl MemoryCodingSessions for TinycortexProvider {
+    async fn coding_session_status(&self) -> Result<Vec<CodingSessionSource>, MemoryError> {
+        // A bounded `walkdir` over two session roots plus a parse of each file:
+        // synchronous filesystem work, so it hops off the executor like every
+        // other synchronous read here. It takes no config — the roots come from
+        // the environment, driver-side, which is why no path appears in the
+        // contract.
+        let statuses =
+            tokio::task::spawn_blocking(tinymemory_core::tinycortex::coding_session_status)
+                .await
+                .map_err(|error| Self::other("scan coding sessions", error))?;
+        Ok(statuses
+            .into_iter()
+            .map(|status| CodingSessionSource {
+                kind: status.kind,
+                available: status.available,
+                session_files: status.session_files,
+                evidence_units: status.evidence_units,
+                invalid_files: status.invalid_files,
+                scan_truncated: status.scan_truncated,
+            })
+            .collect())
+    }
+
+    async fn ingest_coding_sessions(
+        &self,
+        request: CodingSessionIngestRequest,
+    ) -> Result<CodingSessionIngestReport, MemoryError> {
+        let config = self.config.clone();
+        // The persona pipeline holds borrowed path state across its awaits and
+        // is therefore **not** `Send`, while this trait's future must be. So the
+        // future is built and driven inside a blocking worker, on the ambient
+        // runtime, and only the finished report crosses back. Dropping the
+        // `spawn_blocking` and awaiting directly does not compile; replacing it
+        // with a second runtime would give the pipeline a different reactor from
+        // the one its inference calls are registered on.
+        let handle = tokio::runtime::Handle::current();
+        let engine_request = tinymemory_core::tinycortex::CodingSessionIngestRequest {
+            backfill: request.backfill,
+            // Clamped driver-side, as the contract says: `max_sessions` reaches
+            // here from an RPC argument, and each session is one or more
+            // sequential model calls.
+            max_sessions: request.max_sessions,
+        };
+        let response = tokio::task::spawn_blocking(move || {
+            handle.block_on(tinymemory_core::tinycortex::ingest_coding_sessions(
+                &config,
+                engine_request,
+            ))
+        })
+        .await
+        .map_err(|error| Self::other("join coding-session ingestion", error))?
+        .map_err(|error| Self::other("ingest coding sessions", error))?;
+        Ok(CodingSessionIngestReport {
+            mode: response.mode,
+            files_seen: response.files_seen,
+            sessions_processed: response.sessions_processed,
+            sessions_skipped: response.sessions_skipped,
+            sessions_failed: response.sessions_failed,
+            evidence_units: response.evidence_units,
+            observations: response.observations,
+            budget_hit: response.budget_hit,
+            pack_path: response.pack_path,
+        })
     }
 }
 
