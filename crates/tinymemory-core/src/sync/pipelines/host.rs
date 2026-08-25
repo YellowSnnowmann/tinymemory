@@ -259,8 +259,14 @@ pub fn composio_config(config: &Config) -> Result<ComposioSyncConfig, String> {
             entity_id: Some(config.composio().entity_id.clone()),
         })
     } else {
-        let bearer = config
-            .session_token()?
+        // The seam first, the config second — the mirror of the direct branch
+        // above. Inside a loaded module `session_token` cannot answer (the
+        // module holds a load-time snapshot with no bearer in it), so without
+        // the seam this branch refuses for every proxied user. Outside a module
+        // no host is installed, the seam answers `None`, and this falls through
+        // to exactly the config read it always did.
+        let bearer = crate::composio_host::session_bearer(config)
+            .or_else(|| config.session_token().ok().flatten())
             .ok_or_else(|| "OpenHuman backend bearer token is not configured".to_string())?;
         Ok(ComposioSyncConfig {
             mode: ComposioMode::Proxied,

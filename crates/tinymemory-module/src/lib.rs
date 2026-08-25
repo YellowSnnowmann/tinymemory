@@ -378,18 +378,25 @@ fn start_composio_periodic_sync(config: &ModuleConfig) {
     }
 
     log::warn!(
-        "[tinymemory:module] periodic Composio sync is NOT started: this host did not resolve \
-         Composio to direct mode, and backend mode needs a session bearer this module holds no \
-         field for and will not carry. Composio-connected sources will not update in this \
-         process until the sync client routes through `ComposioHost::execute`"
+        "[tinymemory:module] periodic Composio sync is NOT started: this host resolved Composio \
+         to neither direct nor backend mode, so no credential can be obtained for it. \
+         Composio-connected sources will not update in this process"
     );
 }
 
 /// Whether the Composio pipelines can resolve a credential in this process.
 ///
-/// True only for direct mode, which is the whole of the gate: the other branch
-/// of `sync::pipelines::host::composio_config` needs a backend session bearer,
-/// and `EngineRuntimeConfig::session_token` refuses to answer one by design.
+/// Both modes qualify now. Direct mode reads its API key through
+/// `ComposioHost::api_key`, and backend mode reads its bearer through
+/// `ComposioHost::session_bearer` — the seam added precisely so this gate could
+/// stop excluding the mode most hosts actually run. It used to be direct-only,
+/// which meant the loop silently did not start for a host whose default is
+/// backend, and neither side reported it because neither thought it was
+/// responsible.
+///
+/// What is still excluded is a host that resolved to *neither* — an empty or
+/// unrecognised mode string. There is no credential path for that, so starting
+/// the loop would fail on every tick and append a failed audit row each time.
 ///
 /// Asked of the *same* `EngineRuntimeConfig` the loop's own ticks will be handed
 /// and through the same `MemoryHostConfig::composio` accessor `composio_config`
@@ -404,9 +411,11 @@ fn start_composio_periodic_sync(config: &ModuleConfig) {
 /// asserting it through the caller would spawn a real 20-minute tick loop into
 /// the test binary.
 pub(crate) fn composio_sync_can_run(config: &ModuleConfig) -> bool {
-    tinymemory_tinycortex::engine::EngineRuntimeConfig::from(config)
-        .composio()
-        .is_direct()
+    let composio = tinymemory_tinycortex::engine::EngineRuntimeConfig::from(config).composio();
+    // Mirrors `composio_config`'s own branch: direct, else anything that names
+    // a mode at all takes the proxied path. An unset mode names neither and is
+    // the one case with no credential to reach for.
+    composio.is_direct() || !composio.mode.trim().is_empty()
 }
 
 /// The workspace whose queue this process's worker pool drains.
