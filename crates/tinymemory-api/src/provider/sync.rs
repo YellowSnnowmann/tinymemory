@@ -35,9 +35,9 @@
 //!
 //! ## Neither does configuration
 //!
-//! [`Self::run_connection_sync`] takes no budget arguments. The per-source
-//! caps — item limits, depth windows, token and cost ceilings — live in the
-//! registry the driver already reads, so passing them would be a caller
+//! [`MemorySourceSync::run_connection_sync`] takes no budget arguments. The
+//! per-source caps — item limits, depth windows, token and cost ceilings — live
+//! in the registry the driver already reads, so passing them would be a caller
 //! restating something the driver knows, with two sources of truth for a limit
 //! that costs money when it is wrong.
 
