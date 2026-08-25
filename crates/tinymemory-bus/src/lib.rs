@@ -2,7 +2,7 @@
 //! the members that carry them.
 //!
 //! TinyMemory ships as a loadable `TinyBus` module: `crates/tinymemory-module`
-//! exports one object with 120 members on it, built as a `cdylib`. A host that
+//! exports one object with 121 members on it, built as a `cdylib`. A host that
 //! loads it — OpenHuman — can call into it but cannot `use` anything out of it,
 //! so the payload vocabulary has to be published as an ordinary library. This
 //! is that library.

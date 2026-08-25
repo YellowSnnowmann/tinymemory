@@ -762,6 +762,7 @@ mod exports {
             // Source sync this process runs itself. The periodic loops already
             // live here; these are the on-demand half plus what past runs cost.
             "RunConnectionSync",
+            "RunSourceSync",
             "SourceSyncState",
             "SyncAuditLog",
             "EstimateSyncCostUsd",

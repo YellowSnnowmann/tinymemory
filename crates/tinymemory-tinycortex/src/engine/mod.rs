@@ -2467,6 +2467,41 @@ impl MemorySourceSync for TinycortexProvider {
         })
     }
 
+    async fn run_source_sync(&self, source_id: &str) -> Result<SyncRunOutcome, MemoryError> {
+        // Resolved here rather than passed in: the registry is the driver's own
+        // and carries the per-source budgets the pipeline applies, so a caller
+        // supplying the entry would put a second copy of those caps on the wire.
+        let source = tinymemory_core::sources::registry::get_source_in(&self.config, source_id)
+            .map_err(|error| MemoryError::Other(anyhow::anyhow!("read source registry: {error}")))?
+            .ok_or_else(|| {
+                // Distinct from an empty sync on purpose: a caller retrying a
+                // source that was deleted underneath it should learn that, not
+                // read a successful run that moved nothing.
+                MemoryError::NotFound(format!("no memory source registered as {source_id}"))
+            })?;
+
+        let outcome = tinymemory_core::engine::run_source_pipeline(&source, &self.config)
+            .await
+            .map_err(|failure| {
+                // Same shape as `run_connection_sync`: the usage travels in the
+                // message because an error path has nowhere structured to put it.
+                MemoryError::Other(anyhow::anyhow!(
+                    "sync source {source_id}: {} (actions_called={}, provider_cost_usd={})",
+                    failure.message,
+                    failure.actions_called,
+                    failure.provider_cost_usd
+                ))
+            })?;
+
+        Ok(SyncRunOutcome {
+            records_ingested: outcome.records_ingested,
+            more_pending: outcome.more_pending,
+            actions_called: outcome.actions_called,
+            provider_cost_usd: outcome.provider_cost_usd,
+            note: outcome.note,
+        })
+    }
+
     async fn source_sync_state(
         &self,
         toolkit: &str,
