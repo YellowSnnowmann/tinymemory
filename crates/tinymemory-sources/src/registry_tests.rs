@@ -436,3 +436,76 @@ fn every_mutation_path_leaves_the_config_owner_only() {
     assert!(reg.remove("src_2").unwrap());
     assert_eq!(mode_of(&path) & 0o077, 0, "remove() widened the config");
 }
+
+// ── apply_kind_defaults ─────────────────────────────────────────────────────
+//
+// Moved here from the engine crate in #5560 so a host can fill a new entry's
+// caps without linking the engine. The defaults are the ones the retroactive
+// Composio caps migration also applies, so any change here is a change to what
+// already-registered sources are reconciled against.
+
+fn entry_of_kind(kind: SourceKind) -> MemorySourceEntry {
+    let mut entry = folder_entry("defaults");
+    entry.kind = kind;
+    entry
+}
+
+#[test]
+fn github_defaults_fill_only_the_caps_left_unset() {
+    let mut entry = entry_of_kind(SourceKind::GithubRepo);
+    entry.max_issues = Some(3);
+    apply_kind_defaults(&mut entry);
+    assert_eq!(entry.max_prs, Some(10));
+    assert_eq!(entry.max_issues, Some(3), "a user-set cap must survive");
+    assert_eq!(entry.max_commits, Some(50));
+}
+
+#[test]
+fn an_rss_feed_gets_an_item_cap() {
+    let mut entry = entry_of_kind(SourceKind::RssFeed);
+    apply_kind_defaults(&mut entry);
+    assert_eq!(entry.max_items, Some(20));
+}
+
+#[test]
+fn a_twitter_query_gets_a_lookback_window() {
+    let mut entry = entry_of_kind(SourceKind::TwitterQuery);
+    apply_kind_defaults(&mut entry);
+    assert_eq!(entry.since_days, Some(7));
+
+    entry.since_days = Some(2);
+    apply_kind_defaults(&mut entry);
+    assert_eq!(entry.since_days, Some(2), "a user-set window must survive");
+}
+
+#[test]
+fn kinds_with_no_defaults_are_left_alone() {
+    // Composio caps come from the toolkit slug at upsert time, which this
+    // function does not have; folders and web pages have no caps at all.
+    for kind in [
+        SourceKind::Composio,
+        SourceKind::Conversation,
+        SourceKind::Folder,
+        SourceKind::WebPage,
+    ] {
+        let mut entry = entry_of_kind(kind.clone());
+        apply_kind_defaults(&mut entry);
+        assert!(entry.max_items.is_none(), "{kind:?} gained an item cap");
+        assert!(entry.since_days.is_none(), "{kind:?} gained a lookback");
+        assert!(
+            entry.max_prs.is_none(),
+            "{kind:?} gained a pull-request cap"
+        );
+    }
+}
+
+#[test]
+fn applying_the_defaults_twice_changes_nothing() {
+    let mut once = entry_of_kind(SourceKind::GithubRepo);
+    apply_kind_defaults(&mut once);
+    let mut twice = once.clone();
+    apply_kind_defaults(&mut twice);
+    assert_eq!(twice.max_prs, once.max_prs);
+    assert_eq!(twice.max_issues, once.max_issues);
+    assert_eq!(twice.max_commits, once.max_commits);
+}

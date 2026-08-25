@@ -168,6 +168,8 @@ fn every_unadvertised_family_is_unreachable_through_the_trait_object() {
     assert!(provider.as_tool_memory().is_none());
     assert!(provider.as_sources().is_none());
     assert!(provider.as_maintenance().is_none());
+    assert!(provider.as_source_sync().is_none());
+    assert!(provider.as_coding_sessions().is_none());
 }
 
 #[test]
@@ -231,8 +233,8 @@ fn every_optional_method_fails_with_its_advertised_family_name() {
     use crate::goals::GoalsDoc;
     use crate::provider::types::{IngestItem, SourceItem};
     use crate::provider::{
-        ChunkQuery, CoverWindowQuery, FacetType, FastRetrieveQuery, PersonHandle,
-        PersonInteraction, SourceRetrievalQuery, UserState,
+        ChunkQuery, CodingSessionIngestRequest, CoverWindowQuery, FacetType, FastRetrieveQuery,
+        PersonHandle, PersonInteraction, SourceRetrievalQuery, UserState,
     };
     use crate::tool_memory::{ToolMemoryPriority, ToolMemoryRule, ToolMemorySource};
     use crate::tree::IngestRequest;
@@ -507,6 +509,56 @@ fn every_optional_method_fails_with_its_advertised_family_name() {
     );
     assert_unsupported(block_on(driver.drop_facets_below(0.5)), Capability::Profile);
     assert!(!block_on(driver.workflow_identity_matches("*", "value")));
+
+    assert_unsupported(
+        block_on(driver.run_connection_sync("gmail", "conn-1")),
+        Capability::SourceSync,
+    );
+    assert_unsupported(
+        block_on(driver.source_sync_state("gmail", "conn-1")),
+        Capability::SourceSync,
+    );
+    assert_unsupported(
+        block_on(driver.sync_audit_log(None)),
+        Capability::SourceSync,
+    );
+    assert_unsupported(
+        block_on(driver.estimate_sync_cost_usd(1_000, 100)),
+        Capability::SourceSync,
+    );
+    assert_unsupported(block_on(driver.sync_statuses()), Capability::SourceSync);
+    assert_unsupported(
+        block_on(driver.raw_archive_coverage("gmail:conn-1", "archive")),
+        Capability::SourceSync,
+    );
+    assert_unsupported(
+        block_on(driver.rebuild_from_raw_archive("gmail:conn-1", "archive")),
+        Capability::SourceSync,
+    );
+
+    assert_unsupported(
+        block_on(driver.coding_session_status()),
+        Capability::CodingSessions,
+    );
+    assert_unsupported(
+        block_on(driver.ingest_coding_sessions(CodingSessionIngestRequest::default())),
+        Capability::CodingSessions,
+    );
+}
+
+#[test]
+fn the_two_members_added_to_existing_families_refuse_rather_than_report_nothing() {
+    // Both inherit their trait's default body, and both defaults are a refusal
+    // on purpose. A `flush_source_tree` answering `Ok(0)` would tell a user
+    // their source was flushed and had nothing to write; a `diagnose`
+    // answering an empty report would have to claim `healthy` one way or the
+    // other, and both claims are untrue of a driver that never looked.
+    let driver = NullMemoryProvider::new();
+    assert_unsupported(
+        block_on(driver.flush_source_tree("gmail:conn-1")),
+        Capability::Tree,
+    );
+    assert_unsupported(block_on(driver.diagnose()), Capability::Maintenance);
 }
 
 #[test]

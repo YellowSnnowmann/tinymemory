@@ -64,6 +64,43 @@ pub fn memory_sync_defaults_for_toolkit(toolkit: &str) -> (Option<u32>, Option<u
     }
 }
 
+/// Apply conservative per-kind cap defaults to a new source entry.
+///
+/// Only fills fields that are still `None` — never overwrites a caller-supplied
+/// value, so re-running it over an entry a user has already tuned is a no-op.
+/// The retroactive Composio migration applies the same reasoning through
+/// [`memory_sync_defaults_for_toolkit`], which is why the two live together:
+/// creation time and migration time must agree, and they only do if the policy
+/// has one address.
+///
+/// Folder, web-page and Composio kinds have nothing to fill here. Composio caps
+/// are set at upsert time from the toolkit slug, which this function does not
+/// have.
+pub fn apply_kind_defaults(entry: &mut MemorySourceEntry) {
+    match entry.kind {
+        SourceKind::GithubRepo => {
+            if entry.max_prs.is_none() {
+                entry.max_prs = Some(10);
+            }
+            if entry.max_issues.is_none() {
+                entry.max_issues = Some(10);
+            }
+            if entry.max_commits.is_none() {
+                entry.max_commits = Some(50);
+            }
+        }
+        SourceKind::RssFeed => {
+            if entry.max_items.is_none() {
+                entry.max_items = Some(20);
+            }
+        }
+        SourceKind::TwitterQuery if entry.since_days.is_none() => {
+            entry.since_days = Some(7);
+        }
+        _ => {}
+    }
+}
+
 /// A registry of [`MemorySourceEntry`] values backed by a TOML config file.
 ///
 /// Construct one with [`SourceRegistry::new`], pointing at the `config.toml`

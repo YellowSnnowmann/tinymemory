@@ -363,4 +363,51 @@ pub trait MemoryTree: Send + Sync {
     ) -> Result<Vec<TreeLeaf>, MemoryError> {
         Err(MemoryError::unsupported(Capability::Tree))
     }
+
+    /// Seal and cascade one source's tree now, and report how many summaries
+    /// were written.
+    ///
+    /// The "flush this source" control, for a user who does not want to wait
+    /// for the scheduled window. Everything else in this family is addressed
+    /// by *namespace*; this one is addressed by **source scope** — the
+    /// `{platform}:{connection}` string a sync writes under — because that is
+    /// the identity a caller has when it is looking at one connected source.
+    ///
+    /// # Why not `seal` plus `cascade` on the same namespace
+    ///
+    /// Because a source scope is not a namespace, and the mapping between them
+    /// is the driver's. A source's content may sit under a tree the driver
+    /// created for it, named however the driver names trees; a caller that
+    /// tried to derive the namespace would be reimplementing that naming, and
+    /// would get it wrong for exactly the sources whose trees were created
+    /// before whatever convention it copied.
+    ///
+    /// It is also one operation rather than two on purpose. Sealing without
+    /// cascading leaves a tier of leaves with no summary above them, which
+    /// reads as an empty tree to every structural query — and a caller that
+    /// made the second call separately would have a window where that is the
+    /// state.
+    ///
+    /// # Why a count and not a tree
+    ///
+    /// The engine's own flush hands back a live tree object, and the caller's
+    /// question is "did anything happen". A handle to a driver's internal
+    /// object is precisely what this contract exists not to pass, and once the
+    /// labelling decision that flush needs is made driver-side — which is
+    /// where it comes from anyway — there is nothing else the object was
+    /// carrying that a caller can use.
+    ///
+    /// # Errors
+    ///
+    /// [`MemoryError::Unsupported`] from a driver with a tree family but no
+    /// source-scoped flush. Backend failures otherwise.
+    ///
+    /// A scope with nothing buffered is `Ok(0)`, not an error: idempotent for
+    /// the same reason [`Self::seal`] is, so a caller may offer the control
+    /// unconditionally. An **unknown** scope is also `Ok(0)` — the driver
+    /// creates the tree if it has to, so there is no scope it can refuse, and
+    /// a caller cannot use this to probe which scopes exist.
+    async fn flush_source_tree(&self, _source_scope: &str) -> Result<u64, MemoryError> {
+        Err(MemoryError::unsupported(Capability::Tree))
+    }
 }

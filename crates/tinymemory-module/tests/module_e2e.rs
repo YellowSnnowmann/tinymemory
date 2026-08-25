@@ -691,6 +691,17 @@ const EXPECTED_METHODS: &[&str] = &[
     "RecallNamespaceRecent",
     "SummaryForest",
     "RecentLeaves",
+    "FlushSourceTree",
+    "Diagnose",
+    "RunConnectionSync",
+    "SourceSyncState",
+    "SyncAuditLog",
+    "EstimateSyncCostUsd",
+    "SyncStatuses",
+    "RawArchiveCoverage",
+    "RebuildFromRawArchive",
+    "CodingSessionStatus",
+    "IngestCodingSessions",
 ];
 
 #[tokio::test]
@@ -795,10 +806,10 @@ async fn what_is_written_lands_in_the_workspace_it_was_given() {
 #[ignore = "drives a real dlopen'ed module; must be the only such test in the process — see the module docs"]
 async fn every_declared_method_is_actually_routed() {
     // Issue #18 §E5 asks the E2E to cover every family the module advertises.
-    // It advertises `Capabilities::all()` — eighteen families — and the tests
+    // It advertises `Capabilities::all()` — twenty families — and the tests
     // above exercise three of them.
     //
-    // Rather than eighteen bespoke round trips, this asserts the property that
+    // Rather than twenty bespoke round trips, this asserts the property that
     // makes the advertisement honest at this layer: every method the manifest
     // declares is actually *reachable*. `the_manifest_declares_every_method_the
     // _module_serves` compares two lists and would pass for a method that is

@@ -101,7 +101,12 @@ impl tinymemory_api::host::EmbeddingHost for NoopEmbeddingHost {
         Ok(Box::new(tinymemory_api::host::NoopEmbedding))
     }
 }
-use tinymemory_core::sync::composio::providers::sync_state::{SyncState, KV_NAMESPACE};
+// `load`/`save` are the extension trait, not inherent methods: `SyncState`
+// itself moved to the contract crate, which stays free of I/O, so persistence
+// lives here in the engine and arrives through `PersistedSyncState`.
+use tinymemory_core::sync::composio::providers::sync_state::{
+    PersistedSyncState, SyncState, KV_NAMESPACE,
+};
 use tinymemory_core::sync::pipelines::composio::ComposioClient;
 use tinymemory_core::sync::pipelines::composio::GmailSyncPipeline;
 use tinymemory_core::sync::pipelines::dispatcher::SyncDispatcher;

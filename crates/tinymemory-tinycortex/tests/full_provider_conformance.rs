@@ -1,4 +1,4 @@
-//! The conformance suite over the FULL eighteen-family driver (#18 §E1/§E3).
+//! The conformance suite over the FULL twenty-family driver (#18 §E1/§E3).
 //!
 //! `conformance_test.rs` (in-lib) covers `crate::provider` — the mandatory
 //! three families over any engine backend. This target covers

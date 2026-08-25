@@ -343,8 +343,10 @@ fn helper_parsing_and_normalization_cover_malformed_inputs() {
         "team_name__me"
     );
     assert_eq!(normalize_connection_identifier("___"), "");
-    assert_eq!(title_case(""), "");
-    assert_eq!(title_case("slack"), "Slack");
+    // `title_case` went down with the renderer that is its only caller
+    // (#5560); its behaviour is asserted through
+    // `render_connected_identities_section` in the contract crate's tests,
+    // which is the only way it is observable.
 }
 
 #[test]

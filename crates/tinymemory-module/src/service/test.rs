@@ -716,3 +716,44 @@ fn the_served_members_are_exactly_the_published_contract() {
         "the two lists hold the same members in different orders"
     );
 }
+
+#[tokio::test]
+async fn the_two_new_families_are_gated_on_their_own_capability() {
+    // `test_provider` wraps a bare `Memory` backend through the mandatory
+    // composition, so it advertises Core/Recall/Portability and nothing else.
+    // The gate has to be per family: a method reached on a driver that does not
+    // serve its family must refuse by name, not fall through to whatever the
+    // trait's default body happens to return.
+    let service = super::MemoryService::new(test_provider());
+
+    let refusal = |error: BusError| match error {
+        BusError::MethodFailed { name, .. } => name,
+        other => panic!("expected a named MethodFailed, got {other:?}"),
+    };
+
+    let error = service
+        .run_connection_sync("gmail".to_string(), "conn-1".to_string())
+        .await
+        .expect_err("a driver without the source-sync family must refuse");
+    assert_eq!(refusal(error), wire::UNSUPPORTED);
+
+    let error = service
+        .coding_session_status()
+        .await
+        .expect_err("a driver without the coding-sessions family must refuse");
+    assert_eq!(refusal(error), wire::UNSUPPORTED);
+
+    // The two members added to *existing* families refuse through their own
+    // family's gate — Tree and Maintenance — rather than through a new one.
+    let error = service
+        .flush_source_tree("gmail:conn-1".to_string())
+        .await
+        .expect_err("a driver without the tree family must refuse");
+    assert_eq!(refusal(error), wire::UNSUPPORTED);
+
+    let error = service
+        .diagnose()
+        .await
+        .expect_err("a driver without the maintenance family must refuse");
+    assert_eq!(refusal(error), wire::UNSUPPORTED);
+}

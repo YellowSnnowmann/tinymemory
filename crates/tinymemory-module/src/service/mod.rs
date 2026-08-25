@@ -60,6 +60,20 @@
 //!
 //! ForgetMatching(selector)                          -> ForgetOutcome
 //! PurgeAll()                                        -> PurgeOutcome
+//!
+//! FlushSourceTree(source_scope)                     -> u64
+//! Diagnose()                                        -> Diagnosis
+//!
+//! RunConnectionSync(toolkit, connection_id)         -> SyncRunOutcome
+//! SourceSyncState(toolkit, connection_id)           -> Option<SourceSyncState>
+//! SyncAuditLog(limit)                               -> [SyncAuditEntry]
+//! EstimateSyncCostUsd(input_tokens, output_tokens)  -> f64
+//! SyncStatuses()                                    -> [SourceSyncStatus]
+//! RawArchiveCoverage(tree_scope, archive_source_id) -> RawArchiveCoverage
+//! RebuildFromRawArchive(tree_scope, archive_source_id) -> RawRebuildOutcome
+//!
+//! CodingSessionStatus()                             -> [CodingSessionSource]
+//! IngestCodingSessions(request)                     -> CodingSessionIngestReport
 //! ```
 //!
 //! # Source scope crosses as an argument, never as ambient state
@@ -144,6 +158,7 @@ use tinymemory_api::provider::types::{
 use tinymemory_api::provider::chunks::{
     ChunkDetail, ChunkEmbedding, ChunkListRow, ChunkQuery, SourceTotal,
 };
+use tinymemory_api::provider::diagnosis::Diagnosis;
 use tinymemory_api::provider::episodic::{ConversationSegment, EpisodicEvent, EpisodicTurn};
 use tinymemory_api::provider::people::{
     AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
@@ -153,6 +168,13 @@ use tinymemory_api::provider::profile::{FacetType, ProfileFacet, UserState};
 use tinymemory_api::provider::retrieval::{
     CoverWindowQuery, EntityMatch, FastRetrieveQuery, RetrievalHit, RetrievalResponse,
     SourceRetrievalQuery,
+};
+use tinymemory_api::provider::sessions::{
+    CodingSessionIngestReport, CodingSessionIngestRequest, CodingSessionSource,
+};
+use tinymemory_api::provider::sync::{
+    RawArchiveCoverage, RawRebuildOutcome, SourceSyncState, SourceSyncStatus, SyncAuditEntry,
+    SyncRunOutcome,
 };
 use tinymemory_api::provider::MemoryProvider;
 use tinymemory_api::recall::OwnedRecallOpts;
@@ -1657,6 +1679,179 @@ impl MemoryService {
     async fn purge_all(&self) -> BusResult<PurgeOutcome> {
         require_family!(self, as_maintenance, Capability::Maintenance)
             .purge_all()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    // ── Tree, by source scope ───────────────────────────────────────────────
+
+    /// Seal and cascade one source's tree now.
+    ///
+    /// Addressed by source scope rather than by namespace, unlike every other
+    /// member of this family: the caller is looking at one connected source and
+    /// that is the identity it holds. The scope is **not** logged — it carries
+    /// a platform and a connection id, and the second is user data.
+    async fn flush_source_tree(&self, source_scope: String) -> BusResult<u64> {
+        require_family!(self, as_tree, Capability::Tree)
+            .flush_source_tree(&source_scope)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    // ── Maintenance, typed ──────────────────────────────────────────────────
+
+    /// The typed, per-stage pipeline diagnosis.
+    ///
+    /// Beside `Doctor` rather than replacing it. `Doctor` returns the uniform
+    /// `MaintenanceReport` a scheduler reads across all four upkeep calls; this
+    /// returns the classified causes, degradation flags and counters an
+    /// operator or an agent acts on. Both come from one pass driver-side.
+    ///
+    /// Not size-checked: the report is bounded by the driver's stage list.
+    async fn diagnose(&self) -> BusResult<Diagnosis> {
+        require_family!(self, as_maintenance, Capability::Maintenance)
+            .diagnose()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    // ── Source sync the driver runs itself ──────────────────────────────────
+
+    /// Sync one connection now.
+    ///
+    /// The manual "sync now" a user presses. The periodic loops already run in
+    /// this process; this is the on-demand half, which a schedule cannot
+    /// express.
+    ///
+    /// Neither argument is logged. A toolkit is harmless, a connection id is
+    /// not, and logging one without the other says nothing useful.
+    async fn run_connection_sync(
+        &self,
+        toolkit: String,
+        connection_id: String,
+    ) -> BusResult<SyncRunOutcome> {
+        require_family!(self, as_source_sync, Capability::SourceSync)
+            .run_connection_sync(&toolkit, &connection_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// The persisted cursor, dedup and budget state for one connection.
+    ///
+    /// `None` is "never synced", which is a state and not an error — a status
+    /// list covering every connection would otherwise be all errors on a fresh
+    /// install.
+    async fn source_sync_state(
+        &self,
+        toolkit: String,
+        connection_id: String,
+    ) -> BusResult<Option<SourceSyncState>> {
+        require_family!(self, as_source_sync, Capability::SourceSync)
+            .source_sync_state(&toolkit, &connection_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Past sync runs, newest first.
+    ///
+    /// Size-checked, and the only member of this family that needs to be: the
+    /// audit log is append-only for the life of a workspace, so it is the one
+    /// response here that grows without a bound the caller controls. `limit`
+    /// bounds the *count*; the bytes are bounded here, and a refusal names
+    /// `BudgetExceeded` so the caller knows to ask for fewer rows rather than
+    /// reading a silently short log as a complete one.
+    async fn sync_audit_log(&self, limit: Option<usize>) -> BusResult<Vec<SyncAuditEntry>> {
+        let entries = require_family!(self, as_source_sync, Capability::SourceSync)
+            .sync_audit_log(limit)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&entries, "SyncAuditLog")?;
+        Ok(entries)
+    }
+
+    /// Price a token count at the driver's own rate.
+    ///
+    /// A bus round trip for two multiplications, and deliberately so: the same
+    /// constants stamped `estimated_cost_usd` onto every audit row above, and a
+    /// caller holding its own copy would show a projection and a historical
+    /// total computed at two different prices.
+    async fn estimate_sync_cost_usd(
+        &self,
+        input_tokens: u64,
+        output_tokens: u64,
+    ) -> BusResult<f64> {
+        require_family!(self, as_source_sync, Capability::SourceSync)
+            .estimate_sync_cost_usd(input_tokens, output_tokens)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Per-provider sync progress, derived from stored content.
+    ///
+    /// Not size-checked: one row per provider, and a store with enough distinct
+    /// providers to fill a frame has a different problem — the same reasoning
+    /// `Namespaces` is left unchecked under.
+    async fn sync_statuses(&self) -> BusResult<Vec<SourceSyncStatus>> {
+        require_family!(self, as_source_sync, Capability::SourceSync)
+            .sync_statuses()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// How much of one raw archive its summary tree covers.
+    async fn raw_archive_coverage(
+        &self,
+        tree_scope: String,
+        archive_source_id: String,
+    ) -> BusResult<RawArchiveCoverage> {
+        require_family!(self, as_source_sync, Capability::SourceSync)
+            .raw_archive_coverage(&tree_scope, &archive_source_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Re-derive a summary tree from its raw archive.
+    ///
+    /// Costs inference and can run long. It is a call rather than a background
+    /// job on purpose: the module holds no notion of a caller's request, so a
+    /// fire-and-forget rebuild would have nowhere to report to and no way to be
+    /// cancelled. A caller that does not want to wait runs it off its own task.
+    async fn rebuild_from_raw_archive(
+        &self,
+        tree_scope: String,
+        archive_source_id: String,
+    ) -> BusResult<RawRebuildOutcome> {
+        require_family!(self, as_source_sync, Capability::SourceSync)
+            .rebuild_from_raw_archive(&tree_scope, &archive_source_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    // ── Local coding-agent transcripts ──────────────────────────────────────
+
+    /// What each supported coding agent's session store holds.
+    ///
+    /// Not size-checked: one row per agent the driver supports.
+    async fn coding_session_status(&self) -> BusResult<Vec<CodingSessionSource>> {
+        require_family!(self, as_coding_sessions, Capability::CodingSessions)
+            .coding_session_status()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Distil coding sessions into observations.
+    ///
+    /// The longest-running member on this object: one or more sequential model
+    /// calls per session, bounded by the request's session count and by the
+    /// driver's own clamp on it. A caller enforcing a deadline does so on its
+    /// own side — abandoning a run here would leave the driver's per-file state
+    /// disagreeing with what it wrote.
+    async fn ingest_coding_sessions(
+        &self,
+        request: CodingSessionIngestRequest,
+    ) -> BusResult<CodingSessionIngestReport> {
+        require_family!(self, as_coding_sessions, Capability::CodingSessions)
+            .ingest_coding_sessions(request)
             .await
             .map_err(|error| into_bus_error(&error))
     }

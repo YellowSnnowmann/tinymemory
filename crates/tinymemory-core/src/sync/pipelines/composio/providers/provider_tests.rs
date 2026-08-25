@@ -11,7 +11,7 @@ use super::{
     GoogleDriveSyncPipeline, GoogleSheetsSyncPipeline, LinearSyncPipeline, NotionSyncPipeline,
     OutlookSyncPipeline, SlackSearchBackfillPipeline, SlackSyncPipeline, TodoistSyncPipeline,
 };
-use crate::sync::composio::providers::sync_state::{SyncState, SyncStateStore};
+use crate::sync::composio::providers::sync_state::{PersistedSyncState, SyncState, SyncStateStore};
 use crate::sync::pipelines::composio::{
     ActionExecutor, ComposioClient, ExecuteResponse, IncrementalSource, SyncItem, SyncScope,
 };
