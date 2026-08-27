@@ -147,14 +147,22 @@ impl HostChat {
 
 #[tinybus::interface(name = "ai.tinyhumans.tinymemory.EmbeddingHost")]
 impl HostEmbedder {
+    /// The host's real signature, in the host's order: `provider` first,
+    /// because it is what the host selects credential and endpoint by. A fake
+    /// declaring the module's old three-argument form passed while the real
+    /// host refused every batch at decode (openhuman#5820).
     async fn embed(
         &self,
+        provider: String,
         _model: String,
         _dimensions: usize,
         texts: Vec<String>,
     ) -> BusResult<Vec<Vec<f32>>> {
         std::future::ready(()).await;
         EMBED_CALLS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        // The engine's default embedder must announce itself under a slug the
+        // host has a factory arm for; `cloud` is the managed embedder.
+        assert_eq!(provider, "cloud", "unknown provider slug on the Embed wire");
         // A crude content-derived vector: enough that identical text embeds
         // identically and different text does not, which is all recall needs
         // here.
