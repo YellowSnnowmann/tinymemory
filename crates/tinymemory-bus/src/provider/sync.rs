@@ -201,6 +201,21 @@ pub struct SyncAuditEntry {
     /// Why it did not, when it did not. Never memory content.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Items fetched-and-stored whose memory-tree ingest failed
+    /// (openhuman#5820). A non-zero count with `success: false` is the
+    /// "fetch succeeded, tree did not" partial verdict; rows written before
+    /// the field existed read back as `0`.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub tree_ingest_failures: u32,
+    /// Why the tree half failed, when it did. Never memory content.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tree_error: Option<String>,
+}
+
+/// `skip_serializing_if` gate for the additive counter above.
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde's contract is a reference
+fn is_zero_u32(value: &u32) -> bool {
+    *value == 0
 }
 
 impl SyncAuditEntry {

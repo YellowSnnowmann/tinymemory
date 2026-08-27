@@ -28,6 +28,7 @@ use crate::Config;
 // legacy `handlers`, per-job settle (`mark_*`/`scrub_for_log`), and claim
 // helpers are gone from this module. Only startup lock recovery + the loop's
 // storage-degraded signalling remain host.
+use crate::corruption::is_sqlite_corrupt;
 use crate::queue::store::{recover_stale_locks, release_running_locks};
 use crate::tree::health::{clear_storage_degraded, mark_storage_degraded, FailureCode};
 
@@ -52,14 +53,6 @@ const POLL_INTERVAL: Duration = Duration::from_secs(5);
 
 static WORKER_NOTIFY: OnceLock<Arc<Notify>> = OnceLock::new();
 static STARTED: std::sync::Once = std::sync::Once::new();
-
-/// Process-wide latch so a `SQLITE_CORRUPT` flood is reported to Sentry **once**,
-/// not on every poll from every worker. Set on the first malformed-image
-/// detection; cleared after a recovery attempt settles (quarantine+rebuild or a
-/// quick_check that now passes) so a genuinely-new, later corruption can still
-/// page once. Without this, 4 workers polling a wedged DB re-page ~1/sec
-/// (Sentry TAURI-RUST-E93: 1,633 events in ~17 min from one host).
-static CORRUPT_REPORTED: AtomicBool = AtomicBool::new(false);
 
 /// Process-wide latch so a persistent host-filesystem failure (EIO/ENOSPC/
 /// EROFS on the memory_tree dir/DB path) is reported to Sentry **once**, not on
@@ -94,6 +87,18 @@ pub fn start(config: Arc<Config>) {
         if let Err(err) = recover_stale_locks(&*config) {
             log::warn!("[memory::jobs] recover_stale_locks failed at startup: {err:#}");
         }
+
+        // One-shot integrity check of the chunk DB (openhuman#5820 item 5):
+        // workspaces written by pre-#5725 builds can carry latent page damage
+        // that otherwise surfaces hours later through whichever call walks a
+        // damaged b-tree first. `quick_check` reads the whole file, so it runs
+        // on a blocking thread while the workers start normally — a corrupt
+        // verdict quarantines + rebuilds via the same recovery the runtime
+        // classifiers use, and the workers' next poll sees the fresh store.
+        let integrity_cfg = config.to_arc();
+        tokio::task::spawn_blocking(move || {
+            crate::corruption::startup_integrity_check(&*integrity_cfg);
+        });
 
         // Release in-flight locks on graceful shutdown so a clean restart
         // re-claims the work immediately instead of waiting out the lease
@@ -207,13 +212,18 @@ pub fn start(config: Arc<Config>) {
                                 // second and paging Sentry each time turns one
                                 // unrecoverable file into a flood (TAURI-RUST-E93:
                                 // 1,633 events in ~17 min, one host). Report once,
-                                // drive quarantine+rebuild recovery (factored into
-                                // `recover_corrupt_db_once` so it is unit-testable
-                                // without spinning the live loop), then back off
-                                // long so a failed recovery never re-floods.
-                                // `notify` still wakes us on new enqueues once the
-                                // rebuild succeeds.
-                                recover_corrupt_db_once(idx, &err, &*cfg);
+                                // drive quarantine+rebuild recovery (shared with
+                                // the ingest and startup paths in
+                                // `crate::corruption` so every detector escalates
+                                // identically), then back off long so a failed
+                                // recovery never re-floods. `notify` still wakes
+                                // us on new enqueues once the rebuild succeeds.
+                                crate::corruption::report_and_recover(
+                                    &format!("jobs worker {idx}"),
+                                    "tree_jobs_worker_corrupt",
+                                    &err,
+                                    &*cfg,
+                                );
                                 tokio::time::sleep(Duration::from_secs(300)).await;
                             } else if is_host_io_error(&err) {
                                 // Persistent host-filesystem failure (EIO 5 /
@@ -382,36 +392,6 @@ fn is_sqlite_disk_full(err: &anyhow::Error) -> bool {
         || msg.contains("insertion failed because database is full")
 }
 
-/// Classify whether an error from `claim_next` is a `SQLITE_CORRUPT` malformed-
-/// image condition (primary code `DatabaseCorrupt`, code 11) or the closely-
-/// related `NotADatabase` (code 26 — the header itself is unreadable).
-///
-/// Unlike `SQLITE_BUSY`/`LOCKED`, the transient I/O family, or `SQLITE_FULL`,
-/// a malformed image is **persistent on-disk damage**: the claim `UPDATE` can
-/// never succeed, so re-polling every second and paging Sentry on each failure
-/// turns one corrupt file into an infinite flood (Sentry TAURI-RUST-E93:
-/// ~1.6k events in ~17 min from a single host). The worker reports once, drives
-/// a quarantine+rebuild recovery (`recover_corrupt_db`), and backs off long.
-///
-/// Matching on the error code is rusqlite-version-stable. The text fallback
-/// covers the case where the rusqlite error was flattened to a plain `anyhow!`
-/// string across `.context()` layers — SQLite renders these as "database disk
-/// image is malformed" (code 11) and "file is not a database" (code 26).
-fn is_sqlite_corrupt(err: &anyhow::Error) -> bool {
-    if let Some(rusqlite::Error::SqliteFailure(sqlite_err, _)) =
-        err.downcast_ref::<rusqlite::Error>()
-    {
-        if matches!(
-            sqlite_err.code,
-            rusqlite::ErrorCode::DatabaseCorrupt | rusqlite::ErrorCode::NotADatabase
-        ) {
-            return true;
-        }
-    }
-    let msg = format!("{err:#}").to_ascii_lowercase();
-    msg.contains("database disk image is malformed") || msg.contains("file is not a database")
-}
-
 /// Classify whether an error is a **persistent host-filesystem failure** —
 /// `std::fs::create_dir_all` / file open returning an OS-level I/O error on the
 /// memory_tree path. Matches the three persistent, user-only-fixable POSIX
@@ -444,53 +424,6 @@ fn is_host_io_error(err: &anyhow::Error) -> bool {
     }
     let msg = format!("{err:#}").to_ascii_lowercase();
     msg.contains("(os error 5)") || msg.contains("(os error 28)") || msg.contains("(os error 30)")
-}
-
-/// Handle a confirmed `SQLITE_CORRUPT` failure from the worker loop: report it
-/// to Sentry **once** (process-wide [`CORRUPT_REPORTED`] latch, not per-poll
-/// across the workers) and drive the quarantine+rebuild recovery in
-/// [`recover_corrupt_db`](crate::store::chunks::store::recover_corrupt_db).
-///
-/// Factored out of [`start`]'s error arm so the report-once + recovery decision
-/// logic is unit-testable without spinning the live worker loop. The caller
-/// applies the long backoff after this returns.
-fn recover_corrupt_db_once(idx: usize, err: &anyhow::Error, config: &Config) {
-    if !CORRUPT_REPORTED.swap(true, Ordering::Relaxed) {
-        crate::observability::report_error(
-            err,
-            "memory",
-            "tree_jobs_worker_corrupt",
-            &[("worker_idx", &idx.to_string())],
-        );
-    }
-    log::error!(
-        "[memory::jobs] worker {idx} hit SQLITE_CORRUPT (malformed DB image), \
-         attempting quarantine + rebuild recovery: {err:#}"
-    );
-    match crate::store::chunks::store::recover_corrupt_db(config) {
-        Ok(true) => {
-            log::warn!(
-                "[memory::jobs] worker {idx} quarantined corrupt mem_tree DB and rebuilt \
-                 empty schema; queue will resume"
-            );
-            // Recovery settled — allow a future, genuinely-new corruption to
-            // page once.
-            CORRUPT_REPORTED.store(false, Ordering::Relaxed);
-        }
-        Ok(false) => {
-            log::info!(
-                "[memory::jobs] worker {idx} corruption recovery: quick_check now passes, \
-                 no quarantine needed"
-            );
-            CORRUPT_REPORTED.store(false, Ordering::Relaxed);
-        }
-        Err(rec_err) => {
-            log::error!(
-                "[memory::jobs] worker {idx} corruption recovery FAILED, retrying after \
-                 backoff: {rec_err:#}"
-            );
-        }
-    }
 }
 
 #[cfg(test)]

@@ -163,6 +163,13 @@ pub struct SyncOutcome {
     pub provider_cost_usd: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Items whose skill-store write committed but whose memory-tree ingest
+    /// failed (non-corrupt failures — corruption aborts the run instead).
+    /// `records_ingested` counts those items as fetched-and-stored, so a
+    /// non-zero value here is the "fetch succeeded, tree did not" signal the
+    /// sync verdict must not report as full success (openhuman#5820).
+    #[serde(default)]
+    pub tree_ingest_failures: u32,
 }
 
 #[derive(Debug, thiserror::Error)]

@@ -21,6 +21,8 @@ fn entry() -> SyncAuditEntry {
         duration_ms: 1234,
         success: true,
         error: None,
+        tree_ingest_failures: 0,
+        tree_error: None,
     }
 }
 
@@ -48,6 +50,31 @@ fn audit_line_format_is_pinned() {
          \"duration_ms\":1234,\
          \"success\":true}"
     );
+}
+
+/// The #5820 fields are skip-if-empty precisely so the healthy line above
+/// stays byte-identical to the engine writer's; a run with a failed tree half
+/// serialises them, and a reader of engine-written rows (which never carry
+/// them) defaults both. This pins the failure shape and the tolerant read.
+#[test]
+fn tree_failure_fields_serialise_only_when_set_and_default_on_read() {
+    let mut failed = entry();
+    failed.success = false;
+    failed.tree_ingest_failures = 5;
+    failed.tree_error = Some("database disk image is malformed".into());
+    let line = serde_json::to_string(&failed).unwrap();
+    assert!(line.contains("\"tree_ingest_failures\":5"));
+    assert!(line.contains("\"tree_error\":\"database disk image is malformed\""));
+
+    // An engine-written row (no #5820 fields) reads back with defaults.
+    let legacy: SyncAuditEntry = serde_json::from_str(
+        "{\"timestamp\":\"2026-01-02T03:04:05Z\",\"source_id\":\"s\",\"source_kind\":\"k\",\
+         \"scope\":\"u\",\"items_fetched\":1,\"batches\":0,\"input_tokens\":0,\
+         \"output_tokens\":0,\"estimated_cost_usd\":0.0,\"duration_ms\":1,\"success\":true}",
+    )
+    .unwrap();
+    assert_eq!(legacy.tree_ingest_failures, 0);
+    assert!(legacy.tree_error.is_none());
 }
 
 #[test]

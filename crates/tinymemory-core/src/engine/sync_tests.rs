@@ -8,6 +8,18 @@ use crate::sources::MemorySourceEntry;
 use crate::sync::composio::{get_composio_sync_provider, init_default_composio_sync_providers};
 use crate::sync::pipelines::host::{is_composio_toolkit_syncable, syncable_composio_toolkits};
 
+/// The context the production path used to build inline; kept here since
+/// `run_source_pipeline_core` took over that call site with a caller-held
+/// adapter (see `context_over_adapter`).
+fn source_sync_context(
+    memory: crate::store::MemoryClientRef,
+    config: &crate::Config,
+    local: bool,
+) -> tinycortex::memory::sync::SyncContext {
+    let adapter = std::sync::Arc::new(super::HostSyncAdapter::with_config(memory, config.to_arc()));
+    super::context_over_adapter(adapter, config, local)
+}
+
 fn memory_fixture() -> (
     tempfile::TempDir,
     tinymemory_api::host::test_support::TestHostConfig,
@@ -50,12 +62,12 @@ async fn failure_and_context_helpers_preserve_contract_state() {
     assert!(context.external_sources.is_none());
     assert!(context.summariser.is_none());
 
-    let local = super::source_sync_context(client.clone(), &config, true);
+    let local = source_sync_context(client.clone(), &config, true);
     assert!(local.local_documents.is_some());
     assert!(local.external_sources.is_some());
     assert!(local.summariser.is_some());
 
-    let remote = super::source_sync_context(client, &config, false);
+    let remote = source_sync_context(client, &config, false);
     assert!(remote.local_documents.is_none());
     assert!(remote.external_sources.is_none());
     assert!(remote.summariser.is_none());
@@ -672,11 +684,18 @@ async fn tree_ingest_failure_is_tolerated_and_skill_store_is_retained() {
         "the broken tree-ingest workspace must make ingest fail"
     );
 
-    // `store` must swallow that tree-ingest failure and still succeed.
+    // `store` must swallow that tree-ingest failure and still succeed —
+    // and count it, so the run's verdict can report the tree half honestly
+    // (openhuman#5820).
     adapter
         .store(document)
         .await
         .expect("store must tolerate a memory-tree ingest failure (best-effort tree)");
+    assert_eq!(
+        adapter.tree_ingest_failure_count(),
+        1,
+        "a tolerated tree-ingest failure must be counted for the run's verdict"
+    );
 
     // The skill store, committed before the tree half, still holds the item —
     // best-effort tree ingest must never cost the durable skill write.

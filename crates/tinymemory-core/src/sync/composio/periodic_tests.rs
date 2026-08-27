@@ -260,6 +260,8 @@ fn audit_entry(
         duration_ms: 10,
         success,
         error: None,
+        tree_ingest_failures: 0,
+        tree_error: None,
     }
 }
 
@@ -380,7 +382,7 @@ fn periodic_audit_entry_records_composio_cost_on_success() {
         actions_called: 3,
         cost_usd: 0.042,
     };
-    let entry = build_periodic_audit_entry("gmail", "cmp-123", &usage, 17, 1234, None);
+    let entry = build_periodic_audit_entry("gmail", "cmp-123", &usage, 17, 1234, None, 0);
 
     assert_eq!(entry.source_kind, "composio");
     assert_eq!(entry.source_id, "cmp-123");
@@ -413,6 +415,7 @@ fn periodic_audit_entry_preserves_partial_cost_on_failure() {
         0,
         500,
         Some("fetch timed out".to_string()),
+        0,
     );
 
     assert!(!entry.success);

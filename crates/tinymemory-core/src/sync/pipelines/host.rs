@@ -59,6 +59,12 @@ impl PipelineFailure {
 pub struct PipelineHost {
     memory: MemoryClientRef,
     config: Option<Arc<Config>>,
+    /// Items whose skill-store write committed but whose (non-corrupt) tree
+    /// ingest failed during this adapter's run. Read back into
+    /// [`SyncOutcome::tree_ingest_failures`] by the runners, because the
+    /// orchestrator only sees `store()`'s `Ok`/`Err` and the tolerated
+    /// failures deliberately return `Ok` (openhuman#5820).
+    tree_ingest_failures: std::sync::atomic::AtomicU32,
 }
 
 impl PipelineHost {
@@ -68,6 +74,7 @@ impl PipelineHost {
         Self {
             memory,
             config: Some(config),
+            tree_ingest_failures: std::sync::atomic::AtomicU32::new(0),
         }
     }
 
@@ -77,6 +84,7 @@ impl PipelineHost {
         Self {
             memory,
             config: None,
+            tree_ingest_failures: std::sync::atomic::AtomicU32::new(0),
         }
     }
 
@@ -87,6 +95,12 @@ impl PipelineHost {
             documents: self.clone(),
             state: self.clone(),
         }
+    }
+
+    /// Tolerated (non-corrupt) tree-ingest failures recorded so far.
+    pub fn tree_ingest_failures(&self) -> u32 {
+        self.tree_ingest_failures
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 }
 
@@ -117,13 +131,25 @@ impl SkillDocSink for PipelineHost {
 
         // #5473: additively reconnect the synced item to the memory tree — a
         // best-effort secondary index; the skill store above is the source of
-        // truth and has committed. A failure here must NOT abort the sync (one
-        // poisonous item would stall the connection and re-buy the page on
-        // every retry). The config-less adapter skips tree ingest entirely.
+        // truth and has committed. An ordinary failure here must NOT abort the
+        // sync (one poisonous item would stall the connection and re-buy the
+        // page on every retry), but it is COUNTED so the run's verdict can say
+        // "fetched, not tree-ingested" instead of success. Corruption is the
+        // exception (openhuman#5820): a malformed `chunks.db` fails every
+        // later item identically — 747 warns in 34 minutes in the incident —
+        // so it escalates through the shared recovery and aborts the run.
+        // The config-less adapter skips tree ingest entirely.
         if let Some(config) = self.config.as_deref() {
             if let Err(error) = ingest_into_tree(config, &document).await {
+                let rendered = format!("{error:#}");
+                crate::corruption::escalate_or_count(
+                    "composio tree ingest",
+                    config,
+                    error,
+                    &self.tree_ingest_failures,
+                )?;
                 tracing::warn!(
-                    %error,
+                    error = %rendered,
                     document_id = %document.document_id,
                     "[memory_sync] tree ingest failed; skill store remains authoritative"
                 );
@@ -380,14 +406,16 @@ pub async fn run_composio_connection_with_caps(
         max_cost_per_sync_usd: caps.max_cost_per_sync_usd,
     };
     let host = Arc::new(PipelineHost::new(memory, config.to_arc()));
-    run_pipeline(
+    let mut outcome = run_pipeline(
         pipeline,
         toolkit,
         connection_id,
         &pipeline_config,
         &host.context(),
     )
-    .await
+    .await?;
+    outcome.tree_ingest_failures = host.tree_ingest_failures();
+    Ok(outcome)
 }
 
 /// Run a bounded Gmail backfill through the engine-free pipelines.
@@ -410,14 +438,16 @@ pub async fn run_gmail_backfill(
     // The backfill drives the Gmail pipeline, which keys its `SyncState` on
     // `"gmail"`; naming the same toolkit here puts it behind the same guard as
     // a periodic or RPC Gmail sync of this connection.
-    run_pipeline(
+    let mut outcome = run_pipeline(
         pipeline,
         "gmail",
         connection_id,
         &PipelineConfig::default(),
         &host.context(),
     )
-    .await
+    .await?;
+    outcome.tree_ingest_failures = host.tree_ingest_failures();
+    Ok(outcome)
 }
 
 /// Run the Slack search backfill through the engine-free pipelines.
@@ -439,14 +469,16 @@ pub async fn run_slack_search_backfill(
     // `SlackSearchBackfillPipeline` loads and saves the same
     // `("slack", connection_id)` state the Slack sync pipeline does, so the two
     // must share one guard or they clobber each other's cursor and budget.
-    run_pipeline(
+    let mut outcome = run_pipeline(
         pipeline,
         "slack",
         connection_id,
         &PipelineConfig::default(),
         &host.context(),
     )
-    .await
+    .await?;
+    outcome.tree_ingest_failures = host.tree_ingest_failures();
+    Ok(outcome)
 }
 
 /// The note a run carries when another run already holds its connection.

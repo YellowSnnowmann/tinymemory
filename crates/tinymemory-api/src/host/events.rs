@@ -196,6 +196,27 @@ pub enum MemoryEvent {
         /// distinguishable in the log without a correlation id.
         origin: String,
     },
+    /// The primary memory-tree store (`chunks.db`) was found corrupt; the
+    /// damaged file was quarantined to a timestamped `.corrupt-<ts>` sibling
+    /// (preserved, never deleted) and an empty schema was rebuilt in its
+    /// place.
+    ///
+    /// The rebuilt store works, but it is empty: the ingested-source registry
+    /// rows went with the old file, so every previously synced source must
+    /// re-sync before tree-backed recall recovers. The host surfaces this in
+    /// its durable user-error centre — see [`STORE_CORRUPT_KIND`] — naming the
+    /// quarantined path so the user's indexed history is recoverable rather
+    /// than silently stranded on disk (openhuman#5820).
+    StoreCorruptQuarantined {
+        /// Short, non-sensitive tag naming the detecting path
+        /// (`jobs worker N` / `composio tree ingest` / `startup integrity
+        /// check`), so the paths stay distinguishable in the log.
+        origin: String,
+        /// Filesystem path of the quarantined main DB file, when the rename's
+        /// result could be located. Local path, shown to the workspace's own
+        /// user only.
+        quarantined_path: Option<String>,
+    },
 }
 
 /// Stable `error_type` token for the local-embedding-runtime user error.
@@ -205,6 +226,14 @@ pub enum MemoryEvent {
 /// the wire payload from it, and the core's tests assert on it. A drift on
 /// either side drops the signal silently.
 pub const LOCAL_MODEL_UNAVAILABLE_KIND: &str = "local_model_unavailable";
+
+/// Stable `error_type` token for the corrupt-store-quarantined user error.
+///
+/// Mirrors the frontend `UserErrorKind` discriminator of the same name, like
+/// [`LOCAL_MODEL_UNAVAILABLE_KIND`] above: the host builds the wire payload
+/// from it, and tests on both sides assert on it, so a drift on either side
+/// drops the signal silently.
+pub const STORE_CORRUPT_KIND: &str = "memory_store_corrupt";
 
 /// `error_source` for the memory subsystem's user errors. Drives the panel's
 /// scope grouping (`socketService` maps it to the `memory` `UserErrorScope`).

@@ -27,6 +27,11 @@ pub use tinycortex::memory::sync::{RawCoverage, RawFileRef, RealCostAccumulator,
 pub struct HostSyncAdapter {
     memory: MemoryClientRef,
     config: Option<Arc<Config>>,
+    /// Items whose skill-store write committed but whose (non-corrupt) tree
+    /// ingest failed during this adapter's run — the tolerated warns in
+    /// `store()`. Read back by [`run_source_pipeline_core`] so the run's
+    /// verdict can report "fetched, not tree-ingested" (openhuman#5820).
+    tree_ingest_failures: std::sync::atomic::AtomicU32,
 }
 
 #[derive(Debug)]
@@ -57,6 +62,7 @@ impl HostSyncAdapter {
         Self {
             memory,
             config: None,
+            tree_ingest_failures: std::sync::atomic::AtomicU32::new(0),
         }
     }
 
@@ -64,7 +70,14 @@ impl HostSyncAdapter {
         Self {
             memory,
             config: Some(config),
+            tree_ingest_failures: std::sync::atomic::AtomicU32::new(0),
         }
+    }
+
+    /// Tolerated (non-corrupt) tree-ingest failures recorded so far.
+    fn tree_ingest_failure_count(&self) -> u32 {
+        self.tree_ingest_failures
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// Reconnect a synced Composio document to the memory tree (#5473).
@@ -290,8 +303,13 @@ pub fn sync_context(memory: MemoryClientRef) -> SyncContext {
     }
 }
 
-fn source_sync_context(memory: MemoryClientRef, config: &Config, local: bool) -> SyncContext {
-    let adapter = std::sync::Arc::new(HostSyncAdapter::with_config(memory, config.to_arc()));
+/// [`source_sync_context`] over a caller-held adapter, so the caller can read
+/// the adapter's per-run counters after the pipeline finishes.
+fn context_over_adapter(
+    adapter: std::sync::Arc<HostSyncAdapter>,
+    config: &Config,
+    local: bool,
+) -> SyncContext {
     SyncContext {
         events: adapter.clone(),
         documents: adapter.clone(),
@@ -309,6 +327,31 @@ pub async fn run_source_pipeline(
     source: &MemorySourceEntry,
     config: &Config,
 ) -> Result<SyncOutcome, SourcePipelineFailure> {
+    // Engine-typed view over `run_source_pipeline_core` for callers that speak
+    // the engine's `SyncOutcome`. The conversion drops `tree_ingest_failures`
+    // (the engine type has no field for it) — a caller that must see the tree
+    // half's verdict calls the `_core` variant instead.
+    let outcome = run_source_pipeline_core(source, config).await?;
+    Ok(SyncOutcome {
+        records_ingested: outcome.records_ingested,
+        more_pending: outcome.more_pending,
+        actions_called: outcome.actions_called,
+        provider_cost_usd: outcome.provider_cost_usd,
+        note: outcome.note,
+    })
+}
+
+/// [`run_source_pipeline`] returning the core pipelines' own
+/// [`crate::sync::pipelines::traits::SyncOutcome`], which additionally carries
+/// `tree_ingest_failures` — the "fetch committed, tree ingest did not" count a
+/// sync verdict must not launder into success (openhuman#5820). The engine's
+/// outcome type stays untouched; this is the boundary where the richer count
+/// would otherwise be dropped. Crate-private: it is the seam
+/// `crate::sources::sync` reads through, not host surface.
+pub(crate) async fn run_source_pipeline_core(
+    source: &MemorySourceEntry,
+    config: &Config,
+) -> Result<crate::sync::pipelines::traits::SyncOutcome, SourcePipelineFailure> {
     // Composio sources run on the engine-free pipelines (#18 §B1); this seam
     // keeps only the tree-coupled kinds (folder/repo/rss/web — they summarise
     // into the engine tree by design) and converts at the boundary for its
@@ -329,7 +372,7 @@ pub async fn run_source_pipeline(
             .ok_or_else(|| {
                 SourcePipelineFailure::without_usage("composio source missing connection_id")
             })?;
-        let outcome = crate::sync::pipelines::host::run_composio_connection_with_caps(
+        return crate::sync::pipelines::host::run_composio_connection_with_caps(
             &toolkit,
             connection_id,
             config,
@@ -340,13 +383,6 @@ pub async fn run_source_pipeline(
             message: failure.message,
             actions_called: failure.actions_called,
             provider_cost_usd: failure.provider_cost_usd,
-        })?;
-        return Ok(SyncOutcome {
-            records_ingested: outcome.records_ingested,
-            more_pending: outcome.more_pending,
-            actions_called: outcome.actions_called,
-            provider_cost_usd: outcome.provider_cost_usd,
-            note: outcome.note,
         });
     }
 
@@ -366,12 +402,14 @@ pub async fn run_source_pipeline(
     dispatcher
         .register(pipeline)
         .map_err(|error| SourcePipelineFailure::without_usage(error.to_string()))?;
-    dispatcher
-        .tick(
-            &pipeline_id,
-            &memory_config,
-            &source_sync_context(memory, config, source.kind != SourceKind::Composio),
-        )
+    // Built from an adapter handle this fn keeps, rather than through
+    // `source_sync_context`, so the tolerated tree-ingest failure count can be
+    // read back after the run.
+    let adapter = std::sync::Arc::new(HostSyncAdapter::with_config(memory, config.to_arc()));
+    let context =
+        context_over_adapter(adapter.clone(), config, source.kind != SourceKind::Composio);
+    let outcome = dispatcher
+        .tick(&pipeline_id, &memory_config, &context)
         .await
         .map_err(|error| {
             let usage = error.downcast_ref::<tinycortex::memory::sync::SyncRunError>();
@@ -380,7 +418,15 @@ pub async fn run_source_pipeline(
                 actions_called: usage.map_or(0, |error| error.actions_called),
                 provider_cost_usd: usage.map_or(0.0, |error| error.provider_cost_usd),
             }
-        })
+        })?;
+    Ok(crate::sync::pipelines::traits::SyncOutcome {
+        records_ingested: outcome.records_ingested,
+        more_pending: outcome.more_pending,
+        actions_called: outcome.actions_called,
+        provider_cost_usd: outcome.provider_cost_usd,
+        note: outcome.note,
+        tree_ingest_failures: adapter.tree_ingest_failure_count(),
+    })
 }
 
 /// Run a Composio connection through tinycortex, preserving any source-level
@@ -590,13 +636,17 @@ impl SkillDocSink for HostSyncAdapter {
 
         // #5473: additively reconnect the synced item to the memory tree. This
         // is a best-effort secondary index over the skill store, which is the
-        // source of truth and has already committed above. A failure here must
-        // NOT abort the connector sync: most providers do not tolerate scope
-        // errors, so the orchestrator turns a `store` error into a run-aborting
-        // `Err` — propagating would let one deterministically-poisonous item
-        // stall the whole connection and re-fetch the page (Composio spend) on
-        // every retry. Log and continue; the per-item source gate re-attempts
-        // the item on a later sync, and an operator rebuild can backfill.
+        // source of truth and has already committed above. An ordinary failure
+        // here must NOT abort the connector sync: most providers do not
+        // tolerate scope errors, so the orchestrator turns a `store` error
+        // into a run-aborting `Err` — propagating would let one
+        // deterministically-poisonous item stall the whole connection and
+        // re-fetch the page (Composio spend) on every retry. Log, count, and
+        // continue; the per-item source gate re-attempts the item on a later
+        // sync, and an operator rebuild can backfill. Corruption is the
+        // exception (openhuman#5820): a malformed `chunks.db` fails every
+        // later item identically, so it escalates through the shared recovery
+        // and aborts the run — there is nothing per-item about it.
         // The config-less adapter (`sync_context`) has no ingest pipeline and is
         // not on the connector sync path, so it skips tree ingest entirely.
         if let Some(config) = self.config.as_deref() {
@@ -604,11 +654,18 @@ impl SkillDocSink for HostSyncAdapter {
                 .ingest_document_into_memory_tree(config, &document)
                 .await
             {
+                let rendered = format!("{error:#}");
+                crate::corruption::escalate_or_count(
+                    "connector tree ingest",
+                    config,
+                    error,
+                    &self.tree_ingest_failures,
+                )?;
                 tracing::warn!(
                     toolkit = %document.toolkit,
                     connection_id = %document.connection_id,
                     document_id = %document.document_id,
-                    %error,
+                    error = %rendered,
                     "[tinycortex:sync] memory-tree ingest failed; skill store retained"
                 );
             }
