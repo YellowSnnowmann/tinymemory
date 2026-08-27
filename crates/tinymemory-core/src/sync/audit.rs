@@ -47,9 +47,13 @@ pub struct SyncAuditEntry {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
     /// Items fetched-and-stored whose memory-tree ingest failed
-    /// (openhuman#5820). `0` is skipped on the wire so rows from the engine's
-    /// writer — which never counts tree failures — stay byte-identical to
-    /// this writer's healthy rows.
+    /// (openhuman#5820). Both tree-ingest sinks (`PipelineHost` and the
+    /// engine-side `HostSyncAdapter`) count tolerated failures, and the
+    /// source-sync and periodic writers in this crate store that count here;
+    /// only the legacy engine-typed `run_source_pipeline` conversion drops it,
+    /// and the engine's own rebuild writer never sets it. `0` is skipped on
+    /// the wire so those rows stay byte-identical to this writer's healthy
+    /// rows.
     #[serde(default, skip_serializing_if = "is_zero_u32")]
     pub tree_ingest_failures: u32,
     /// Why the tree half failed, when it did. Never memory content.

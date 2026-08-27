@@ -303,14 +303,6 @@ pub fn sync_context(memory: MemoryClientRef) -> SyncContext {
     }
 }
 
-/// Test-only since `run_source_pipeline_core` took over the production call
-/// site with a caller-held adapter (see `context_over_adapter`).
-#[cfg(test)]
-fn source_sync_context(memory: MemoryClientRef, config: &Config, local: bool) -> SyncContext {
-    let adapter = std::sync::Arc::new(HostSyncAdapter::with_config(memory, config.to_arc()));
-    context_over_adapter(adapter, config, local)
-}
-
 /// [`source_sync_context`] over a caller-held adapter, so the caller can read
 /// the adapter's per-run counters after the pipeline finishes.
 fn context_over_adapter(
@@ -354,8 +346,9 @@ pub async fn run_source_pipeline(
 /// `tree_ingest_failures` — the "fetch committed, tree ingest did not" count a
 /// sync verdict must not launder into success (openhuman#5820). The engine's
 /// outcome type stays untouched; this is the boundary where the richer count
-/// would otherwise be dropped.
-pub async fn run_source_pipeline_core(
+/// would otherwise be dropped. Crate-private: it is the seam
+/// `crate::sources::sync` reads through, not host surface.
+pub(crate) async fn run_source_pipeline_core(
     source: &MemorySourceEntry,
     config: &Config,
 ) -> Result<crate::sync::pipelines::traits::SyncOutcome, SourcePipelineFailure> {

@@ -300,49 +300,56 @@ struct RunVerdict {
     stage: MemorySyncStage,
     detail: String,
     success: bool,
+    /// Items fetched-and-stored whose tree ingest failed — an item count, the
+    /// unit `SyncAuditEntry::tree_ingest_failures` is defined in. Reconcile
+    /// failures are per scope and are NOT folded into this number.
     tree_failures: u32,
     tree_error: Option<String>,
 }
 
 /// Fold the tree half into the run's verdict (openhuman#5820).
 ///
-/// A run whose fetch and skill-store committed but whose tree ingest (or
-/// post-run reconcile) dropped items must NOT read as success — that is the
-/// exact shape that hid a corrupt store behind 34 minutes of green sync rows.
-/// Reporting it failed with the fetch count intact is the recoverable
-/// direction: the next sync retries the tree half, nothing fetched is lost.
+/// A run whose fetch and skill-store committed but whose tree ingest dropped
+/// items, or whose post-run reconcile failed, must NOT read as success — that
+/// is the exact shape that hid a corrupt store behind 34 minutes of green
+/// sync rows. Reporting it failed with the fetch count intact is the
+/// recoverable direction: the next sync retries the tree half, nothing
+/// fetched is lost.
+///
+/// Item failures and reconcile failures are different units (items vs
+/// scopes) and both diagnostics are kept: the item count is what the audit
+/// row stores, and `tree_error` / `detail` name whichever halves failed.
 fn run_verdict(
     items: usize,
     pipeline_tree_failures: u32,
     reconcile_errors: &[String],
 ) -> RunVerdict {
-    let tree_failures = pipeline_tree_failures.saturating_add(reconcile_errors.len() as u32);
-    let tree_error = if pipeline_tree_failures > 0 {
-        Some(format!(
+    let mut problems: Vec<String> = Vec::new();
+    if pipeline_tree_failures > 0 {
+        problems.push(format!(
             "{pipeline_tree_failures} item(s) fetched but not ingested into the memory tree"
-        ))
-    } else {
-        reconcile_errors.first().cloned()
-    };
-    if tree_failures == 0 {
-        RunVerdict {
+        ));
+    }
+    problems.extend(reconcile_errors.iter().cloned());
+    if problems.is_empty() {
+        return RunVerdict {
             stage: MemorySyncStage::Completed,
             detail: format!("ingested {items} item(s)"),
             success: true,
-            tree_failures,
-            tree_error,
-        }
-    } else {
-        RunVerdict {
-            stage: MemorySyncStage::Failed,
-            detail: format!(
-                "fetched {items} item(s) but {tree_failures} memory-tree ingest \
-                 failure(s); tree-backed recall is missing these items"
-            ),
-            success: false,
-            tree_failures,
-            tree_error,
-        }
+            tree_failures: 0,
+            tree_error: None,
+        };
+    }
+    let tree_error = problems.join("; ");
+    RunVerdict {
+        stage: MemorySyncStage::Failed,
+        detail: format!(
+            "fetched {items} item(s) but the memory-tree half failed ({tree_error}); \
+             tree-backed recall is missing these items"
+        ),
+        success: false,
+        tree_failures: pipeline_tree_failures,
+        tree_error: Some(tree_error),
     }
 }
 

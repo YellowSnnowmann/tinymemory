@@ -217,9 +217,10 @@ async fn rebuild_check_is_a_noop_for_sources_without_archive_scopes() {
 /// The #5820 verdict table: a clean tree half completes; any dropped item —
 /// from the pipeline's tolerated ingest failures or from a failed reconcile —
 /// flips the run to Failed with the fetch count intact, and carries a
-/// tree_error for the audit row. A false ✓ here is the unrecoverable
-/// direction (the user never learns recall is missing items); a false ✗ costs
-/// one re-sync.
+/// tree_error for the audit row. Item failures (an item count) and reconcile
+/// failures (per scope) stay separate units, and both diagnostics survive
+/// when they coexist. A false ✓ here is the unrecoverable direction (the user
+/// never learns recall is missing items); a false ✗ costs one re-sync.
 #[test]
 fn run_verdict_folds_the_tree_half_into_the_outcome() {
     use crate::sync_events::MemorySyncStage;
@@ -240,7 +241,6 @@ fn run_verdict_folds_the_tree_half_into_the_outcome() {
         .as_deref()
         .is_some_and(|error| error.contains("3 item(s) fetched but not ingested")));
     assert!(dropped.detail.contains("fetched 250 item(s)"));
-    assert!(dropped.detail.contains("3 memory-tree ingest failure(s)"));
 
     let reconcile_failed = run_verdict(
         10,
@@ -249,9 +249,36 @@ fn run_verdict_folds_the_tree_half_into_the_outcome() {
     );
     assert!(!reconcile_failed.success);
     assert_eq!(reconcile_failed.stage, MemorySyncStage::Failed);
-    assert_eq!(reconcile_failed.tree_failures, 1);
+    assert_eq!(
+        reconcile_failed.tree_failures, 0,
+        "a failed reconcile scope is not an item count"
+    );
     assert!(reconcile_failed
         .tree_error
         .as_deref()
         .is_some_and(|error| error.contains("reconcile failed for scope")));
+
+    // Both halves failing: the item count stays an item count and neither
+    // diagnostic is dropped.
+    let both = run_verdict(
+        10,
+        2,
+        &["reconcile failed for scope `gmail:user`: boom".to_string()],
+    );
+    assert!(!both.success);
+    assert_eq!(both.tree_failures, 2);
+    let error = both.tree_error.as_deref().expect("combined diagnostics");
+    assert!(
+        error.contains("2 item(s) fetched but not ingested"),
+        "{error}"
+    );
+    assert!(
+        error.contains("reconcile failed for scope `gmail:user`: boom"),
+        "{error}"
+    );
+    assert!(
+        both.detail.contains("2 item(s)") && both.detail.contains("boom"),
+        "{}",
+        both.detail
+    );
 }
