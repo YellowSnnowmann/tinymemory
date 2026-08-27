@@ -49,11 +49,11 @@ use tinymemory_api::provider::{
     FacetType, FastRetrieveQuery, MemoryChunks, MemoryCodingSessions, MemoryCore, MemoryDiff,
     MemoryDocuments, MemoryEntities, MemoryEpisodic, MemoryGoals, MemoryGraph, MemoryIngest,
     MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProfile, MemoryProvider,
-    MemoryRecall, MemoryRetrieval, MemoryScoring, MemorySourceSink, MemorySourceSync, MemoryToolMemory,
-    MemoryTree, PersonHandle, PersonInteraction, PersonRecord, PersonScore, ProfileFacet,
-    RankedPerson, RawArchiveCoverage, RawRebuildOutcome, ResolvedPerson, RetrievalHit,
-    RetrievalResponse, SourceRetrievalQuery, SourceSyncState, SourceSyncStatus, SourceTotal,
-    SyncAuditEntry, SyncFreshness, SyncRunOutcome, UserState,
+    MemoryRecall, MemoryRetrieval, MemoryScoring, MemorySourceSink, MemorySourceSync,
+    MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
+    ProfileFacet, RankedPerson, RawArchiveCoverage, RawRebuildOutcome, ResolvedPerson,
+    RetrievalHit, RetrievalResponse, SourceRetrievalQuery, SourceSyncState, SourceSyncStatus,
+    SourceTotal, SyncAuditEntry, SyncFreshness, SyncRunOutcome, UserState,
 };
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
@@ -2796,14 +2796,13 @@ impl MemoryScoring for TinycortexProvider {
     async fn extract_entities(&self, query: &str) -> Result<Vec<String>, MemoryError> {
         let config = self.config.clone();
         let query = query.to_owned();
-        let entities =
-            tokio::task::spawn_blocking(move || {
-                tokio::runtime::Handle::current().block_on(
-                    tinymemory_core::tree::nlp::extract_query_entities(&config, &query),
-                )
-            })
-            .await
-            .map_err(|error| Self::other("extract entities", error))?;
+        let entities = tokio::task::spawn_blocking(move || {
+            tokio::runtime::Handle::current().block_on(
+                tinymemory_core::tree::nlp::extract_query_entities(&config, &query),
+            )
+        })
+        .await
+        .map_err(|error| Self::other("extract entities", error))?;
         Ok(entities.into_iter().map(|e| e.canonical_id).collect())
     }
 
