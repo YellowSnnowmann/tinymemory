@@ -354,7 +354,6 @@ impl SourceRegistry {
         Ok(targets.len().min(u32::MAX as usize) as u32)
     }
 
-    /// Enable every source and clear all per-source caps ("All In" mode).
     /// Replace the whole registry with `entries`, validating each first.
     ///
     /// The write-through behind a host-config view whose `memory_sources_json`
@@ -377,6 +376,7 @@ impl SourceRegistry {
         self.write_all(entries)
     }
 
+    /// Enable every source and clear all per-source caps ("All In" mode).
     pub fn apply_all_in(&self) -> Result<Vec<MemorySourceEntry>> {
         let _guard = mutation_guard();
         let mut sources = self.list()?;
