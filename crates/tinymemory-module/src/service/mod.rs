@@ -176,7 +176,6 @@ use tinymemory_api::provider::retrieval::{
     CoverWindowQuery, EntityMatch, FastRetrieveQuery, RetrievalHit, RetrievalResponse,
     SourceRetrievalQuery,
 };
-use tinymemory_api::provider::scoring::MemoryScoring;
 use tinymemory_api::provider::sessions::{
     CodingSessionIngestReport, CodingSessionIngestRequest, CodingSessionSource,
 };
