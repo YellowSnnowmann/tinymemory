@@ -77,6 +77,41 @@ pub fn get_source_in(
         .map_err(|error| error.to_string())
 }
 
+/// [`list_sources`] against an **explicit** config — the same reasoning as
+/// [`get_source_in`]: a driver bound to one workspace must read that
+/// workspace's registry file, not whatever the process environment names.
+///
+/// Synchronous for the same reason; this is what lets a host-config view
+/// answer `memory_sources_json` from the file the host writes rather than
+/// from a load-time snapshot (openhuman#5820).
+///
+/// # Errors
+///
+/// Returns `Err` with the registry's error message, stringified, when the
+/// file cannot be read or parsed as `[[memory_sources]]`.
+pub fn list_sources_in(config: &crate::Config) -> Result<Vec<MemorySourceEntry>, String> {
+    registry_in(config)
+        .list()
+        .map_err(|error| error.to_string())
+}
+
+/// Replace the registry file an **explicit** config names with `entries` —
+/// the write half of [`list_sources_in`], so a host-config view that reads
+/// live can also write through (openhuman#5820).
+///
+/// # Errors
+///
+/// Returns `Err` with the registry's error message, stringified, when an
+/// entry fails validation or the file cannot be written atomically.
+pub fn replace_sources_in(
+    config: &crate::Config,
+    entries: &[MemorySourceEntry],
+) -> Result<(), String> {
+    registry_in(config)
+        .replace_all(entries)
+        .map_err(|error| error.to_string())
+}
+
 pub async fn add_source(entry: MemorySourceEntry) -> Result<MemorySourceEntry, String> {
     let _guard = memory_sources_write_guard().await;
     log::debug!("[memory_sources] crate add kind={}", entry.kind.as_str());

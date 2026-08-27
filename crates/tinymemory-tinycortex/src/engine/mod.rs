@@ -268,9 +268,35 @@ impl MemoryHostConfig for EngineRuntimeConfig {
         }
     }
     fn memory_sources_json(&self) -> anyhow::Result<serde_json::Value> {
+        // The host's registry file is the source of truth and it is live: a
+        // source the user adds after this module loaded is in that file and
+        // not in the load-time snapshot. Read the file when there is one;
+        // the snapshot stays the answer for a host that never wrote a
+        // registry, and for a read that fails (openhuman#5820).
+        if self.config_path.is_file() {
+            match tinymemory_core::sources::registry::list_sources_in(self) {
+                Ok(sources) => return Ok(serde_json::to_value(sources)?),
+                Err(error) => log::warn!(
+                    "[tinycortex:engine] could not read the source registry at {}; \
+                     answering from the load-time snapshot: {error}",
+                    self.config_path.display()
+                ),
+            }
+        }
         Ok(self.memory_sources.clone())
     }
     fn set_memory_sources_json(&mut self, value: serde_json::Value) -> anyhow::Result<()> {
+        // Write through to the host's registry file when there is one, so the
+        // next `memory_sources_json` (a live read) sees this update and it
+        // survives the process; `save` on this config is a no-op, so this is
+        // the persistence step. The snapshot is kept in step for a config
+        // with no file (openhuman#5820).
+        if self.config_path.is_file() {
+            let entries: Vec<tinymemory_core::sources::MemorySourceEntry> =
+                serde_json::from_value(value.clone())?;
+            tinymemory_core::sources::registry::replace_sources_in(self, &entries)
+                .map_err(|error| anyhow::anyhow!("write memory sources: {error}"))?;
+        }
         self.memory_sources = value;
         Ok(())
     }

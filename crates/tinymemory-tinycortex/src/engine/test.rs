@@ -427,3 +427,97 @@ fn the_two_new_families_are_advertised_by_the_full_engine() {
     assert!(caps.contains(Capability::SourceSync));
     assert!(caps.contains(Capability::CodingSessions));
 }
+
+/// `memory_sources_json` answers from the host's registry file when it
+/// exists — a source added after load is visible — and from the load-time
+/// snapshot only when there is no file (openhuman#5820).
+#[test]
+fn memory_sources_json_reads_the_live_registry_file_when_present() {
+    use tinymemory_api::host::MemoryHostConfig;
+
+    let root = tempfile::tempdir().expect("tempdir");
+    let config_path = root.path().join("config.toml");
+    let snapshot = serde_json::json!([
+        { "id": "src_snapshot", "kind": "folder", "label": "old", "path": "." }
+    ]);
+
+    let mut config = runtime_config();
+    config.workspace_dir = root.path().join("workspace");
+    config.config_path = config_path.clone();
+    config.memory_sources = snapshot.clone();
+
+    // No file yet: the snapshot is the only answer.
+    assert_eq!(
+        config.memory_sources_json().expect("snapshot answer"),
+        snapshot
+    );
+
+    // The host writes a registry entry after load; the live read sees it.
+    std::fs::write(
+        &config_path,
+        "[[memory_sources]]\nid = \"src_live\"\nkind = \"folder\"\nlabel = \"new\"\npath = \".\"\n",
+    )
+    .expect("write the registry file");
+    let live = config.memory_sources_json().expect("live answer");
+    let ids: Vec<&str> = live
+        .as_array()
+        .expect("a JSON array of sources")
+        .iter()
+        .filter_map(|entry| entry.get("id").and_then(|id| id.as_str()))
+        .collect();
+    assert_eq!(
+        ids,
+        vec!["src_live"],
+        "the file, not the snapshot, is the registry"
+    );
+}
+
+/// With a registry file present, `set_memory_sources_json` writes through:
+/// the next (live) getter returns the new entries and the file holds them
+/// (openhuman#5820, review follow-up). Without a file, the snapshot is
+/// updated and read back as before.
+#[test]
+fn set_memory_sources_json_writes_through_to_the_registry_file() {
+    use tinymemory_api::host::MemoryHostConfig;
+
+    let root = tempfile::tempdir().expect("tempdir");
+    let config_path = root.path().join("config.toml");
+    std::fs::write(&config_path, "other_key = 1\n").expect("seed the config file");
+
+    let mut config = runtime_config();
+    config.workspace_dir = root.path().join("workspace");
+    config.config_path = config_path.clone();
+
+    let entries = serde_json::json!([
+        { "id": "src_written", "kind": "folder", "label": "written", "path": "." }
+    ]);
+    config
+        .set_memory_sources_json(entries.clone())
+        .expect("the setter writes through");
+
+    // The live getter sees the update...
+    let live = config.memory_sources_json().expect("live answer");
+    let ids: Vec<&str> = live
+        .as_array()
+        .expect("a JSON array of sources")
+        .iter()
+        .filter_map(|entry| entry.get("id").and_then(|id| id.as_str()))
+        .collect();
+    assert_eq!(ids, vec!["src_written"]);
+
+    // ...it is on disk, and the file's other keys survived the write.
+    let on_disk = std::fs::read_to_string(&config_path).expect("read the config file");
+    assert!(on_disk.contains("src_written"), "{on_disk}");
+    assert!(on_disk.contains("other_key = 1"), "{on_disk}");
+
+    // No file: the snapshot is the store.
+    let mut snapshot_only = runtime_config();
+    snapshot_only.config_path = root.path().join("missing").join("config.toml");
+    snapshot_only
+        .set_memory_sources_json(entries.clone())
+        .expect("snapshot-only setter");
+    assert_eq!(
+        snapshot_only.memory_sources_json().expect("snapshot"),
+        entries
+    );
+}
