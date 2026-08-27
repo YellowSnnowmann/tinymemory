@@ -316,6 +316,14 @@ pub mod methods {
     pub const CODING_SESSION_STATUS: &str = "CodingSessionStatus";
     /// `IngestCodingSessions` — distil coding sessions into observations.
     pub const INGEST_CODING_SESSIONS: &str = "IngestCodingSessions";
+
+    // Scoring family — entity extraction and text embedding through the bus.
+    /// `ExtractEntities` — extract canonical entity ids from a query string.
+    pub const EXTRACT_ENTITIES: &str = "ExtractEntities";
+    /// `EmbedText` — produce a dense embedding vector for an arbitrary string.
+    pub const EMBED_TEXT: &str = "EmbedText";
+    /// `EmbedderSlug` — the stable identifier of the active embedder.
+    pub const EMBEDDER_SLUG: &str = "EmbedderSlug";
 }
 
 /// Every member name, in the order the module declares them.
@@ -323,7 +331,7 @@ pub mod methods {
 /// The order matters: `tinybus`'s `Interface::members()` returns declaration
 /// order, and the module compares the two sequences directly rather than as
 /// sets, so a reordering is caught alongside an addition or a removal.
-pub const METHODS: [&str; 123] = [
+pub const METHODS: [&str; 126] = [
     methods::DRIVER_ID,
     methods::CAPABILITIES,
     methods::HEALTH,
@@ -447,6 +455,9 @@ pub const METHODS: [&str; 123] = [
     methods::REBUILD_FROM_RAW_ARCHIVE,
     methods::CODING_SESSION_STATUS,
     methods::INGEST_CODING_SESSIONS,
+    methods::EXTRACT_ENTITIES,
+    methods::EMBED_TEXT,
+    methods::EMBEDDER_SLUG,
 ];
 
 #[cfg(test)]
