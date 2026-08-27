@@ -6,7 +6,7 @@
 //! unsearchable without a re-embed, and nothing fails at the time. So the
 //! provider checks, and these tests are what prove it checks.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use tinybus::broker::Broker;
 use tinybus::transport::memory::MemoryBus;
@@ -17,25 +17,56 @@ use super::{BusEmbeddingHost, EMBEDDING_HOST_BUS_NAME, EMBEDDING_HOST_OBJECT_PAT
 use crate::config::ModuleConfig;
 
 /// A stand-in for the host's embedder, returning vectors of a chosen width.
+///
+/// Its `Embed` takes the four positional arguments the real host declares, in
+/// the host's order — `(provider, model, dimensions, texts)` — because argument
+/// order is the part of a bus contract no compiler checks. A fake with the
+/// wrong arity would pass every test here while the real host refused every
+/// call at decode, which is exactly how the module shipped sending three
+/// (openhuman#5820).
 struct FakeHostEmbedder {
     /// Width of each returned vector. Set to something other than the requested
     /// dimensionality to exercise the mismatch refusal.
     width: usize,
     /// Return this many vectors regardless of input count, when `Some`.
     force_count: Option<usize>,
+    /// Every `(provider, model, dimensions)` triple the host was asked for.
+    seen: Arc<Mutex<Vec<(String, String, usize)>>>,
 }
 
 #[tinybus::interface(name = "ai.tinyhumans.tinymemory.EmbeddingHost")]
 impl FakeHostEmbedder {
     async fn embed(
         &self,
-        _model: String,
-        _dimensions: usize,
+        provider: String,
+        model: String,
+        dimensions: usize,
         texts: Vec<String>,
     ) -> BusResult<Vec<Vec<f32>>> {
         std::future::ready(()).await;
+        self.seen
+            .lock()
+            .expect("seen lock")
+            .push((provider, model, dimensions));
         let count = self.force_count.unwrap_or(texts.len());
         Ok((0..count).map(|_| vec![0.5_f32; self.width]).collect())
+    }
+}
+
+impl FakeHostEmbedder {
+    fn with_width(width: usize) -> Self {
+        Self {
+            width,
+            force_count: None,
+            seen: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    fn forcing_count(width: usize, count: usize) -> Self {
+        Self {
+            force_count: Some(count),
+            ..Self::with_width(width)
+        }
     }
 }
 
@@ -82,11 +113,7 @@ fn config_with_dims(dims: usize) -> ModuleConfig {
 
 #[tokio::test]
 async fn a_batch_is_embedded_over_the_bus() {
-    let connection = bus_with_host(FakeHostEmbedder {
-        width: 4,
-        force_count: None,
-    })
-    .await;
+    let connection = bus_with_host(FakeHostEmbedder::with_width(4)).await;
     let host = BusEmbeddingHost::new(connection, &config_with_dims(4));
     let provider = host.default_embedding_provider();
 
@@ -104,11 +131,7 @@ async fn a_wrong_width_is_refused_rather_than_written() {
     // The dangerous case. Accepting these would write vectors into a space they
     // do not belong to, and nothing would fail until a later search silently
     // returned nothing.
-    let connection = bus_with_host(FakeHostEmbedder {
-        width: 8,
-        force_count: None,
-    })
-    .await;
+    let connection = bus_with_host(FakeHostEmbedder::with_width(8)).await;
     let host = BusEmbeddingHost::new(connection, &config_with_dims(4));
     let provider = host.default_embedding_provider();
 
@@ -123,11 +146,7 @@ async fn a_wrong_width_is_refused_rather_than_written() {
 async fn a_wrong_vector_count_is_refused() {
     // Callers pair inputs with outputs positionally, so a short reply would
     // attach the wrong vector to the wrong chunk.
-    let connection = bus_with_host(FakeHostEmbedder {
-        width: 4,
-        force_count: Some(1),
-    })
-    .await;
+    let connection = bus_with_host(FakeHostEmbedder::forcing_count(4, 1)).await;
     let host = BusEmbeddingHost::new(connection, &config_with_dims(4));
     let provider = host.default_embedding_provider();
 
@@ -142,11 +161,7 @@ async fn a_wrong_vector_count_is_refused() {
 async fn a_zero_dimension_provider_yields_empty_vectors() {
     // Zero dimensions is the engine's "semantic search off" state, and the
     // vectors it yields are expected to be empty rather than merely unchecked.
-    let connection = bus_with_host(FakeHostEmbedder {
-        width: 0,
-        force_count: None,
-    })
-    .await;
+    let connection = bus_with_host(FakeHostEmbedder::with_width(0)).await;
     let host = BusEmbeddingHost::new(connection, &config_with_dims(0));
     let provider = host.default_embedding_provider();
 
@@ -166,11 +181,7 @@ async fn a_zero_dimension_request_answered_with_real_vectors_is_refused() {
     // then believe no vectors existed while the store filled with embeddings
     // from a space nothing tracks — the split-space failure, with the split
     // hidden. Zero means empty, and this is the test that says so.
-    let connection = bus_with_host(FakeHostEmbedder {
-        width: 768,
-        force_count: None,
-    })
-    .await;
+    let connection = bus_with_host(FakeHostEmbedder::with_width(768)).await;
     let host = BusEmbeddingHost::new(connection, &config_with_dims(0));
     let provider = host.default_embedding_provider();
 
@@ -230,11 +241,7 @@ async fn the_module_never_reports_a_credential() {
     // The central claim, asserted on the behaviour rather than the config shape:
     // no provider name yields a key, including ones a host would normally have
     // one for.
-    let connection = bus_with_host(FakeHostEmbedder {
-        width: 4,
-        force_count: None,
-    })
-    .await;
+    let connection = bus_with_host(FakeHostEmbedder::with_width(4)).await;
     let host = BusEmbeddingHost::new(connection, &config_with_dims(4));
 
     for provider in ["openai", "cohere", "voyage", "custom", "ollama", "cloud"] {
@@ -250,11 +257,7 @@ async fn a_keyed_provider_request_still_builds_and_ignores_the_key() {
     // The engine may ask for a keyed provider with an empty key. Refusing would
     // break recall; forwarding a key would defeat the split. It builds, and the
     // key goes nowhere.
-    let connection = bus_with_host(FakeHostEmbedder {
-        width: 3,
-        force_count: None,
-    })
-    .await;
+    let connection = bus_with_host(FakeHostEmbedder::with_width(3)).await;
     let host = BusEmbeddingHost::new(connection, &config_with_dims(3));
 
     let provider = host
@@ -272,11 +275,7 @@ async fn dimension_support_is_answered_from_configuration() {
     // A synchronous getter cannot make a bus call, so the host passes the list.
     // Absent means "unsupported", which is the safe direction: the engine omits
     // the parameter rather than writing a batch the provider rejects halfway.
-    let connection = bus_with_host(FakeHostEmbedder {
-        width: 4,
-        force_count: None,
-    })
-    .await;
+    let connection = bus_with_host(FakeHostEmbedder::with_width(4)).await;
     let host = BusEmbeddingHost::new(connection, &config_with_dims(4));
 
     assert!(host.model_supports_dimensions("test-model"));
@@ -285,11 +284,7 @@ async fn dimension_support_is_answered_from_configuration() {
 
 #[tokio::test]
 async fn configured_getters_and_provider_factories_preserve_their_identity() {
-    let connection = bus_with_host(FakeHostEmbedder {
-        width: 6,
-        force_count: None,
-    })
-    .await;
+    let connection = bus_with_host(FakeHostEmbedder::with_width(6)).await;
     let config = ModuleConfig {
         ollama_base_url: "http://embedder.internal:11434".to_string(),
         cloud_embedding_model: "cloud-default".to_string(),
@@ -303,7 +298,7 @@ async fn configured_getters_and_provider_factories_preserve_their_identity() {
     assert_eq!(host.default_cloud_embedding_dimensions(), 6);
 
     let default_provider = host.default_embedding_provider();
-    assert_eq!(default_provider.name(), "module-bus");
+    assert_eq!(default_provider.name(), "cloud");
     assert_eq!(default_provider.model_id(), "cloud-default");
     assert_eq!(default_provider.dimensions(), 6);
 
@@ -333,11 +328,7 @@ async fn configured_getters_and_provider_factories_preserve_their_identity() {
 async fn the_signature_matches_what_the_contract_formats() {
     // Drift between a live provider's signature and a config-derived one splits
     // one embedding space in two, so both must route through the same formatter.
-    let connection = bus_with_host(FakeHostEmbedder {
-        width: 4,
-        force_count: None,
-    })
-    .await;
+    let connection = bus_with_host(FakeHostEmbedder::with_width(4)).await;
     let host = BusEmbeddingHost::new(connection, &config_with_dims(4));
     let provider = host.default_embedding_provider();
 
@@ -373,14 +364,52 @@ async fn the_debug_form_carries_no_connection_and_no_key() {
 /// bus provider must be usable as one.
 #[tokio::test]
 async fn the_provider_is_usable_as_a_trait_object() {
-    let connection = bus_with_host(FakeHostEmbedder {
-        width: 2,
-        force_count: None,
-    })
-    .await;
+    let connection = bus_with_host(FakeHostEmbedder::with_width(2)).await;
     let host = BusEmbeddingHost::new(connection, &config_with_dims(2));
 
     let provider: Arc<dyn EmbeddingProvider> = host.default_embedding_provider();
     let one = provider.embed_one("alpha").await.expect("embed_one works");
     assert_eq!(one.len(), 2);
+}
+
+#[tokio::test]
+async fn the_provider_name_travels_first_then_model_then_dimensions() {
+    // The host resolves credential and endpoint from the provider name, so it
+    // must arrive as the first argument. This pins the wire order against the
+    // host's `EmbeddingHost::embed(provider, model, dimensions, texts)`; the
+    // three-argument form the module used to send put `dimensions` where the
+    // host reads `model` and was refused at decode (openhuman#5820).
+    let embedder = FakeHostEmbedder::with_width(4);
+    let seen = Arc::clone(&embedder.seen);
+    let connection = bus_with_host(embedder).await;
+    let host = BusEmbeddingHost::new(connection, &config_with_dims(4));
+
+    host.default_embedding_provider()
+        .embed(&["alpha"])
+        .await
+        .expect("the managed embedder answers");
+    host.ollama_embedding_provider("http://127.0.0.1:11434", "nomic-embed-text", 4)
+        .expect("an ollama provider is constructible")
+        .embed(&["beta"])
+        .await
+        .expect("the local embedder answers");
+    host.create_embedding_provider_with_credentials("voyage", "voyage-3", 4, "", None)
+        .expect("a BYO-key provider is constructible")
+        .embed(&["gamma"])
+        .await
+        .expect("the BYO-key embedder answers");
+
+    let seen = seen.lock().expect("seen lock").clone();
+    assert_eq!(
+        seen,
+        vec![
+            (
+                "cloud".to_string(),
+                config_with_dims(4).cloud_embedding_model,
+                4
+            ),
+            ("ollama".to_string(), "nomic-embed-text".to_string(), 4),
+            ("voyage".to_string(), "voyage-3".to_string(), 4),
+        ]
+    );
 }

@@ -121,12 +121,14 @@ impl EmbeddingHost for BusEmbeddingHost {
         self.ollama_base_url.clone()
     }
 
+    /// The host's default is its managed-cloud embedder built from the same
+    /// two values it sent as `cloud_embedding_model`/`cloud_embedding_dimensions`,
+    /// so this provider is that embedder and names itself `cloud`: the name
+    /// travels first on every `Embed` call and is what the host selects the
+    /// credential and endpoint by. An invented label here (`module-bus`, once)
+    /// reaches the host as an unknown provider slug and fails every batch.
     fn default_embedding_provider(&self) -> Arc<dyn EmbeddingProvider> {
-        Arc::new(self.provider(
-            "module-bus",
-            &self.cloud_model.clone(),
-            self.cloud_dimensions,
-        ))
+        Arc::new(self.provider("cloud", &self.cloud_model.clone(), self.cloud_dimensions))
     }
 
     /// Builds a provider for an explicit triple, ignoring `api_key`.
@@ -257,10 +259,23 @@ impl EmbeddingProvider for BusEmbeddingProvider {
             self.dimensions
         );
 
+        // Four positional arguments, in the order the host's `EmbeddingHost`
+        // interface declares them: `(provider, model, dimensions, texts)`. The
+        // host needs the provider name first because it is what selects the
+        // credential and endpoint (`cloud` is its managed embedder, `ollama`
+        // its local daemon, anything else a BYO-key slug). Sending three
+        // arguments shifted `dimensions` into `model` and every embed was
+        // refused at decode with "invalid type: integer, expected a string" —
+        // nothing ingested in module mode ever got a vector (openhuman#5820).
         let vectors: Vec<Vec<f32>> = proxy
             .call(
                 EMBED_METHOD,
-                (self.model_id.clone(), self.dimensions, owned),
+                (
+                    self.name.clone(),
+                    self.model_id.clone(),
+                    self.dimensions,
+                    owned,
+                ),
             )
             .await
             .map_err(|error| anyhow::anyhow!("host embed failed: {error}"))?;
