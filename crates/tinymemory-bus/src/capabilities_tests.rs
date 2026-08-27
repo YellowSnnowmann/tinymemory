@@ -2,7 +2,7 @@
 //!
 //! Three properties are load-bearing and each has its own test:
 //!
-//! 1. the enum has exactly the twenty contract families and no more;
+//! 1. the enum has exactly the twenty-one contract families and no more;
 //! 2. the serialized form is stable snake_case **strings**, never discriminant
 //!    integers — a driver deployed against an older build must keep advertising
 //!    the same set after a variant is inserted mid-enum;
@@ -19,9 +19,9 @@ use super::*;
 use serde_json::json;
 
 #[test]
-fn capability_has_exactly_the_twenty_contract_families() {
-    assert_eq!(Capability::ALL.len(), 20);
-    assert_eq!(Capability::all().len(), 20);
+fn capability_has_exactly_the_twenty_one_contract_families() {
+    assert_eq!(Capability::ALL.len(), 21);
+    assert_eq!(Capability::all().len(), 21);
 
     let names: Vec<&str> = Capability::ALL.iter().map(|c| c.as_str()).collect();
     assert_eq!(
@@ -47,6 +47,7 @@ fn capability_has_exactly_the_twenty_contract_families() {
             "episodic",
             "source_sync",
             "coding_sessions",
+            "scoring",
         ]
     );
 }

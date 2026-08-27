@@ -783,6 +783,10 @@ mod exports {
             // Local coding-agent transcripts.
             "CodingSessionStatus",
             "IngestCodingSessions",
+            // Scoring: entity extraction, text embedding, embedder identification.
+            "ExtractEntities",
+            "EmbedText",
+            "EmbedderSlug",
         ],
         signals = [],
         // The host's embedder is deliberately NOT declared as `requires`. That

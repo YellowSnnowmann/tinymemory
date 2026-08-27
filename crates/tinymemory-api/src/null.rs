@@ -64,7 +64,7 @@ use crate::provider::{
     CodingSessionIngestRequest, CodingSessionSource, CoverWindowQuery, EntityMatch, FacetType,
     FastRetrieveQuery, MemoryChunks, MemoryCodingSessions, MemoryCore, MemoryDiff, MemoryDocuments,
     MemoryEntities, MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople,
-    MemoryPortability, MemoryProfile, MemoryProvider, MemoryRecall, MemoryRetrieval,
+    MemoryPortability, MemoryProfile, MemoryProvider, MemoryRecall, MemoryRetrieval, MemoryScoring,
     MemorySourceSink, MemorySourceSync, MemoryToolMemory, MemoryTree, PersonHandle,
     PersonInteraction, PersonRecord, PersonScore, ProfileFacet, RankedPerson, RawArchiveCoverage,
     RawRebuildOutcome, ResolvedPerson, RetrievalHit, RetrievalResponse, SourceRetrievalQuery,
@@ -782,6 +782,21 @@ impl MemoryCodingSessions for NullMemoryProvider {
         _request: CodingSessionIngestRequest,
     ) -> Result<CodingSessionIngestReport, MemoryError> {
         unsupported(Capability::CodingSessions)
+    }
+}
+
+#[async_trait]
+impl MemoryScoring for NullMemoryProvider {
+    async fn extract_entities(&self, _query: &str) -> Result<Vec<String>, MemoryError> {
+        unsupported(Capability::Scoring)
+    }
+
+    async fn embed_text(&self, _text: &str) -> Result<Vec<f32>, MemoryError> {
+        unsupported(Capability::Scoring)
+    }
+
+    async fn embedder_slug(&self) -> Result<String, MemoryError> {
+        unsupported(Capability::Scoring)
     }
 }
 

@@ -76,6 +76,7 @@ pub mod people;
 pub mod profile;
 pub mod records;
 pub mod retrieval;
+pub mod scoring;
 pub mod sessions;
 pub mod sync;
 // The value types every family exchanges, defined in `tinymemory-bus` and
@@ -109,6 +110,7 @@ pub use retrieval::{
     CoverWindowQuery, EntityMatch, FastRetrieveQuery, MemoryRetrieval, RetrievalHit,
     RetrievalNodeKind, RetrievalResponse, SourceRetrievalQuery,
 };
+pub use scoring::MemoryScoring;
 pub use sessions::{
     CodingSessionIngestReport, CodingSessionIngestRequest, CodingSessionSource,
     MemoryCodingSessions,

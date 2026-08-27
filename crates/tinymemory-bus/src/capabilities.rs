@@ -113,6 +113,9 @@ pub enum Capability {
     /// walk. Advertising them together would put a dead control in front of
     /// whichever half is absent.
     CodingSessions,
+    /// Scoring and NLP operations: entity extraction, text embedding, and
+    /// embedder identification.
+    Scoring,
 }
 
 impl Capability {
@@ -121,7 +124,7 @@ impl Capability {
     /// Declaration order is also bit order in [`Capabilities`] and iteration
     /// order in its serialized form, so this slice is the single ordering
     /// authority for the whole module.
-    pub const ALL: [Capability; 20] = [
+    pub const ALL: [Capability; 21] = [
         Capability::Core,
         Capability::Recall,
         Capability::Ingest,
@@ -145,6 +148,7 @@ impl Capability {
         Capability::Episodic,
         Capability::SourceSync,
         Capability::CodingSessions,
+        Capability::Scoring,
     ];
 
     /// The families a driver must advertise to be bindable at all.
@@ -190,6 +194,7 @@ impl Capability {
             Self::Episodic => "episodic",
             Self::SourceSync => "source_sync",
             Self::CodingSessions => "coding_sessions",
+            Self::Scoring => "scoring",
         }
     }
 
@@ -239,6 +244,7 @@ impl Capability {
             Self::Episodic => 17,
             Self::SourceSync => 18,
             Self::CodingSessions => 19,
+            Self::Scoring => 20,
         }
     }
 
