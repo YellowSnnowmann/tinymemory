@@ -231,3 +231,23 @@ fn a_populated_config_round_trips() {
     assert_eq!(back.models_supporting_dimensions, vec!["m".to_string()]);
     assert_eq!(back.driver_id, "tinycortex");
 }
+
+/// A host that predates `config_path` still deserializes, with the field
+/// absent rather than invented; a host that sends it is honoured verbatim.
+#[test]
+fn config_path_is_optional_on_the_wire_and_honoured_when_sent() {
+    let old_host: ModuleConfig =
+        serde_json::from_value(serde_json::json!({ "workspace_dir": "/w/workspace" }))
+            .expect("an older host's payload still deserializes");
+    assert!(old_host.config_path.is_none());
+
+    let new_host: ModuleConfig = serde_json::from_value(serde_json::json!({
+        "workspace_dir": "/w/workspace",
+        "config_path": "/w/config.toml",
+    }))
+    .expect("a host that sends config_path deserializes");
+    assert_eq!(
+        new_host.config_path.as_deref(),
+        Some(std::path::Path::new("/w/config.toml"))
+    );
+}

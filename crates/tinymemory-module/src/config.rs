@@ -62,6 +62,20 @@ pub struct ModuleConfig {
     /// memory store somewhere nobody would look for it.
     pub workspace_dir: PathBuf,
 
+    /// Path of the host's `config.toml` — the file that holds the
+    /// `[[memory_sources]]` registry the host writes.
+    ///
+    /// The engine's source registry is a TOML file, and the host and this
+    /// module must read and write the *same one*: `get_source_in` looks a
+    /// source up by id in that file, so a module reading a different path
+    /// answers `NotFound` for every source the host registered
+    /// (openhuman#5820, the "no memory source registered as src_…" strand).
+    /// A host too old to send this field deserializes as `None`, and
+    /// `provider::host_config_path` then falls back to the host's documented
+    /// layout — `config.toml` beside the `workspace/` directory — before the
+    /// historical (and wrong) `workspace_dir/config.toml`.
+    pub config_path: Option<PathBuf>,
+
     /// The engine's own configuration, passed through unchanged.
     pub memory: MemoryConfig,
 
@@ -214,6 +228,7 @@ impl Default for ModuleConfig {
     fn default() -> Self {
         Self {
             workspace_dir: PathBuf::new(),
+            config_path: None,
             memory: MemoryConfig::default(),
             memory_tree: MemoryTreeConfig::default(),
             scheduler_gate: SchedulerGateConfig::default(),

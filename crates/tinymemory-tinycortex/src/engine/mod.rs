@@ -268,6 +268,21 @@ impl MemoryHostConfig for EngineRuntimeConfig {
         }
     }
     fn memory_sources_json(&self) -> anyhow::Result<serde_json::Value> {
+        // The host's registry file is the source of truth and it is live: a
+        // source the user adds after this module loaded is in that file and
+        // not in the load-time snapshot. Read the file when there is one;
+        // the snapshot stays the answer for a host that never wrote a
+        // registry, and for a read that fails (openhuman#5820).
+        if self.config_path.is_file() {
+            match tinymemory_core::sources::registry::list_sources_in(self) {
+                Ok(sources) => return Ok(serde_json::to_value(sources)?),
+                Err(error) => log::warn!(
+                    "[tinycortex:engine] could not read the source registry at {}; \
+                     answering from the load-time snapshot: {error}",
+                    self.config_path.display()
+                ),
+            }
+        }
         Ok(self.memory_sources.clone())
     }
     fn set_memory_sources_json(&mut self, value: serde_json::Value) -> anyhow::Result<()> {

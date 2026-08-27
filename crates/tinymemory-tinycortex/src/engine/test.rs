@@ -427,3 +427,47 @@ fn the_two_new_families_are_advertised_by_the_full_engine() {
     assert!(caps.contains(Capability::SourceSync));
     assert!(caps.contains(Capability::CodingSessions));
 }
+
+/// `memory_sources_json` answers from the host's registry file when it
+/// exists — a source added after load is visible — and from the load-time
+/// snapshot only when there is no file (openhuman#5820).
+#[test]
+fn memory_sources_json_reads_the_live_registry_file_when_present() {
+    use tinymemory_api::host::MemoryHostConfig;
+
+    let root = tempfile::tempdir().expect("tempdir");
+    let config_path = root.path().join("config.toml");
+    let snapshot = serde_json::json!([
+        { "id": "src_snapshot", "kind": "folder", "label": "old", "path": "." }
+    ]);
+
+    let mut config = runtime_config();
+    config.workspace_dir = root.path().join("workspace");
+    config.config_path = config_path.clone();
+    config.memory_sources = snapshot.clone();
+
+    // No file yet: the snapshot is the only answer.
+    assert_eq!(
+        config.memory_sources_json().expect("snapshot answer"),
+        snapshot
+    );
+
+    // The host writes a registry entry after load; the live read sees it.
+    std::fs::write(
+        &config_path,
+        "[[memory_sources]]\nid = \"src_live\"\nkind = \"folder\"\nlabel = \"new\"\npath = \".\"\n",
+    )
+    .expect("write the registry file");
+    let live = config.memory_sources_json().expect("live answer");
+    let ids: Vec<&str> = live
+        .as_array()
+        .expect("a JSON array of sources")
+        .iter()
+        .filter_map(|entry| entry.get("id").and_then(|id| id.as_str()))
+        .collect();
+    assert_eq!(
+        ids,
+        vec!["src_live"],
+        "the file, not the snapshot, is the registry"
+    );
+}
