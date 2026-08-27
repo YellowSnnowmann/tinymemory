@@ -355,6 +355,28 @@ impl SourceRegistry {
     }
 
     /// Enable every source and clear all per-source caps ("All In" mode).
+    /// Replace the whole registry with `entries`, validating each first.
+    ///
+    /// The write-through behind a host-config view whose `memory_sources_json`
+    /// reads this file: a setter that only updated an in-memory snapshot would
+    /// be invisible to the very next getter (openhuman#5820). Same atomic
+    /// load-modify-validate-save cycle as the other mutations, so other
+    /// top-level keys in the file are preserved.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when an entry fails validation, or when the file
+    /// cannot be read, parsed, serialized or atomically replaced.
+    pub fn replace_all(&self, entries: &[MemorySourceEntry]) -> Result<()> {
+        let _guard = mutation_guard();
+        for entry in entries {
+            entry
+                .validate()
+                .map_err(|reason| anyhow!("invalid memory source `{}`: {reason}", entry.id))?;
+        }
+        self.write_all(entries)
+    }
+
     pub fn apply_all_in(&self) -> Result<Vec<MemorySourceEntry>> {
         let _guard = mutation_guard();
         let mut sources = self.list()?;

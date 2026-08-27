@@ -286,6 +286,17 @@ impl MemoryHostConfig for EngineRuntimeConfig {
         Ok(self.memory_sources.clone())
     }
     fn set_memory_sources_json(&mut self, value: serde_json::Value) -> anyhow::Result<()> {
+        // Write through to the host's registry file when there is one, so the
+        // next `memory_sources_json` (a live read) sees this update and it
+        // survives the process; `save` on this config is a no-op, so this is
+        // the persistence step. The snapshot is kept in step for a config
+        // with no file (openhuman#5820).
+        if self.config_path.is_file() {
+            let entries: Vec<tinymemory_core::sources::MemorySourceEntry> =
+                serde_json::from_value(value.clone())?;
+            tinymemory_core::sources::registry::replace_sources_in(self, &entries)
+                .map_err(|error| anyhow::anyhow!("write memory sources: {error}"))?;
+        }
         self.memory_sources = value;
         Ok(())
     }
