@@ -49,7 +49,7 @@ use tinymemory_api::provider::{
     FacetType, FastRetrieveQuery, MemoryChunks, MemoryCodingSessions, MemoryCore, MemoryDiff,
     MemoryDocuments, MemoryEntities, MemoryEpisodic, MemoryGoals, MemoryGraph, MemoryIngest,
     MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProfile, MemoryProvider,
-    MemoryRecall, MemoryRetrieval, MemorySourceSink, MemorySourceSync, MemoryToolMemory,
+    MemoryRecall, MemoryRetrieval, MemoryScoring, MemorySourceSink, MemorySourceSync, MemoryToolMemory,
     MemoryTree, PersonHandle, PersonInteraction, PersonRecord, PersonScore, ProfileFacet,
     RankedPerson, RawArchiveCoverage, RawRebuildOutcome, ResolvedPerson, RetrievalHit,
     RetrievalResponse, SourceRetrievalQuery, SourceSyncState, SourceSyncStatus, SourceTotal,
@@ -2343,6 +2343,9 @@ impl MemoryProvider for TinycortexProvider {
     fn as_coding_sessions(&self) -> Option<&dyn MemoryCodingSessions> {
         Some(self)
     }
+    fn as_scoring(&self) -> Option<&dyn MemoryScoring> {
+        Some(self)
+    }
 }
 
 // ── Source sync ──────────────────────────────────────────────────────────────
@@ -2783,6 +2786,47 @@ impl MemoryCodingSessions for TinycortexProvider {
             budget_hit: response.budget_hit,
             pack_path: response.pack_path,
         })
+    }
+}
+
+// ── Scoring ──────────────────────────────────────────────────────────────────
+
+#[async_trait]
+impl MemoryScoring for TinycortexProvider {
+    async fn extract_entities(&self, query: &str) -> Result<Vec<String>, MemoryError> {
+        let config = self.config.clone();
+        let query = query.to_owned();
+        let entities =
+            tokio::task::spawn_blocking(move || {
+                tokio::runtime::Handle::current().block_on(
+                    tinymemory_core::tree::nlp::extract_query_entities(&config, &query),
+                )
+            })
+            .await
+            .map_err(|error| Self::other("extract entities", error))?;
+        Ok(entities.into_iter().map(|e| e.canonical_id).collect())
+    }
+
+    async fn embed_text(&self, text: &str) -> Result<Vec<f32>, MemoryError> {
+        let config = self.config.clone();
+        let text = text.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let embedder =
+                tinymemory_core::tree::score::embed::factory::build_embedder_from_config(&config)
+                    .map_err(|error| MemoryError::Other(anyhow::anyhow!("{error}")))?;
+            tokio::runtime::Handle::current()
+                .block_on(embedder.embed(&text))
+                .map_err(|error| MemoryError::Other(anyhow::anyhow!("{error}")))
+        })
+        .await
+        .map_err(|error| Self::other("embed text", error))?
+    }
+
+    async fn embedder_slug(&self) -> Result<String, MemoryError> {
+        Ok(
+            tinymemory_core::tree::score::embed::factory::effective_embedder_slug(&self.config)
+                .to_string(),
+        )
     }
 }
 

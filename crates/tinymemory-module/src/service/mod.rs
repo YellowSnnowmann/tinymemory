@@ -77,6 +77,10 @@
 //!
 //! CodingSessionStatus()                             -> [CodingSessionSource]
 //! IngestCodingSessions(request)                     -> CodingSessionIngestReport
+//!
+//! ExtractEntities(query)                             -> [String]
+//! EmbedText(text)                                    -> [f32]
+//! EmbedderSlug()                                     -> String
 //! ```
 //!
 //! # Source scope crosses as an argument, never as ambient state
@@ -172,6 +176,7 @@ use tinymemory_api::provider::retrieval::{
     CoverWindowQuery, EntityMatch, FastRetrieveQuery, RetrievalHit, RetrievalResponse,
     SourceRetrievalQuery,
 };
+use tinymemory_api::provider::scoring::MemoryScoring;
 use tinymemory_api::provider::sessions::{
     CodingSessionIngestReport, CodingSessionIngestRequest, CodingSessionSource,
 };
@@ -1893,6 +1898,27 @@ impl MemoryService {
     ) -> BusResult<CodingSessionIngestReport> {
         require_family!(self, as_coding_sessions, Capability::CodingSessions)
             .ingest_coding_sessions(request)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn extract_entities(&self, query: String) -> BusResult<Vec<String>> {
+        require_family!(self, as_scoring, Capability::Scoring)
+            .extract_entities(&query)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn embed_text(&self, text: String) -> BusResult<Vec<f32>> {
+        require_family!(self, as_scoring, Capability::Scoring)
+            .embed_text(&text)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn embedder_slug(&self) -> BusResult<String> {
+        require_family!(self, as_scoring, Capability::Scoring)
+            .embedder_slug()
             .await
             .map_err(|error| into_bus_error(&error))
     }

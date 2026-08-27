@@ -66,6 +66,7 @@ use crate::provider::records::{
     MemoryGoals, MemoryMaintenance, MemorySourceSink, MemoryToolMemory,
 };
 use crate::provider::retrieval::MemoryRetrieval;
+use crate::provider::scoring::MemoryScoring;
 use crate::provider::sessions::MemoryCodingSessions;
 use crate::provider::sync::MemorySourceSync;
 
@@ -214,6 +215,11 @@ pub trait MemoryProvider: MemoryCore + MemoryRecall + MemoryPortability + 'stati
         None
     }
 
+    /// Scoring and NLP operations, when advertised.
+    fn as_scoring(&self) -> Option<&dyn MemoryScoring> {
+        None
+    }
+
     /// Whether `capability` is actually **reachable** on this driver.
     ///
     /// This is the implementation-side truth, as opposed to
@@ -246,6 +252,7 @@ pub trait MemoryProvider: MemoryCore + MemoryRecall + MemoryPortability + 'stati
             Capability::Episodic => self.as_episodic().is_some(),
             Capability::SourceSync => self.as_source_sync().is_some(),
             Capability::CodingSessions => self.as_coding_sessions().is_some(),
+            Capability::Scoring => self.as_scoring().is_some(),
         }
     }
 }
