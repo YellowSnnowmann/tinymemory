@@ -46,6 +46,21 @@ pub struct SyncAuditEntry {
     pub success: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// Items fetched-and-stored whose memory-tree ingest failed
+    /// (openhuman#5820). `0` is skipped on the wire so rows from the engine's
+    /// writer — which never counts tree failures — stay byte-identical to
+    /// this writer's healthy rows.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    pub tree_ingest_failures: u32,
+    /// Why the tree half failed, when it did. Never memory content.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tree_error: Option<String>,
+}
+
+/// `skip_serializing_if` gate for the additive counters above.
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde's contract is a reference
+fn is_zero_u32(value: &u32) -> bool {
+    *value == 0
 }
 
 impl SyncAuditEntry {

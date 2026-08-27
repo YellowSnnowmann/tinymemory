@@ -404,6 +404,8 @@ fn an_audit_row_crosses_field_for_field_and_keeps_its_price() {
         duration_ms: 4_200,
         success: true,
         error: None,
+        tree_ingest_failures: 0,
+        tree_error: None,
     };
     let crossed = audit_entry(entry);
     assert_eq!(crossed.source_id, "composio:gmail:conn-1");

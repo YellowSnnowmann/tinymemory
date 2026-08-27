@@ -672,11 +672,18 @@ async fn tree_ingest_failure_is_tolerated_and_skill_store_is_retained() {
         "the broken tree-ingest workspace must make ingest fail"
     );
 
-    // `store` must swallow that tree-ingest failure and still succeed.
+    // `store` must swallow that tree-ingest failure and still succeed —
+    // and count it, so the run's verdict can report the tree half honestly
+    // (openhuman#5820).
     adapter
         .store(document)
         .await
         .expect("store must tolerate a memory-tree ingest failure (best-effort tree)");
+    assert_eq!(
+        adapter.tree_ingest_failure_count(),
+        1,
+        "a tolerated tree-ingest failure must be counted for the run's verdict"
+    );
 
     // The skill store, committed before the tree half, still holds the item —
     // best-effort tree ingest must never cost the durable skill write.

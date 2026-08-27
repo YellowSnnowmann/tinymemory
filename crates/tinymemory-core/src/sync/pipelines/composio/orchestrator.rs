@@ -425,7 +425,14 @@ async fn run_pages(
                 tokens_ingested =
                     tokens_ingested.saturating_add((document.content.len() / 4) as u64);
                 if let Err(error) = context.documents.store(document).await {
-                    if source.tolerate_scope_errors() {
+                    // Scope tolerance exists for per-item flakiness. A corrupt
+                    // store is not that: every later item fails identically in
+                    // every scope, so tolerating it here re-buys the
+                    // openhuman#5820 flood one scope at a time. Corruption
+                    // always aborts the run.
+                    if source.tolerate_scope_errors()
+                        && !crate::corruption::is_sqlite_corrupt(&error)
+                    {
                         tracing::warn!(toolkit = source.toolkit(), connection_id, scope = %scope.label, %error, "[sync:orchestrator] scope document store failed; continuing");
                         scope_failed = true;
                         break;
@@ -494,6 +501,9 @@ async fn run_pages(
         actions_called: state.run_requests,
         provider_cost_usd: state.run_provider_cost_usd,
         note: None,
+        // Stamped by the runner from the sink's counter; the orchestrator only
+        // sees store()'s Ok/Err and the tolerated failures return Ok.
+        tree_ingest_failures: 0,
     })
 }
 

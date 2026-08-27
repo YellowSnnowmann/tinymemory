@@ -571,13 +571,24 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
                     actions_called: outcome.actions_called,
                     cost_usd: outcome.provider_cost_usd,
                 };
-                tracing::debug!(
-                    toolkit = %conn.toolkit,
-                    connection_id = %conn.id,
-                    items = outcome.records_ingested,
-                    composio_actions = usage.actions_called,
-                    "[composio:periodic] sync ok"
-                );
+                if outcome.tree_ingest_failures > 0 {
+                    tracing::warn!(
+                        toolkit = %conn.toolkit,
+                        connection_id = %conn.id,
+                        items = outcome.records_ingested,
+                        tree_failures = outcome.tree_ingest_failures,
+                        "[composio:periodic] fetch ok but the memory-tree half dropped \
+                         items; auditing the run as failed"
+                    );
+                } else {
+                    tracing::debug!(
+                        toolkit = %conn.toolkit,
+                        connection_id = %conn.id,
+                        items = outcome.records_ingested,
+                        composio_actions = usage.actions_called,
+                        "[composio:periodic] sync ok"
+                    );
+                }
                 let entry = build_periodic_audit_entry(
                     &toolkit,
                     &conn.id,
@@ -585,6 +596,7 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
                     outcome.records_ingested as usize,
                     duration_ms,
                     None,
+                    outcome.tree_ingest_failures,
                 );
                 if let Err(error) = append_audit_entry(config.workspace_dir(), &entry) {
                     tracing::warn!(%error, "[memory_sync:audit] append failed");
@@ -612,6 +624,7 @@ pub(crate) async fn run_one_tick() -> Result<(), String> {
                     0,
                     duration_ms,
                     Some(e.to_string()),
+                    0,
                 );
                 if let Err(error) = append_audit_entry(config.workspace_dir(), &entry) {
                     tracing::warn!(%error, "[memory_sync:audit] append failed");
@@ -693,7 +706,14 @@ fn build_periodic_audit_entry(
     items_ingested: usize,
     duration_ms: u64,
     error: Option<String>,
+    tree_ingest_failures: u32,
 ) -> SyncAuditEntry {
+    // A run whose fetch committed but whose tree half dropped items must not
+    // read as success in Sync History (openhuman#5820).
+    let success = error.is_none() && tree_ingest_failures == 0;
+    let tree_error = (tree_ingest_failures > 0).then(|| {
+        format!("{tree_ingest_failures} item(s) fetched but not ingested into the memory tree")
+    });
     SyncAuditEntry {
         timestamp: chrono::Utc::now(),
         source_id: connection_id.to_string(),
@@ -708,8 +728,10 @@ fn build_periodic_audit_entry(
         composio_cost_usd: usage.cost_usd,
         actual_charged_usd: None,
         duration_ms,
-        success: error.is_none(),
+        success,
         error,
+        tree_ingest_failures,
+        tree_error,
     }
 }
 

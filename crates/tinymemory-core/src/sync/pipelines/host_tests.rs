@@ -452,3 +452,45 @@ async fn pipeline_host_state_event_and_delete_capabilities_round_trip() {
     assert!(!sink.drain().is_empty());
     host.delete("gmail", "missing-document").await.unwrap();
 }
+
+/// An ordinary (non-corrupt) tree-ingest failure is tolerated — `store`
+/// returns `Ok` and the skill store keeps the item — but it is COUNTED, so the
+/// run's verdict can say "fetched, not tree-ingested" instead of reading as
+/// full success (openhuman#5820). The broken-workspace lever is the same one
+/// the engine adapter's tolerance test uses: the tree config's workspace sits
+/// under a regular file, so the tree store cannot be created.
+#[tokio::test]
+async fn a_tolerated_tree_ingest_failure_is_counted() {
+    use tinymemory_api::host::test_support::TestHostConfig;
+    use tinymemory_api::host::MemoryHostConfig;
+
+    crate::test_seams::init();
+    let workspace = tempfile::tempdir().expect("workspace");
+    let client: MemoryClientRef = Arc::new(
+        crate::store::MemoryClient::from_workspace_dir(workspace.path().join("skill-store"))
+            .expect("memory client initialises against a fresh workspace"),
+    );
+    let blocker = workspace.path().join("blocker");
+    std::fs::write(&blocker, b"not a directory").expect("write blocker file");
+    let mut host_config = TestHostConfig::default();
+    host_config.workspace_dir = blocker.join("workspace");
+    let host = Arc::new(PipelineHost::new(client, host_config.to_arc()));
+
+    assert_eq!(host.tree_ingest_failures(), 0);
+    host.store(SkillDocument {
+        namespace_skill_id: "gmail".into(),
+        connection_id: "conn-1".into(),
+        document_id: "gmail:msg-1".into(),
+        title: "Quarterly planning".into(),
+        content: "Let's finalise the Q3 roadmap.".into(),
+        toolkit: "gmail".into(),
+        metadata: serde_json::json!({ "source": "composio-provider-incremental" }),
+    })
+    .await
+    .expect("a non-corrupt tree-ingest failure must stay tolerated");
+    assert_eq!(
+        host.tree_ingest_failures(),
+        1,
+        "the tolerated failure must be counted for the run's verdict"
+    );
+}

@@ -36,6 +36,7 @@ pub mod chat_host;
 pub mod composio_host;
 pub mod config_loader;
 pub mod conversations;
+pub(crate) mod corruption;
 pub mod diff;
 pub mod embedding_adapter;
 pub mod embedding_host;

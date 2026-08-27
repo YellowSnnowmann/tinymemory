@@ -19,6 +19,8 @@ fn entry(source_id: &str, kind: &str, success: bool, ts: DateTime<Utc>) -> SyncA
         duration_ms: 10,
         success,
         error: None,
+        tree_ingest_failures: 0,
+        tree_error: None,
     }
 }
 

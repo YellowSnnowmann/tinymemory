@@ -188,6 +188,7 @@ impl SlackSearchBackfillPipeline {
             note: Some(format!(
                 "slack search-backfill: pages={page} records={stored}"
             )),
+            tree_ingest_failures: 0,
         })
     }
 }

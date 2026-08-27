@@ -2398,6 +2398,8 @@ fn audit_entry(entry: tinymemory_core::sync::audit::SyncAuditEntry) -> SyncAudit
         duration_ms,
         success,
         error,
+        tree_ingest_failures,
+        tree_error,
     } = entry;
     SyncAuditEntry {
         timestamp,
@@ -2415,6 +2417,8 @@ fn audit_entry(entry: tinymemory_core::sync::audit::SyncAuditEntry) -> SyncAudit
         duration_ms,
         success,
         error,
+        tree_ingest_failures,
+        tree_error,
     }
 }
 

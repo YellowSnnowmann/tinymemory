@@ -40,6 +40,7 @@ impl SyncPipeline for FakePipeline {
             actions_called: 0,
             provider_cost_usd: 0.0,
             note: None,
+            tree_ingest_failures: 0,
         })
     }
 }
