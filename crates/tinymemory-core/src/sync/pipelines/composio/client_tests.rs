@@ -132,7 +132,10 @@ fn a_bare_error_string_body_reaches_the_message() {
 fn an_unrecognised_body_is_truncated() {
     let body = "x".repeat(5_000);
     let message = describe_failure("direct", reqwest::StatusCode::BAD_GATEWAY, &body);
-    assert!(message.contains('…'), "expected an elision marker: {message}");
+    assert!(
+        message.contains('…'),
+        "expected an elision marker: {message}"
+    );
     assert!(
         message.chars().count() < 600,
         "the message grew to {} chars",
@@ -153,5 +156,8 @@ fn truncation_survives_multibyte_bodies() {
 #[test]
 fn an_empty_body_leaves_the_status_line_alone() {
     let message = describe_failure("direct", reqwest::StatusCode::NOT_FOUND, "   ");
-    assert_eq!(message, "Composio direct request failed with HTTP 404 Not Found");
+    assert_eq!(
+        message,
+        "Composio direct request failed with HTTP 404 Not Found"
+    );
 }

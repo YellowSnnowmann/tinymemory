@@ -366,7 +366,10 @@ fn structured_detail(parsed: &serde_json::Value) -> Option<String> {
         detail.push_str(&format!(" [{slug}]"));
     }
     if let Some(fix) = field("suggested_fix") {
-        detail.push_str(&format!(" — suggested fix: {}", truncate(fix, FAILURE_BODY_LIMIT)));
+        detail.push_str(&format!(
+            " — suggested fix: {}",
+            truncate(fix, FAILURE_BODY_LIMIT)
+        ));
     }
     Some(detail)
 }
