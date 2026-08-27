@@ -705,6 +705,10 @@ const EXPECTED_METHODS: &[&str] = &[
     "RebuildFromRawArchive",
     "CodingSessionStatus",
     "IngestCodingSessions",
+    // Scoring family.
+    "ExtractEntities",
+    "EmbedText",
+    "EmbedderSlug",
 ];
 
 #[tokio::test]
