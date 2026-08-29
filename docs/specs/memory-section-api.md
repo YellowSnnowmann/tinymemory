@@ -130,13 +130,24 @@ It promises, and its rustdoc states:
 - **`truncated` means namespaces were skipped**, never that hits exceeded `limit`.
 - **`opts.namespace` must be `None`.** `Some` is `MemoryError::Invalid` carrying
   `NAMESPACE_FILTER_CONFLICT`, rather than a silent override of the caller's filter.
-- **`opts.cross_session` is refused outside the conversation section**, with
-  `CROSS_SESSION_SECTION_CONFLICT`. The bundled driver's cross-session path
-  surfaces *episodic* rows from other sessions and relabels each with whichever
-  namespace the call pinned, so honouring it on `learning:` or `document:` would
-  return conversational content presented as a learning or a document. On
-  `across_section` the same rows would also repeat once per scope, crowding
-  genuine hits out of `limit`. Refused rather than misrepresented.
+- **`opts.cross_session` and `opts.session_id` are refused outside the
+  conversation section**, with `CROSS_SESSION_SECTION_CONFLICT`, checked
+  against the section's *normalised* form so `Custom("conversation")` is
+  treated as `MemorySection::Conversation` here too. The bundled driver's
+  cross-session path surfaces *episodic* rows from other sessions, and its
+  `session_id` path independently appends that session's episodic rows; both
+  relabel every such row with whichever namespace the call pinned, so
+  honouring either on `learning:` or `document:` would return conversational
+  content presented as a learning or a document.
+- **`opts.cross_session` and `opts.session_id` are refused on
+  `across_section` unconditionally**, including on the conversation section,
+  with `CROSS_SESSION_FAN_OUT_CONFLICT`. The driver's episodic augmentation
+  for either option runs once, independent of the pinned namespace, so the
+  fan-out would repeat the same rows once per scope, crowding genuine hits
+  out of `limit` before the fan-out over conversation scopes adds anything —
+  `across_section` already visits every conversation scope on its own. A
+  caller who wants cross-session or session-scoped recall uses `in_scope`
+  instead, which issues exactly one call.
 
 Scores come from separate calls to one driver with one query. They are comparable
 in practice on every bundled driver; the contract does not guarantee it, and the
