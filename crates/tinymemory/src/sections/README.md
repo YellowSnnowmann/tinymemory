@@ -65,15 +65,28 @@ capped at `MAX_SECTION_NAMESPACES` and reported through `SectionHits::truncated`
 when the cap bites. Each namespace is asked for the full `limit`, never a
 share of it — a share would let one scope's best hit lose to another's worst.
 
-**`cross_session` is refused outside the conversation section.** The bundled
-`UnifiedMemory` driver's `cross_session` recall option only ever surfaces
-episodic *conversational* rows from other sessions, and relabels every such row
-with whichever namespace the call was pinned to. Honouring `cross_session` on a
-`learning:` or `document:` section would therefore return conversational
-content mislabeled as that section's own hits, and on `across_section` the same
-cross-session rows would repeat once per scope, crowding genuine hits out of
-`limit`. Both `in_scope` and `across_section` reject `cross_session` with
-`CROSS_SESSION_SECTION_CONFLICT` unless `section == MemorySection::Conversation`.
+**`cross_session` and `session_id` are refused outside the conversation
+section, and refused on `across_section` unconditionally.** The bundled
+`UnifiedMemory` driver's `cross_session` recall option surfaces episodic
+*conversational* rows from other sessions; its `session_id` option
+independently appends that session's episodic rows. Both relabel every such
+row with whichever namespace the call was pinned to, regardless of the
+option's own defaults. Honouring either on a `learning:` or `document:`
+section would therefore return conversational content mislabeled as that
+section's own hits, so `in_scope` rejects both with
+`CROSS_SESSION_SECTION_CONFLICT` — checked against the section's *normalised*
+form, so `Custom("conversation")` counts as `MemorySection::Conversation` —
+unless `section == MemorySection::Conversation`.
+
+`across_section` rejects both unconditionally, with
+`CROSS_SESSION_FAN_OUT_CONFLICT`, including on the conversation section. This
+is not merely the same hazard: the driver's episodic augmentation runs once,
+independent of the pinned namespace, so the fan-out would repeat the exact
+same rows once per scope in the merged result, crowding genuine hits out of
+`limit` — and it is also redundant even where it would not repeat, since
+`across_section` already visits every conversation scope on its own. A caller
+who wants cross-session or session-scoped recall uses `in_scope` instead,
+which issues exactly one call.
 
 **Visit order is by entry count descending, not recency.** `SectionScope::last_updated`
 is optional and no bundled driver currently populates it, so `scopes()` cannot
