@@ -327,10 +327,7 @@ async fn namespace_summaries_strips_brackets_from_pii_redacted_sectioned_namespa
     // `sanitize_namespace`'s own character mapping) would re-sanitize this
     // name to a *different* physical namespace than the one actually
     // written, so this call would silently return nothing.
-    let listed = mem
-        .list(Some(&found.namespace), None, None)
-        .await
-        .unwrap();
+    let listed = mem.list(Some(&found.namespace), None, None).await.unwrap();
     assert_eq!(
         listed.len(),
         1,
