@@ -18,6 +18,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::json;
 
 use crate::store::namespace_store::fts5;
+use crate::store::safety::LOGICAL_NAMESPACE_FILTER_SQL;
 use crate::store::types::{NamespaceDocumentInput, GLOBAL_NAMESPACE};
 use crate::traits::{
     Memory, MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary, RecallOpts,
@@ -312,8 +313,6 @@ type MemoryDocRow = (
     Option<String>,
     Option<String>,
 );
-
-use crate::store::safety::LOGICAL_NAMESPACE_FILTER_SQL;
 
 impl UnifiedMemory {
     fn get_blocking(
