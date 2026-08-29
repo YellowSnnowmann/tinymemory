@@ -252,7 +252,8 @@ impl UnifiedMemory {
         let namespace = Self::sanitize_namespace(&input.namespace);
         // See `upsert_document_presanitized` — same delimiter-preserving,
         // PII-redacted logical namespace, same reason.
-        let logical_namespace = safety::canonical_identifier(input.namespace.trim());
+        let logical_namespace =
+            safety::canonical_logical_namespace(&input.namespace, GLOBAL_NAMESPACE);
         let key = input.key.trim().to_string();
         if key.is_empty() {
             return Err("document key cannot be empty".to_string());
