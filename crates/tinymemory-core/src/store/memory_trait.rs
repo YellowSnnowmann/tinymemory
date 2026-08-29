@@ -304,9 +304,31 @@ impl UnifiedMemory {
 type MemoryDocRow = (String, String, String, f64, String, String, Option<String>);
 
 impl UnifiedMemory {
+    /// Address a row by its **logical** namespace, not just its physical one.
+    ///
+    /// `ns` is the sanitized storage address (`WHERE namespace = ?1`); `logical`
+    /// is `canonical_logical_namespace(caller_input, GLOBAL_NAMESPACE)` — the
+    /// exact value the write path bound into the `logical_namespace` column
+    /// (see `upsert_document_presanitized`). Two distinct logical names can
+    /// sanitize to the same physical address (`a:b_c` and `a_b:c` both become
+    /// `a_b_c`); without this clause a read addressed to one would also surface
+    /// -- and a `get`/`forget` addressed to one could delete -- the other's
+    /// rows, because both share `ns`. Filtering on `logical_namespace` too
+    /// keeps the two apart.
+    ///
+    /// `OR logical_namespace IS NULL` is required, not incidental: rows
+    /// written before this column existed have it NULL and never get a value
+    /// reconstructed (a sanitized `_` cannot be un-collapsed into whatever
+    /// delimiter it replaced), so excluding NULL rows outright would make
+    /// every pre-migration row permanently unaddressable by `get`/`forget` and
+    /// invisible to `list`, silently breaking every caller relying on them.
+    const LOGICAL_NAMESPACE_FILTER: &'static str =
+        "(logical_namespace = ?logical OR logical_namespace IS NULL)";
+
     fn get_blocking(
         conn: &Arc<Mutex<Connection>>,
         ns: &str,
+        logical: &str,
         key: &str,
     ) -> anyhow::Result<Option<MemoryEntry>> {
         let conn = conn.lock();
@@ -315,11 +337,19 @@ impl UnifiedMemory {
         // readers disagree about one record. The contract's round-trip
         // assertion catches exactly that (`tinymemory_conformance`), and it was
         // invisible until #18 §A3 let this store be bound as a driver at all.
-        let row: Option<MemoryDocRow> = conn
+        //
+        // `logical_namespace` is selected too so the returned `MemoryEntry`
+        // reports the row's own logical name rather than the physical address
+        // this method happens to have been called with — see `list_blocking`'s
+        // doc comment for why that distinction matters.
+        let row: Option<(String, String, String, f64, String, String, Option<String>, Option<String>)> = conn
             .query_row(
-                "SELECT document_id, key, content, updated_at, category, taint, session_id
-                 FROM memory_docs WHERE namespace = ?1 AND key = ?2 LIMIT 1",
-                params![ns, key],
+                &format!(
+                    "SELECT document_id, key, content, updated_at, category, taint, session_id, logical_namespace
+                     FROM memory_docs WHERE namespace = ?1 AND key = ?2 AND {} LIMIT 1",
+                    Self::LOGICAL_NAMESPACE_FILTER.replace("?logical", "?3")
+                ),
+                params![ns, key, logical],
                 |row| {
                     Ok((
                         row.get(0)?,
@@ -329,43 +359,61 @@ impl UnifiedMemory {
                         row.get(4)?,
                         row.get(5)?,
                         row.get(6)?,
+                        row.get(7)?,
                     ))
                 },
             )
             .optional()?;
         Ok(row.map(
-            |(id, key, content, updated_at, category, taint_str, session_id)| MemoryEntry {
-                id,
-                key,
-                content,
-                namespace: Some(ns.to_string()),
-                category: memory_category_from_stored(&category),
-                timestamp: timestamp_to_rfc3339(updated_at),
-                session_id,
-                score: None,
-                taint: crate::MemoryTaint::from_db_str(&taint_str),
+            |(id, key, content, updated_at, category, taint_str, session_id, row_logical)| {
+                MemoryEntry {
+                    id,
+                    key,
+                    content,
+                    namespace: Some(row_logical.unwrap_or_else(|| ns.to_string())),
+                    category: memory_category_from_stored(&category),
+                    timestamp: timestamp_to_rfc3339(updated_at),
+                    session_id,
+                    score: None,
+                    taint: crate::MemoryTaint::from_db_str(&taint_str),
+                }
             },
         ))
     }
 
+    /// List every row addressed to one namespace, physical **and** logical.
+    ///
+    /// A caller lists `learning:rust`; `ns` is the sanitized `learning_rust`
+    /// storage address, and `logical` is `learning:rust` itself. Filtering on
+    /// physical address alone would also return `learning_rust`'s own rows
+    /// (a distinct logical namespace that happens to sanitize identically),
+    /// mislabelling them as belonging to the section that was listed —
+    /// exactly the incompleteness `logical_namespace` exists to close. Each
+    /// returned entry's `namespace` is the row's *own* logical name (falling
+    /// back to the physical address only for pre-migration NULL rows), never
+    /// the caller's query namespace, so a row that genuinely came from the
+    /// aliased NULL-logical legacy address is still labelled honestly.
     fn list_blocking(
         conn: &Arc<Mutex<Connection>>,
         ns: &str,
+        logical: &str,
         category: Option<&MemoryCategory>,
         session_id: Option<&str>,
     ) -> anyhow::Result<Vec<MemoryEntry>> {
         let conn = conn.lock();
-        let mut stmt = conn.prepare(
-            "SELECT document_id, key, content, category, session_id, updated_at, taint
-             FROM memory_docs WHERE namespace = ?1 ORDER BY updated_at DESC",
-        )?;
-        let rows = stmt.query_map(params![ns], |row| {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT document_id, key, content, category, session_id, updated_at, taint, logical_namespace
+             FROM memory_docs WHERE namespace = ?1 AND {} ORDER BY updated_at DESC",
+            Self::LOGICAL_NAMESPACE_FILTER.replace("?logical", "?2")
+        ))?;
+        let rows = stmt.query_map(params![ns, logical], |row| {
             let stored_category: String = row.get(3)?;
+            let row_logical: Option<String> = row.get(7)?;
             Ok(MemoryEntry {
                 id: row.get(0)?,
                 key: row.get(1)?,
                 content: row.get(2)?,
-                namespace: Some(ns.to_string()),
+                namespace: Some(row_logical.unwrap_or_else(|| ns.to_string())),
                 category: memory_category_from_stored(&stored_category),
                 session_id: row.get(4)?,
                 timestamp: timestamp_to_rfc3339(row.get(5)?),
@@ -386,13 +434,17 @@ impl UnifiedMemory {
     fn forget_lookup_blocking(
         conn: &Arc<Mutex<Connection>>,
         ns: &str,
+        logical: &str,
         key: &str,
     ) -> anyhow::Result<Option<String>> {
         let conn = conn.lock();
         Ok(conn
             .query_row(
-                "SELECT document_id FROM memory_docs WHERE namespace = ?1 AND key = ?2 LIMIT 1",
-                params![ns, key],
+                &format!(
+                    "SELECT document_id FROM memory_docs WHERE namespace = ?1 AND key = ?2 AND {} LIMIT 1",
+                    Self::LOGICAL_NAMESPACE_FILTER.replace("?logical", "?3")
+                ),
+                params![ns, key, logical],
                 |row| row.get(0),
             )
             .optional()?)
