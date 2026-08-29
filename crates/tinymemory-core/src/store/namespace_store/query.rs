@@ -116,13 +116,27 @@ impl UnifiedMemory {
     /// Hybrid retrieval: returns ranked hits across documents and KV records,
     /// scored by graph relevance + vector similarity + keyword overlap +
     /// freshness.
+    ///
+    /// Takes both address forms explicitly — `ns` (the physical, sanitized
+    /// storage address) and `logical` (the delimiter-preserving name recorded
+    /// in `logical_namespace`) — rather than one string this function derives
+    /// the other from. Deriving one from the other WITHIN this function is
+    /// exactly the mistake that caused `query_namespace_context_data` to
+    /// silently return empty for every sectioned namespace: it had already
+    /// sanitized its input before calling in, so a from-scratch derivation
+    /// here would have canonicalized the *sanitized* string and produced a
+    /// logical name no row actually has. Forcing both forms into the
+    /// signature makes that impossible to get wrong silently — the caller
+    /// must answer both questions, and [`UnifiedMemory::namespace_address_forms`]
+    /// answers them correctly in one call from the original raw namespace.
     pub async fn query_namespace_hits(
         &self,
-        namespace: &str,
+        ns: &str,
+        logical: &str,
         query: &str,
         limit: u32,
     ) -> Result<Vec<NamespaceMemoryHit>, String> {
-        self.query_namespace_hits_excluding_session(namespace, query, limit, None)
+        self.query_namespace_hits_excluding_session(ns, logical, query, limit, None)
             .await
     }
 
@@ -143,30 +157,24 @@ impl UnifiedMemory {
     /// identical to [`Self::query_namespace_hits`] — no filtering is
     /// applied, so every existing caller (and every caller with no ambient
     /// session context) keeps its exact prior behavior.
+    ///
+    /// `ns` and `logical` must come from the same original caller string via
+    /// [`UnifiedMemory::namespace_address_forms`] — see [`Self::query_namespace_hits`]'s
+    /// doc comment for why this function does not derive one from the other
+    /// itself.
     pub async fn query_namespace_hits_excluding_session(
         &self,
-        namespace: &str,
+        ns: &str,
+        logical: &str,
         query: &str,
         limit: u32,
         exclude_session_id: Option<&str>,
     ) -> Result<Vec<NamespaceMemoryHit>, String> {
-        let ns = Self::sanitize_namespace(namespace);
-        // The physical address is not injective (`a:b_c` and `a_b:c` both
-        // sanitize to `a_b_c`), so addressing only by `ns` would score
-        // another logical namespace's rows into this recall. `namespace`
-        // here is still the caller's raw/logical string (this function's
-        // only caller, `Memory::recall` via `recall_excluding_session`,
-        // passes `normalize_namespace(opts.namespace)` straight through
-        // without sanitizing it), so the logical name is derived the same
-        // way the write path derived it — no new value threaded in from
-        // outside. See `safety::LOGICAL_NAMESPACE_FILTER_SQL` for why the
-        // `IS NULL` arm alone would over-match.
-        let logical = safety::canonical_logical_namespace(namespace, GLOBAL_NAMESPACE);
         let exclude_session_id = exclude_session_id
             .map(str::trim)
             .filter(|id| !id.is_empty());
         let mut docs = self
-            .load_documents_for_scope_matching_logical(&ns, &logical)
+            .load_documents_for_scope_matching_logical(ns, logical)
             .await?;
         if let Some(exclude) = exclude_session_id {
             let before = docs.len();
