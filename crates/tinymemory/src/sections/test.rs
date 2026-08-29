@@ -29,8 +29,8 @@ use crate::mandatory::MemoryTraitProvider;
 
 use super::types::merge_hits;
 use super::{
-    Sections, CROSS_SESSION_FAN_OUT_CONFLICT, CROSS_SESSION_SECTION_CONFLICT, MAX_SECTION_NAMESPACES,
-    NAMESPACE_FILTER_CONFLICT,
+    Sections, CROSS_SESSION_FAN_OUT_CONFLICT, CROSS_SESSION_SECTION_CONFLICT,
+    MAX_SECTION_NAMESPACES, NAMESPACE_FILTER_CONFLICT,
 };
 
 /// Build an entry directly, so a test can set the `score` no API accepts.
@@ -601,7 +601,14 @@ async fn in_scope_rejects_session_id_outside_the_conversation_section() {
 
     let err = Sections::new(&provider)
         .recall()
-        .in_scope(&MemorySection::Document, "brief", "q", 10, &session_scoped, None)
+        .in_scope(
+            &MemorySection::Document,
+            "brief",
+            "q",
+            10,
+            &session_scoped,
+            None,
+        )
         .await
         .expect_err("session_id triggers the same episodic augmentation as cross_session");
 
