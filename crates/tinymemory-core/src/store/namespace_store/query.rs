@@ -74,6 +74,14 @@ impl UnifiedMemory {
     /// - graph relevance is the primary signal
     /// - vector similarity is the secondary verification signal
     /// - keyword overlap remains as a lexical backstop
+    ///
+    /// Takes a single, un-sanitized `namespace` — the caller's raw/logical
+    /// string — and derives both address forms itself, once, via
+    /// [`UnifiedMemory::namespace_address_forms`]. This is the top of the
+    /// call chain the `Memory::recall` path drives, so it is the correct
+    /// (only) place in this chain to perform that derivation from a string
+    /// argument; everything it calls below takes both forms already derived,
+    /// explicitly, and does not re-derive either from the other.
     pub async fn query_namespace_ranked(
         &self,
         namespace: &str,
@@ -87,6 +95,9 @@ impl UnifiedMemory {
     /// Same as [`Self::query_namespace_ranked`], but excludes same-session
     /// documents — see [`Self::query_namespace_hits_excluding_session`] for
     /// the exact semantics and backward-compatibility guarantee.
+    ///
+    /// Same single-`namespace`-derives-both-forms contract as
+    /// [`Self::query_namespace_ranked`].
     pub async fn query_namespace_ranked_excluding_session(
         &self,
         namespace: &str,
@@ -94,8 +105,9 @@ impl UnifiedMemory {
         limit: u32,
         exclude_session_id: Option<&str>,
     ) -> Result<Vec<NamespaceQueryResult>, String> {
+        let (ns, logical) = Self::namespace_address_forms(namespace);
         let hits = self
-            .query_namespace_hits_excluding_session(namespace, query, limit, exclude_session_id)
+            .query_namespace_hits_excluding_session(&ns, &logical, query, limit, exclude_session_id)
             .await?;
         let mut out = Vec::new();
         for hit in hits {
