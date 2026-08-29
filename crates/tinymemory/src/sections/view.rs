@@ -18,10 +18,10 @@ use super::types::SectionScope;
 ///
 /// The handle borrows rather than owning an `Arc`, matching `DocumentIntake`:
 /// it is cheap to make, cheap to drop, and cannot outlive the provider it reads.
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct SectionView<'a> {
     provider: &'a dyn MemoryProvider,
-    section: &'a MemorySection,
+    section: MemorySection,
 }
 
 impl fmt::Debug for SectionView<'_> {
@@ -35,15 +35,21 @@ impl fmt::Debug for SectionView<'_> {
 
 impl<'a> SectionView<'a> {
     /// Bind `section` of `provider`.
+    ///
+    /// The section is taken by value because a [`MemorySection::Custom`] owns
+    /// its name, and borrowing one would make [`Sections::section`] unable to
+    /// hand back a view over a section the caller built inline.
+    ///
+    /// [`Sections::section`]: super::Sections::section
     #[must_use]
-    pub fn new(provider: &'a dyn MemoryProvider, section: &'a MemorySection) -> Self {
+    pub fn new(provider: &'a dyn MemoryProvider, section: MemorySection) -> Self {
         Self { provider, section }
     }
 
     /// The section this view is bound to.
     #[must_use]
-    pub fn section(&self) -> &'a MemorySection {
-        self.section
+    pub fn section(&self) -> &MemorySection {
+        &self.section
     }
 
     /// The namespace `scope` names within this section.
@@ -149,7 +155,7 @@ impl<'a> SectionView<'a> {
             .into_iter()
             .filter_map(|summary| {
                 let namespace = Namespace::parse(&summary.namespace).ok()?;
-                if namespace.section() != Some(self.section) {
+                if namespace.section() != Some(&self.section) {
                     return None;
                 }
                 Some(SectionScope {
