@@ -1396,3 +1396,69 @@ async fn no_session_context_leaves_results_unchanged() {
         "a blank exclude_session_id must not filter anything"
     );
 }
+
+// ── Sectioned-namespace context query (double-sanitization regression) ──────
+
+/// `query_namespace_context_data` (and the public `query_namespace` /
+/// `query_documents` context API built on it) must find a row stored under a
+/// sectioned namespace like `conversation:thread-9f11`, not silently return
+/// empty.
+///
+/// The bug: `query_namespace_context_data` used to sanitize its `namespace`
+/// argument first (`conversation:thread-9f11` -> `conversation_thread-9f11`)
+/// and only then call `query_namespace_hits`, which derived the *logical*
+/// filter from that already-sanitized string. Canonicalizing an
+/// already-sanitized string is a no-op (no `:` survives to preserve), so the
+/// derived logical name was `conversation_thread-9f11` — a value no row's
+/// `logical_namespace` column actually holds, since the write path derives
+/// the logical form from the ORIGINAL namespace. The row's real
+/// `logical_namespace` is `conversation:thread-9f11`, so
+/// `LOGICAL_NAMESPACE_FILTER_SQL` matched nothing and every sectioned
+/// namespace queried through this path came back empty.
+#[tokio::test]
+async fn query_namespace_context_data_finds_rows_in_a_sectioned_namespace() {
+    let tmp = TempDir::new().unwrap();
+    let memory = UnifiedMemory::new(tmp.path(), Arc::new(NoopEmbedding), None).unwrap();
+
+    let namespace = "conversation:thread-9f11";
+    memory
+        .upsert_document(NamespaceDocumentInput {
+            namespace: namespace.to_string(),
+            key: "decision".to_string(),
+            title: "Decision".to_string(),
+            content: "We decided to ship the rocket launch on Friday.".to_string(),
+            source_type: "chat".to_string(),
+            priority: "medium".to_string(),
+            tags: Vec::new(),
+            metadata: json!({}),
+            category: "core".to_string(),
+            session_id: None,
+            document_id: None,
+            taint: crate::MemoryTaint::Internal,
+        })
+        .await
+        .unwrap();
+
+    let context = memory
+        .query_namespace_context_data(namespace, "rocket launch", 5)
+        .await
+        .unwrap();
+    assert!(
+        context.hits.iter().any(|hit| hit.key == "decision"),
+        "query_namespace_context_data must find rows stored in a sectioned \
+         namespace, not just an unsectioned one, got {:#?}",
+        context.hits
+    );
+
+    // `query_namespace_context` is the string-only convenience wrapper the
+    // public `query_namespace` client API calls — it must surface the same
+    // content, not just the structured hit list.
+    let text = memory
+        .query_namespace_context(namespace, "rocket launch", 5)
+        .await
+        .unwrap();
+    assert!(
+        text.contains("rocket launch"),
+        "context text must include the sectioned namespace's own content, got: {text}"
+    );
+}
