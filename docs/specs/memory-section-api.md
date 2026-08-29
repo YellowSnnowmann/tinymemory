@@ -314,6 +314,8 @@ unnoticed.
 - A pre-migration row with `logical_namespace IS NULL` is visible only under
   a call whose logical name equals its physical address exactly, never under
   a different logical name that merely sanitizes to the same address.
+- The public `query_namespace` / `query_documents` context API finds rows
+  stored under a sectioned namespace, not just an unsectioned one.
 - The four contract commands pass, and rustdoc builds with `-D warnings`.
 
 ## Open questions
