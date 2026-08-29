@@ -94,9 +94,8 @@ impl RetrievalFacade {
         query: &str,
         limit: u32,
     ) -> Result<Vec<NamespaceMemoryHit>, String> {
-        let (ns, logical) = UnifiedMemory::namespace_address_forms(namespace);
         self.unified
-            .query_namespace_hits(&ns, &logical, query, limit)
+            .query_namespace_hits(namespace, query, limit)
             .await
     }
 
@@ -110,9 +109,8 @@ impl RetrievalFacade {
         query: &str,
         limit: u32,
     ) -> Result<Vec<NamespaceMemoryHit>, String> {
-        let (ns, logical) = UnifiedMemory::namespace_address_forms(namespace);
         self.unified
-            .query_namespace_hits(&ns, &logical, query, limit)
+            .query_namespace_hits(namespace, query, limit)
             .await
     }
 
