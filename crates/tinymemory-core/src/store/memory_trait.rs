@@ -459,24 +459,34 @@ impl UnifiedMemory {
         // `_`), so guessing would silently mislabel unrelated namespaces —
         // NULL rows simply keep reporting their sanitized address.
         //
-        // `GROUP BY namespace` (the storage address), not `ns` (the logical
-        // name): two distinct logical names can sanitize to the same address
+        // `GROUP BY COALESCE(logical_namespace, namespace)` — the logical
+        // name, not the raw storage address — so two distinct logical names
+        // that happen to sanitize to the same physical address
         // (`conversation:x` and `conversation_x` both sanitize to
-        // `conversation_x`), and those rows are already merged into one
-        // physical namespace by every addressed call (`list`, `export`, ...).
-        // Grouping by the logical name instead would split one physical
-        // namespace's rows across two summaries with two partial counts,
-        // while every addressed call still visits the single merged
-        // namespace and returns the union — double-counting it if a caller
-        // then lists each reported summary in turn. Grouping by the address
-        // keeps one summary per physical namespace with an accurate count;
-        // `MIN(logical_namespace)` (aggregate `MIN` ignores `NULL`) just picks
-        // a single, deterministic logical representative for it when more
-        // than one exists.
+        // `conversation_x`) get two separate summaries with their own counts.
+        //
+        // This used to group by `namespace` (the address) instead, on the
+        // reasoning that every addressed call already merged aliased rows
+        // into one physical namespace, so grouping by logical name would
+        // split one merged namespace's rows across two summaries with two
+        // partial counts. That reasoning no longer holds: `list`/`get`/
+        // `forget` now filter on `logical_namespace` too (see
+        // `LOGICAL_NAMESPACE_FILTER_SQL`), so an addressed call for one
+        // logical name only ever returns that name's own rows. Grouping
+        // summaries by address here, while reads are scoped by logical name,
+        // would report one summary for both aliases while `list` on that
+        // reported name only ever returns half its count — and would hide
+        // the other alias from enumeration entirely, exactly the leak this
+        // fixes.
+        //
+        // Legacy rows with `logical_namespace IS NULL` still group by their
+        // physical address (`COALESCE` falls through to `namespace`), which
+        // matches what `list`'s `OR logical_namespace IS NULL` arm returns
+        // for that address.
         let mut stmt = conn.prepare(
-            "SELECT COALESCE(MIN(logical_namespace), namespace) AS ns, COUNT(*) AS n, MAX(updated_at) AS last
+            "SELECT COALESCE(logical_namespace, namespace) AS ns, COUNT(*) AS n, MAX(updated_at) AS last
              FROM memory_docs
-             GROUP BY namespace
+             GROUP BY COALESCE(logical_namespace, namespace)
              ORDER BY ns",
         )?;
         let rows = stmt.query_map([], |row| {
