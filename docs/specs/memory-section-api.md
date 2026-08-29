@@ -153,6 +153,40 @@ Scores come from separate calls to one driver with one query. They are comparabl
 in practice on every bundled driver; the contract does not guarantee it, and the
 documentation says so rather than pretending otherwise.
 
+### 4. The storage address and the logical namespace
+
+`UnifiedMemory` cannot store a `:` in the value it uses as a namespace: that
+string becomes a filesystem directory via `namespace_dir()`, and
+`sanitize_namespace` maps every character outside `[A-Za-z0-9\-_/]` to `_` as a
+path-traversal defence. So `conversation:thread-8f21` was stored — and
+enumerated — as `conversation_thread-8f21`, which `Namespace::parse` reads as
+*unsectioned*. Every enumerating call on this surface therefore returned empty
+against the production store, after writes that had succeeded.
+
+Widening that allow-list is not the fix. It is what keeps the address path-safe,
+`:` is illegal in a Windows filename and denotes an NTFS alternate data stream,
+and the sanitiser also performs the PII redaction that keeps a national ID from
+becoming a storage address.
+
+So the address and the name are now separate columns. `memory_docs.namespace`
+keeps exactly the characters it has today and remains what addresses the row and
+names the directory. A new nullable `memory_docs.logical_namespace` carries
+`canonical_identifier(namespace)` — the delimiter-preserving form, still
+PII-redacted — and `namespace_summaries` reports
+`COALESCE(logical_namespace, namespace)`.
+
+The `COALESCE` is the entire backfill, deliberately. A row written before the
+migration has `NULL` and keeps exactly its previous behaviour; the upsert clause
+sets the column, so such a row heals when it is next written. No migration tries
+to turn an old `_` back into a `:` — that mapping is not invertible, because a
+scope may legitimately contain `_`, and guessing would silently relabel
+unrelated namespaces into a section they were never written to.
+
+`assert_namespaces_preserve_their_section` in the conformance suite now holds
+every driver to this: a namespace written in a section must be reported back in
+that section. It is the assertion whose absence let the two bundled drivers
+disagree unnoticed.
+
 ## Invariants and constraints
 
 - A `SectionView` never reads or writes a namespace outside its own section.
@@ -163,6 +197,12 @@ documentation says so rather than pretending otherwise.
 - An unusable section is an error, never an empty one: if a section's prefix
   fails validation, the enumerating calls fail rather than reporting no scopes,
   so they agree with the addressed calls about the same section.
+- A driver reports a namespace back in the section it was written in. A driver
+  may re-address a namespace to suit its store, but it may not change which
+  section the name belongs to; `assert_namespaces_preserve_their_section`
+  enforces it.
+- A namespace never reaches the filesystem with a character the path allow-list
+  excludes, and the PII redaction on the storage address is unchanged.
 - `put` then `get` on the same `(scope, key)` round-trips on any retaining driver.
 - Every call succeeds on a driver that retains nothing, returning empty rather
   than an error — the surface has no capability-absent path.
