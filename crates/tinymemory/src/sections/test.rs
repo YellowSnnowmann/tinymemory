@@ -563,7 +563,7 @@ async fn in_scope_allows_cross_session_on_the_conversation_section() {
 }
 
 #[tokio::test]
-async fn in_scope_rejects_a_custom_alias_of_the_conversation_section_with_cross_session() {
+async fn in_scope_allows_a_custom_alias_of_the_conversation_section_with_cross_session() {
     // `Custom("conversation")` and `MemorySection::Conversation` are the same
     // view (see `a_custom_section_spelling_a_known_prefix_is_the_same_view`),
     // so the cross_session guard must normalise before checking — it must
