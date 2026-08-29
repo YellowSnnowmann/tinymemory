@@ -224,6 +224,14 @@ disagree unnoticed.
   descending, reports `namespaces_searched`, and sets `truncated` only when the
   namespace cap skipped one.
 - `across_section` with `opts.namespace: Some(_)` returns `MemoryError::Invalid`.
+- A sectioned write to the production `UnifiedMemory` store is enumerable
+  afterwards: `scopes()` reports it, proven by the tinycortex full-provider
+  conformance test against a real on-disk workspace rather than an in-memory
+  double.
+- The storage address still contains no character outside the path allow-list,
+  and a PII-bearing namespace is still redacted in both columns.
+- The `logical_namespace` migration is idempotent, and a row predating it still
+  enumerates under its sanitised name.
 - The four contract commands pass, and rustdoc builds with `-D warnings`.
 
 ## Open questions
