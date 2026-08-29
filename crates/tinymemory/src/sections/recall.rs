@@ -161,9 +161,14 @@ impl<'a> SectionRecall<'a> {
     /// # Errors
     ///
     /// [`MemoryError::Invalid`] carrying [`NAMESPACE_FILTER_CONFLICT`] when
-    /// `opts` already pins a namespace. Otherwise whatever the backend returns
-    /// from the enumeration or from any one recall — a section recall fails as a
-    /// whole rather than reporting a partial answer as a success.
+    /// `opts` already pins a namespace, or carrying
+    /// [`CROSS_SESSION_SECTION_CONFLICT`] when `opts.cross_session` is set on
+    /// any section other than [`MemorySection::Conversation`] — without this,
+    /// the same cross-session rows would be repeated once per scope in the
+    /// fan-out, crowding genuine hits out of `limit`. Otherwise whatever the
+    /// backend returns from the enumeration or from any one recall — a section
+    /// recall fails as a whole rather than reporting a partial answer as a
+    /// success.
     pub async fn across_section(
         &self,
         section: &MemorySection,
@@ -173,6 +178,7 @@ impl<'a> SectionRecall<'a> {
         sources: Option<&SourceScope>,
     ) -> Result<SectionHits, MemoryError> {
         reject_namespace_filter(opts)?;
+        reject_cross_session_outside_conversation(section, opts)?;
         let scopes = SectionView::new(self.provider, section).scopes().await?;
         let truncated = scopes.len() > MAX_SECTION_NAMESPACES;
 
