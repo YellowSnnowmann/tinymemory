@@ -136,7 +136,7 @@ pub fn canonical_document_key(key: &str) -> String {
 /// cross-section leak this column exists to close, just for legacy rows
 /// instead of new ones.
 pub(crate) const LOGICAL_NAMESPACE_FILTER_SQL: &str =
-    "(logical_namespace = ?2 OR logical_namespace IS NULL)";
+    "(logical_namespace = ?2 OR (logical_namespace IS NULL AND ?1 = ?2))";
 
 /// Scrub a namespace-document input, field by field, via the crate scrubbers.
 ///
