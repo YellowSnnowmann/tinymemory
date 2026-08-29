@@ -303,28 +303,28 @@ impl UnifiedMemory {
 /// `(document_id, key, content, updated_at, category, taint, session_id)`.
 type MemoryDocRow = (String, String, String, f64, String, String, Option<String>);
 
-impl UnifiedMemory {
-    /// Address a row by its **logical** namespace, not just its physical one.
-    ///
-    /// `ns` is the sanitized storage address (`WHERE namespace = ?1`); `logical`
-    /// is `canonical_logical_namespace(caller_input, GLOBAL_NAMESPACE)` — the
-    /// exact value the write path bound into the `logical_namespace` column
-    /// (see `upsert_document_presanitized`). Two distinct logical names can
-    /// sanitize to the same physical address (`a:b_c` and `a_b:c` both become
-    /// `a_b_c`); without this clause a read addressed to one would also surface
-    /// -- and a `get`/`forget` addressed to one could delete -- the other's
-    /// rows, because both share `ns`. Filtering on `logical_namespace` too
-    /// keeps the two apart.
-    ///
-    /// `OR logical_namespace IS NULL` is required, not incidental: rows
-    /// written before this column existed have it NULL and never get a value
-    /// reconstructed (a sanitized `_` cannot be un-collapsed into whatever
-    /// delimiter it replaced), so excluding NULL rows outright would make
-    /// every pre-migration row permanently unaddressable by `get`/`forget` and
-    /// invisible to `list`, silently breaking every caller relying on them.
-    const LOGICAL_NAMESPACE_FILTER: &'static str =
-        "(logical_namespace = ?logical OR logical_namespace IS NULL)";
+// Filters an addressed row query on the row's **logical** namespace, not
+// just its physical one.
+//
+// `ns` is the sanitized storage address (bound to `?1`, `WHERE namespace =
+// ?1`); `logical` is `canonical_logical_namespace(caller_input,
+// GLOBAL_NAMESPACE)` — the exact value the write path bound into the
+// `logical_namespace` column (see `upsert_document_presanitized`). Two
+// distinct logical names can sanitize to the same physical address (`a:b_c`
+// and `a_b:c` both become `a_b_c`); without this clause a read addressed to
+// one would also surface — and a `get`/`forget` addressed to one could
+// delete — the other's rows, because both share `ns`. Filtering on
+// `logical_namespace` too keeps the two apart.
+//
+// `OR logical_namespace IS NULL` is required, not incidental: rows written
+// before this column existed have it NULL and never get a value
+// reconstructed (a sanitized `_` cannot be un-collapsed into whatever
+// delimiter it replaced), so excluding NULL rows outright would make every
+// pre-migration row permanently unaddressable by `get`/`forget` and
+// invisible to `list`, silently breaking every caller relying on them.
+const LOGICAL_NAMESPACE_FILTER_SQL: &str = "(logical_namespace = ?2 OR logical_namespace IS NULL)";
 
+impl UnifiedMemory {
     fn get_blocking(
         conn: &Arc<Mutex<Connection>>,
         ns: &str,
@@ -346,10 +346,9 @@ impl UnifiedMemory {
             .query_row(
                 &format!(
                     "SELECT document_id, key, content, updated_at, category, taint, session_id, logical_namespace
-                     FROM memory_docs WHERE namespace = ?1 AND key = ?2 AND {} LIMIT 1",
-                    Self::LOGICAL_NAMESPACE_FILTER.replace("?logical", "?3")
+                     FROM memory_docs WHERE namespace = ?1 AND key = ?3 AND {LOGICAL_NAMESPACE_FILTER_SQL} LIMIT 1"
                 ),
-                params![ns, key, logical],
+                params![ns, logical, key],
                 |row| {
                     Ok((
                         row.get(0)?,
@@ -403,8 +402,7 @@ impl UnifiedMemory {
         let conn = conn.lock();
         let mut stmt = conn.prepare(&format!(
             "SELECT document_id, key, content, category, session_id, updated_at, taint, logical_namespace
-             FROM memory_docs WHERE namespace = ?1 AND {} ORDER BY updated_at DESC",
-            Self::LOGICAL_NAMESPACE_FILTER.replace("?logical", "?2")
+             FROM memory_docs WHERE namespace = ?1 AND {LOGICAL_NAMESPACE_FILTER_SQL} ORDER BY updated_at DESC"
         ))?;
         let rows = stmt.query_map(params![ns, logical], |row| {
             let stored_category: String = row.get(3)?;
@@ -441,10 +439,9 @@ impl UnifiedMemory {
         Ok(conn
             .query_row(
                 &format!(
-                    "SELECT document_id FROM memory_docs WHERE namespace = ?1 AND key = ?2 AND {} LIMIT 1",
-                    Self::LOGICAL_NAMESPACE_FILTER.replace("?logical", "?3")
+                    "SELECT document_id FROM memory_docs WHERE namespace = ?1 AND key = ?3 AND {LOGICAL_NAMESPACE_FILTER_SQL} LIMIT 1"
                 ),
-                params![ns, key, logical],
+                params![ns, logical, key],
                 |row| row.get(0),
             )
             .optional()?)
