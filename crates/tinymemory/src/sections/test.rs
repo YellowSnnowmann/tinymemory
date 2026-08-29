@@ -29,7 +29,8 @@ use crate::mandatory::MemoryTraitProvider;
 
 use super::types::merge_hits;
 use super::{
-    Sections, CROSS_SESSION_SECTION_CONFLICT, MAX_SECTION_NAMESPACES, NAMESPACE_FILTER_CONFLICT,
+    Sections, CROSS_SESSION_FAN_OUT_CONFLICT, CROSS_SESSION_SECTION_CONFLICT, MAX_SECTION_NAMESPACES,
+    NAMESPACE_FILTER_CONFLICT,
 };
 
 /// Build an entry directly, so a test can set the `score` no API accepts.
@@ -562,22 +563,100 @@ async fn in_scope_allows_cross_session_on_the_conversation_section() {
 }
 
 #[tokio::test]
-async fn across_section_rejects_cross_session_outside_the_conversation_section() {
+async fn in_scope_rejects_a_custom_alias_of_the_conversation_section_with_cross_session() {
+    // `Custom("conversation")` and `MemorySection::Conversation` are the same
+    // view (see `a_custom_section_spelling_a_known_prefix_is_the_same_view`),
+    // so the cross_session guard must normalise before checking — it must
+    // *not* reject this the way it rejects a genuinely different section.
+    let (memory, provider) = ScoredMemory::provider();
+    memory.seed("conversation:chat-a", "one", "hello", Some(0.5));
+    let cross_session = OwnedRecallOpts {
+        cross_session: true,
+        ..OwnedRecallOpts::default()
+    };
+
+    let found = Sections::new(&provider)
+        .recall()
+        .in_scope(
+            &MemorySection::Custom("conversation".to_string()),
+            "chat-a",
+            "hello",
+            10,
+            &cross_session,
+            None,
+        )
+        .await
+        .expect("a custom alias of Conversation must be treated as Conversation");
+
+    assert_eq!(found.hits.len(), 1);
+}
+
+#[tokio::test]
+async fn in_scope_rejects_session_id_outside_the_conversation_section() {
+    let (_memory, provider) = ScoredMemory::provider();
+    let session_scoped = OwnedRecallOpts {
+        session_id: Some("session-a".to_string()),
+        ..OwnedRecallOpts::default()
+    };
+
+    let err = Sections::new(&provider)
+        .recall()
+        .in_scope(&MemorySection::Document, "brief", "q", 10, &session_scoped, None)
+        .await
+        .expect_err("session_id triggers the same episodic augmentation as cross_session");
+
+    match err {
+        MemoryError::Invalid(message) => {
+            assert_eq!(message, CROSS_SESSION_SECTION_CONFLICT);
+        }
+        other => panic!("expected Invalid, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn across_section_rejects_cross_session_even_on_the_conversation_section() {
+    // Unlike `in_scope`, `across_section` refuses cross_session on *every*
+    // section — including Conversation — because the fan-out would repeat the
+    // driver's cross-session rows once per scope.
     let (_memory, provider) = ScoredMemory::provider();
     let cross_session = OwnedRecallOpts {
         cross_session: true,
         ..OwnedRecallOpts::default()
     };
 
+    for section in [MemorySection::Document, MemorySection::Conversation] {
+        let err = Sections::new(&provider)
+            .recall()
+            .across_section(&section, "q", 10, &cross_session, None)
+            .await
+            .expect_err("across_section never allows cross_session, even for conversations");
+
+        match err {
+            MemoryError::Invalid(message) => {
+                assert_eq!(message, CROSS_SESSION_FAN_OUT_CONFLICT);
+            }
+            other => panic!("expected Invalid, got {other:?}"),
+        }
+    }
+}
+
+#[tokio::test]
+async fn across_section_rejects_session_id_on_every_section() {
+    let (_memory, provider) = ScoredMemory::provider();
+    let session_scoped = OwnedRecallOpts {
+        session_id: Some("session-a".to_string()),
+        ..OwnedRecallOpts::default()
+    };
+
     let err = Sections::new(&provider)
         .recall()
-        .across_section(&MemorySection::Document, "q", 10, &cross_session, None)
+        .across_section(&MemorySection::Conversation, "q", 10, &session_scoped, None)
         .await
-        .expect_err("cross_session only means something for conversations");
+        .expect_err("across_section never allows session_id, even for conversations");
 
     match err {
         MemoryError::Invalid(message) => {
-            assert_eq!(message, CROSS_SESSION_SECTION_CONFLICT);
+            assert_eq!(message, CROSS_SESSION_FAN_OUT_CONFLICT);
         }
         other => panic!("expected Invalid, got {other:?}"),
     }
