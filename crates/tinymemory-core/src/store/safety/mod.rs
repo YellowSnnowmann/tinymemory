@@ -58,14 +58,19 @@ pub fn canonical_identifier(value: &str) -> String {
 /// the same way the storage address is (#5164), with two corrections
 /// `canonical_identifier` alone does not make:
 ///
-/// * **Bracket stripping.** The `[REDACTED_PII_*]` placeholder is valid
-///   storage-address content but not a valid `Namespace` scope —
-///   `Namespace::parse` rejects `[` and `]` — so a PII-bearing sectioned
-///   namespace would round-trip through redaction and then fail to parse back
-///   into its own section, reintroducing the exact enumeration gap this
-///   column exists to close. Stripping the brackets keeps the redacted tokens
-///   (`REDACTED_PII_SSN`, underscores and all) namespace-valid without
-///   reintroducing the PII they replaced.
+/// * **Bracket substitution, not stripping.** The `[REDACTED_PII_*]`
+///   placeholder is valid storage-address content but not a valid `Namespace`
+///   scope — `Namespace::parse` rejects `[` and `]` — so a PII-bearing
+///   sectioned namespace would round-trip through redaction and then fail to
+///   parse back into its own section, reintroducing the exact enumeration gap
+///   this column exists to close. The brackets are mapped to `_`, the exact
+///   substitution `UnifiedMemory::sanitize_namespace` already performs on
+///   every character outside its path-safe allow-list. That match matters:
+///   removing the brackets instead (rather than substituting) would make the
+///   logical name parse but no longer *address-equivalent* — re-sanitizing it
+///   would produce a different physical namespace than the one the row was
+///   actually written under, so a caller that fed the reported name back into
+///   `list`/`get` would find nothing.
 /// * **Blank fallback.** `UnifiedMemory::sanitize_namespace` maps blank /
 ///   whitespace-only input to `fallback` (in practice `GLOBAL_NAMESPACE`) so
 ///   the storage address is never an empty string. `canonical_identifier`
@@ -75,7 +80,10 @@ pub fn canonical_identifier(value: &str) -> String {
 ///   that column exists to shadow. Applying the same fallback here keeps them
 ///   in sync.
 pub fn canonical_logical_namespace(raw: &str, fallback: &str) -> String {
-    let canonical = canonical_identifier(raw.trim()).replace(['[', ']'], "");
+    let canonical: String = canonical_identifier(raw.trim())
+        .chars()
+        .map(|ch| if ch == '[' || ch == ']' { '_' } else { ch })
+        .collect();
     if canonical.is_empty() {
         fallback.to_string()
     } else {
