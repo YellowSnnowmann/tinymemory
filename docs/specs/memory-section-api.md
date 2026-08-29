@@ -183,9 +183,12 @@ scope may legitimately contain `_`, and guessing would silently relabel
 unrelated namespaces into a section they were never written to.
 
 `assert_namespaces_preserve_their_section` in the conformance suite now holds
-every driver to this: a namespace written in a section must be reported back in
-that section. It is the assertion whose absence let the two bundled drivers
-disagree unnoticed.
+every *retaining* driver to this: a namespace written in a section must be
+reported back in that section. It is skipped for a driver that retains nothing,
+like the rest of the storage assertions, and it says nothing about a row written
+before this change and never rewritten — see the invariant below for the exact
+scope. It is the assertion whose absence let the two bundled drivers disagree
+unnoticed.
 
 ## Invariants and constraints
 
