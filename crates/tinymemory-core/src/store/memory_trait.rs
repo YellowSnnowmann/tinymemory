@@ -711,6 +711,135 @@ mod tests {
         assert!(alpha.last_updated.is_some());
     }
 
+    /// A `<section>:<scope>` namespace (`tinymemory_bus::namespace`'s
+    /// convention) must survive `namespace_summaries()` byte-for-byte, even
+    /// though the on-disk address stays sanitized. Before the
+    /// `logical_namespace` column, `sanitize_namespace` collapsed `:` to `_`
+    /// and `namespace_summaries` read that sanitized value straight back out,
+    /// so every sectioned namespace looked unsectioned to a caller enumerating
+    /// namespaces.
+    #[tokio::test]
+    async fn namespace_summaries_reports_sectioned_namespace_verbatim() {
+        let (_tmp, mem) = fresh_mem();
+        let namespace = "conversation:thread-8f21";
+        mem.store(namespace, "k1", "hello there", MemoryCategory::Core, None)
+            .await
+            .unwrap();
+
+        let summaries = mem.namespace_summaries().await.unwrap();
+        let found = summaries
+            .iter()
+            .find(|s| s.namespace == namespace)
+            .unwrap_or_else(|| panic!("expected `{namespace}` in {summaries:?}"));
+        assert_eq!(found.count, 1);
+
+        // The storage address stays sanitized: the sectioned `:` is not a
+        // valid filesystem character, so the column and the on-disk directory
+        // must both still use the collapsed form.
+        let sanitized: String = {
+            let conn = mem.conn.lock();
+            conn.query_row(
+                "SELECT namespace FROM memory_docs WHERE key = 'k1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(sanitized, "conversation_thread-8f21");
+        assert!(
+            !sanitized.contains(':'),
+            "the memory_docs.namespace column must stay path-safe, got {sanitized}"
+        );
+
+        let dir = mem.namespace_dir(namespace);
+        assert!(
+            !dir.to_string_lossy().contains(':'),
+            "namespace_dir must never contain ':', got {}",
+            dir.display()
+        );
+    }
+
+    /// `get`/`forget`/`list`/`recall` must still address a sectioned
+    /// namespace by its original, unsanitized string — the `logical_namespace`
+    /// column is purely additive and must not disturb the sanitized lookup
+    /// path those methods already use.
+    #[tokio::test]
+    async fn sectioned_namespace_stays_addressable_by_its_original_string() {
+        let (_tmp, mem) = fresh_mem();
+        let namespace = "conversation:thread-8f21";
+        mem.store(
+            namespace,
+            "k1",
+            "we should ship on friday",
+            MemoryCategory::Core,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let got = mem.get(namespace, "k1").await.unwrap();
+        assert_eq!(got.unwrap().content, "we should ship on friday");
+
+        let listed = mem.list(Some(namespace), None, None).await.unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].key, "k1");
+
+        let recalled = mem
+            .recall(
+                "ship on friday",
+                5,
+                RecallOpts {
+                    namespace: Some(namespace),
+                    min_score: Some(0.0),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+        assert!(
+            recalled.iter().any(|e| e.key == "k1"),
+            "recall must still find the row via the original sectioned namespace, got {recalled:#?}"
+        );
+
+        assert!(mem.forget(namespace, "k1").await.unwrap());
+        assert!(mem.get(namespace, "k1").await.unwrap().is_none());
+    }
+
+    /// A row written before this migration has `logical_namespace = NULL`.
+    /// `namespace_summaries` must fall back to the sanitized `namespace`
+    /// column for those rows rather than erroring or hiding them — the
+    /// `COALESCE` is the entire backfill story, deliberately, because a
+    /// sanitized `_` cannot be un-collapsed back into the original delimiter.
+    #[tokio::test]
+    async fn namespace_summaries_falls_back_to_sanitized_namespace_when_logical_is_null() {
+        let (_tmp, mem) = fresh_mem();
+        {
+            let conn = mem.conn.lock();
+            conn.execute(
+                "INSERT INTO memory_docs (
+                    document_id, namespace, key, title, content, source_type,
+                    priority, tags_json, metadata_json, category, session_id,
+                    created_at, updated_at, markdown_rel_path
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, 'chat', 'medium', '[]', '{}', 'core', NULL, 0.0, 0.0, '')",
+                rusqlite::params![
+                    "pre-migration-doc",
+                    "premigration_ns",
+                    "k1",
+                    "title",
+                    "content"
+                ],
+            )
+            .unwrap();
+        }
+
+        let summaries = mem.namespace_summaries().await.unwrap();
+        let found = summaries
+            .iter()
+            .find(|s| s.namespace == "premigration_ns")
+            .unwrap_or_else(|| panic!("expected `premigration_ns` in {summaries:?}"));
+        assert_eq!(found.count, 1);
+    }
+
     #[tokio::test]
     async fn legacy_namespace_migration_splits_and_is_idempotent() {
         use rusqlite::params;
