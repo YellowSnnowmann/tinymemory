@@ -402,11 +402,18 @@ impl UnifiedMemory {
         conn: &Arc<Mutex<Connection>>,
     ) -> anyhow::Result<Vec<NamespaceSummary>> {
         let conn = conn.lock();
+        // `COALESCE(logical_namespace, namespace)` is the entire backfill
+        // story, deliberately: rows written before the `logical_namespace`
+        // column existed have it NULL and fall back to exactly today's
+        // sanitized value. A sanitized `_` cannot be reconstructed into
+        // whatever delimiter it replaced (a scope may legitimately contain
+        // `_`), so guessing would silently mislabel unrelated namespaces —
+        // NULL rows simply keep reporting their sanitized address.
         let mut stmt = conn.prepare(
-            "SELECT namespace, COUNT(*) AS n, MAX(updated_at) AS last
+            "SELECT COALESCE(logical_namespace, namespace) AS ns, COUNT(*) AS n, MAX(updated_at) AS last
              FROM memory_docs
-             GROUP BY namespace
-             ORDER BY namespace",
+             GROUP BY ns
+             ORDER BY ns",
         )?;
         let rows = stmt.query_map([], |row| {
             let ns: String = row.get(0)?;
