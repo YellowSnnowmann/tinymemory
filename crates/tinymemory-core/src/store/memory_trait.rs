@@ -600,8 +600,9 @@ impl Memory for UnifiedMemory {
         limit: usize,
         min_vector_similarity: f64,
     ) -> anyhow::Result<Vec<(String, String)>> {
+        let (ns, logical) = UnifiedMemory::namespace_address_forms(namespace);
         let hits = self
-            .query_namespace_hits(namespace, query, limit as u32)
+            .query_namespace_hits(&ns, &logical, query, limit as u32)
             .await
             .map_err(anyhow::Error::msg)?;
         Ok(hits
