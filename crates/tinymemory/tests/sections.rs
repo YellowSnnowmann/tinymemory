@@ -6,6 +6,11 @@
 //! — and `NullMemoryProvider` is one that retains nothing, which is where the
 //! "works on every driver" claim is machine-checked rather than asserted.
 
+// A failing assertion in a test *is* a panic; the crate-wide `expect_used` /
+// `unwrap_used` / `panic` lints exist to keep the library from panicking, not
+// the tests. Same allowance, and same reasoning, as `src/registry/test.rs`.
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+
 use std::sync::Arc;
 
 use tinymemory::error::MemoryError;

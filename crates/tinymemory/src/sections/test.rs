@@ -18,7 +18,6 @@ use async_trait::async_trait;
 use tinymemory_api::error::MemoryError;
 use tinymemory_api::namespace::MemorySection;
 use tinymemory_api::null::NullMemoryProvider;
-use tinymemory_api::provider::MemoryProvider;
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::traits::Memory;
 use tinymemory_api::types::{
@@ -74,7 +73,7 @@ impl ScoredMemory {
 
 #[async_trait]
 impl Memory for ScoredMemory {
-    fn name(&self) -> &str {
+    fn name(&self) -> &'static str {
         "scored-double"
     }
 
