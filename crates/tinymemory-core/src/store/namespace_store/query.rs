@@ -467,7 +467,8 @@ impl UnifiedMemory {
         query: &str,
         limit: u32,
     ) -> Result<NamespaceRetrievalContext, String> {
-        let (ns, logical) = Self::namespace_address_forms(namespace);
+        let ns = Self::sanitize_namespace(namespace);
+        let (_, logical) = Self::namespace_address_forms(&ns);
         let hits = self
             .query_namespace_hits(&ns, &logical, query, limit)
             .await?;
