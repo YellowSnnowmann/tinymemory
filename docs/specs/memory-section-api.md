@@ -197,10 +197,15 @@ disagree unnoticed.
 - An unusable section is an error, never an empty one: if a section's prefix
   fails validation, the enumerating calls fail rather than reporting no scopes,
   so they agree with the addressed calls about the same section.
-- A driver reports a namespace back in the section it was written in. A driver
-  may re-address a namespace to suit its store, but it may not change which
-  section the name belongs to; `assert_namespaces_preserve_their_section`
-  enforces it.
+- On a retaining driver, a namespace written or rewritten after this change is
+  reported back in the section it was written in. A driver may re-address a
+  namespace to suit its store, but it may not change which section the name
+  belongs to; `assert_namespaces_preserve_their_section` enforces it for every
+  retaining driver (`assert_provider` skips it, like the rest of the storage
+  assertions, for a driver that accepts writes and discards them). A row
+  written before this change and never rewritten keeps enumerating under its
+  sanitised, unsectioned name — see "The storage address and the logical
+  namespace" above for why that backfill is deliberately a no-op.
 - A namespace never reaches the filesystem with a character the path allow-list
   excludes, and the PII redaction on the storage address is unchanged.
 - `put` then `get` on the same `(scope, key)` round-trips on any retaining driver.
