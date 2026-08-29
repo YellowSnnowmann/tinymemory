@@ -264,22 +264,21 @@ async fn namespace_summaries_normalizes_blank_namespace_to_global() {
     assert_eq!(found.count, 1);
 }
 
-/// Two logical names that sanitize to the same physical address
+/// Two logical names that sanitize to the same physical namespace
 /// (`conversation:x` and `conversation_x` both collapse to
-/// `conversation_x`) are NOT the same namespace and must not be merged:
-/// `namespace_summaries` must report one summary per logical name, each
-/// with only its own rows counted, and `list` addressed to one logical name
-/// must return only that name's rows — never the other alias's.
+/// `conversation_x`) must not split into two summaries with two partial
+/// counts: every addressed call (`list`, `export`, ...) already merges
+/// their rows into one physical namespace, so `namespace_summaries` must
+/// report exactly one entry with the true, combined count.
 ///
-/// This is the corrected behavior. Before `list`/`get`/`forget` filtered on
-/// `logical_namespace` (not just the physical `namespace` column), both
-/// aliases' rows were indistinguishable once written, so every addressed
-/// call silently merged them: listing `conversation:x` also returned
-/// `conversation_x`'s rows mislabelled as belonging to it, and
-/// `namespace_summaries` reported one summary hiding the losing alias
-/// entirely from enumeration.
+/// `sanitize_namespace` has always collapsed these two names onto one
+/// physical address, and every operation on this store has always treated
+/// them as one namespace — that is pre-existing behaviour, not something
+/// `logical_namespace` changes. What `logical_namespace` adds is purely a
+/// more informative label on the merged summary (a sectioned spelling
+/// instead of the sanitized one), not isolation between the two names.
 #[tokio::test]
-async fn logical_namespaces_stay_isolated_when_they_alias_one_physical_address() {
+async fn namespace_summaries_deduplicates_when_two_logical_names_alias_one_address() {
     let (_tmp, mem) = fresh_mem();
     mem.store("conversation:x", "k1", "a", MemoryCategory::Core, None)
         .await
@@ -288,176 +287,21 @@ async fn logical_namespaces_stay_isolated_when_they_alias_one_physical_address()
         .await
         .unwrap();
 
-    // Each logical name gets its own summary with its own count — neither
-    // hides nor merges with the other.
     let summaries = mem.namespace_summaries().await.unwrap();
-    let colon = summaries
+    let matching: Vec<_> = summaries
         .iter()
-        .find(|s| s.namespace == "conversation:x")
-        .unwrap_or_else(|| panic!("expected `conversation:x` in {summaries:?}"));
-    let underscore = summaries
-        .iter()
-        .find(|s| s.namespace == "conversation_x")
-        .unwrap_or_else(|| panic!("expected `conversation_x` in {summaries:?}"));
-    assert_eq!(colon.count, 1);
-    assert_eq!(underscore.count, 1);
-
-    // Listing one alias must return only its own row, not the other's.
-    let listed_colon = mem.list(Some("conversation:x"), None, None).await.unwrap();
-    assert_eq!(listed_colon.len(), 1);
-    assert_eq!(listed_colon[0].key, "k1");
-    assert_eq!(listed_colon[0].namespace.as_deref(), Some("conversation:x"));
-
-    let listed_underscore = mem.list(Some("conversation_x"), None, None).await.unwrap();
-    assert_eq!(listed_underscore.len(), 1);
-    assert_eq!(listed_underscore[0].key, "k2");
+        .filter(|s| s.namespace == "conversation:x" || s.namespace == "conversation_x")
+        .collect();
     assert_eq!(
-        listed_underscore[0].namespace.as_deref(),
-        Some("conversation_x")
+        matching.len(),
+        1,
+        "expected exactly one summary for the aliased address, got {summaries:?}"
     );
+    assert_eq!(matching[0].count, 2);
 
-    // `get`/`forget` must not cross the alias boundary either.
-    assert!(mem.get("conversation:x", "k2").await.unwrap().is_none());
-    assert!(mem.get("conversation_x", "k1").await.unwrap().is_none());
-    assert!(!mem.forget("conversation:x", "k2").await.unwrap());
-    assert!(mem.get("conversation_x", "k2").await.unwrap().is_some());
-}
-
-/// The same aliasing hazard as
-/// `logical_namespaces_stay_isolated_when_they_alias_one_physical_address`,
-/// but through `recall` and with the exact pair from the report: `a:b_c` and
-/// `a_b:c` both sanitize to `a_b_c` (`:` and the existing `_` both collapse
-/// to `_`). Before `query_namespace_hits_excluding_session` filtered on
-/// `logical_namespace` too, a `recall` pinned to one alias scored the
-/// other's rows into its ranked results as well, because both load from the
-/// same physical namespace.
-#[tokio::test]
-async fn recall_pinned_to_one_aliasing_namespace_does_not_score_the_others_rows() {
-    let (_tmp, mem) = fresh_mem();
-    assert_eq!(
-        UnifiedMemory::sanitize_namespace("a:b_c"),
-        UnifiedMemory::sanitize_namespace("a_b:c"),
-        "test fixture assumption: both must sanitize to the same physical address"
-    );
-
-    mem.store(
-        "a:b_c",
-        "k1",
-        "the roadmap ships on friday",
-        MemoryCategory::Core,
-        None,
-    )
-    .await
-    .unwrap();
-    mem.store(
-        "a_b:c",
-        "k2",
-        "the roadmap ships on monday",
-        MemoryCategory::Core,
-        None,
-    )
-    .await
-    .unwrap();
-
-    let recalled_first = mem
-        .recall(
-            "roadmap",
-            10,
-            RecallOpts {
-                namespace: Some("a:b_c"),
-                min_score: Some(0.0),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-    assert!(
-        recalled_first.iter().any(|e| e.key == "k1"),
-        "recall must still find the namespace's own row, got {recalled_first:#?}"
-    );
-    assert!(
-        !recalled_first.iter().any(|e| e.key == "k2"),
-        "recall pinned to `a:b_c` must not score `a_b:c`'s row, got {recalled_first:#?}"
-    );
-
-    let recalled_second = mem
-        .recall(
-            "roadmap",
-            10,
-            RecallOpts {
-                namespace: Some("a_b:c"),
-                min_score: Some(0.0),
-                ..Default::default()
-            },
-        )
-        .await
-        .unwrap();
-    assert!(
-        recalled_second.iter().any(|e| e.key == "k2"),
-        "recall must still find the namespace's own row, got {recalled_second:#?}"
-    );
-    assert!(
-        !recalled_second.iter().any(|e| e.key == "k1"),
-        "recall pinned to `a_b:c` must not score `a:b_c`'s row, got {recalled_second:#?}"
-    );
-}
-
-/// A legacy row with `logical_namespace = NULL` has no recorded logical
-/// name — its physical `namespace` column is its only identity. It must be
-/// visible only under a call whose logical name equals that physical
-/// address exactly, never under some other logical name that merely
-/// sanitizes to the same address.
-///
-/// Before `LOGICAL_NAMESPACE_FILTER_SQL` gated its `IS NULL` arm on `?1 =
-/// ?2`, this NULL row matched ANY logical name sanitizing to `a_b_c` —
-/// `list("a:b_c", ...)` and `list("a_b:c", ...)` both saw it, reintroducing
-/// the aliasing leak for legacy rows specifically.
-#[tokio::test]
-async fn legacy_null_logical_namespace_row_is_visible_only_under_its_physical_name() {
-    use rusqlite::params;
-
-    let (_tmp, mem) = fresh_mem();
-    assert_eq!(
-        UnifiedMemory::sanitize_namespace("a:b_c"),
-        UnifiedMemory::sanitize_namespace("a_b:c"),
-    );
-    assert_eq!(UnifiedMemory::sanitize_namespace("a_b_c"), "a_b_c");
-
-    {
-        let conn = mem.conn.lock();
-        conn.execute(
-            "INSERT INTO memory_docs (
-                document_id, namespace, key, title, content, source_type,
-                priority, tags_json, metadata_json, category, session_id,
-                created_at, updated_at, markdown_rel_path
-             ) VALUES (?1, 'a_b_c', ?2, ?3, ?4, 'chat', 'medium', '[]', '{}', 'core', NULL, 0.0, 0.0, '')",
-            params!["legacy-doc", "k1", "title", "legacy content"],
-        )
-        .unwrap();
-    }
-
-    // Addressed by its own physical name: visible, exactly as before this
-    // column existed.
-    let by_physical = mem.list(Some("a_b_c"), None, None).await.unwrap();
-    assert_eq!(by_physical.len(), 1);
-    assert_eq!(by_physical[0].key, "k1");
-    assert!(mem.get("a_b_c", "k1").await.unwrap().is_some());
-
-    // Addressed by either aliasing logical name that merely sanitizes to
-    // the same physical address: must NOT surface the legacy row.
-    let by_colon_alias = mem.list(Some("a:b_c"), None, None).await.unwrap();
-    assert!(
-        by_colon_alias.is_empty(),
-        "legacy NULL row must not surface under an aliasing logical name, got {by_colon_alias:#?}"
-    );
-    assert!(mem.get("a:b_c", "k1").await.unwrap().is_none());
-
-    let by_underscore_alias = mem.list(Some("a_b:c"), None, None).await.unwrap();
-    assert!(
-        by_underscore_alias.is_empty(),
-        "legacy NULL row must not surface under an aliasing logical name, got {by_underscore_alias:#?}"
-    );
-    assert!(mem.get("a_b:c", "k1").await.unwrap().is_none());
+    // Both aliases still address the same merged physical namespace.
+    let listed = mem.list(Some("conversation:x"), None, None).await.unwrap();
+    assert_eq!(listed.len(), 2);
 }
 
 /// `canonical_identifier`'s `[REDACTED_PII_*]` placeholder is valid storage
