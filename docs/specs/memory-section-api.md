@@ -172,8 +172,12 @@ So the address and the name are now separate columns. `memory_docs.namespace`
 keeps exactly the characters it has today and remains what addresses the row and
 names the directory. A new nullable `memory_docs.logical_namespace` carries
 `canonical_identifier(namespace)` — the delimiter-preserving form, still
-PII-redacted — and `namespace_summaries` reports
-`COALESCE(logical_namespace, namespace)`.
+PII-redacted. `namespace_summaries` reports `COALESCE(MIN(logical_namespace),
+namespace)`, and `get`/`list` populate `MemoryEntry.namespace` from the row's
+own `logical_namespace` where the row query already selects it, falling back
+to the physical address for a pre-migration row that has none. This is purely
+a **labelling** fix: a sectioned namespace enumerates and round-trips under
+its `:` spelling again, closing the actual goal of this change.
 
 The `COALESCE` is the entire backfill, deliberately. A row written before the
 migration has `NULL` and keeps exactly its previous behaviour; the upsert clause
@@ -182,74 +186,47 @@ to turn an old `_` back into a `:` — that mapping is not invertible, because a
 scope may legitimately contain `_`, and guessing would silently relabel
 unrelated namespaces into a section they were never written to.
 
-The physical address is not injective — `a:b_c` and `a_b:c` both sanitize to
-`a_b_c` — so the logical column has to do more than label a summary. `get`,
-`list`, `forget`, and the query path backing `Memory::recall` all filter on it
-too: each addressed read is `WHERE namespace = ?1 AND (logical_namespace = ?2
-OR (logical_namespace IS NULL AND ?1 = ?2))`, not `WHERE namespace = ?1` alone
-(`safety::LOGICAL_NAMESPACE_FILTER_SQL`). Without the second predicate, listing
-or recalling `a:b_c` would also surface `a_b:c`'s rows — mislabelled as
-belonging to the section that was listed, not the one that wrote them — and
-the two logical names would be indistinguishable once written. `recall`
-derives its logical name the same way `get`/`list` do, from the caller's own
-`opts.namespace` (never sanitized before this derivation), so no new value is
-threaded in from outside the call.
+**This column does not make the physical address injective, and no operation
+here isolates two logical names that sanitize to the same address.** `a:b_c`
+and `a_b:c` both sanitize to `a_b_c`; `sanitize_namespace` has always
+collapsed them onto that one physical address, and every operation on this
+store — `get`, `list`, `forget`, `recall`, `clear_namespace` — has always
+treated that address as a single namespace, addressing rows and deleting data
+by it alone. That is unchanged here and is **explicitly out of scope**: it is
+pre-existing behaviour this change restores rather than a regression this
+change introduces. Concretely:
 
-The `logical_namespace IS NULL` arm exists so a pre-migration row without a
-recorded logical name still reads under its sanitised address, matching the
-backfill guarantee above — but it is gated on `?1 = ?2`, not unconditional. A
-legacy NULL row's `namespace` column is its only identity, so it must surface
-only when the caller's logical name equals that physical address directly,
-never under some other logical name that merely happens to sanitize to the
-same address. An earlier version of this predicate omitted that gate
-(`OR logical_namespace IS NULL` alone), which let a legacy row match ANY
-aliasing logical name — reintroducing the same cross-section leak for legacy
-rows that this column exists to close for new ones.
+- `list("a:b_c", ...)` and `list("a_b:c", ...)` both return the union of
+  whatever was written under either spelling — the same physical namespace,
+  same as before `logical_namespace` existed.
+- `namespace_summaries` reports **one** summary for the physical address
+  (`GROUP BY namespace`), under a single logical representative
+  (`MIN(logical_namespace)`, falling back to the address when every row
+  predates the column) — not one summary per logical name. Only one of the
+  two colliding names is ever reported by enumeration; the other still
+  addresses the same merged data, but does not appear as its own entry.
+- `clear_namespace` deletes the entire physical namespace's rows across
+  `memory_docs`, `vector_chunks`, `kv_namespace`, and `graph_namespace`, and
+  removes the whole on-disk markdown directory — regardless of which
+  colliding logical name is named. It does not, and cannot with this schema,
+  delete only "half" of a physically-merged namespace.
+- `recall` and the hybrid query path (`query_namespace_hits`) score every
+  document under the physical address, whichever logical name was used to
+  reach it.
 
-Every returned `MemoryEntry.namespace` is the row's own logical name (falling
-back to the physical address only for a NULL row addressed by that address),
-never the caller's query namespace, so the physical address stays an internal
-storage detail that never reaches a `MemoryEntry`.
+Isolating two aliasing logical namespaces from each other — so that `list`,
+`get`, `forget`, `recall`, and `clear_namespace` each treat `a:b_c` and
+`a_b:c` as genuinely separate namespaces — was explored in earlier revisions
+of this change and reverted. It requires every access path on every table
+(`memory_docs`, `vector_chunks`, `kv_namespace`, `graph_namespace`) to filter
+on the logical name, `kv_namespace` and `graph_namespace` would need their own
+`logical_namespace` columns and write-path support (they currently have
+neither), and the `UNIQUE(namespace, key)` constraint would still let two
+colliding logical namespaces silently contend for one key even with read-side
+filtering. That is real, scoped work with its own migration story — a
+separate change, not a half-measure folded into this one.
 
-Deriving both forms is itself a hazard: sanitizing first and then deriving the
-logical form from the *sanitized* result silently produces the wrong logical
-name, because sanitizing is lossy (a sectioned `conversation:thread-8f21`
-sanitizes to `conversation_thread-8f21`, which has no `:` left to preserve).
-This actually happened — `query_namespace_context_data` sanitized its
-namespace argument before calling into the query path, so every sectioned
-namespace queried through the public `query_namespace` / `query_documents`
-context API silently returned empty. `UnifiedMemory::namespace_address_forms`
-exists to make that mistake structural rather than a one-line slip: it derives
-`(physical, logical)` in one call from the original raw namespace, and the
-functions that filter on `logical_namespace`
-(`query_namespace_hits`/`query_namespace_hits_excluding_session`,
-`load_documents_for_scope_matching_logical`) take both forms as separate,
-already-derived parameters rather than a single string to derive one from the
-other. A caller holding an already-sanitized string cannot silently supply it
-as the source of the logical name — the signature forces both questions to be
-answered, from the same original value, in one place.
-
-`namespace_summaries` groups by `COALESCE(logical_namespace, namespace)` for
-the same reason: once reads are scoped by logical name, two logical names that
-alias one physical address must report two summaries, each with its own count,
-or `list` on one reported name would return only half its count while the
-other alias never appears in enumeration at all.
-
-One trade-off follows directly from filtering `get`/`forget` on the logical
-name: the `UNIQUE(namespace, key)` constraint is still keyed on the physical
-address only, so two colliding logical namespaces writing the *same* key still
-collide at the storage layer — `ON CONFLICT(namespace, key) DO UPDATE` still
-overwrites the row, and `logical_namespace` is set to whichever logical name
-wrote it last. A caller addressing that key by the losing logical name's `get`
-now returns `None` (the row's `logical_namespace` no longer matches) rather
-than the pre-fix behaviour of silently reading the winning write's content.
-This surfaces the collision instead of hiding it, but does not resolve it: two
-distinct logical namespaces sharing a physical address can still contend for
-one key. `idx_memory_docs_ns_updated` is unaffected — it still indexes
-`(namespace, updated_at DESC)`, which every addressed query still filters on
-first.
-
-`assert_namespaces_preserve_their_section` in the conformance suite now holds
+`assert_namespaces_preserve_their_section` in the conformance suite holds
 every *retaining* driver to this: a namespace written in a section must be
 reported back in that section. It is skipped for a driver that retains nothing,
 like the rest of the storage assertions, and it says nothing about a row written
