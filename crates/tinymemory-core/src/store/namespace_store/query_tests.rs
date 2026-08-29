@@ -1313,7 +1313,13 @@ async fn excludes_same_session_document_but_keeps_unrelated_useful_doc() {
     // With the current-session exclusion applied, the self-echo document is
     // dropped and the useful fact survives.
     let filtered = memory
-        .query_namespace_hits_excluding_session("global", "global", query, 10, Some("thread-current"))
+        .query_namespace_hits_excluding_session(
+            "global",
+            "global",
+            query,
+            10,
+            Some("thread-current"),
+        )
         .await
         .unwrap();
 

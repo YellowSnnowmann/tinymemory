@@ -199,10 +199,7 @@ impl UnifiedMemory {
         }
         let kvs = self.kv_records_for_scope(ns).await?;
 
-        let graph_relations = self
-            .graph_relations_for_scope(ns)
-            .await
-            .unwrap_or_default();
+        let graph_relations = self.graph_relations_for_scope(ns).await.unwrap_or_default();
         let chunks = self.load_chunks_for_scope(ns).await?;
         let plan = self.build_retrieval_plan(query, &docs, &graph_relations);
         let matched_relations = self.collect_relation_matches(&plan, &graph_relations);
@@ -471,7 +468,9 @@ impl UnifiedMemory {
         limit: u32,
     ) -> Result<NamespaceRetrievalContext, String> {
         let (ns, logical) = Self::namespace_address_forms(namespace);
-        let hits = self.query_namespace_hits(&ns, &logical, query, limit).await?;
+        let hits = self
+            .query_namespace_hits(&ns, &logical, query, limit)
+            .await?;
         Ok(NamespaceRetrievalContext {
             namespace: ns,
             query: Some(query.to_string()),
