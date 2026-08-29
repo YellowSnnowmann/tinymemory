@@ -130,6 +130,13 @@ It promises, and its rustdoc states:
 - **`truncated` means namespaces were skipped**, never that hits exceeded `limit`.
 - **`opts.namespace` must be `None`.** `Some` is `MemoryError::Invalid` carrying
   `NAMESPACE_FILTER_CONFLICT`, rather than a silent override of the caller's filter.
+- **`opts.cross_session` is refused outside the conversation section**, with
+  `CROSS_SESSION_SECTION_CONFLICT`. The bundled driver's cross-session path
+  surfaces *episodic* rows from other sessions and relabels each with whichever
+  namespace the call pinned, so honouring it on `learning:` or `document:` would
+  return conversational content presented as a learning or a document. On
+  `across_section` the same rows would also repeat once per scope, crowding
+  genuine hits out of `limit`. Refused rather than misrepresented.
 
 Scores come from separate calls to one driver with one query. They are comparable
 in practice on every bundled driver; the contract does not guarantee it, and the
@@ -148,6 +155,9 @@ documentation says so rather than pretending otherwise.
 - `put` then `get` on the same `(scope, key)` round-trips on any retaining driver.
 - Every call succeeds on a driver that retains nothing, returning empty rather
   than an error — the surface has no capability-absent path.
+- What a section returns belongs to that section. A recall option that would
+  make the driver surface another section's content under this section's
+  namespace is refused, not filtered afterwards.
 - Results are deterministic given a fixed store, on every ordering the API exposes.
 - An invalid scope fails before any write, so a rejected call stores nothing.
 - No driver, trait signature, capability set, or error enum changes.
@@ -155,6 +165,8 @@ documentation says so rather than pretending otherwise.
 ## Acceptance criteria
 
 - The full surface works against `NullMemoryProvider`, returning `Ok` and empty.
+- `cross_session` recall is refused on every section but `conversation:`, and
+  allowed on it, at both `in_scope` and `across_section`.
 - A round trip works against `InMemoryProvider` through the public API only.
 - `across_section` returns no hit belonging to another section, orders by score
   descending, reports `namespaces_searched`, and sets `truncated` only when the
