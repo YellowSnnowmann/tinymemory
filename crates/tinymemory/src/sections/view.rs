@@ -50,7 +50,10 @@ impl<'a> SectionView<'a> {
     /// [`Sections::section`]: super::Sections::section
     #[must_use]
     pub fn new(provider: &'a dyn MemoryProvider, section: MemorySection) -> Self {
-        Self { provider, section }
+        Self {
+            provider,
+            section: MemorySection::from_prefix(section.as_str()),
+        }
     }
 
     /// Fail when this view's section cannot form a namespace at all.
