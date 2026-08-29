@@ -637,10 +637,12 @@ mod tests {
     fn logical_namespace_migration_is_idempotent_across_reopen() {
         fn has_logical_namespace_column(conn: &Connection) -> bool {
             let mut stmt = conn.prepare("PRAGMA table_info(memory_docs)").unwrap();
-            stmt.query_map([], |row| row.get::<_, String>(1))
+            let found = stmt
+                .query_map([], |row| row.get::<_, String>(1))
                 .unwrap()
                 .filter_map(Result::ok)
-                .any(|name| name == "logical_namespace")
+                .any(|name| name == "logical_namespace");
+            found
         }
 
         let tmp = TempDir::new().unwrap();
