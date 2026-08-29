@@ -675,33 +675,87 @@ impl UnifiedMemory {
 
     /// Delete all documents, vector chunks, KV entries, and graph relations
     /// for the given namespace in a single transaction. Also removes the
-    /// on-disk markdown directory (`namespaces/{ns}/docs/`).
+    /// on-disk markdown files this call's documents own.
+    ///
+    /// `memory_docs` is scoped by **logical** namespace, not just the
+    /// physical address (via [`safety::LOGICAL_NAMESPACE_FILTER_SQL`]): two
+    /// logical namespaces can alias one physical address (`a:b_c` / `a_b:c`
+    /// both sanitize to `a_b_c`), and clearing one must not delete the
+    /// other's rows. `vector_chunks` has no `logical_namespace` column of its
+    /// own, but every chunk is keyed to a `document_id`, and this collects
+    /// exactly the document ids the logical filter selected before deleting
+    /// them — so chunk deletion stays scoped to the same set without needing
+    /// a new column on that table. The markdown directory is only
+    /// `remove_dir_all`'d wholesale when no documents remain under the
+    /// physical address afterward (the common, non-aliased case); when the
+    /// other alias's rows survive, only the deleted documents' own sidecar
+    /// files are removed individually.
+    ///
+    /// `kv_namespace` and `graph_namespace` are **not** logical-namespace
+    /// aware — neither table has a `logical_namespace` column, and their rows
+    /// carry no document linkage to derive one from. Clearing either aliasing
+    /// logical namespace still deletes the physical address's entire KV and
+    /// graph data, including the surviving alias's. Closing that gap needs
+    /// the same additive-column-plus-backfill migration `memory_docs`
+    /// already has, applied to two more tables and their own write paths
+    /// (`kv.rs`, `graph.rs`) — out of scope here, flagged rather than
+    /// silently left half-fixed.
     pub async fn clear_namespace(&self, namespace: &str) -> Result<(), String> {
-        let ns = Self::sanitize_namespace(namespace);
-        log::debug!("[memory] clear_namespace: starting for namespace={ns}");
+        let (ns, logical) = Self::namespace_address_forms(namespace);
+        log::debug!("[memory] clear_namespace: starting for namespace={ns} logical={logical}");
 
-        {
+        let markdown_rel_paths: Vec<String> = {
             let conn = self.conn.lock();
             let tx = conn
                 .unchecked_transaction()
                 .map_err(|e| format!("clear_namespace begin tx: {e}"))?;
 
+            // Collect the sidecar paths and ids for exactly the documents
+            // this call is about to delete, BEFORE deleting them — the row
+            // is the only record of where its own markdown file lives and
+            // which vector_chunks belong to it.
+            let (markdown_rel_paths, document_ids): (Vec<String>, Vec<String>) = {
+                let mut stmt = tx
+                    .prepare(&format!(
+                        "SELECT markdown_rel_path, document_id FROM memory_docs                          WHERE namespace = ?1 AND {}",
+                        safety::LOGICAL_NAMESPACE_FILTER_SQL
+                    ))
+                    .map_err(|e| format!("clear_namespace prepare doomed rows: {e}"))?;
+                let rows = stmt
+                    .query_map(rusqlite::params![ns, logical], |row| {
+                        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                    })
+                    .map_err(|e| format!("clear_namespace query doomed rows: {e}"))?
+                    .collect::<rusqlite::Result<Vec<(String, String)>>>()
+                    .map_err(|e| format!("clear_namespace read doomed rows: {e}"))?;
+                rows.into_iter().unzip()
+            };
+
             let doc_count = tx
                 .execute(
-                    "DELETE FROM memory_docs WHERE namespace = ?1",
-                    rusqlite::params![ns],
+                    &format!(
+                        "DELETE FROM memory_docs WHERE namespace = ?1 AND {}",
+                        safety::LOGICAL_NAMESPACE_FILTER_SQL
+                    ),
+                    rusqlite::params![ns, logical],
                 )
                 .map_err(|e| format!("clear_namespace delete memory_docs: {e}"))?;
             log::debug!("[memory] clear_namespace: deleted {doc_count} rows from memory_docs");
 
-            let chunk_count = tx
-                .execute(
-                    "DELETE FROM vector_chunks WHERE namespace = ?1",
-                    rusqlite::params![ns],
-                )
-                .map_err(|e| format!("clear_namespace delete vector_chunks: {e}"))?;
+            let mut chunk_count = 0usize;
+            for document_id in &document_ids {
+                chunk_count += tx
+                    .execute(
+                        "DELETE FROM vector_chunks WHERE namespace = ?1 AND document_id = ?2",
+                        rusqlite::params![ns, document_id],
+                    )
+                    .map_err(|e| format!("clear_namespace delete vector_chunks: {e}"))?;
+            }
             log::debug!("[memory] clear_namespace: deleted {chunk_count} rows from vector_chunks");
 
+            // See this method's doc comment: these two tables are scoped by
+            // physical address only, deliberately documented as a known gap
+            // rather than silently fixed or silently left unmentioned.
             let kv_count = tx
                 .execute(
                     "DELETE FROM kv_namespace WHERE namespace = ?1",
@@ -722,20 +776,53 @@ impl UnifiedMemory {
 
             tx.commit()
                 .map_err(|e| format!("clear_namespace commit tx: {e}"))?;
-        }
 
-        // Remove on-disk markdown files for this namespace.
-        let docs_dir = self.namespace_dir(&ns).join("docs");
-        if docs_dir.exists() {
-            tokio::fs::remove_dir_all(&docs_dir).await.map_err(|e| {
-                format!(
-                    "clear_namespace remove docs dir {}: {e}",
+            markdown_rel_paths
+        };
+
+        // Any documents left under the physical address belong to a
+        // surviving aliasing logical namespace — remove only the files this
+        // call's own documents owned. Otherwise this was the only occupant
+        // of the physical address, so the whole directory can go.
+        let remaining: i64 = {
+            let conn = self.conn.lock();
+            conn.query_row(
+                "SELECT COUNT(*) FROM memory_docs WHERE namespace = ?1",
+                rusqlite::params![ns],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("clear_namespace count survivors: {e}"))?
+        };
+
+        if remaining == 0 {
+            let docs_dir = self.namespace_dir(&ns).join("docs");
+            if docs_dir.exists() {
+                tokio::fs::remove_dir_all(&docs_dir).await.map_err(|e| {
+                    format!(
+                        "clear_namespace remove docs dir {}: {e}",
+                        docs_dir.display()
+                    )
+                })?;
+                log::debug!(
+                    "[memory] clear_namespace: removed docs directory {}",
                     docs_dir.display()
-                )
-            })?;
+                );
+            }
+        } else {
+            for rel in &markdown_rel_paths {
+                let abs = self.workspace_dir.join(rel);
+                if let Err(e) = tokio::fs::remove_file(&abs).await {
+                    if e.kind() != std::io::ErrorKind::NotFound {
+                        log::warn!(
+                            "[memory] clear_namespace: failed to remove sidecar {}: {e}",
+                            abs.display()
+                        );
+                    }
+                }
+            }
             log::debug!(
-                "[memory] clear_namespace: removed docs directory {}",
-                docs_dir.display()
+                "[memory] clear_namespace: {remaining} row(s) remain under {ns} from an                  aliasing logical namespace; removed {} sidecar file(s) individually instead                  of the whole docs directory",
+                markdown_rel_paths.len()
             );
         }
 
