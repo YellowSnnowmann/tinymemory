@@ -19,6 +19,10 @@
 //!   rather than re-deriving the same four subtleties.
 //! - **[`registry`]** — driver admission. Which driver ids exist, what class
 //!   each binds as, and the fail-closed rule for out-of-process drivers.
+//! - **[`sections`]** — typed surfaces for the sections the namespace
+//!   convention names: conversations, learnings, documents, and a
+//!   section-aware recall. Composes the mandatory families only, so it works
+//!   on every driver.
 //! - **Engine adapters** — one crate per engine under `crates/`, each
 //!   implementing [`provider::MemoryProvider`] over a concrete engine, and
 //!   each selected by the feature named after it.
