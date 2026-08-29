@@ -325,7 +325,7 @@ impl UnifiedMemory {
                 hits.push(NamespaceMemoryHit {
                     id: format!("episodic:{}", entry.id.unwrap_or(0)),
                     kind: MemoryItemKind::Episodic,
-                    namespace: ns.clone(),
+                    namespace: ns.to_string(),
                     key: format!("{}:{}", entry.session_id, entry.role),
                     title: entry.lesson.clone(),
                     content,

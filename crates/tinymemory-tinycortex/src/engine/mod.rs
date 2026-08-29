@@ -259,12 +259,18 @@ impl MemoryHostConfig for EngineRuntimeConfig {
     ///   reads it; it gates the host's LLM triage of Composio *triggers*, a path
     ///   that never enters this crate. Carrying a value nobody reads would
     ///   invite a reader to believe it does something here.
+    /// - `gmail_sync_query` stays `None` for the same reason as the two above:
+    ///   [`EngineRuntimeConfig`] carries no field for it and nothing plumbs one
+    ///   in from `ModuleConfig`, so `None` (the whole-inbox default) is the
+    ///   only honest answer here rather than inventing a value this type was
+    ///   never told.
     fn composio(&self) -> ComposioMode {
         ComposioMode {
             mode: self.composio_mode.clone(),
             entity_id: self.composio_entity_id.clone(),
             api_key: None,
             triage_disabled: false,
+            gmail_sync_query: None,
         }
     }
     fn memory_sources_json(&self) -> anyhow::Result<serde_json::Value> {

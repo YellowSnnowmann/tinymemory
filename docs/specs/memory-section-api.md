@@ -153,6 +153,87 @@ Scores come from separate calls to one driver with one query. They are comparabl
 in practice on every bundled driver; the contract does not guarantee it, and the
 documentation says so rather than pretending otherwise.
 
+### 4. The storage address and the logical namespace
+
+`UnifiedMemory` cannot store a `:` in the value it uses as a namespace: that
+string becomes a filesystem directory via `namespace_dir()`, and
+`sanitize_namespace` maps every character outside `[A-Za-z0-9\-_/]` to `_` as a
+path-traversal defence. So `conversation:thread-8f21` was stored — and
+enumerated — as `conversation_thread-8f21`, which `Namespace::parse` reads as
+*unsectioned*. Every enumerating call on this surface therefore returned empty
+against the production store, after writes that had succeeded.
+
+Widening that allow-list is not the fix. It is what keeps the address path-safe,
+`:` is illegal in a Windows filename and denotes an NTFS alternate data stream,
+and the sanitiser also performs the PII redaction that keeps a national ID from
+becoming a storage address.
+
+So the address and the name are now separate columns. `memory_docs.namespace`
+keeps exactly the characters it has today and remains what addresses the row and
+names the directory. A new nullable `memory_docs.logical_namespace` carries
+`canonical_identifier(namespace)` — the delimiter-preserving form, still
+PII-redacted. `namespace_summaries` reports `COALESCE(MIN(logical_namespace),
+namespace)`, and `get`/`list` populate `MemoryEntry.namespace` from the row's
+own `logical_namespace` where the row query already selects it, falling back
+to the physical address for a pre-migration row that has none. This is purely
+a **labelling** fix: a sectioned namespace enumerates and round-trips under
+its `:` spelling again, closing the actual goal of this change.
+
+The `COALESCE` is the entire backfill, deliberately. A row written before the
+migration has `NULL` and keeps exactly its previous behaviour; the upsert clause
+sets the column, so such a row heals when it is next written. No migration tries
+to turn an old `_` back into a `:` — that mapping is not invertible, because a
+scope may legitimately contain `_`, and guessing would silently relabel
+unrelated namespaces into a section they were never written to.
+
+**This column does not make the physical address injective, and no operation
+here isolates two logical names that sanitize to the same address.** `a:b_c`
+and `a_b:c` both sanitize to `a_b_c`; `sanitize_namespace` has always
+collapsed them onto that one physical address, and every operation on this
+store — `get`, `list`, `forget`, `recall`, `clear_namespace` — has always
+treated that address as a single namespace, addressing rows and deleting data
+by it alone. That is unchanged here and is **explicitly out of scope**: it is
+pre-existing behaviour this change restores rather than a regression this
+change introduces. Concretely:
+
+- `list("a:b_c", ...)` and `list("a_b:c", ...)` both return the union of
+  whatever was written under either spelling — the same physical namespace,
+  same as before `logical_namespace` existed.
+- `namespace_summaries` reports **one** summary for the physical address
+  (`GROUP BY namespace`), under a single logical representative
+  (`MIN(logical_namespace)`, falling back to the address when every row
+  predates the column) — not one summary per logical name. Only one of the
+  two colliding names is ever reported by enumeration; the other still
+  addresses the same merged data, but does not appear as its own entry.
+- `clear_namespace` deletes the entire physical namespace's rows across
+  `memory_docs`, `vector_chunks`, `kv_namespace`, and `graph_namespace`, and
+  removes the whole on-disk markdown directory — regardless of which
+  colliding logical name is named. It does not, and cannot with this schema,
+  delete only "half" of a physically-merged namespace.
+- `recall` and the hybrid query path (`query_namespace_hits`) score every
+  document under the physical address, whichever logical name was used to
+  reach it.
+
+Isolating two aliasing logical namespaces from each other — so that `list`,
+`get`, `forget`, `recall`, and `clear_namespace` each treat `a:b_c` and
+`a_b:c` as genuinely separate namespaces — was explored in earlier revisions
+of this change and reverted. It requires every access path on every table
+(`memory_docs`, `vector_chunks`, `kv_namespace`, `graph_namespace`) to filter
+on the logical name, `kv_namespace` and `graph_namespace` would need their own
+`logical_namespace` columns and write-path support (they currently have
+neither), and the `UNIQUE(namespace, key)` constraint would still let two
+colliding logical namespaces silently contend for one key even with read-side
+filtering. That is real, scoped work with its own migration story — a
+separate change, not a half-measure folded into this one.
+
+`assert_namespaces_preserve_their_section` in the conformance suite holds
+every *retaining* driver to this: a namespace written in a section must be
+reported back in that section. It is skipped for a driver that retains nothing,
+like the rest of the storage assertions, and it says nothing about a row written
+before this change and never rewritten — see the invariant below for the exact
+scope. It is the assertion whose absence let the two bundled drivers disagree
+unnoticed.
+
 ## Invariants and constraints
 
 - A `SectionView` never reads or writes a namespace outside its own section.
@@ -163,6 +244,17 @@ documentation says so rather than pretending otherwise.
 - An unusable section is an error, never an empty one: if a section's prefix
   fails validation, the enumerating calls fail rather than reporting no scopes,
   so they agree with the addressed calls about the same section.
+- On a retaining driver, a namespace written or rewritten after this change is
+  reported back in the section it was written in. A driver may re-address a
+  namespace to suit its store, but it may not change which section the name
+  belongs to; `assert_namespaces_preserve_their_section` enforces it for every
+  retaining driver (`assert_provider` skips it, like the rest of the storage
+  assertions, for a driver that accepts writes and discards them). A row
+  written before this change and never rewritten keeps enumerating under its
+  sanitised, unsectioned name — see "The storage address and the logical
+  namespace" above for why that backfill is deliberately a no-op.
+- A namespace never reaches the filesystem with a character the path allow-list
+  excludes, and the PII redaction on the storage address is unchanged.
 - `put` then `get` on the same `(scope, key)` round-trips on any retaining driver.
 - Every call succeeds on a driver that retains nothing, returning empty rather
   than an error — the surface has no capability-absent path.
@@ -184,6 +276,24 @@ documentation says so rather than pretending otherwise.
   descending, reports `namespaces_searched`, and sets `truncated` only when the
   namespace cap skipped one.
 - `across_section` with `opts.namespace: Some(_)` returns `MemoryError::Invalid`.
+- A sectioned write to the production `UnifiedMemory` store is enumerable
+  afterwards: `scopes()` reports it, proven by the tinycortex full-provider
+  conformance test against a real on-disk workspace rather than an in-memory
+  double.
+- The storage address still contains no character outside the path allow-list,
+  and a PII-bearing namespace is still redacted in both columns.
+- The `logical_namespace` migration is idempotent, and a row predating it still
+  enumerates under its sanitised name.
+- Two logical namespaces that sanitize to the same physical address remain one
+  namespace for every operation — reads, writes, recall, and clearing —
+  exactly as before this change: `list`/`get`/`forget`/`recall` on either
+  spelling return the merged physical namespace's rows, `namespace_summaries`
+  reports one summary for it, and `clear_namespace` deletes it as one unit.
+  Only one of the two colliding logical names is reported by enumeration.
+  This is pre-existing behaviour and explicitly out of scope here — see "The
+  storage address and the logical namespace" above.
+- The public `query_namespace` / `query_documents` context API finds rows
+  stored under a sectioned namespace, not just an unsectioned one.
 - The four contract commands pass, and rustdoc builds with `-D warnings`.
 
 ## Open questions

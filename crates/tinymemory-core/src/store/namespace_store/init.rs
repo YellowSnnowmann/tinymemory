@@ -171,6 +171,7 @@ impl UnifiedMemory {
                updated_at REAL NOT NULL,
                markdown_rel_path TEXT NOT NULL,
                taint TEXT NOT NULL DEFAULT 'internal',
+               logical_namespace TEXT,
                UNIQUE(namespace, key)
              );
              CREATE INDEX IF NOT EXISTS idx_memory_docs_ns_updated ON memory_docs(namespace, updated_at DESC);
@@ -248,6 +249,19 @@ impl UnifiedMemory {
         apply_additive_migration(
             &conn,
             "ALTER TABLE memory_docs ADD COLUMN taint TEXT NOT NULL DEFAULT 'internal'",
+            "memory_docs",
+        )?;
+
+        // Backfill the `logical_namespace` column on existing `memory_docs`
+        // databases. Fresh installs get this via the CREATE TABLE above.
+        // Nullable, no DEFAULT: existing rows get NULL rather than a guessed
+        // value, because a sanitized `_` cannot be reliably un-collapsed back
+        // into whatever delimiter it replaced (`namespace_summaries_blocking`
+        // falls back to the sanitized `namespace` column for those rows via
+        // `COALESCE`).
+        apply_additive_migration(
+            &conn,
+            "ALTER TABLE memory_docs ADD COLUMN logical_namespace TEXT",
             "memory_docs",
         )?;
 

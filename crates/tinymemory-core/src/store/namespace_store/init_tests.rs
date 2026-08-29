@@ -181,6 +181,35 @@ fn additive_migration_surfaces_a_readonly_database() {
     );
 }
 
+/// The `logical_namespace` additive migration must be safe to run on
+/// every boot: a fresh install gets the column from `CREATE TABLE`, and
+/// reopening the same store must not fail with "duplicate column name".
+#[test]
+fn logical_namespace_migration_is_idempotent_across_reopen() {
+    fn has_logical_namespace_column(conn: &Connection) -> bool {
+        let mut stmt = conn.prepare("PRAGMA table_info(memory_docs)").unwrap();
+        let found = stmt
+            .query_map([], |row| row.get::<_, String>(1))
+            .unwrap()
+            .filter_map(Result::ok)
+            .any(|name| name == "logical_namespace");
+        found
+    }
+
+    let tmp = TempDir::new().unwrap();
+    {
+        let mem = UnifiedMemory::new(tmp.path(), Arc::new(NoopEmbedding), None).unwrap();
+        assert!(
+            has_logical_namespace_column(&mem.conn.lock()),
+            "a fresh install must get logical_namespace from CREATE TABLE"
+        );
+    }
+
+    // Reopening must not fail even though the column already exists.
+    let mem = UnifiedMemory::new(tmp.path(), Arc::new(NoopEmbedding), None).unwrap();
+    assert!(has_logical_namespace_column(&mem.conn.lock()));
+}
+
 #[test]
 fn connection_has_busy_timeout_set() {
     let tmp = TempDir::new().unwrap();

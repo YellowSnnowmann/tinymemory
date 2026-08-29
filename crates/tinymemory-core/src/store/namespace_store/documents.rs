@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use uuid::Uuid;
 
 use crate::store::safety;
-use crate::store::types::{NamespaceDocumentInput, StoredMemoryDocument};
+use crate::store::types::{NamespaceDocumentInput, StoredMemoryDocument, GLOBAL_NAMESPACE};
 
 use super::UnifiedMemory;
 
@@ -29,6 +29,16 @@ impl UnifiedMemory {
         input: NamespaceDocumentInput,
     ) -> Result<String, String> {
         let namespace = Self::sanitize_namespace(&input.namespace);
+        // The logical (delimiter-preserving) namespace, PII-redacted the same
+        // way `sanitize_namespace` redacts the storage address, so
+        // `namespace_summaries` can report `conversation:thread-8f21` back
+        // verbatim instead of the path-safe `conversation_thread-8f21`. Uses
+        // the same blank-input fallback as `sanitize_namespace` and strips the
+        // redaction placeholder's brackets so a PII-bearing sectioned
+        // namespace stays `Namespace::parse`-able -- see
+        // `canonical_logical_namespace`'s doc comment for both.
+        let logical_namespace =
+            safety::canonical_logical_namespace(&input.namespace, GLOBAL_NAMESPACE);
         let key = input.key.trim().to_string();
         if key.is_empty() {
             return Err("document key cannot be empty".to_string());
@@ -110,9 +120,9 @@ impl UnifiedMemory {
                 .map_err(|e| format!("begin tx: {e}"))?;
             tx.execute(
                 "INSERT INTO memory_docs
-                  (document_id, namespace, key, title, content, source_type, priority, tags_json, metadata_json, category, session_id, created_at, updated_at, markdown_rel_path, taint)
+                  (document_id, namespace, key, title, content, source_type, priority, tags_json, metadata_json, category, session_id, created_at, updated_at, markdown_rel_path, taint, logical_namespace)
                  VALUES
-                  (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                  (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
                  ON CONFLICT(namespace, key) DO UPDATE SET
                   title = excluded.title,
                   content = excluded.content,
@@ -124,7 +134,8 @@ impl UnifiedMemory {
                   session_id = excluded.session_id,
                   updated_at = excluded.updated_at,
                   markdown_rel_path = excluded.markdown_rel_path,
-                  taint = excluded.taint",
+                  taint = excluded.taint,
+                  logical_namespace = excluded.logical_namespace",
                 params![
                     document_id,
                     namespace,
@@ -140,7 +151,8 @@ impl UnifiedMemory {
                     created_at,
                     updated_at,
                     markdown_rel,
-                    input.taint.as_db_str()
+                    input.taint.as_db_str(),
+                    logical_namespace
                 ],
             )
             .map_err(|e| format!("upsert memory_docs: {e}"))?;
@@ -238,6 +250,10 @@ impl UnifiedMemory {
         input: NamespaceDocumentInput,
     ) -> Result<String, String> {
         let namespace = Self::sanitize_namespace(&input.namespace);
+        // See `upsert_document_presanitized` — same delimiter-preserving,
+        // PII-redacted logical namespace, same reason.
+        let logical_namespace =
+            safety::canonical_logical_namespace(&input.namespace, GLOBAL_NAMESPACE);
         let key = input.key.trim().to_string();
         if key.is_empty() {
             return Err("document key cannot be empty".to_string());
@@ -308,9 +324,9 @@ impl UnifiedMemory {
             let conn = self.conn.lock();
             conn.execute(
                 "INSERT INTO memory_docs
-                  (document_id, namespace, key, title, content, source_type, priority, tags_json, metadata_json, category, session_id, created_at, updated_at, markdown_rel_path, taint)
+                  (document_id, namespace, key, title, content, source_type, priority, tags_json, metadata_json, category, session_id, created_at, updated_at, markdown_rel_path, taint, logical_namespace)
                  VALUES
-                  (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                  (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
                  ON CONFLICT(namespace, key) DO UPDATE SET
                   title = excluded.title,
                   content = excluded.content,
@@ -322,7 +338,8 @@ impl UnifiedMemory {
                   session_id = excluded.session_id,
                   updated_at = excluded.updated_at,
                   markdown_rel_path = excluded.markdown_rel_path,
-                  taint = excluded.taint",
+                  taint = excluded.taint,
+                  logical_namespace = excluded.logical_namespace",
                 params![
                     document_id,
                     namespace,
@@ -338,7 +355,8 @@ impl UnifiedMemory {
                     created_at,
                     updated_at,
                     markdown_rel,
-                    input.taint.as_db_str()
+                    input.taint.as_db_str(),
+                    logical_namespace
                 ],
             )
             .map_err(|e| format!("upsert memory_docs: {e}"))?;
@@ -457,36 +475,43 @@ impl UnifiedMemory {
             .next()
             .map_err(|e| format!("row load_documents_for_scope: {e}"))?
         {
-            let tags_json: String = row.get(7).map_err(|e| e.to_string())?;
-            let metadata_json: String = row.get(8).map_err(|e| e.to_string())?;
-            // The `taint` column has a NOT NULL DEFAULT 'internal' clause
-            // from the migration, so legacy rows that pre-date the column
-            // surface as "internal" string and round-trip back to
-            // `MemoryTaint::Internal`. Unknown / corrupted values fail
-            // closed to `MemoryTaint::ExternalSync` inside `from_db_str`,
-            // so a forward-rolled schema variant or a bad UPDATE can't
-            // silently downgrade a row to user-authored content.
-            let taint_str: String = row.get(14).map_err(|e| e.to_string())?;
-            let taint = crate::MemoryTaint::from_db_str(&taint_str);
-            docs.push(StoredMemoryDocument {
-                document_id: row.get(0).map_err(|e| e.to_string())?,
-                namespace: row.get(1).map_err(|e| e.to_string())?,
-                key: row.get(2).map_err(|e| e.to_string())?,
-                title: row.get(3).map_err(|e| e.to_string())?,
-                content: row.get(4).map_err(|e| e.to_string())?,
-                source_type: row.get(5).map_err(|e| e.to_string())?,
-                priority: row.get(6).map_err(|e| e.to_string())?,
-                tags: serde_json::from_str(&tags_json).unwrap_or_default(),
-                metadata: serde_json::from_str(&metadata_json).unwrap_or_else(|_| json!({})),
-                category: row.get(9).map_err(|e| e.to_string())?,
-                session_id: row.get(10).map_err(|e| e.to_string())?,
-                created_at: row.get(11).map_err(|e| e.to_string())?,
-                updated_at: row.get(12).map_err(|e| e.to_string())?,
-                markdown_rel_path: row.get(13).map_err(|e| e.to_string())?,
-                taint,
-            });
+            docs.push(Self::row_to_stored_document(row)?);
         }
         Ok(docs)
+    }
+
+    /// Map one `memory_docs` row, in the column order
+    /// [`Self::load_documents_for_scope`] selects it in, into a
+    /// [`StoredMemoryDocument`].
+    fn row_to_stored_document(row: &rusqlite::Row<'_>) -> Result<StoredMemoryDocument, String> {
+        let tags_json: String = row.get(7).map_err(|e| e.to_string())?;
+        let metadata_json: String = row.get(8).map_err(|e| e.to_string())?;
+        // The `taint` column has a NOT NULL DEFAULT 'internal' clause
+        // from the migration, so legacy rows that pre-date the column
+        // surface as "internal" string and round-trip back to
+        // `MemoryTaint::Internal`. Unknown / corrupted values fail
+        // closed to `MemoryTaint::ExternalSync` inside `from_db_str`,
+        // so a forward-rolled schema variant or a bad UPDATE can't
+        // silently downgrade a row to user-authored content.
+        let taint_str: String = row.get(14).map_err(|e| e.to_string())?;
+        let taint = crate::MemoryTaint::from_db_str(&taint_str);
+        Ok(StoredMemoryDocument {
+            document_id: row.get(0).map_err(|e| e.to_string())?,
+            namespace: row.get(1).map_err(|e| e.to_string())?,
+            key: row.get(2).map_err(|e| e.to_string())?,
+            title: row.get(3).map_err(|e| e.to_string())?,
+            content: row.get(4).map_err(|e| e.to_string())?,
+            source_type: row.get(5).map_err(|e| e.to_string())?,
+            priority: row.get(6).map_err(|e| e.to_string())?,
+            tags: serde_json::from_str(&tags_json).unwrap_or_default(),
+            metadata: serde_json::from_str(&metadata_json).unwrap_or_else(|_| json!({})),
+            category: row.get(9).map_err(|e| e.to_string())?,
+            session_id: row.get(10).map_err(|e| e.to_string())?,
+            created_at: row.get(11).map_err(|e| e.to_string())?,
+            updated_at: row.get(12).map_err(|e| e.to_string())?,
+            markdown_rel_path: row.get(13).map_err(|e| e.to_string())?,
+            taint,
+        })
     }
 
     /// List documents in a namespace, or across all namespaces when `None`.
@@ -575,6 +600,17 @@ impl UnifiedMemory {
     /// Delete all documents, vector chunks, KV entries, and graph relations
     /// for the given namespace in a single transaction. Also removes the
     /// on-disk markdown directory (`namespaces/{ns}/docs/`).
+    ///
+    /// Scoped by the physical `namespace` column only, exactly as before
+    /// `logical_namespace` existed: `sanitize_namespace` has always collapsed
+    /// two differently-delimited names onto one physical address (`a:b_c` and
+    /// `a_b:c` both sanitize to `a_b_c`), and every operation on this store —
+    /// reads, writes, and this clear — has always treated that as one
+    /// namespace. This call is no exception; isolating aliasing logical
+    /// namespaces from each other is out of scope here (it would need
+    /// `logical_namespace` columns, and matching write-path support, on
+    /// `vector_chunks`, `kv_namespace`, and `graph_namespace` too, not just
+    /// `memory_docs`).
     pub async fn clear_namespace(&self, namespace: &str) -> Result<(), String> {
         let ns = Self::sanitize_namespace(namespace);
         log::debug!("[memory] clear_namespace: starting for namespace={ns}");
