@@ -1398,17 +1398,15 @@ async fn no_session_context_leaves_results_unchanged() {
 /// sectioned namespace like `conversation:thread-9f11`, not silently return
 /// empty.
 ///
-/// The bug: `query_namespace_context_data` used to sanitize its `namespace`
-/// argument first (`conversation:thread-9f11` -> `conversation_thread-9f11`)
-/// and only then call `query_namespace_hits`, which derived the *logical*
-/// filter from that already-sanitized string. Canonicalizing an
-/// already-sanitized string is a no-op (no `:` survives to preserve), so the
-/// derived logical name was `conversation_thread-9f11` — a value no row's
-/// `logical_namespace` column actually holds, since the write path derives
-/// the logical form from the ORIGINAL namespace. The row's real
-/// `logical_namespace` is `conversation:thread-9f11`, so
-/// `LOGICAL_NAMESPACE_FILTER_SQL` matched nothing and every sectioned
-/// namespace queried through this path came back empty.
+/// Kept as a regression test for a double-sanitization bug this path is prone
+/// to: a caller derives a value from `namespace`, then hands the *sanitized*
+/// form to a callee that derives from it again. Canonicalizing an
+/// already-sanitized string is a no-op — no `:` survives to preserve — so the
+/// second derivation silently produces a name no row holds, since the write
+/// path derives from the ORIGINAL namespace. The shape recurs whenever a
+/// physical and a logical form of the same namespace both travel through this
+/// call chain, so the assertion is worth keeping even though the read filter
+/// that first exposed it is gone.
 #[tokio::test]
 async fn query_namespace_context_data_finds_rows_in_a_sectioned_namespace() {
     let tmp = TempDir::new().unwrap();
