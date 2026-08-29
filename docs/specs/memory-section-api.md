@@ -290,8 +290,12 @@ unnoticed.
 - The `logical_namespace` migration is idempotent, and a row predating it still
   enumerates under its sanitised name.
 - Two logical namespaces that sanitize to the same physical address stay
-  isolated from each other in `get`, `list`, `forget`, and `namespace_summaries`
-  — neither's rows are mislabelled as, merged with, or hidden by the other's.
+  isolated from each other in `get`, `list`, `forget`, `recall`, and
+  `namespace_summaries` — neither's rows are mislabelled as, merged with,
+  scored into, or hidden by the other's.
+- A pre-migration row with `logical_namespace IS NULL` is visible only under
+  a call whose logical name equals its physical address exactly, never under
+  a different logical name that merely sanitizes to the same address.
 - The four contract commands pass, and rustdoc builds with `-D warnings`.
 
 ## Open questions
