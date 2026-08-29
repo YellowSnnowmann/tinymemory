@@ -320,6 +320,23 @@ async fn namespace_summaries_strips_brackets_from_pii_redacted_sectioned_namespa
     let parsed = Namespace::parse(&found.namespace)
         .unwrap_or_else(|e| panic!("reported namespace `{}` must parse: {e}", found.namespace));
     assert_eq!(parsed.section(), Some(&MemorySection::Conversation));
+
+    // Address-equivalence: feeding the reported logical name straight back
+    // into an addressed call must find the row it names. Stripping the
+    // brackets instead of substituting `_` for them (matching
+    // `sanitize_namespace`'s own character mapping) would re-sanitize this
+    // name to a *different* physical namespace than the one actually
+    // written, so this call would silently return nothing.
+    let listed = mem
+        .list(Some(&found.namespace), None, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        listed.len(),
+        1,
+        "listing the reported namespace `{}` must find the row stored under `{namespace}`",
+        found.namespace
+    );
 }
 
 #[tokio::test]
