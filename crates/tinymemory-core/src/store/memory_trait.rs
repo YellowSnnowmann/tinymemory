@@ -313,39 +313,7 @@ type MemoryDocRow = (
     Option<String>,
 );
 
-// Filters an addressed row query on the row's **logical** namespace, not
-// just its physical one.
-//
-// `ns` is the sanitized storage address (bound to `?1`, `WHERE namespace =
-// ?1`); `logical` is `canonical_logical_namespace(caller_input,
-// GLOBAL_NAMESPACE)` — the exact value the write path bound into the
-// `logical_namespace` column (see `upsert_document_presanitized`). Two
-// distinct logical names can sanitize to the same physical address (`a:b_c`
-// and `a_b:c` both become `a_b_c`); without this clause a read addressed to
-// one would also surface — and a `get`/`forget` addressed to one could
-// delete — the other's rows, because both share `ns`. Filtering on
-// `logical_namespace` too keeps the two apart.
-//
-// The `logical_namespace IS NULL` arm is required, not incidental: rows
-// written before this column existed have it NULL and never get a value
-// reconstructed (a sanitized `_` cannot be un-collapsed into whatever
-// delimiter it replaced), so excluding NULL rows outright would make every
-// pre-migration row permanently unaddressable by `get`/`forget` and
-// invisible to `list`, silently breaking every caller relying on them.
-//
-// That NULL arm is gated on `?1 = ?2` (physical address equals the supplied
-// logical name), not left unconditional. A legacy NULL row's `namespace`
-// column is its own only identity — it has no recorded logical name — so it
-// must surface only when the caller addressed it *by that physical name*
-// directly, i.e. a caller whose logical name happens to equal the physical
-// address (the common case: a plain namespace with no delimiter-sanitized
-// characters). An unconditional `OR logical_namespace IS NULL` let the row
-// match ANY logical name that sanitizes to its address — so a pre-migration
-// row stored under `a_b_c` surfaced under `a:b_c`, `a_b:c`, and every other
-// alias, reintroducing the exact cross-section leak this column exists to
-// close, just for legacy rows instead of new ones.
-const LOGICAL_NAMESPACE_FILTER_SQL: &str =
-    "(logical_namespace = ?2 OR (logical_namespace IS NULL AND ?1 = ?2))";
+use crate::store::safety::LOGICAL_NAMESPACE_FILTER_SQL;
 
 impl UnifiedMemory {
     fn get_blocking(
