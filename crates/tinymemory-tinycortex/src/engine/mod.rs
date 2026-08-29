@@ -3514,11 +3514,20 @@ impl MemoryRetrieval for TinycortexProvider {
         limit: usize,
         exclude_session_id: Option<&str>,
     ) -> Result<Vec<NamespaceMemoryHit>, MemoryError> {
+        // Both address forms are derived here, once, from the caller's raw
+        // `namespace` — never from each other's already-transformed value.
+        // See `UnifiedMemory::namespace_address_forms`'s doc comment for why
+        // that distinction matters for a sectioned namespace.
+        let (ns, logical) =
+            tinymemory_core::store::namespace_store::UnifiedMemory::namespace_address_forms(
+                namespace,
+            );
         let hits = self
             .client
             .unified_handle()
             .query_namespace_hits_excluding_session(
-                namespace,
+                &ns,
+                &logical,
                 query,
                 u32::try_from(limit).unwrap_or(u32::MAX),
                 exclude_session_id,
