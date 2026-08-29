@@ -1934,6 +1934,7 @@ dependencies = [
  "async-trait",
  "serde_json",
  "tinymemory-api",
+ "tinymemory-bus",
  "tokio",
 ]
 
