@@ -182,6 +182,41 @@ to turn an old `_` back into a `:` — that mapping is not invertible, because a
 scope may legitimately contain `_`, and guessing would silently relabel
 unrelated namespaces into a section they were never written to.
 
+The physical address is not injective — `a:b_c` and `a_b:c` both sanitize to
+`a_b_c` — so the logical column has to do more than label a summary. `get`,
+`list`, and `forget` filter on it too: each addressed read is
+`WHERE namespace = ?1 AND (logical_namespace = ?2 OR logical_namespace IS
+NULL)`, not `WHERE namespace = ?1` alone. Without the second predicate, listing
+`a:b_c` would also surface `a_b:c`'s rows — mislabelled as belonging to the
+section that was listed, not the one that wrote them — and the two logical
+names would be indistinguishable once written. The `OR logical_namespace IS
+NULL` arm is required, not incidental: it is what keeps a pre-migration NULL
+row visible under its sanitised address, matching the backfill guarantee above.
+Every returned `MemoryEntry.namespace` is the row's own logical name (falling
+back to the physical address only for a NULL row), never the caller's query
+namespace, so the physical address stays an internal storage detail that never
+reaches a `MemoryEntry`.
+
+`namespace_summaries` groups by `COALESCE(logical_namespace, namespace)` for
+the same reason: once reads are scoped by logical name, two logical names that
+alias one physical address must report two summaries, each with its own count,
+or `list` on one reported name would return only half its count while the
+other alias never appears in enumeration at all.
+
+One trade-off follows directly from filtering `get`/`forget` on the logical
+name: the `UNIQUE(namespace, key)` constraint is still keyed on the physical
+address only, so two colliding logical namespaces writing the *same* key still
+collide at the storage layer — `ON CONFLICT(namespace, key) DO UPDATE` still
+overwrites the row, and `logical_namespace` is set to whichever logical name
+wrote it last. A caller addressing that key by the losing logical name's `get`
+now returns `None` (the row's `logical_namespace` no longer matches) rather
+than the pre-fix behaviour of silently reading the winning write's content.
+This surfaces the collision instead of hiding it, but does not resolve it: two
+distinct logical namespaces sharing a physical address can still contend for
+one key. `idx_memory_docs_ns_updated` is unaffected — it still indexes
+`(namespace, updated_at DESC)`, which every addressed query still filters on
+first.
+
 `assert_namespaces_preserve_their_section` in the conformance suite now holds
 every *retaining* driver to this: a namespace written in a section must be
 reported back in that section. It is skipped for a driver that retains nothing,
