@@ -66,6 +66,9 @@ use crate::provider::records::{
     MemoryGoals, MemoryMaintenance, MemorySourceSink, MemoryToolMemory,
 };
 use crate::provider::retrieval::MemoryRetrieval;
+use crate::provider::scoring::MemoryScoring;
+use crate::provider::sessions::MemoryCodingSessions;
+use crate::provider::sync::MemorySourceSync;
 
 /// A bound memory driver.
 ///
@@ -74,8 +77,8 @@ use crate::provider::retrieval::MemoryRetrieval;
 /// supertraits, so a driver missing any of them cannot be constructed as a
 /// provider at all.
 ///
-/// The thirteen optional families are reached through the `as_*` accessors below.
-/// Each defaults to `None`, so a minimal driver implements only what it
+/// The seventeen optional families are reached through the `as_*` accessors
+/// below. Each defaults to `None`, so a minimal driver implements only what it
 /// supports and inherits correct absence for everything else.
 #[async_trait]
 pub trait MemoryProvider: MemoryCore + MemoryRecall + MemoryPortability + 'static {
@@ -197,6 +200,26 @@ pub trait MemoryProvider: MemoryCore + MemoryRecall + MemoryPortability + 'stati
         None
     }
 
+    /// Syncs this driver runs itself, when advertised.
+    ///
+    /// Distinct from [`Self::as_sources`], which is the write seam a caller
+    /// pushes fetched items through. A driver may serve either alone: pushing
+    /// a batch needs storage, walking a connection needs pipelines and a
+    /// credential seam.
+    fn as_source_sync(&self) -> Option<&dyn MemorySourceSync> {
+        None
+    }
+
+    /// Local coding-agent transcript ingestion, when advertised.
+    fn as_coding_sessions(&self) -> Option<&dyn MemoryCodingSessions> {
+        None
+    }
+
+    /// Scoring and NLP operations, when advertised.
+    fn as_scoring(&self) -> Option<&dyn MemoryScoring> {
+        None
+    }
+
     /// Whether `capability` is actually **reachable** on this driver.
     ///
     /// This is the implementation-side truth, as opposed to
@@ -204,7 +227,7 @@ pub trait MemoryProvider: MemoryCore + MemoryRecall + MemoryPortability + 'stati
     /// agree; [`crate::provider::audit_provider`] is where they are compared.
     ///
     /// The mandatory three are always `true` because they are supertraits. The
-    /// remaining ten delegate to their accessor.
+    /// remaining seventeen delegate to their accessor.
     ///
     /// The `match` is deliberately exhaustive: [`Capability`] is not
     /// `#[non_exhaustive]`, so adding a family without adding an accessor and
@@ -227,6 +250,9 @@ pub trait MemoryProvider: MemoryCore + MemoryRecall + MemoryPortability + 'stati
             Capability::Retrieval => self.as_retrieval().is_some(),
             Capability::Profile => self.as_profile().is_some(),
             Capability::Episodic => self.as_episodic().is_some(),
+            Capability::SourceSync => self.as_source_sync().is_some(),
+            Capability::CodingSessions => self.as_coding_sessions().is_some(),
+            Capability::Scoring => self.as_scoring().is_some(),
         }
     }
 }

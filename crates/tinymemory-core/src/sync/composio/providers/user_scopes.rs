@@ -11,52 +11,29 @@
 //! Storage uses the same KV surface as [`super::sync_state`]
 //! (`MemoryClient::kv_get` / `kv_set`) under a dedicated namespace so
 //! prefs survive process restarts without any extra file management.
-
-use serde::{Deserialize, Serialize};
+//!
+//! # Where the shape lives (#5560)
+//!
+//! [`UserScopePref`] itself is defined in the contract crate and re-exported
+//! here: OpenHuman reads a preference to decide which Composio actions to show
+//! the user and which to offer the agent, so the *shape* — and the defaults
+//! that decide what a brand-new connection may do — has to be nameable without
+//! a compile-time link to this crate.
+//!
+//! The three functions below stayed, because reading and writing a preference
+//! is I/O against a memory client and the contract crate holds none.
 
 use crate::store::MemoryClientRef;
 
-use super::tool_scope::ToolScope;
+/// The preference shape, defined in the contract crate.
+///
+/// Re-exported at this path so every historical
+/// `providers::user_scopes::UserScopePref` reference keeps resolving.
+pub use tinymemory_api::composio::scopes::UserScopePref;
 
 /// KV namespace for scope prefs. Separate from `composio-sync-state` so
 /// the two never collide.
 const KV_NAMESPACE: &str = "composio-user-scopes";
-
-/// Per-toolkit scope preference.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct UserScopePref {
-    #[serde(default = "default_true")]
-    pub read: bool,
-    #[serde(default = "default_true")]
-    pub write: bool,
-    #[serde(default)]
-    pub admin: bool,
-}
-
-fn default_true() -> bool {
-    true
-}
-
-impl Default for UserScopePref {
-    fn default() -> Self {
-        Self {
-            read: true,
-            write: true,
-            admin: false,
-        }
-    }
-}
-
-impl UserScopePref {
-    /// Returns `true` if the given scope is enabled in this preference.
-    pub fn allows(&self, scope: ToolScope) -> bool {
-        match scope {
-            ToolScope::Read => self.read,
-            ToolScope::Write => self.write,
-            ToolScope::Admin => self.admin,
-        }
-    }
-}
 
 fn kv_key(toolkit: &str) -> String {
     toolkit.trim().to_ascii_lowercase()

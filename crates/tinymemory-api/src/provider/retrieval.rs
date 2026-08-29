@@ -178,6 +178,39 @@ pub trait MemoryRetrieval: Send + Sync {
         exclude_session_id: Option<&str>,
     ) -> Result<Vec<NamespaceMemoryHit>, MemoryError>;
 
+    /// Namespace recall ordered by **recency**, with no query to rank against.
+    ///
+    /// # Why this is not [`Self::recall_namespace_scored`] with an empty query
+    ///
+    /// It looks like the same call with one argument left blank, and it is not.
+    /// The two share a prefix — loading the namespace's documents and key-value
+    /// records — and diverge after it. The scored path ranks candidates against
+    /// the query text; handed an empty string it still runs the ranking, with
+    /// nothing to rank against, and returns hits ordered by a similarity signal
+    /// computed from nothing.
+    ///
+    /// This path never ranks. It orders by freshness and priority, which is
+    /// what a caller asking "what is in this namespace" means, and what a
+    /// context-assembly step needs when there is no user query yet.
+    ///
+    /// The substitution is dangerous precisely because it compiles, returns
+    /// plausible hits, and quietly changes what the user gets back. A caller
+    /// that *has* a real query wants the scored path; one that does not wants
+    /// this.
+    ///
+    /// Hits carry the same [`NamespaceMemoryHit`] shape as the scored path, so
+    /// a host re-ranking on engine signals treats the two uniformly.
+    ///
+    /// # Errors
+    ///
+    /// Backend failures; an unknown namespace yields an empty vector, which is
+    /// a true statement about it rather than a fault.
+    async fn recall_namespace_recent(
+        &self,
+        namespace: &str,
+        limit: usize,
+    ) -> Result<Vec<NamespaceMemoryHit>, MemoryError>;
+
     /// Free-text search over the entity index.
     ///
     /// `kinds` filters by classification; `None` matches every kind. This is

@@ -102,6 +102,10 @@ pub struct ComposioSyncConfig {
     pub api_key: Option<SecretString>,
     pub bearer_token: Option<SecretString>,
     pub entity_id: Option<String>,
+    /// Optional Gmail search query the Gmail pipeline ANDs onto every page
+    /// fetch (e.g. `label:brain`) so background sync only ingests matching
+    /// messages. `None` = whole inbox window.
+    pub gmail_query: Option<String>,
 }
 
 /// A string whose `Debug` never prints the value.
@@ -163,6 +167,13 @@ pub struct SyncOutcome {
     pub provider_cost_usd: f64,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
+    /// Items whose skill-store write committed but whose memory-tree ingest
+    /// failed (non-corrupt failures — corruption aborts the run instead).
+    /// `records_ingested` counts those items as fetched-and-stored, so a
+    /// non-zero value here is the "fetch succeeded, tree did not" signal the
+    /// sync verdict must not report as full success (openhuman#5820).
+    #[serde(default)]
+    pub tree_ingest_failures: u32,
 }
 
 #[derive(Debug, thiserror::Error)]

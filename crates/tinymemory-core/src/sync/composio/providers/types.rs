@@ -1,7 +1,20 @@
 //! Shared types for Composio provider implementations.
+//!
+//! # What is here, and what moved down (#5560)
+//!
+//! The *values* a provider exchanges — the run report, the task envelope, the
+//! normalized profile — are defined in the contract crate
+//! ([`tinymemory_api::composio`]) and re-exported below at their historical
+//! paths. OpenHuman names every one of them in its own signatures, so they had
+//! to be reachable without a compile-time link to this crate; they are inert
+//! serde data, so moving them cost nothing.
+//!
+//! What stayed is [`ProviderContext`], and it stayed because it is not a value:
+//! it holds an `Arc<Config>`, resolves a Composio client through the host seam
+//! on every call, and awaits an HTTP round-trip. None of that may enter the
+//! contract crate.
 
-use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 // Test-only: the tests below build a `TestHostConfig` and call
 // `MemoryHostConfig` methods on it directly. Production code in this module
@@ -13,281 +26,34 @@ use crate::composio_host::{self, ComposioExecuteResponse};
 use crate::config_loader as config_rpc;
 use crate::Config;
 
-/// Reason a sync was triggered. Providers can use this to decide
-/// whether to do a full backfill or an incremental pull.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SyncReason {
-    /// First sync immediately after an OAuth handoff completes.
-    ConnectionCreated,
-    /// Periodic background sync from the scheduler.
-    Periodic,
-    /// Explicit user-driven sync from RPC / UI.
-    Manual,
-}
-
-impl SyncReason {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            SyncReason::ConnectionCreated => "connection_created",
-            SyncReason::Periodic => "periodic",
-            SyncReason::Manual => "manual",
-        }
-    }
-}
-
-/// What kind of work an ingested task implies. GitHub's issues-and-PRs
-/// search returns both shapes, and the job differs fundamentally —
-/// *resolve* an issue vs *review* a pull request — so providers tag each
-/// task and the `task_sources` enrichment phrases the objective / agent
-/// prompt accordingly (the triage LLM then knows what to do). Providers
-/// that don't distinguish (notion, linear, clickup) leave this `Generic`.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum TaskKind {
-    /// No issue/PR distinction — the default for non-code providers.
-    #[default]
-    Generic,
-    /// A tracker issue: the job is to resolve / implement it.
-    Issue,
-    /// A pull request: the job is to review it (read the diff, give feedback).
-    PullRequest,
-}
-
-impl TaskKind {
-    /// Stable lowercase tag, mirrored into the card's `source_metadata`.
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            TaskKind::Generic => "generic",
-            TaskKind::Issue => "issue",
-            TaskKind::PullRequest => "pull_request",
-        }
-    }
-}
-
-/// Normalized user profile shape returned by every provider.
+/// The Composio sync vocabulary, defined in the contract crate.
 ///
-/// The shared fields (`display_name`, `email`, `username`, `avatar_url`,
-/// `profile_url`)
-/// cover what the desktop UI actually needs to render a connected
-/// account card. Anything provider-specific (Gmail's `messagesTotal`,
-/// Notion's workspace ids, …) goes into [`extras`](Self::extras) so
-/// callers don't have to widen the shape every time a new toolkit
-/// lands.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ProviderUserProfile {
-    pub toolkit: String,
-    pub connection_id: Option<String>,
-    pub display_name: Option<String>,
-    pub email: Option<String>,
-    pub username: Option<String>,
-    pub avatar_url: Option<String>,
-    pub profile_url: Option<String>,
-    /// Provider-specific extras (raw JSON object).
-    #[serde(default)]
-    pub extras: serde_json::Value,
-}
-
-/// Result of a provider sync run. Mostly used for logging + UI status.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct SyncOutcome {
-    pub toolkit: String,
-    pub connection_id: Option<String>,
-    pub reason: String,
-    pub items_ingested: usize,
-    pub started_at_ms: u64,
-    pub finished_at_ms: u64,
-    pub summary: String,
-    /// Provider-specific extras (raw JSON object).
-    #[serde(default)]
-    pub details: serde_json::Value,
-}
-
-impl SyncOutcome {
-    pub fn elapsed_ms(&self) -> u64 {
-        self.finished_at_ms.saturating_sub(self.started_at_ms)
-    }
-}
-
-/// A provider-agnostic, structured work item produced by
-/// [`super::ComposioProvider::fetch_tasks`].
-///
-/// Unlike the `sync()` path — which persists upstream items into the
-/// memory store as passive context — `fetch_tasks` *returns* normalized
-/// tasks so the `task_sources` domain can enrich them and route them
-/// onto the agent's todo board. Every native task provider (github,
-/// notion, linear, clickup) maps its upstream payload shape into this
-/// common envelope.
-///
-/// `source_id` is left empty by providers and stamped by the
-/// `task_sources` pipeline with the originating `TaskSource.id` — a
-/// provider has no knowledge of which configured source asked for the
-/// fetch.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct NormalizedTask {
-    /// Upstream provider's stable id for the item (issue/task/page id).
-    pub external_id: String,
-    /// The `TaskSource.id` that produced this task. Empty until the
-    /// pipeline stamps it.
-    #[serde(default)]
-    pub source_id: String,
-    /// Toolkit slug, e.g. `"github"`.
-    pub provider: String,
-    /// Whether this task is an issue, a pull request, or undifferentiated.
-    /// Drives intent-aware objective / prompt phrasing in enrichment.
-    #[serde(default)]
-    pub kind: TaskKind,
-    pub title: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub body: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub url: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub assignee: Option<String>,
-    /// Due date as an ISO-8601 string, when the provider exposes one.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub due: Option<String>,
-    #[serde(default)]
-    pub labels: Vec<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub priority: Option<String>,
-    /// Last-updated ISO-8601 timestamp — used for cursor advancement and
-    /// edit-aware dedup (`{external_id}@{updated_at}`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<String>,
-    /// The raw upstream payload, retained for enrichment / debugging.
-    #[serde(default)]
-    pub raw: serde_json::Value,
-}
-
-/// A selectable upstream task container (board / database / list) used to
-/// populate a picker so the user chooses from a list instead of pasting a
-/// raw id. Today this is a Notion database, later a Linear team or ClickUp
-/// list. Surfaced to the task-source UI as `{ id, title }`.
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskContainer {
-    /// Provider-native id (e.g. a Notion database id) used as the filter id.
-    pub id: String,
-    /// Human-readable label for the picker.
-    pub title: String,
-}
-
-/// Provider-agnostic filter passed into
-/// [`super::ComposioProvider::fetch_tasks`].
-///
-/// The `task_sources` domain builds this from a user-configured,
-/// per-provider `FilterSpec`. Each provider reads only the fields that
-/// apply to it (github reads `repo`/`labels`; notion reads
-/// `database_id`; linear/clickup read `team_id`; …) and ignores the
-/// rest. `extra` is a free-form escape hatch surfaced in the UI for
-/// advanced provider-native query fragments.
-/// How the GitHub task-source fetch reaches GitHub. Shipped desktop users
-/// connect GitHub via Composio OAuth (no `gh` on PATH, no `GITHUB_TOKEN`),
-/// while local dev / self-host setups often have the reverse. `Auto` does the
-/// right thing for both; `Composio` / `Local` force a path when the user wants.
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum GithubFetchMode {
-    /// Try the connected Composio account first; fall back to local `gh`/REST
-    /// only when Composio is unavailable. The safe default — no regression for
-    /// shipped users, still a true fallback for local/dev.
-    #[default]
-    Auto,
-    /// Force the connected Composio account (classic shipped-app behaviour).
-    Composio,
-    /// Force local `gh` CLI / REST with a `GH_TOKEN`/`GITHUB_TOKEN` env token.
-    Local,
-}
-
-#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct TaskFetchFilter {
-    /// Scope to items assigned to (or involving) the authenticated user.
-    #[serde(default)]
-    pub assignee_is_me: bool,
-    /// GitHub fetch path selector (Composio vs local `gh`/REST). Default `Auto`.
-    #[serde(default)]
-    pub github_fetch_mode: GithubFetchMode,
-    /// GitHub `owner/name` repository scope.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub repo: Option<String>,
-    /// GitHub label filter.
-    #[serde(default)]
-    pub labels: Vec<String>,
-    /// Issue/task state filter (e.g. `"open"`, `"todo"`).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub state: Option<String>,
-    /// Notion database (board) id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub database_id: Option<String>,
-    /// Notion status property filter.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
-    /// Linear / ClickUp team (workspace) id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub team_id: Option<String>,
-    /// ClickUp list id.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub list_id: Option<String>,
-    /// Free-form provider-native filter fragment (advanced).
-    #[serde(default)]
-    pub extra: serde_json::Value,
-    /// Hard cap on how many tasks a single fetch returns.
-    #[serde(default)]
-    pub max: u32,
-}
-
-impl TaskFetchFilter {
-    /// Effective per-fetch item cap, defaulting to a safe bound when the
-    /// caller leaves `max` unset (0).
-    pub fn effective_max(&self) -> usize {
-        if self.max == 0 {
-            25
-        } else {
-            self.max as usize
-        }
-    }
-}
+/// Re-exported at this path because roughly a hundred call sites here and in
+/// OpenHuman already spell these `providers::SyncOutcome`,
+/// `providers::NormalizedTask` and so on, and the move delivers the decoupling
+/// without spending that churn.
+pub use tinymemory_api::composio::{
+    ComposioUsage, ComposioUsageHandle, GithubFetchMode, NormalizedTask, ProviderUserProfile,
+    SyncOutcome, SyncReason, TaskContainer, TaskFetchFilter, TaskKind,
+};
 
 /// Per-call context handed to provider methods.
 ///
-/// `connection_id` is `None` when a method runs in a "no specific
-/// connection" mode (e.g. an across-the-board periodic sync that
-/// already iterated). For per-connection paths it is always populated.
+/// `connection_id` is `None` when a method runs in a "no specific connection"
+/// mode (e.g. an across-the-board periodic sync that already iterated). For
+/// per-connection paths it is always populated.
 ///
 /// **Mode-aware dispatch (#1710)**: pre-fix, `ProviderContext` cached a
 /// pre-baked `ComposioClient` built once at construction time. Toggling
-/// `composio.mode = "direct"` mid-session left provider syncs still
-/// routing through the backend tinyhumans tenant. The current shape
-/// keeps an [`Arc<Config>`] and resolves the underlying client per call
-/// through [`ProviderContext::execute`], mirroring the agent-tool
-/// migration in the host's `integrations::composio::tools::ComposioExecuteTool`.
-/// Per-sync accumulator for Composio billable-action usage.
+/// `composio.mode = "direct"` mid-session left provider syncs still routing
+/// through the backend tinyhumans tenant. The current shape keeps an
+/// [`Arc<Config>`] and resolves the underlying client per call through
+/// [`ProviderContext::execute`], mirroring the agent-tool migration in the
+/// host's `integrations::composio::tools::ComposioExecuteTool`.
 ///
-/// Lives behind a shared handle on [`ProviderContext`] so the single
-/// `execute` chokepoint can tally every action a provider fires during one
-/// sync run, regardless of which provider (gmail / slack / github / notion /
-/// linear / clickup) or how many pages it paginates.
-/// [`crate::sync::composio::run_connection_sync`] returns
-/// the final tally alongside the [`SyncOutcome`] for the sync audit log
-/// (#3111).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ComposioUsage {
-    /// Count of `execute` calls that returned a response this run.
-    pub actions_called: u32,
-    /// Sum of each response's backend-reported `cost_usd`.
-    pub cost_usd: f64,
-}
-
-/// Shared, interior-mutable handle to a [`ComposioUsage`] tally. Cloning a
-/// [`ProviderContext`] shares the same underlying counter, so the count is
-/// stable no matter how the context is passed around within a sync.
-pub type ComposioUsageHandle = Arc<Mutex<ComposioUsage>>;
-
+/// This is the one item in this module that is *not* contract vocabulary: a
+/// context is a live handle onto the host seam, not something a frame can
+/// carry. See the module docs.
 #[derive(Clone)]
 pub struct ProviderContext {
     pub config: Arc<Config>,
@@ -423,13 +189,6 @@ impl ProviderContext {
     ///
     /// Under `cfg(test)` the global singleton is not booted, so build a
     /// workspace-scoped client directly instead.
-    #[cfg(test)]
-    pub fn memory_client(&self) -> Option<crate::store::MemoryClientRef> {
-        crate::store::MemoryClient::from_workspace_dir(self.config.workspace_dir().clone())
-            .ok()
-            .map(std::sync::Arc::new)
-    }
-
     /// Memory client handle if the global memory singleton is ready.
     /// Used by providers that want to persist sync snapshots.
     #[cfg(not(test))]
@@ -439,85 +198,9 @@ impl ProviderContext {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+#[path = "types_test_support.rs"]
+mod test_support;
 
-    /// The whole #3111 tally relies on the `usage` handle being *shared*
-    /// across `ProviderContext` clones: a provider's `sync` runs against a
-    /// clone (or the same ctx passed by `&`), accumulates via `execute`, and
-    /// `run_connection_sync` reads the count back from its own handle. Pin
-    /// that the `Arc<Mutex<_>>` is genuinely shared so a clone's increments
-    /// are visible from the original — if this regressed to a per-clone
-    /// counter, the audit cost would silently always read zero.
-    #[test]
-    fn usage_handle_is_shared_across_context_clones() {
-        let ctx = ProviderContext {
-            config: Arc::new(TestHostConfig::default()) as Arc<crate::Config>,
-            toolkit: "gmail".to_string(),
-            connection_id: None,
-            usage: ComposioUsageHandle::default(),
-            max_items: None,
-            sync_depth_days: None,
-        };
-        let cloned = ctx.clone();
-
-        // Simulate two `execute` round-trips accumulating on the clone.
-        {
-            let mut usage = cloned.usage.lock().expect("lock usage");
-            usage.actions_called = usage.actions_called.saturating_add(2);
-            usage.cost_usd += 0.015;
-        }
-
-        // The original handle must observe the clone's tally.
-        let observed = ctx.usage.lock().expect("lock usage");
-        assert_eq!(observed.actions_called, 2);
-        assert!((observed.cost_usd - 0.015).abs() < 1e-9);
-    }
-
-    /// `ComposioUsage` defaults to a zero tally — the value
-    /// `run_connection_sync` returns for a sync that fired no Composio
-    /// actions, and what non-sync `ProviderContext` callers carry.
-    #[test]
-    fn composio_usage_defaults_to_zero() {
-        let usage = ComposioUsage::default();
-        assert_eq!(usage.actions_called, 0);
-        assert_eq!(usage.cost_usd, 0.0);
-    }
-
-    // `ProviderContext::execute` and `ProviderContext::backend_client` reload
-    // config from `ctx.config.config_path()` (via `reload_config_snapshot_with_timeout`)
-    // rather than from the process-global `OPENHUMAN_WORKSPACE`. Tests
-    // therefore only need to persist the config to `config_path` — no env var
-    // manipulation required.
-
-    #[tokio::test]
-    async fn provider_context_execute_backend_branch_without_session_errors_cleanly() {
-        // Default `Config` (mode = "backend") with no stored session
-        // token: the factory should return a backend-session error from
-        // `ctx.execute`. Verifies the backend branch is reachable and
-        // the error surface is sensible.
-        let tmp = tempfile::tempdir().expect("tempdir");
-
-        let mut config = TestHostConfig::default();
-        config.config_path = tmp.path().join("config.toml");
-        config.workspace_dir = tmp.path().join("workspace");
-        config.secrets_encrypt = false;
-        config.save().await.expect("save fake config to disk");
-
-        let ctx = ProviderContext {
-            config: Arc::new(config) as Arc<crate::Config>,
-            toolkit: "gmail".to_string(),
-            connection_id: None,
-            usage: ComposioUsageHandle::default(),
-            max_items: None,
-            sync_depth_days: None,
-        };
-        let res = ctx.execute("GMAIL_FETCH_EMAILS", None).await;
-        let err = res.expect_err("no backend session must error");
-        let msg = err.to_string();
-        assert!(
-            msg.contains("backend") || msg.contains("session"),
-            "expected backend-session error, got: {msg}"
-        );
-    }
-}
+#[cfg(test)]
+#[path = "types_tests.rs"]
+mod tests;

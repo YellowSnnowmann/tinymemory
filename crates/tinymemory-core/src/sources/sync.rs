@@ -87,13 +87,20 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
             // Composio billable-action usage for this run, populated by
             // `sync_composio` (#3111). Stays zero for non-Composio kinds.
             let mut composio_usage = ComposioUsage::default();
+            // Every kind runs through `run_source_pipeline_core`, whose
+            // outcome carries `tree_ingest_failures` — the count of items that
+            // were fetched-and-stored but never reached the memory tree. The
+            // engine-typed `run_source_pipeline` would drop it (openhuman#5820).
             let outcome = match source.kind {
                 SourceKind::Composio => {
-                    match crate::engine::run_source_pipeline(&source, &*config).await {
+                    match crate::engine::run_source_pipeline_core(&source, &*config).await {
                         Ok(outcome) => {
                             composio_usage.actions_called = outcome.actions_called;
                             composio_usage.cost_usd = outcome.provider_cost_usd;
-                            Ok(outcome.records_ingested as usize)
+                            Ok((
+                                outcome.records_ingested as usize,
+                                outcome.tree_ingest_failures,
+                            ))
                         }
                         Err(error) => {
                             composio_usage.actions_called = error.actions_called;
@@ -102,43 +109,59 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
                         }
                     }
                 }
-                SourceKind::Conversation | SourceKind::Folder => {
-                    crate::engine::run_source_pipeline(&source, &*config)
-                        .await
-                        .map(|outcome| outcome.records_ingested as usize)
-                        .map_err(|error| error.to_string())
-                }
-                SourceKind::GithubRepo => crate::engine::run_source_pipeline(&source, &*config)
+                SourceKind::Conversation
+                | SourceKind::Folder
+                | SourceKind::GithubRepo
+                | SourceKind::RssFeed
+                | SourceKind::WebPage => crate::engine::run_source_pipeline_core(&source, &*config)
                     .await
-                    .map(|outcome| outcome.records_ingested as usize)
+                    .map(|outcome| {
+                        (
+                            outcome.records_ingested as usize,
+                            outcome.tree_ingest_failures,
+                        )
+                    })
                     .map_err(|error| error.to_string()),
-                SourceKind::RssFeed | SourceKind::WebPage => {
-                    crate::engine::run_source_pipeline(&source, &*config)
-                        .await
-                        .map(|outcome| outcome.records_ingested as usize)
-                        .map_err(|error| error.to_string())
-                }
                 SourceKind::TwitterQuery => Err(
                     "Twitter sync not yet configured. Provide bearer token in settings."
                         .to_string(),
                 ),
             };
-            let duration_ms = sync_start.elapsed().as_millis() as u64;
 
             match outcome {
-                Ok(items) => {
+                Ok((items, pipeline_tree_failures)) => {
+                    // Auto-rebuild BEFORE the verdict (openhuman#5820): if raw
+                    // files exist but the tree has no summaries, build the
+                    // tree now — its failures are part of this run's truth,
+                    // and stamping the audit line first is how a corrupt store
+                    // ran for 34 minutes behind a column of green rows.
+                    let reconcile_errors = check_and_rebuild_tree(&source, &*config).await;
+                    let duration_ms = sync_start.elapsed().as_millis() as u64;
+
+                    let verdict = run_verdict(items, pipeline_tree_failures, &reconcile_errors);
                     tracing::debug!(
                         source_id = %source.id,
                         kind = %source.kind.as_str(),
                         items = items,
-                        "[memory_sources:sync] completed"
+                        tree_failures = verdict.tree_failures,
+                        "[memory_sources:sync] pipeline finished"
                     );
+                    if !verdict.success {
+                        tracing::warn!(
+                            source_id = %source.id,
+                            kind = %source.kind.as_str(),
+                            items = items,
+                            tree_failures = verdict.tree_failures,
+                            "[memory_sources:sync] fetch succeeded but the memory-tree \
+                             half failed; reporting the run as failed"
+                        );
+                    }
                     emit_sync_stage(
                         MemorySyncTrigger::Manual,
-                        MemorySyncStage::Completed,
+                        verdict.stage,
                         Some(source.kind.as_str()),
                         Some(&source.id),
-                        Some(format!("ingested {items} item(s)")),
+                        Some(verdict.detail),
                         Some(&source.id),
                     );
 
@@ -163,18 +186,18 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
                             composio_cost_usd: composio_usage.cost_usd,
                             actual_charged_usd: None,
                             duration_ms,
-                            success: true,
+                            success: verdict.success,
                             error: None,
+                            tree_ingest_failures: verdict.tree_failures,
+                            tree_error: verdict.tree_error,
                         },
                     ) {
                         tracing::warn!(%error, "[memory_sync:audit] append failed");
                     }
 
-                    // Auto-rebuild: if raw files exist but the tree has
-                    // no summaries, build the tree now.
-                    check_and_rebuild_tree(&source, &*config).await;
-
                     // Auto-snapshot: capture post-sync state for diff tracking.
+                    // The raw archive committed even when the tree half failed,
+                    // so the snapshot stays correct either way.
                     if let Err(e) =
                         crate::diff::ops::auto_snapshot_after_sync(&source, &*config).await
                     {
@@ -186,6 +209,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
                     }
                 }
                 Err(error) => {
+                    let duration_ms = sync_start.elapsed().as_millis() as u64;
                     // Audit failed syncs too.
                     use crate::sync::audit::{append_audit_entry, SyncAuditEntry};
                     if let Err(error) = append_audit_entry(
@@ -210,6 +234,8 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
                             duration_ms,
                             success: false,
                             error: Some(error.clone()),
+                            tree_ingest_failures: 0,
+                            tree_error: None,
                         },
                     ) {
                         tracing::warn!(%error, "[memory_sync:audit] append failed");
@@ -268,10 +294,78 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
     Ok(())
 }
 
+/// What a finished (fetch-successful) run reports, folding the tree half in.
+#[derive(Clone, Debug, PartialEq)]
+struct RunVerdict {
+    stage: MemorySyncStage,
+    detail: String,
+    success: bool,
+    /// Items fetched-and-stored whose tree ingest failed — an item count, the
+    /// unit `SyncAuditEntry::tree_ingest_failures` is defined in. Reconcile
+    /// failures are per scope and are NOT folded into this number.
+    tree_failures: u32,
+    tree_error: Option<String>,
+}
+
+/// Fold the tree half into the run's verdict (openhuman#5820).
+///
+/// A run whose fetch and skill-store committed but whose tree ingest dropped
+/// items, or whose post-run reconcile failed, must NOT read as success — that
+/// is the exact shape that hid a corrupt store behind 34 minutes of green
+/// sync rows. Reporting it failed with the fetch count intact is the
+/// recoverable direction: the next sync retries the tree half, nothing
+/// fetched is lost.
+///
+/// Item failures and reconcile failures are different units (items vs
+/// scopes) and both diagnostics are kept: the item count is what the audit
+/// row stores, and `tree_error` / `detail` name whichever halves failed.
+fn run_verdict(
+    items: usize,
+    pipeline_tree_failures: u32,
+    reconcile_errors: &[String],
+) -> RunVerdict {
+    let mut problems: Vec<String> = Vec::new();
+    if pipeline_tree_failures > 0 {
+        problems.push(format!(
+            "{pipeline_tree_failures} item(s) fetched but not ingested into the memory tree"
+        ));
+    }
+    problems.extend(reconcile_errors.iter().cloned());
+    if problems.is_empty() {
+        return RunVerdict {
+            stage: MemorySyncStage::Completed,
+            detail: format!("ingested {items} item(s)"),
+            success: true,
+            tree_failures: 0,
+            tree_error: None,
+        };
+    }
+    let tree_error = problems.join("; ");
+    RunVerdict {
+        stage: MemorySyncStage::Failed,
+        detail: format!(
+            "fetched {items} item(s) but the memory-tree half failed ({tree_error}); \
+             tree-backed recall is missing these items"
+        ),
+        success: false,
+        tree_failures: pipeline_tree_failures,
+        tree_error: Some(tree_error),
+    }
+}
+
 /// Reconcile raw files that are not yet covered by tree summaries.
-pub(crate) async fn check_and_rebuild_tree(source: &MemorySourceEntry, config: &Config) {
+///
+/// Returns one message per failed scope so the caller can fold reconcile
+/// failures into the run's verdict instead of the run reading green over a
+/// tree that received nothing (openhuman#5820). A corrupt store additionally
+/// escalates through the shared recovery before being returned.
+pub(crate) async fn check_and_rebuild_tree(
+    source: &MemorySourceEntry,
+    config: &Config,
+) -> Vec<String> {
     use crate::engine::{needs_rebuild, rebuild_tree_from_raw};
 
+    let mut failures = Vec::new();
     for scope in derive_scopes(source, config) {
         if !needs_rebuild(config, &scope.tree_scope, &scope.archive_source_id) {
             continue;
@@ -291,13 +385,28 @@ pub(crate) async fn check_and_rebuild_tree(source: &MemorySourceEntry, config: &
                 cost_is_actual = outcome.actual_charged_usd.is_some(),
                 "[memory_sources:sync] reconcile complete"
             ),
-            Err(error) => tracing::warn!(
-                scope = %scope.tree_scope,
-                error = %format!("{error:#}"),
-                "[memory_sources:sync] reconcile failed"
-            ),
+            Err(error) => {
+                if crate::corruption::is_sqlite_corrupt(&error) {
+                    crate::corruption::report_and_recover(
+                        "tree reconcile",
+                        "tree_ingest_corrupt",
+                        &error,
+                        config,
+                    );
+                }
+                tracing::warn!(
+                    scope = %scope.tree_scope,
+                    error = %format!("{error:#}"),
+                    "[memory_sources:sync] reconcile failed"
+                );
+                failures.push(format!(
+                    "reconcile failed for scope `{}`: {error:#}",
+                    scope.tree_scope
+                ));
+            }
         }
     }
+    failures
 }
 
 /// A source's tree scope paired with its raw-archive source id. The two
@@ -383,32 +492,5 @@ pub fn derive_scopes(source: &MemorySourceEntry, config: &Config) -> Vec<SourceS
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The two GitHub coordinate helpers are re-exported from `tinymemory-sources` and
-    /// they deliberately differ: `tree_scope` slugifies to
-    /// `github-tinyhumansai-openhuman` while `archive_source_id` slugifies to
-    /// `github-com-tinyhumansai-openhuman`. Swapping the two still compiles and
-    /// still type-checks — it just makes reconcile scan an empty directory at
-    /// runtime. Pin both spellings.
-    #[test]
-    fn derive_scopes_keeps_github_tree_and_archive_ids_distinct() {
-        let source: MemorySourceEntry = serde_json::from_value(serde_json::json!({
-            "id": "gh-scope",
-            "kind": "github_repo",
-            "label": "Repo",
-            "url": "https://github.com/tinyhumansai/openhuman",
-        }))
-        .expect("github source entry");
-
-        let scopes = derive_scopes(&source, &TestHostConfig::default());
-
-        assert_eq!(scopes.len(), 1);
-        assert_eq!(scopes[0].tree_scope, "github:tinyhumansai/openhuman");
-        assert_eq!(
-            scopes[0].archive_source_id,
-            "github.com/tinyhumansai/openhuman"
-        );
-    }
-}
+#[path = "sync_tests.rs"]
+mod tests;

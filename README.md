@@ -77,8 +77,8 @@ composition — no storage engine, no HTTP stack, no native library.
 | Feature | Brings in |
 | --- | --- |
 | `tinycortex` | the embedded TinyCortex engine, as `tinymemory::tinycortex` |
-| `supermemory`, `mem0`, `cognee` | the matching HTTP adapter, as `tinymemory::remote` |
-| `engines` | all four of the above |
+| `supermemory`, `mem0`, `cognee`, `agentmemory` | the matching HTTP adapter, as `tinymemory::remote` |
+| `engines` | all five of the above |
 | `core` | `tinymemory::core` — the memory subsystem |
 | `sync` | `tinymemory::sync` — the Composio normalisers |
 | `sources` | `tinymemory::sources` — source contracts and local readers |
@@ -97,7 +97,7 @@ is deliberately outside `full`: "give me the whole workspace" is not the same
 request as "give me the test doubles".
 
 This table says which crate each feature brings in. For what each *engine*
-feature actually serves — driver class, and how many of the eighteen capability
+feature actually serves — driver class, and how many of the twenty capability
 families answer — see the engine table under
 [Using from your project](#using-from-your-project).
 
@@ -113,7 +113,7 @@ error.
 None of these crates are on crates.io yet, so you take the facade by git.
 Which patch table you need depends on the engine you pick.
 
-**Remote engines (Supermemory, Mem0, Cognee — hosted or self-hosted) — no patch table:**
+**Remote engines (Supermemory, Mem0, Cognee, AgentMemory) — no patch table:**
 
 ```toml
 [dependencies]
@@ -173,7 +173,7 @@ let provider = Arc::new(provider(Arc::new(InMemoryMemoryStore::new())));
 ```
 
 That is a complete embedded setup for the mandatory three families. The full
-eighteen-family engine (`TinycortexProvider`) additionally needs the host
+twenty-family engine (`TinycortexProvider`) additionally needs the host
 seams (`EmbeddingHost` et al.) installed — see
 `crates/tinymemory-tinycortex/tests/full_provider_conformance.rs` for the
 minimal working wiring.
@@ -184,6 +184,7 @@ minimal working wiring.
 | `supermemory` | Supermemory, hosted | external | 3 (mandatory) |
 | `mem0` | Mem0, hosted (`cloud`) or self-hosted | external | 3 (mandatory) |
 | `cognee` | Cognee, hosted or self-hosted | external | 3 (mandatory) |
+| `agentmemory` | AgentMemory, self-hosted | external | 3 (mandatory) |
 | `memory-git` | add-on: git-backed diff snapshots | — | requires `tinycortex` |
 | *(none)* | `NullMemoryProvider` | null | contract + registry only, 40 crates |
 
@@ -199,10 +200,10 @@ for assistant-memory workloads; wrong for high-volume keyed storage.
 ## The contract
 
 `MemoryProvider` is an object-safe trait with **three mandatory** capability
-families and **fifteen optional** ones. The mandatory three are supertraits, so a
-driver missing any of them cannot be constructed; the optional fifteen are reached
-through `as_ingest()` / `as_tree()` / … accessors that default to `None`, so a
-minimal driver implements what it supports and inherits correct absence for
+families and **seventeen optional** ones. The mandatory three are supertraits, so
+a driver missing any of them cannot be constructed; the optional seventeen are
+reached through `as_ingest()` / `as_tree()` / … accessors that default to `None`,
+so a minimal driver implements what it supports and inherits correct absence for
 everything else.
 
 A driver's advertised set and its reachable accessors must agree.
@@ -275,9 +276,9 @@ that skips enforcement is the entire reason the policy layer exists.
 ## Remote engines
 
 The `tinymemory-remote` crate supports the managed and self-hosted native APIs
-of Supermemory, Cognee, and Mem0. Each adapter stores TinyMemory's key,
-category, session, and provenance in backend metadata (or a Cognee raw-data
-envelope), so exact CRUD and portability survive the seam while recall remains
+of Supermemory, Cognee, Mem0, and AgentMemory. Each adapter stores TinyMemory's key,
+category, session, and provenance in backend metadata or a versioned native-content
+envelope, so exact CRUD and portability survive the seam while recall remains
 engine-native. Provider-facing dataset names, container tags,
 and filenames are bounded stable hashes, so every namespace and key accepted by
 the TinyMemory contract remains valid on the remote API.
@@ -306,15 +307,48 @@ let mem0 = Mem0Memory::cloud("m0-...")?;
 # Ok::<_, anyhow::Error>((cognee, supermemory, mem0))
 ```
 
+AgentMemory is local-first. It exposes its REST API at `http://localhost:3111`
+by default; pass its optional API secret when one is configured:
+
+```rust
+use tinymemory_remote::{agentmemory_provider, AgentMemoryMemory};
+
+let provider = agentmemory_provider(AgentMemoryMemory::local(None)?);
+# Ok::<_, anyhow::Error>(provider)
+```
+
 Cognee Cloud uses `X-Api-Key`; authenticated self-hosted Cognee uses a bearer
 access token. Supermemory uses bearer API keys for both deployment modes. Mem0's
 hosted platform uses `Authorization: Token`, and self-hosted Mem0 uses
 `X-API-Key`. All constructors redact credentials from `Debug` output, from
 transport errors, and from the request's own header rendering.
 
-All three advertise the mandatory Core, Recall, and Portability families. The
+All four advertise the mandatory Core, Recall, and Portability families. The
 live Docker harness and conformance command are documented in
 [`integration/remote-engines/`](integration/remote-engines/README.md).
+
+One of them restricts what it will store. Supermemory removes `U+0000` and
+`U+FFFD` from content server-side, so the adapter refuses such content with
+`MemoryError::Invalid` rather than storing a value the service would quietly
+rewrite: `MemoryCore::store` promises that what is read back equals what was
+stored, and a driver may refuse a shape but may not accept one and hand back
+another. The restriction is no wider than the defect — every other C0 control,
+plus DEL, NEL, ZWSP, BOM and U+2028, survives — and identity is untouched,
+because keys and namespaces travel in metadata, which the service does not
+sanitise. Callers that might hold either character should strip or replace it
+first; `U+FFFD` in particular arrives in any text that has been through a lossy
+decode (issue #80).
+
+Behaviour like that is visible only against the real service, so
+`tinymemory-remote` carries a live target that runs the full contract suite
+against a hosted endpoint when credentials are present and skips when they are
+not. Point it at a scratch account: the suite writes and deletes records.
+
+```bash
+TINYMEMORY_TEST_SUPERMEMORY_URL=https://api.supermemory.ai \
+TINYMEMORY_TEST_SUPERMEMORY_KEY=sm_... \
+  cargo test -p tinymemory-remote --test live_remote_engines
+```
 
 ## Development
 

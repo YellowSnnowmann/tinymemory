@@ -222,6 +222,59 @@ bind that driver directly.
 
 The general lesson: **"carried verbatim" carries credentials verbatim too.**
 
+### Three fields the periodic sync loops need
+
+`memory_sync_interval_secs`, `composio_mode` and `composio_entity_id` are the
+module's answer to settings the engine used to read off a host `Config` it no
+longer has. All three are optional on the wire, like every other field.
+
+**The cadence is the one that failed silently.** `EngineRuntimeConfig` answered
+the constant `Some(0)`, which the contract defines as *manual only*, so both
+loops skipped every source on every tick — no error, no warning, nothing in the
+log. It now answers the host's value, and an absent field defaults to `None`
+("the user chose nothing", so the 24h fallback) rather than to `Some(0)`. The
+two are not symmetrical: an over-sync is bounded and a user can see it, a
+no-sync is invisible by construction. Host and module are separately released,
+so whatever the default says is what an older host silently means.
+
+**The Composio pair is routing, not access.** The mode picks which branch
+`sync::pipelines::host::composio_config` takes, and the entity says whose
+connected accounts a call addresses; neither authorises anything. The
+direct-mode API key still does not travel — it is fetched from the host per call
+— and there is no field for a backend session bearer, which is the whole reason
+only direct mode can run in here.
+
+## The two periodic sync loops, and what they lose
+
+`setup` starts `sync::workspace::start_workspace_periodic_sync`, and in direct
+mode `sync::composio::start_periodic_sync`, for the reason it starts the queue
+worker pool: a host that deletes its in-process engine can start neither, and a
+memory that stops updating reports "no connections" — indistinguishable from a
+user who has none.
+
+Three things had to become true first, and all three were false. The cadence is
+one (above). The second is that `composio_config`'s direct branch was never
+selected, because `EngineRuntimeConfig` answered an empty mode; `ComposioHost`
+cannot rescue that, because its key is consulted *inside* the branch not taken.
+The third is that `global::client_if_ready()` — the first line of every pipeline
+run — was `None`, because this module builds its store through
+`store::factories`, which never touches the global slot.
+
+The third is closed by `global::bind`, which publishes the **already-built**
+client into the global slot *and* the per-workspace cache, so all three
+resolution paths converge on it. `global::init` would have built a second
+`MemoryClient` over the same SQLite file — two ingestion workers, duplicate
+graph extraction, duplicate embedding — which is why `bind` refuses a different
+client for a workspace rather than quietly absorbing it.
+
+**What the loops lose here.** The scheduler gate is a stub that always answers
+`Normal`, so neither honours `periodic_pause_reason`'s two pauses — "Memory Tree
+off" and "signed out" — and re-enabling sync no longer wakes them early instead
+of waiting out the tick. Each source's own `enabled` toggle still applies.
+**Backend-mode Composio sync is not started at all**, and says so once at boot,
+rather than listing the user's connections every 20 minutes and failing every
+due one forever.
+
 ## Two operational constraints
 
 **Two worker threads, not one.** A recall that triggers an embed makes an

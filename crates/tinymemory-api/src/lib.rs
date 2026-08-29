@@ -55,13 +55,26 @@
 //! ## Module map
 //!
 //! - [`types`]: pure data contracts (entries, hits, taint, namespaces).
+//! - [`evidence`]: [`evidence::EvidenceRef`], the pointer a learned fact keeps
+//!   back to what it was learned from. Also re-exported as
+//!   [`host::EvidenceRef`], which is where the memory store's callers name it.
+//! - [`learning`]: the learning-candidate taxonomy
+//!   ([`learning::FacetClass`], [`learning::CueFamily`],
+//!   [`learning::LearningCandidate`]) — what a producer asserts about the user
+//!   and how strongly, with the buffer that queues it left in the engine crate.
+//! - [`composio`]: the connector-sync vocabulary — [`composio::SyncOutcome`],
+//!   [`composio::NormalizedTask`], [`composio::SyncState`],
+//!   [`composio::ToolScope`] and friends. **Not** [`host::composio`], which is
+//!   the *client* seam: connections, execute responses and the capability
+//!   matrix a host serves to the memory layer. This one is what a provider run
+//!   produces and remembers; that one is how it reaches Composio at all.
 //! - [`recall`]: the borrowed [`recall::RecallOpts`] and owned, serde-derived
 //!   [`recall::OwnedRecallOpts`] recall filters (both re-exported from
 //!   [`types`]).
-//! - [`capabilities`]: the eighteen [`capabilities::Capability`] families and
+//! - [`capabilities`]: the twenty [`capabilities::Capability`] families and
 //!   the [`capabilities::Capabilities`] set negotiated at bind time.
 //! - [`provider`]: the driver contract — [`provider::MemoryProvider`] plus the
-//!   eighteen capability family traits and the value types they need.
+//!   twenty capability family traits and the value types they need.
 //! - [`null`]: [`null::NullMemoryProvider`], the reference driver a
 //!   compiled-out or unconfigured memory subsystem binds to.
 //! - [`health`]: [`health::MemoryHealth`], the liveness state a driver reports.
@@ -89,7 +102,9 @@
 //!   such transport, so the names cannot drift apart.
 
 pub mod drivers;
+pub mod events;
 pub mod host;
+pub mod sync_events;
 
 // The wire vocabulary, re-exported from `tinymemory-bus`.
 //
@@ -106,8 +121,8 @@ pub mod host;
 // point: a second definition would need a conversion at the module seam that
 // nothing type-checks.
 pub use tinymemory_bus::{
-    capabilities, chunks, error, goals, graph, health, namespace, recall, tool_memory, tree, types,
-    version, wire,
+    capabilities, chunks, composio, error, evidence, goals, graph, health, learning, namespace,
+    recall, tool_memory, tree, types, version, wire,
 };
 /// The mandatory-family composition: wrap any [`traits::Memory`] backend as a
 /// complete [`provider::MemoryProvider`].

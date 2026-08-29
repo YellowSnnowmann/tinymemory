@@ -4,7 +4,7 @@ name = "tinymemory"
 # consumed by path and is not on crates.io, so `cargo package` cannot resolve
 # the graph. Every consumer takes this repo by path or git.
 publish = false
-version = "1.1.0"
+version = "1.13.3"
 edition = "2021"
 rust-version = "1.96"
 license = "MIT"
@@ -92,10 +92,11 @@ tinycortex = ["dep:tinymemory-tinycortex"]
 supermemory = ["dep:tinymemory-remote"]
 mem0 = ["dep:tinymemory-remote"]
 cognee = ["dep:tinymemory-remote"]
+agentmemory = ["dep:tinymemory-remote"]
 # Every engine at once. A host that binds its driver from configuration rather
 # than at compile time wants this: `DriverRegistry` admission is a static policy
 # table, so which adapters are compiled in decides what it can actually bind.
-engines = ["tinycortex", "supermemory", "mem0", "cognee"]
+engines = ["tinycortex", "supermemory", "mem0", "cognee", "agentmemory"]
 
 # --- Subsystems ------------------------------------------------------------
 # The workspace crates that are not adapters, each re-exported as a module of

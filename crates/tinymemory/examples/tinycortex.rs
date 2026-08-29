@@ -11,7 +11,7 @@
 //! one proves the first real engine binds the same way and actually retains.
 //! The backend is the engine's own in-memory store — a complete embedded
 //! setup for the mandatory three families: no workspace, no host seams. (The
-//! full eighteen-family `TinycortexProvider` additionally needs the host
+//! full twenty-family `TinycortexProvider` additionally needs the host
 //! seams installed; `crates/tinymemory-tinycortex/tests/full_provider_conformance.rs`
 //! is the minimal working wiring for that.)
 

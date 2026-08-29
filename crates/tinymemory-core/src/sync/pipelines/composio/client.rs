@@ -186,8 +186,8 @@ impl ComposioClient {
             .map_err(|error| anyhow::anyhow!("Composio direct transport error: {error}"))?;
         let status = response.status();
         if !status.is_success() {
-            let _ = response.bytes().await;
-            anyhow::bail!("Composio direct request failed with HTTP {status}");
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!(describe_failure("direct", status, &body));
         }
         let raw: serde_json::Value = decode_response(response, "direct").await?;
         Ok(decode_direct_response(raw))
@@ -218,8 +218,8 @@ impl ComposioClient {
             .map_err(|error| anyhow::anyhow!("Composio proxy transport error: {error}"))?;
         let status = response.status();
         if !status.is_success() {
-            let _ = response.bytes().await;
-            anyhow::bail!("Composio proxy request failed with HTTP {status}");
+            let body = response.text().await.unwrap_or_default();
+            anyhow::bail!(describe_failure("proxy", status, &body));
         }
         let raw: serde_json::Value = response
             .json()
@@ -287,15 +287,100 @@ fn retryable_provider_error(error: Option<&str>) -> bool {
 /// needle that both status-bail messages also matched.
 fn retryable_transport_error(error: &anyhow::Error) -> bool {
     let message = error.to_string();
+    // Anchored on the status clause this module actually emits. A bare
+    // "HTTP 429" needle would now be forgeable: the failure message carries the
+    // response body, and a body that merely mentions another status must not
+    // turn a permanent 400 into a retry.
     [
-        "HTTP 429",
-        "HTTP 502",
-        "HTTP 503",
-        "HTTP 504",
+        "failed with HTTP 429",
+        "failed with HTTP 502",
+        "failed with HTTP 503",
+        "failed with HTTP 504",
         "transport error",
     ]
     .iter()
     .any(|needle| message.contains(needle))
+}
+
+/// Longest body snippet echoed for a response whose shape we do not recognise.
+const FAILURE_BODY_LIMIT: usize = 400;
+
+/// Describe a non-2xx Composio response, using the body rather than throwing it away.
+///
+/// Composio answers with a structured error whose `message` and `suggested_fix`
+/// name the actual problem and how to correct it — an entity-id mismatch says
+/// which id to use instead. Discarding it left callers with a bare status line
+/// and no route to a fix.
+///
+/// The `failed with HTTP {status}` clause is load-bearing: [`retryable_transport_error`]
+/// keys off it, so it stays first and stays verbatim.
+///
+/// Only the known error fields are surfaced. An unrecognised body is truncated
+/// instead of echoed whole, so an unexpected payload cannot pour arbitrary
+/// content into logs.
+fn describe_failure(surface: &str, status: reqwest::StatusCode, body: &str) -> String {
+    let head = format!("Composio {surface} request failed with HTTP {status}");
+    match failure_detail(body) {
+        Some(detail) => format!("{head}: {detail}"),
+        None => head,
+    }
+}
+
+/// Pull the human-meaningful part out of a Composio error body.
+fn failure_detail(body: &str) -> Option<String> {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(trimmed) {
+        if let Some(detail) = structured_detail(&parsed) {
+            return Some(detail);
+        }
+    }
+
+    Some(truncate(trimmed, FAILURE_BODY_LIMIT))
+}
+
+/// `{"error": {"message": .., "slug": .., "suggested_fix": ..}}`, or a bare
+/// `{"error": "..."}`.
+fn structured_detail(parsed: &serde_json::Value) -> Option<String> {
+    let error = parsed.get("error")?;
+
+    if let Some(text) = error.as_str() {
+        let text = text.trim();
+        return (!text.is_empty()).then(|| truncate(text, FAILURE_BODY_LIMIT));
+    }
+
+    let field = |name: &str| {
+        error
+            .get(name)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+    };
+
+    let message = field("message")?;
+    let mut detail = truncate(message, FAILURE_BODY_LIMIT);
+    if let Some(slug) = field("slug") {
+        detail.push_str(&format!(" [{slug}]"));
+    }
+    if let Some(fix) = field("suggested_fix") {
+        detail.push_str(&format!(
+            " — suggested fix: {}",
+            truncate(fix, FAILURE_BODY_LIMIT)
+        ));
+    }
+    Some(detail)
+}
+
+/// Cut on a char boundary so a multi-byte body cannot panic the error path.
+fn truncate(value: &str, limit: usize) -> String {
+    if value.chars().count() <= limit {
+        return value.to_owned();
+    }
+    let kept: String = value.chars().take(limit).collect();
+    format!("{kept}…")
 }
 
 async fn decode_response(
@@ -309,85 +394,5 @@ async fn decode_response(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// 4xx is permanent: an invalid key must fail once, not retry with
-    /// backoff. Only rate-limit/upstream statuses and transport failures
-    /// (connect/read errors, timeouts) are worth another attempt.
-    #[test]
-    fn retry_classification_is_by_status_not_by_substring() {
-        let retry = |m: &str| retryable_transport_error(&anyhow::anyhow!("{m}"));
-        assert!(retry(
-            "Composio direct request failed with HTTP 429 Too Many Requests"
-        ));
-        assert!(retry(
-            "Composio proxy request failed with HTTP 503 Service Unavailable"
-        ));
-        assert!(retry("Composio direct transport error: connection reset"));
-        assert!(!retry(
-            "Composio direct request failed with HTTP 401 Unauthorized"
-        ));
-        assert!(!retry(
-            "Composio proxy request failed with HTTP 404 Not Found"
-        ));
-        assert!(!retry(
-            "Composio direct request failed with HTTP 400 Bad Request"
-        ));
-    }
-
-    /// An error payload is a failure even when the flag is absent or true.
-    #[test]
-    fn an_error_payload_is_never_a_success() {
-        let r = decode_direct_response(serde_json::json!({"error": "quota exceeded"}));
-        assert!(!r.successful, "missing flag + error must be a failure");
-        assert_eq!(r.error.as_deref(), Some("quota exceeded"));
-
-        let r = decode_direct_response(serde_json::json!({"successful": true, "error": " boom "}));
-        assert!(!r.successful, "flag=true + error must still be a failure");
-        assert_eq!(r.error.as_deref(), Some("boom"));
-
-        let r = decode_direct_response(
-            serde_json::json!({"successful": true, "error": "  ", "data": {"x": 1}}),
-        );
-        assert!(r.successful, "an empty error string is no error");
-        assert!(r.error.is_none());
-        assert_eq!(r.data["x"], 1);
-    }
-
-    /// The client is built with finite timeouts; a build failure must not
-    /// silently degrade to an untimed client.
-    #[test]
-    fn client_builds_with_timeouts() {
-        let _ = ComposioClient::new(ComposioSyncConfig::default());
-        assert!(CONNECT_TIMEOUT < REQUEST_TIMEOUT);
-    }
-
-    #[test]
-    fn proxied_backend_envelope_decodes_provider_response() {
-        let response = decode_proxy_response(serde_json::json!({
-            "success": true,
-            "data": {
-                "successful": true,
-                "data": {"messages": [{"messageId": "message-1"}]},
-                "error": null
-            }
-        }))
-        .unwrap();
-
-        assert!(response.successful);
-        assert_eq!(response.data["messages"][0]["messageId"], "message-1");
-    }
-
-    #[test]
-    fn flat_proxy_response_remains_supported() {
-        let response = decode_proxy_response(serde_json::json!({
-            "successful": true,
-            "data": {"items": [1]}
-        }))
-        .unwrap();
-
-        assert!(response.successful);
-        assert_eq!(response.data["items"], serde_json::json!([1]));
-    }
-}
+#[path = "client_tests.rs"]
+mod tests;

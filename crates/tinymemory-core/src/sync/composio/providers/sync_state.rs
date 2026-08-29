@@ -1,33 +1,64 @@
 //! Cursor, dedup and daily-budget state for Composio sync (#18 §B2).
 //!
-//! Owned here, engine-neutral, persisted through the [`SyncStateStore`] KV
-//! seam — any provider whose KV family can get/set a JSON value can carry
-//! sync state. This was a re-export of the engine's copy; §B2 asks for the
-//! state to be engine-neutral, and the type is nothing but serde shapes over
-//! std/chrono, so owning it costs one copy.
+//! Engine-neutral, persisted through the [`SyncStateStore`] KV seam — any
+//! provider whose KV family can get and set a JSON value can carry sync state.
 //!
-//! The engine keeps its own copy for its internal pipelines until §B1's
-//! orchestrator move retires them. The two persist under the same KV
-//! namespace with the same serde shape; `the_state_namespace_is_pinned` and
-//! `state_line_format_is_pinned` below hold this copy to that contract.
-
-use std::collections::{HashMap, HashSet};
+//! The engine keeps its own copy of the shape for its internal pipelines until
+//! §B1's orchestrator move retires them. The two persist under the same KV
+//! namespace with the same serde form; the pin tests either side hold this copy
+//! to that contract.
+//!
+//! # Where the shape lives (#5560)
+//!
+//! [`SyncState`], [`DailyBudget`], the namespaces and [`extract_item_id`] are
+//! defined in [`tinymemory_api::composio::state`] and re-exported here. Both
+//! sides read them: the module advances the cursor and spends the budget, while
+//! OpenHuman renders "312 of 500 requests used today" and, on disconnect, walks
+//! the dedup set to decide what to forget. A host-side twin would decode today
+//! and diverge on the first added field — and because this shape is
+//! *persisted*, divergence is a stranded cursor and a re-ingested inbox rather
+//! than a wire error someone notices.
+//!
+//! What stayed here is the I/O: the [`SyncStateStore`] seam and the two methods
+//! that use it, offered as the [`PersistedSyncState`] extension trait because
+//! an inherent `impl` has to live in the crate that defines the type. Call
+//! sites are unchanged — `SyncState::load(store, …)` and `state.save(store)`
+//! still resolve — but the trait has to be in scope, so the four call sites in
+//! this crate import it alongside the type.
 
 use async_trait::async_trait;
-use chrono::Utc;
-use serde::{Deserialize, Serialize};
 
-/// The KV namespace every persisted sync cursor lives under.
+/// The persisted sync-state shape, defined in the contract crate.
 ///
-/// Durable: changing it strands every cursor. See the pin test.
-pub const KV_NAMESPACE: &str = STATE_NAMESPACE;
+/// Re-exported at this path so every historical
+/// `providers::sync_state::SyncState` reference keeps resolving.
+pub use tinymemory_api::composio::state::{
+    extract_item_id, DailyBudget, SyncState, DEFAULT_DAILY_REQUEST_LIMIT, KV_NAMESPACE,
+    STATE_NAMESPACE,
+};
 
-pub const DEFAULT_DAILY_REQUEST_LIMIT: u32 = 500;
-pub const STATE_NAMESPACE: &str = "composio-sync-state";
-
+/// The key/value seam a [`SyncState`] is persisted through.
+///
+/// Deliberately narrower than a memory client: get and set one JSON value by
+/// `(namespace, key)`. That is the whole requirement, and stating it as two
+/// methods is what lets a non-TinyCortex driver carry Composio sync state
+/// without implementing anything else.
 #[async_trait]
 pub trait SyncStateStore: Send + Sync {
+    /// Read the value at `(namespace, key)`, or `None` when nothing is stored.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying store cannot be reached. "Nothing
+    /// stored" is `Ok(None)`, not an error — a first sync is the normal case.
     async fn get(&self, namespace: &str, key: &str) -> anyhow::Result<Option<serde_json::Value>>;
+
+    /// Write `value` at `(namespace, key)`, replacing anything already there.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the underlying store rejects or cannot persist the
+    /// write.
     async fn set(
         &self,
         namespace: &str,
@@ -36,133 +67,45 @@ pub trait SyncStateStore: Send + Sync {
     ) -> anyhow::Result<()>;
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DailyBudget {
-    pub date: String,
-    pub requests_used: u32,
-    pub limit: u32,
+/// Loading and saving a [`SyncState`] through a [`SyncStateStore`].
+///
+/// An extension trait rather than an inherent `impl` because the type is
+/// defined in the contract crate, which holds no I/O and publishes no traits.
+/// The method names and signatures are the ones the inherent versions had, so
+/// existing call sites only need this trait in scope.
+#[async_trait]
+pub trait PersistedSyncState: Sized {
+    /// Load the state for one `(toolkit, connection)` pair.
+    ///
+    /// A connection with nothing stored yields a fresh state rather than an
+    /// error — that is a first sync, not a failure. A loaded state has its
+    /// daily budget rolled forward before it is returned, so what a caller
+    /// spends and later writes back is today's row rather than yesterday's.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the store cannot be reached, or when the stored
+    /// value is not a decodable state. Both are genuine faults: silently
+    /// starting from a fresh state would re-ingest everything the connection
+    /// had already synced.
+    async fn load(
+        store: &dyn SyncStateStore,
+        toolkit: &str,
+        connection_id: &str,
+    ) -> anyhow::Result<Self>;
+
+    /// Persist this state under its `(toolkit, connection)` key.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the state cannot be serialised or the store
+    /// rejects the write.
+    async fn save(&self, store: &dyn SyncStateStore) -> anyhow::Result<()>;
 }
 
-impl Default for DailyBudget {
-    fn default() -> Self {
-        Self {
-            date: today(),
-            requests_used: 0,
-            limit: DEFAULT_DAILY_REQUEST_LIMIT,
-        }
-    }
-}
-
-impl DailyBudget {
-    pub fn remaining(&self) -> u32 {
-        if self.date != today() {
-            self.limit
-        } else {
-            self.limit.saturating_sub(self.requests_used)
-        }
-    }
-
-    pub fn is_exhausted(&self) -> bool {
-        self.remaining() == 0
-    }
-
-    pub fn record_requests(&mut self, count: u32) {
-        let today = today();
-        if self.date != today {
-            self.date = today;
-            self.requests_used = 0;
-        }
-        self.requests_used = self.requests_used.saturating_add(count);
-    }
-
-    pub fn record_request(&mut self) {
-        self.record_requests(1);
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SyncState {
-    pub toolkit: String,
-    pub connection_id: String,
-    #[serde(default)]
-    pub cursor: Option<String>,
-    #[serde(default)]
-    pub synced_ids: HashSet<String>,
-    #[serde(default)]
-    pub item_versions: HashMap<String, String>,
-    #[serde(default)]
-    pub daily_budget: DailyBudget,
-    #[serde(default)]
-    pub last_seen_id: Option<String>,
-    #[serde(default)]
-    pub last_sync_at_ms: Option<u64>,
-    #[serde(skip)]
-    pub run_requests: u32,
-    #[serde(skip)]
-    pub run_provider_cost_usd: f64,
-}
-
-impl SyncState {
-    pub fn new(toolkit: impl Into<String>, connection_id: impl Into<String>) -> Self {
-        Self {
-            toolkit: toolkit.into(),
-            connection_id: connection_id.into(),
-            cursor: None,
-            synced_ids: HashSet::new(),
-            item_versions: HashMap::new(),
-            daily_budget: DailyBudget::default(),
-            last_seen_id: None,
-            last_sync_at_ms: None,
-            run_requests: 0,
-            run_provider_cost_usd: 0.0,
-        }
-    }
-
-    pub fn key(toolkit: &str, connection_id: &str) -> String {
-        format!("{toolkit}:{connection_id}")
-    }
-
-    pub fn is_synced(&self, id: &str) -> bool {
-        self.synced_ids.contains(id)
-    }
-
-    pub fn mark_synced(&mut self, id: impl Into<String>) {
-        self.synced_ids.insert(id.into());
-    }
-
-    pub fn advance_cursor(&mut self, cursor: impl Into<String>) {
-        self.cursor = Some(cursor.into());
-    }
-
-    pub fn set_last_seen_id(&mut self, id: impl Into<String>) {
-        self.last_seen_id = Some(id.into());
-    }
-
-    pub fn set_last_sync_at_ms(&mut self, timestamp_ms: u64) {
-        self.last_sync_at_ms = Some(timestamp_ms);
-    }
-
-    pub fn budget_exhausted(&self) -> bool {
-        self.daily_budget.is_exhausted()
-    }
-
-    pub fn budget_remaining(&self) -> u32 {
-        self.daily_budget.remaining()
-    }
-
-    pub fn record_requests(&mut self, count: u32) {
-        self.daily_budget.record_requests(count);
-        self.run_requests = self.run_requests.saturating_add(count);
-    }
-
-    pub fn record_action(&mut self, attempts: u32, cost_usd: f64) {
-        self.record_requests(attempts.max(1));
-        if cost_usd.is_finite() && cost_usd > 0.0 {
-            self.run_provider_cost_usd += cost_usd;
-        }
-    }
-
-    pub async fn load(
+#[async_trait]
+impl PersistedSyncState for SyncState {
+    async fn load(
         store: &dyn SyncStateStore,
         toolkit: &str,
         connection_id: &str,
@@ -171,17 +114,14 @@ impl SyncState {
         match store.get(STATE_NAMESPACE, &key).await? {
             Some(value) => {
                 let mut state: Self = serde_json::from_value(value)?;
-                if state.daily_budget.date != today() {
-                    state.daily_budget.date = today();
-                    state.daily_budget.requests_used = 0;
-                }
+                state.daily_budget.roll_over_if_stale();
                 Ok(state)
             }
             None => Ok(Self::new(toolkit, connection_id)),
         }
     }
 
-    pub async fn save(&self, store: &dyn SyncStateStore) -> anyhow::Result<()> {
+    async fn save(&self, store: &dyn SyncStateStore) -> anyhow::Result<()> {
         let value = serde_json::to_value(self)?;
         store
             .set(
@@ -193,134 +133,6 @@ impl SyncState {
     }
 }
 
-/// First non-empty string at any of `paths` (dot-separated) in `item`.
-///
-/// Removed in the §B1a move as dead within this workspace; restored because
-/// OpenHuman's raw-coverage integration tests import and exercise it through
-/// the pin — "dead here" was measured with too small a grep.
-pub fn extract_item_id(item: &serde_json::Value, paths: &[&str]) -> Option<String> {
-    paths.iter().find_map(|path| {
-        let value = path
-            .split('.')
-            .try_fold(item, |current, segment| current.get(segment))?;
-        value
-            .as_str()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_owned)
-    })
-}
-
-fn today() -> String {
-    Utc::now().format("%Y-%m-%d").to_string()
-}
-
 #[cfg(test)]
-mod tests {
-    use std::collections::HashMap;
-    use std::sync::Mutex;
-
-    use super::*;
-
-    #[derive(Default)]
-    struct MemoryStateStore(Mutex<HashMap<String, serde_json::Value>>);
-
-    #[async_trait]
-    impl SyncStateStore for MemoryStateStore {
-        async fn get(
-            &self,
-            namespace: &str,
-            key: &str,
-        ) -> anyhow::Result<Option<serde_json::Value>> {
-            Ok(self
-                .0
-                .lock()
-                .unwrap()
-                .get(&format!("{namespace}:{key}"))
-                .cloned())
-        }
-
-        async fn set(
-            &self,
-            namespace: &str,
-            key: &str,
-            value: &serde_json::Value,
-        ) -> anyhow::Result<()> {
-            self.0
-                .lock()
-                .unwrap()
-                .insert(format!("{namespace}:{key}"), value.clone());
-            Ok(())
-        }
-    }
-
-    #[tokio::test]
-    async fn state_round_trips_cursor_dedup_and_budget() {
-        let store = MemoryStateStore::default();
-        let mut state = SyncState::new("gmail", "conn-1");
-        state.advance_cursor("cursor-2");
-        state.mark_synced("message-1");
-        state.record_requests(3);
-        state.save(&store).await.unwrap();
-
-        let loaded = SyncState::load(&store, "gmail", "conn-1").await.unwrap();
-        assert_eq!(loaded.cursor.as_deref(), Some("cursor-2"));
-        assert!(loaded.is_synced("message-1"));
-        assert_eq!(loaded.daily_budget.requests_used, 3);
-    }
-
-    /// The namespace is durable: every persisted Composio sync cursor lives
-    /// under this string, so a change strands all of them. The engine's copy
-    /// must agree; failing here means a coordinated migration, never a local
-    /// edit.
-    #[test]
-    fn the_state_namespace_is_pinned() {
-        assert_eq!(
-            KV_NAMESPACE, "composio-sync-state",
-            "the Composio sync-state KV namespace changed; every persisted \
-             cursor is stored under the old value and needs migrating"
-        );
-        assert_eq!(STATE_NAMESPACE, KV_NAMESPACE);
-    }
-
-    /// The engine persists the same state with its own copy of this type.
-    /// Pins the serialised shape so the copies cannot drift silently.
-    #[test]
-    fn state_line_format_is_pinned() {
-        let mut state = SyncState::new("gmail", "conn-1");
-        state.daily_budget.date = "2026-01-02".into();
-        state.daily_budget.requests_used = 3;
-        state.advance_cursor("c2");
-        state.mark_synced("m1");
-        state.item_versions.insert("m1".into(), "v1".into());
-        state.set_last_seen_id("m1");
-        state.set_last_sync_at_ms(1_000);
-        let value = serde_json::to_value(&state).unwrap();
-        assert_eq!(
-            value,
-            serde_json::json!({
-                "toolkit": "gmail",
-                "connection_id": "conn-1",
-                "cursor": "c2",
-                "synced_ids": ["m1"],
-                "item_versions": {"m1": "v1"},
-                "daily_budget": {"date": "2026-01-02", "requests_used": 3, "limit": 500},
-                "last_seen_id": "m1",
-                "last_sync_at_ms": 1000
-            })
-        );
-    }
-
-    #[test]
-    fn stale_budget_reports_full_and_resets_on_record() {
-        let mut budget = DailyBudget {
-            date: "2000-01-01".into(),
-            requests_used: 499,
-            limit: 500,
-        };
-        assert_eq!(budget.remaining(), 500);
-        budget.record_requests(1);
-        assert_eq!(budget.requests_used, 1);
-        assert_eq!(budget.remaining(), 499);
-    }
-}
+#[path = "sync_state_tests.rs"]
+mod tests;

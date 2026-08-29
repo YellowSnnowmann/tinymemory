@@ -71,7 +71,17 @@ impl IncrementalSource for NotionSyncPipeline {
         _: &SyncState,
         page: Option<&str>,
     ) -> Value {
-        let mut args = serde_json::json!({"page_size": self.page_size, "filter": {"value": "page", "property": "object"}, "sort": {"direction": "descending", "timestamp": "last_edited_time"}});
+        // `fetch_type` is required by Composio's `NOTION_FETCH_DATA`; omitting
+        // it fails the action's input-schema validation with `Invalid request
+        // data provided - Following fields are missing: {'fetch_type'}`, so
+        // every periodic Notion sync tick errors out.
+        //
+        // Unconditionally `"pages"`: this path hardcodes `filter: {value:
+        // "page"}`, so no other value is valid here. The agent-tool path infers
+        // the value instead (OpenHuman's `ensure_notion_fetch_type`) because
+        // there the filter is caller-supplied; that inference is deliberately
+        // not duplicated into this pipeline.
+        let mut args = serde_json::json!({"fetch_type": "pages", "page_size": self.page_size, "filter": {"value": "page", "property": "object"}, "sort": {"direction": "descending", "timestamp": "last_edited_time"}});
         if let Some(page) = page {
             args["start_cursor"] = serde_json::json!(page);
         }

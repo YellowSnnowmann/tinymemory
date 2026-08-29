@@ -2,8 +2,23 @@
 
 use super::normalization::{extract_notion_cursor, extract_page_title, extract_results};
 use super::NotionProvider;
-use crate::sync::composio::providers::ComposioProvider;
+use crate::sync::composio::providers::{
+    ComposioProvider, ComposioUsageHandle, ProviderContext, TaskFetchFilter,
+};
 use serde_json::json;
+use std::sync::Arc;
+
+fn context(connection_id: Option<&str>) -> ProviderContext {
+    ProviderContext {
+        config: Arc::new(tinymemory_api::host::test_support::TestHostConfig::default())
+            as Arc<crate::Config>,
+        toolkit: "notion".into(),
+        connection_id: connection_id.map(str::to_string),
+        usage: ComposioUsageHandle::default(),
+        max_items: None,
+        sync_depth_days: None,
+    }
+}
 
 #[test]
 fn extract_results_walks_common_shapes() {
@@ -116,4 +131,105 @@ fn parse_database_results_handles_data_wrapper_and_empty() {
     assert_eq!(dbs[0].title, "Wrapped");
 
     assert!(parse_database_results(&json!({ "results": [] })).is_empty());
+}
+
+#[tokio::test]
+async fn provider_io_methods_fail_with_action_context_without_host() {
+    let provider = NotionProvider::new();
+    assert!(provider
+        .fetch_user_profile(&context(Some("connection-1")))
+        .await
+        .unwrap_err()
+        .contains("NOTION_GET_ABOUT_ME"));
+    assert!(provider
+        .fetch_tasks(
+            &context(Some("connection-1")),
+            &TaskFetchFilter {
+                database_id: Some(" database-1 ".into()),
+                max: 4,
+                extra: json!({"archived": false}),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err()
+        .contains("NOTION_QUERY_DATABASE"));
+    assert!(provider
+        .fetch_tasks(&context(Some("connection-1")), &TaskFetchFilter::default())
+        .await
+        .unwrap_err()
+        .contains("NOTION_FETCH_DATA"));
+    assert!(provider
+        .list_databases(&context(Some("connection-1")))
+        .await
+        .unwrap_err()
+        .contains("NOTION_SEARCH_NOTION_PAGE"));
+    assert!(provider
+        .on_trigger(&context(None), "PAGE_UPDATED", &json!({}))
+        .await
+        .unwrap_err()
+        .contains("missing connection_id"));
+}
+
+#[test]
+fn page_normalization_covers_properties_and_fallbacks() {
+    use super::provider::normalize_notion_page;
+
+    assert!(normalize_notion_page(&json!({"title": "missing id"})).is_none());
+    let page = normalize_notion_page(&json!({
+        "pageId": "page-7",
+        "properties": {
+            "Status": {"status": {"name": "In progress"}},
+            "Assignee": {"people": [{"name": "Alice"}]},
+            "Due": {"date": {"start": "2026-08-21"}},
+            "Priority": {"select": {"name": "High"}}
+        },
+        "lastEditedTime": "2026-08-20T12:00:00Z"
+    }))
+    .unwrap();
+    assert_eq!(page.external_id, "page-7");
+    assert_eq!(page.title, "Notion page page-7");
+    assert_eq!(page.status.as_deref(), Some("In progress"));
+    assert_eq!(page.assignee.as_deref(), Some("Alice"));
+    assert_eq!(page.due.as_deref(), Some("2026-08-21"));
+    assert_eq!(page.priority.as_deref(), Some("High"));
+}
+
+/// The second `NOTION_FETCH_DATA` call site.
+///
+/// `fetch_tasks` falls back to this action when a Notion task source names no
+/// database, and it is reached from a shipped, user-configurable feature —
+/// OpenHuman's task-sources pipeline resolves `notion` through `get_provider`
+/// and calls `fetch_tasks`. It had the same missing `fetch_type` the periodic
+/// sync pipeline did, so it failed Composio's input-schema validation the same
+/// way on the Direct (BYOK) arm, where nothing injects the field for it.
+///
+/// Asserted on the argument builder rather than through `fetch_tasks`: the
+/// `ComposioHost` seam is installed once per process as a signed-out stub, so a
+/// test cannot observe what the request carried — only that it errored. That is
+/// exactly how this site stayed broken while the tests above passed.
+#[test]
+fn fetch_tasks_recent_pages_fallback_sends_fetch_type() {
+    let args = super::provider::fetch_data_args(25);
+    assert_eq!(
+        args["fetch_type"], "pages",
+        "NOTION_FETCH_DATA is rejected without `fetch_type`; args were {args}"
+    );
+    // The rest of the shape is unchanged — pinned so the fix cannot be
+    // "corrected" by rewriting the request into something Composio pages
+    // differently.
+    assert_eq!(args["page_size"], 25);
+    assert_eq!(args["filter"]["value"], "page");
+    assert_eq!(args["sort"]["timestamp"], "last_edited_time");
+}
+
+/// The cap `fetch_tasks` applies before the request goes out.
+#[test]
+fn fetch_tasks_recent_pages_fallback_caps_page_size_at_the_api_maximum() {
+    assert_eq!(super::provider::fetch_data_args(5_000)["page_size"], 100);
+    assert_eq!(
+        super::provider::fetch_data_args(5_000)["fetch_type"],
+        "pages",
+        "the cap must not drop the required field"
+    );
 }

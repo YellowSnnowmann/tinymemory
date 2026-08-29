@@ -1,124 +1,57 @@
 //! Learning candidate buffer — Phase 1 of issue #566.
 //!
-//! Defines the taxonomy types ([`FacetClass`], [`CueFamily`], [`EvidenceRef`]),
-//! the unit-of-work [`LearningCandidate`], and a thread-safe ring-buffer
-//! [`Buffer`] that collects candidates emitted by producers (Phase 2) before
-//! they are consumed by the stability detector (Phase 3).
+//! The taxonomy ([`FacetClass`], [`CueFamily`], [`EvidenceRef`]) and the
+//! unit-of-work [`LearningCandidate`] are defined in the contract crate; this
+//! module re-exports them and owns the thread-safe ring-buffer [`Buffer`] that
+//! collects candidates emitted by producers (Phase 2) before the stability
+//! detector consumes them (Phase 3).
 //!
 //! The buffer is bounded: when full it evicts the oldest entry (FIFO overflow).
 //! A global singleton is exposed via [`global()`]; individual tests may
 //! construct their own [`Buffer`] with `Buffer::new(capacity)`.
+//!
+//! # Why the types moved out and the buffer did not (#5560)
+//!
+//! The types moved to [`tinymemory_api::learning`] because a *host* names them:
+//! the stability detector, the facet cache and the reflection hooks all live in
+//! OpenHuman, and reaching them through this crate is one of the compile-time
+//! links #5560 removes. They are inert serde data, so the contract crate is the
+//! right floor for them — same argument, and the same destination, as
+//! [`EvidenceRef`], which went there first.
+//!
+//! The buffer stayed because a **`static` is not a payload**. This crate is
+//! compiled into the module `cdylib`; the contract crate is compiled into both
+//! that and the host binary. Moving [`global()`] down would not give the two
+//! sides one queue, it would give them two, and the producer would push into
+//! the copy the consumer never drains.
+//!
+//! **That split is already live, and moving the types does not close it.** The
+//! one producer in this workspace is
+//! `crate::sync::composio::providers::profile`, which pushes an identity
+//! candidate on every provider-profile sync — and that code runs inside the
+//! module. The host's detector drains the host's buffer. Delivering a candidate
+//! across that boundary needs a bus member (or an event), which is contract
+//! work rather than a re-export, and is called out in the upstream gap notes
+//! rather than papered over here.
 
 use std::collections::VecDeque;
 use std::sync::OnceLock;
 
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
 
-// ── Taxonomy ────────────────────────────────────────────────────────────────
-
-/// Six-class taxonomy of what the cache can hold.
+/// The learning-candidate taxonomy, defined in the contract crate.
 ///
-/// Keys are stored with a class prefix, e.g. `style/verbosity` or
-/// `tooling/package_manager`. The class determines the half-life and
-/// class budget used by the stability detector (Phase 3).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum FacetClass {
-    /// Communication style preferences — verbosity, formality, code format.
-    Style,
-    /// Stable biographical facts — timezone, name, language, role.
-    Identity,
-    /// Developer toolchain preferences — package manager, editor, OS, language.
-    Tooling,
-    /// Hard user vetoes — things the user has explicitly rejected or forbidden.
-    Veto,
-    /// Active user goals or ongoing projects.
-    Goal,
-    /// Preferred communication channel or platform.
-    Channel,
-}
+/// Re-exported at this path because ~30 call sites in this crate and in
+/// OpenHuman already spell it `learning_candidate::FacetClass`, and the move
+/// delivers the decoupling without spending that churn.
+pub use tinymemory_api::learning::{CueFamily, FacetClass, LearningCandidate};
 
-/// How a candidate signal was produced — determines the weight multiplier
-/// applied in the stability formula.
-///
-/// Higher-weight families contribute more strongly per evidence item.
-/// The weights here are the canonical values from the Phase 1 plan:
-/// `Explicit=1.0`, `Structural=0.9`, `Behavioral=0.7`, `Recurrence=0.6`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum CueFamily {
-    /// Direct declaration of intent by the user (highest weight — 1.0).
-    ///
-    /// Examples: "I prefer pnpm", "my timezone is PST", "always use terse replies".
-    Explicit,
-    /// Inferred from structured file or provider metadata (weight 0.9).
-    ///
-    /// Examples: `package.json#packageManager`, Gmail display name, Slack workspace.
-    Structural,
-    /// Inferred by heuristics or LLM from observed behaviour (weight 0.7).
-    ///
-    /// Examples: rolling edit-window ratio, correction-repeat signal, reflection hook output.
-    Behavioral,
-    /// Materialized from recurrence statistics in the memory tree (weight 0.6).
-    ///
-    /// Examples: tree-topic hotness, source_weight per channel.
-    Recurrence,
-}
-
-impl CueFamily {
-    /// Weight multiplier for this cue family in the stability formula.
-    ///
-    /// Phase 1 canonical values (matches the plan):
-    /// `Explicit=1.0`, `Structural=0.9`, `Behavioral=0.7`, `Recurrence=0.6`.
-    pub fn weight(self) -> f64 {
-        match self {
-            CueFamily::Explicit => 1.0,
-            CueFamily::Structural => 0.9,
-            CueFamily::Behavioral => 0.7,
-            CueFamily::Recurrence => 0.6,
-        }
-    }
-}
-
-// ── Evidence reference ───────────────────────────────────────────────────────
+// ── Evidence reference ──────────────────────────────────────────
 
 /// Where a candidate's evidence points. Defined in the contract crate — the
 /// memory store persists it, so both sides must name one type. See
 /// [`tinymemory_api::host::EvidenceRef`].
 pub use tinymemory_api::host::EvidenceRef;
-
-// ── Learning candidate ───────────────────────────────────────────────────────
-
-/// A single unit of learning evidence emitted by a producer and queued in the
-/// [`Buffer`].
-///
-/// Each candidate asserts a specific `(class, key, value)` triple alongside
-/// the evidence that backs it. The stability detector (Phase 3) aggregates
-/// competing candidates for the same `(class, key)` pair and resolves them
-/// into a single cache entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LearningCandidate {
-    /// Which facet class this evidence touches.
-    pub class: FacetClass,
-    /// Canonical slug key within the class, e.g. `"verbosity"`, `"package_manager"`.
-    ///
-    /// Convention: `snake_case`, lowercase, no class prefix (the class carries that).
-    pub key: String,
-    /// Canonical value string, e.g. `"terse"`, `"pnpm"`, `"UTC+5:30"`.
-    pub value: String,
-    /// How this candidate was produced.
-    pub cue_family: CueFamily,
-    /// Pointer to the backing evidence in the memory substrate.
-    pub evidence: EvidenceRef,
-    /// Source-provided confidence hint, `0.0..=1.0`.
-    ///
-    /// This is an initial hint; the stability detector will reweight it using
-    /// the cue-family weight and recency decay.
-    pub initial_confidence: f64,
-    /// When this candidate was observed, as seconds since the Unix epoch.
-    pub observed_at: f64,
-}
 
 // ── Buffer ───────────────────────────────────────────────────────────────────
 
@@ -208,142 +141,5 @@ pub fn global() -> &'static Buffer {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    fn now_secs() -> f64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs_f64()
-    }
-
-    fn make_candidate(value: &str) -> LearningCandidate {
-        LearningCandidate {
-            class: FacetClass::Style,
-            key: "verbosity".into(),
-            value: value.into(),
-            cue_family: CueFamily::Explicit,
-            evidence: EvidenceRef::Episodic { episodic_id: 1 },
-            initial_confidence: 0.8,
-            observed_at: now_secs(),
-        }
-    }
-
-    #[test]
-    fn push_then_drain_preserves_fifo_order() {
-        let buf = Buffer::new(10);
-        buf.push(make_candidate("a"));
-        buf.push(make_candidate("b"));
-        buf.push(make_candidate("c"));
-
-        let drained = buf.drain();
-        assert_eq!(drained.len(), 3);
-        assert_eq!(drained[0].value, "a");
-        assert_eq!(drained[1].value, "b");
-        assert_eq!(drained[2].value, "c");
-    }
-
-    #[test]
-    fn drain_empties_the_buffer() {
-        let buf = Buffer::new(10);
-        buf.push(make_candidate("x"));
-        buf.push(make_candidate("y"));
-        assert_eq!(buf.len(), 2);
-
-        let _ = buf.drain();
-        assert_eq!(buf.len(), 0);
-        assert!(buf.is_empty());
-    }
-
-    #[test]
-    fn bounded_capacity_evicts_oldest() {
-        let buf = Buffer::new(3);
-        buf.push(make_candidate("first"));
-        buf.push(make_candidate("second"));
-        buf.push(make_candidate("third"));
-        // Buffer is full — next push evicts "first"
-        buf.push(make_candidate("fourth"));
-
-        assert_eq!(buf.len(), 3);
-        let items = buf.drain();
-        assert_eq!(items[0].value, "second");
-        assert_eq!(items[1].value, "third");
-        assert_eq!(items[2].value, "fourth");
-    }
-
-    #[test]
-    fn peek_does_not_remove() {
-        let buf = Buffer::new(10);
-        buf.push(make_candidate("p"));
-        buf.push(make_candidate("q"));
-
-        let peeked = buf.peek();
-        assert_eq!(peeked.len(), 2);
-        // Buffer still holds the items
-        assert_eq!(buf.len(), 2);
-
-        let drained = buf.drain();
-        assert_eq!(drained[0].value, "p");
-        assert_eq!(drained[1].value, "q");
-    }
-
-    #[test]
-    fn cue_family_weight_values() {
-        assert_eq!(CueFamily::Explicit.weight(), 1.0);
-        assert_eq!(CueFamily::Structural.weight(), 0.9);
-        assert_eq!(CueFamily::Behavioral.weight(), 0.7);
-        assert_eq!(CueFamily::Recurrence.weight(), 0.6);
-    }
-
-    #[test]
-    fn roundtrip_serde_evidence_ref() {
-        let cases: Vec<EvidenceRef> = vec![
-            EvidenceRef::Episodic { episodic_id: 42 },
-            EvidenceRef::EpisodicWindow {
-                from_id: 10,
-                to_id: 20,
-            },
-            EvidenceRef::SourceSummary {
-                summary_id: "sum-abc".into(),
-            },
-            EvidenceRef::TreeTopic {
-                topic_id: "topic-xyz".into(),
-            },
-            EvidenceRef::DocumentChunk {
-                source_id: "notion:page1".into(),
-                chunk_id: "chunk-001".into(),
-            },
-            EvidenceRef::EmailMessage {
-                source_id: "gmail:user@example.com".into(),
-                message_id: "<abc123@mail.gmail.com>".into(),
-            },
-            EvidenceRef::Provider {
-                toolkit: "gmail".into(),
-                connection_id: "conn-1".into(),
-                field: "display_name".into(),
-            },
-            EvidenceRef::ToolCall {
-                tool_name: "write_file".into(),
-                episodic_id: 99,
-            },
-            EvidenceRef::TreeSourceWeight {
-                window_label: "2026-W18".into(),
-            },
-        ];
-
-        for ev in &cases {
-            let json = serde_json::to_string(ev).expect("serialize failed");
-            let back: EvidenceRef = serde_json::from_str(&json).expect("deserialize failed");
-            assert_eq!(ev, &back, "round-trip failed for variant: {json}");
-        }
-    }
-
-    #[test]
-    fn global_returns_same_instance_across_calls() {
-        let a = global() as *const Buffer;
-        let b = global() as *const Buffer;
-        assert_eq!(a, b, "global() must return the same static instance");
-    }
-}
+#[path = "learning_candidate_tests.rs"]
+mod tests;

@@ -28,6 +28,32 @@ use crate::sync::composio::providers::{
 pub(crate) const ACTION_GET_ABOUT_ME: &str = "NOTION_GET_ABOUT_ME";
 pub(crate) const ACTION_FETCH_DATA: &str = "NOTION_FETCH_DATA";
 pub(crate) const ACTION_QUERY_DATABASE: &str = "NOTION_QUERY_DATABASE";
+
+/// Arguments for the recent-pages `NOTION_FETCH_DATA` fallback `fetch_tasks`
+/// uses when a task source names no database.
+///
+/// Extracted from the call site so the request shape is assertable: the
+/// `ComposioHost` seam is a process-global stub in this crate's tests, so the
+/// outgoing arguments are otherwise unobservable and only the error string can
+/// be checked.
+///
+/// `fetch_type` is required by Composio and its omission is what
+/// `Invalid request data provided - Following fields are missing: {'fetch_type'}`
+/// reports. Unconditionally `"pages"` for the same reason the periodic sync
+/// pipeline sends that value: this arm hardcodes `filter: {value: "page"}`, so
+/// no other value is valid here.
+///
+/// OpenHuman injects the field for this action in `ensure_notion_fetch_type`,
+/// but only on the Backend arm of its Composio client; the Direct (BYOK) arm
+/// passes arguments through untouched, so this path cannot rely on it.
+pub(crate) fn fetch_data_args(max: usize) -> Value {
+    json!({
+        "fetch_type": "pages",
+        "page_size": max.min(100) as u32,
+        "filter": { "value": "page", "property": "object" },
+        "sort": { "direction": "descending", "timestamp": "last_edited_time" },
+    })
+}
 pub(crate) const ACTION_SEARCH_NOTION_PAGE: &str = "NOTION_SEARCH_NOTION_PAGE";
 
 /// Paths for extracting a page's unique ID.
@@ -162,14 +188,7 @@ impl ComposioProvider for NotionProvider {
                     "sorts": [ { "timestamp": "last_edited_time", "direction": "descending" } ],
                 }),
             ),
-            None => (
-                ACTION_FETCH_DATA,
-                json!({
-                    "page_size": max.min(100) as u32,
-                    "filter": { "value": "page", "property": "object" },
-                    "sort": { "direction": "descending", "timestamp": "last_edited_time" },
-                }),
-            ),
+            None => (ACTION_FETCH_DATA, fetch_data_args(max)),
         };
         merge_extra(&mut args, &filter.extra);
 
@@ -302,7 +321,7 @@ impl ComposioProvider for NotionProvider {
 /// best-effort against common property names (`Status`, `Assignee`,
 /// `Due`). Anything unmatched is simply left `None` — the raw payload is
 /// preserved for enrichment.
-fn normalize_notion_page(page: &serde_json::Value) -> Option<NormalizedTask> {
+pub(super) fn normalize_notion_page(page: &serde_json::Value) -> Option<NormalizedTask> {
     let external_id = pick_str(page, PAGE_ID_PATHS)?;
     let title = normalization::extract_page_title(page)
         .unwrap_or_else(|| format!("Notion page {external_id}"));

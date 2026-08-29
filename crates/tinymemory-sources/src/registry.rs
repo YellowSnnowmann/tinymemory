@@ -12,6 +12,12 @@
 //! Each on-disk write (`SourceRegistry::atomic_write`) is atomic (temp file +
 //! rename), so a crash mid-write cannot leave a truncated `config.toml`.
 //!
+//! Because that rename replaces a file the *host* also writes, this registry
+//! owes the host its permission contract as well as its contents: the temp file
+//! is created owner-only, so a source mutation cannot hand back a config that is
+//! more permissive than the one it replaced. See `create_owner_only`, which is
+//! private, so this is a plain reference rather than an intra-doc link.
+//!
 //! The complete load-modify-save cycle is guarded by a process-wide mutation
 //! lock, so separate [`SourceRegistry`] handles cannot overwrite one another's
 //! in-process updates. Atomic rename protects each individual disk write.
@@ -58,6 +64,43 @@ pub fn memory_sync_defaults_for_toolkit(toolkit: &str) -> (Option<u32>, Option<u
     }
 }
 
+/// Apply conservative per-kind cap defaults to a new source entry.
+///
+/// Only fills fields that are still `None` — never overwrites a caller-supplied
+/// value, so re-running it over an entry a user has already tuned is a no-op.
+/// The retroactive Composio migration applies the same reasoning through
+/// [`memory_sync_defaults_for_toolkit`], which is why the two live together:
+/// creation time and migration time must agree, and they only do if the policy
+/// has one address.
+///
+/// Folder, web-page and Composio kinds have nothing to fill here. Composio caps
+/// are set at upsert time from the toolkit slug, which this function does not
+/// have.
+pub fn apply_kind_defaults(entry: &mut MemorySourceEntry) {
+    match entry.kind {
+        SourceKind::GithubRepo => {
+            if entry.max_prs.is_none() {
+                entry.max_prs = Some(10);
+            }
+            if entry.max_issues.is_none() {
+                entry.max_issues = Some(10);
+            }
+            if entry.max_commits.is_none() {
+                entry.max_commits = Some(50);
+            }
+        }
+        SourceKind::RssFeed => {
+            if entry.max_items.is_none() {
+                entry.max_items = Some(20);
+            }
+        }
+        SourceKind::TwitterQuery if entry.since_days.is_none() => {
+            entry.since_days = Some(7);
+        }
+        _ => {}
+    }
+}
+
 /// A registry of [`MemorySourceEntry`] values backed by a TOML config file.
 ///
 /// Construct one with [`SourceRegistry::new`], pointing at the `config.toml`
@@ -66,6 +109,35 @@ pub fn memory_sync_defaults_for_toolkit(toolkit: &str) -> (Option<u32>, Option<u
 #[derive(Debug, Clone)]
 pub struct SourceRegistry {
     path: PathBuf,
+}
+
+/// Create `path` for writing, restricted to the owner on platforms that have
+/// file modes, and refusing to reuse anything already at that path.
+///
+/// The mode is part of the `open(2)` call rather than a `chmod` afterwards, so
+/// the file is never even momentarily group- or world-readable. That matters
+/// because [`SourceRegistry::atomic_write`] renames this temp file over the
+/// host's `config.toml`, and a rename carries the *source* file's mode onto the
+/// destination: a temp file created at the default `0o666 & ~umask` (0644 under
+/// the usual 022) silently re-widens the live config on every source mutation,
+/// undoing any hardening the host applied when it wrote that file itself.
+///
+/// `create_new` is deliberate too. The caller already names the temp file with a
+/// fresh UUID, so a collision means something else put a file — or a symlink —
+/// where this one was about to go, and failing is the safe answer.
+///
+/// Note that `mode` is masked by the process umask, so a pathological umask can
+/// make the result *narrower* than `0o600`. That is not a weakening, and it is
+/// the same property every other umask-respecting create in the tree has.
+fn create_owner_only(path: &Path) -> std::io::Result<std::fs::File> {
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    options.open(path)
 }
 
 impl SourceRegistry {
@@ -125,7 +197,8 @@ impl SourceRegistry {
     /// Writes are atomic: the new TOML is written to a same-directory temp file
     /// and then renamed over the config. This keeps a failed/crashed write from
     /// leaving a truncated `config.toml`, matching the OpenHuman source
-    /// registry contract.
+    /// registry contract. The temp file is created owner-only so the rename
+    /// cannot widen the live config — see [`create_owner_only`].
     ///
     /// Mutation callers hold [`REGISTRY_MUTATION_LOCK`] across their initial
     /// read and this preserving re-read, keeping the two snapshots ordered with
@@ -163,7 +236,7 @@ impl SourceRegistry {
 
         let write_result = (|| -> Result<()> {
             {
-                let mut file = std::fs::File::create(&tmp_path)
+                let mut file = create_owner_only(&tmp_path)
                     .with_context(|| format!("failed to create {}", tmp_path.display()))?;
                 use std::io::Write;
                 file.write_all(bytes)
@@ -279,6 +352,28 @@ impl SourceRegistry {
         }
         self.write_all(&sources)?;
         Ok(targets.len().min(u32::MAX as usize) as u32)
+    }
+
+    /// Replace the whole registry with `entries`, validating each first.
+    ///
+    /// The write-through behind a host-config view whose `memory_sources_json`
+    /// reads this file: a setter that only updated an in-memory snapshot would
+    /// be invisible to the very next getter (openhuman#5820). Same atomic
+    /// load-modify-validate-save cycle as the other mutations, so other
+    /// top-level keys in the file are preserved.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when an entry fails validation, or when the file
+    /// cannot be read, parsed, serialized or atomically replaced.
+    pub fn replace_all(&self, entries: &[MemorySourceEntry]) -> Result<()> {
+        let _guard = mutation_guard();
+        for entry in entries {
+            entry
+                .validate()
+                .map_err(|reason| anyhow!("invalid memory source `{}`: {reason}", entry.id))?;
+        }
+        self.write_all(entries)
     }
 
     /// Enable every source and clear all per-source caps ("All In" mode).

@@ -1,4 +1,7 @@
 use super::*;
+// `allows` is defined on the contract's type, so `ToolScope` is no longer
+// imported by the module under test and has to be named here (#5560).
+use super::super::tool_scope::ToolScope;
 use crate::store::MemoryClient;
 use std::sync::Arc;
 use tempfile::TempDir;

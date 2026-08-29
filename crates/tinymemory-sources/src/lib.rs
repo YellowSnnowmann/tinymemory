@@ -57,7 +57,9 @@ pub type SourceResult<T> = Result<T, tinymemory_api::error::MemoryError>;
 /// only its previous address.
 pub const FOLDER_FILE_SIZE_CAP_BYTES: u64 = 10 * 1024 * 1024;
 
-pub use registry::{memory_sync_defaults_for_toolkit, ComposioUpsertTarget, SourceRegistry};
+pub use registry::{
+    apply_kind_defaults, memory_sync_defaults_for_toolkit, ComposioUpsertTarget, SourceRegistry,
+};
 pub use types::{
     ContentType, MemorySourceEntry, MemorySourcePatch, SourceContent, SourceItem, SourceKind,
 };

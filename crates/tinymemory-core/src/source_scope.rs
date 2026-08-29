@@ -1,5 +1,26 @@
 //! Ambient per-turn allowlist of memory-source scopes an agent may recall from.
 //!
+//! # Why this stayed here and did not move to `tinymemory-api`
+//!
+//! [`events`](crate::events) and [`sync_events`](crate::sync_events) moved into
+//! the contract crate; this did not, for two independent reasons.
+//!
+//! It is a `tokio::task_local!`, and `tinymemory-api`'s manifest carries an
+//! explicit invariant — with a `cargo tree` guard command beside it — that
+//! nothing in its normal graph may pull in an async runtime. That is a promise
+//! to third-party driver authors, who implement `MemoryProvider` and never
+//! touch a host's per-turn allowlist.
+//!
+//! It also does not need to move. This task-local is the **in-process**
+//! convenience default, read by
+//! [`query_source`](crate::tree::retrieval::source::query_source); the
+//! transport-facing form is `query_source_scoped`, which takes the scope as an
+//! argument, and the bus carries it explicitly as
+//! `tinymemory_api::provider::types::SourceScope`. A host driving memory
+//! through the loadable module could not share a task-local with it in any
+//! case — the module is a separately compiled `cdylib` with its own statics —
+//! so it gathers its own ambient scope and passes it as a parameter.
+//!
 //! Agent profiles can restrict which memory sources a flavour recalls (the
 //! `AgentProfile::memory_sources` allowlist). Threading that allowlist through
 //! every memory tool and the deep `select_trees` retrieval layer would touch
@@ -119,94 +140,5 @@ pub fn chunk_source_allowed_in(set: &HashSet<String>, tags: &[String], source_id
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn unrestricted_outside_scope() {
-        assert!(current_source_scope().is_none());
-        assert!(scope_allowed("anything"));
-    }
-
-    #[tokio::test]
-    async fn restricts_to_allowlisted_scopes() {
-        with_source_scope(
-            Some(vec!["slack:#eng".into(), "  gmail:me  ".into()]),
-            async {
-                let set = current_source_scope().expect("scope set");
-                assert_eq!(set.len(), 2);
-                assert!(scope_allowed("slack:#eng"));
-                assert!(scope_allowed("gmail:me")); // trimmed
-                assert!(!scope_allowed("notion:team"));
-            },
-        )
-        .await;
-        // Must not leak past the scope.
-        assert!(current_source_scope().is_none());
-        assert!(scope_allowed("notion:team"));
-    }
-
-    #[tokio::test]
-    async fn empty_allowlist_blocks_everything() {
-        with_source_scope(Some(vec![]), async {
-            assert!(current_source_scope().is_some());
-            assert!(!scope_allowed("slack:#eng"));
-        })
-        .await;
-    }
-
-    #[tokio::test]
-    async fn explicit_none_is_unrestricted() {
-        with_source_scope(None, async {
-            assert!(current_source_scope().is_none());
-            assert!(scope_allowed("slack:#eng"));
-        })
-        .await;
-    }
-
-    #[tokio::test]
-    async fn chunk_gate_passes_non_source_chunks_and_gates_tagged_ones() {
-        let src_tags = vec!["memory_sources".to_string(), "document".to_string()];
-        let other_tags = vec!["conversation".to_string()];
-
-        with_source_scope(
-            Some(vec!["slack:#eng".into(), "src-rss-42".into()]),
-            async {
-                // Non-source chunk (no memory_sources tag) always passes.
-                assert!(chunk_source_allowed(&other_tags, "thr_123:user"));
-                // Composio/channel source chunk: raw source_id == scope.
-                assert!(chunk_source_allowed(&src_tags, "slack:#eng"));
-                assert!(!chunk_source_allowed(&src_tags, "gmail:alice"));
-                // Reader-based composite: extracted registry id matches.
-                assert!(chunk_source_allowed(
-                    &src_tags,
-                    "mem_src:src-rss-42:https://example.com/item-7"
-                ));
-                assert!(!chunk_source_allowed(
-                    &src_tags,
-                    "mem_src:src-folder-9:/notes/a.md"
-                ));
-            },
-        )
-        .await;
-    }
-
-    #[tokio::test]
-    async fn chunk_gate_unrestricted_without_scope() {
-        let src_tags = vec!["memory_sources".to_string()];
-        // Outside any scope, even tagged source chunks pass.
-        assert!(chunk_source_allowed(&src_tags, "gmail:alice"));
-    }
-
-    #[tokio::test]
-    async fn chunk_gate_empty_allowlist_blocks_tagged_sources_only() {
-        let src_tags = vec!["memory_sources".to_string()];
-        let other_tags: Vec<String> = vec![];
-        with_source_scope(Some(vec![]), async {
-            assert!(!chunk_source_allowed(&src_tags, "slack:#eng"));
-            // Non-source chunks still pass even under an empty allowlist.
-            assert!(chunk_source_allowed(&other_tags, "thr_1:user"));
-        })
-        .await;
-    }
-}
+#[path = "source_scope_tests.rs"]
+mod tests;

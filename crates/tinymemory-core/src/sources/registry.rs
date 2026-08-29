@@ -2,6 +2,14 @@
 //!
 //! The registry itself moved to `tinymemory-sources` (#18 §B4); this layer adds
 //! the host's config path and the lock that serialises writes to it.
+//!
+//! [`apply_kind_defaults`] followed the registry down in #5560. It is pure
+//! policy over a [`MemorySourceEntry`] — it fills caps that are still `None`
+//! and nothing else — and OpenHuman calls it when a user adds a source, so it
+//! had to be reachable without a compile-time link to this crate. It now sits
+//! beside `memory_sync_defaults_for_toolkit`, the Composio half of the same
+//! decision, which is where it should have been all along: creation-time and
+//! migration-time defaults only stay in step while the policy has one address.
 
 use std::sync::OnceLock;
 
@@ -9,7 +17,7 @@ use crate::config_loader as config_rpc;
 use crate::sources::types::{MemorySourceEntry, SourceKind};
 
 pub use tinymemory_sources::{
-    memory_sync_defaults_for_toolkit, ComposioUpsertTarget, MemorySourcePatch,
+    apply_kind_defaults, memory_sync_defaults_for_toolkit, ComposioUpsertTarget, MemorySourcePatch,
 };
 
 static MEMORY_SOURCES_WRITE_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
@@ -23,9 +31,11 @@ pub(crate) async fn memory_sources_write_guard() -> tokio::sync::MutexGuard<'sta
 
 async fn registry() -> Result<tinymemory_sources::registry::SourceRegistry, String> {
     let config = config_rpc::load_config_with_timeout().await?;
-    Ok(tinymemory_sources::registry::SourceRegistry::new(
-        config.config_path(),
-    ))
+    Ok(registry_in(&*config))
+}
+
+fn registry_in(config: &crate::Config) -> tinymemory_sources::registry::SourceRegistry {
+    tinymemory_sources::registry::SourceRegistry::new(config.config_path().clone())
 }
 
 pub async fn list_sources() -> Result<Vec<MemorySourceEntry>, String> {
@@ -62,8 +72,43 @@ pub fn get_source_in(
     config: &crate::Config,
     id: &str,
 ) -> Result<Option<MemorySourceEntry>, String> {
-    tinymemory_sources::registry::SourceRegistry::new(config.config_path().clone())
+    registry_in(config)
         .get(id)
+        .map_err(|error| error.to_string())
+}
+
+/// [`list_sources`] against an **explicit** config — the same reasoning as
+/// [`get_source_in`]: a driver bound to one workspace must read that
+/// workspace's registry file, not whatever the process environment names.
+///
+/// Synchronous for the same reason; this is what lets a host-config view
+/// answer `memory_sources_json` from the file the host writes rather than
+/// from a load-time snapshot (openhuman#5820).
+///
+/// # Errors
+///
+/// Returns `Err` with the registry's error message, stringified, when the
+/// file cannot be read or parsed as `[[memory_sources]]`.
+pub fn list_sources_in(config: &crate::Config) -> Result<Vec<MemorySourceEntry>, String> {
+    registry_in(config)
+        .list()
+        .map_err(|error| error.to_string())
+}
+
+/// Replace the registry file an **explicit** config names with `entries` —
+/// the write half of [`list_sources_in`], so a host-config view that reads
+/// live can also write through (openhuman#5820).
+///
+/// # Errors
+///
+/// Returns `Err` with the registry's error message, stringified, when an
+/// entry fails validation or the file cannot be written atomically.
+pub fn replace_sources_in(
+    config: &crate::Config,
+    entries: &[MemorySourceEntry],
+) -> Result<(), String> {
+    registry_in(config)
+        .replace_all(entries)
         .map_err(|error| error.to_string())
 }
 
@@ -134,39 +179,6 @@ pub async fn apply_all_in() -> Result<Vec<MemorySourceEntry>, String> {
         .map_err(|error| error.to_string())
 }
 
-/// Apply conservative per-kind cap defaults to a new source entry.
-///
-/// Only fills fields that are still `None` — never overwrites a
-/// caller-supplied value. This mirrors the retroactive migration logic in
-/// `reconcile::apply_composio_source_caps_migration` so the same defaults
-/// are applied consistently at creation time and during migration.
-pub fn apply_kind_defaults(entry: &mut MemorySourceEntry) {
-    match entry.kind {
-        SourceKind::GithubRepo => {
-            if entry.max_prs.is_none() {
-                entry.max_prs = Some(10);
-            }
-            if entry.max_issues.is_none() {
-                entry.max_issues = Some(10);
-            }
-            if entry.max_commits.is_none() {
-                entry.max_commits = Some(50);
-            }
-        }
-        SourceKind::RssFeed => {
-            if entry.max_items.is_none() {
-                entry.max_items = Some(20);
-            }
-        }
-        SourceKind::TwitterQuery if entry.since_days.is_none() => {
-            entry.since_days = Some(7);
-        }
-        // Folder / WebPage / Composio: no defaults to apply here.
-        // Composio defaults are set at upsert time in registry::upsert_composio_source.
-        _ => {}
-    }
-}
-
 /// Decode the source registry a host config carries.
 ///
 /// The registry crosses the host seam as JSON: [`MemorySourceEntry`] is defined
@@ -191,3 +203,7 @@ pub fn decode_memory_sources(config: &crate::Config) -> Vec<MemorySourceEntry> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "registry_tests.rs"]
+mod tests;
