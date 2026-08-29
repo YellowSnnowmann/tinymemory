@@ -409,10 +409,25 @@ impl UnifiedMemory {
         // whatever delimiter it replaced (a scope may legitimately contain
         // `_`), so guessing would silently mislabel unrelated namespaces —
         // NULL rows simply keep reporting their sanitized address.
+        //
+        // `GROUP BY namespace` (the storage address), not `ns` (the logical
+        // name): two distinct logical names can sanitize to the same address
+        // (`conversation:x` and `conversation_x` both sanitize to
+        // `conversation_x`), and those rows are already merged into one
+        // physical namespace by every addressed call (`list`, `export`, ...).
+        // Grouping by the logical name instead would split one physical
+        // namespace's rows across two summaries with two partial counts,
+        // while every addressed call still visits the single merged
+        // namespace and returns the union — double-counting it if a caller
+        // then lists each reported summary in turn. Grouping by the address
+        // keeps one summary per physical namespace with an accurate count;
+        // `MIN(logical_namespace)` (aggregate `MIN` ignores `NULL`) just picks
+        // a single, deterministic logical representative for it when more
+        // than one exists.
         let mut stmt = conn.prepare(
-            "SELECT COALESCE(logical_namespace, namespace) AS ns, COUNT(*) AS n, MAX(updated_at) AS last
+            "SELECT COALESCE(MIN(logical_namespace), namespace) AS ns, COUNT(*) AS n, MAX(updated_at) AS last
              FROM memory_docs
-             GROUP BY ns
+             GROUP BY namespace
              ORDER BY ns",
         )?;
         let rows = stmt.query_map([], |row| {
