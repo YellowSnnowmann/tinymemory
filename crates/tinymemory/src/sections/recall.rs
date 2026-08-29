@@ -40,6 +40,26 @@ fn reject_namespace_filter(opts: &OwnedRecallOpts) -> Result<(), MemoryError> {
     Ok(())
 }
 
+/// Refuse `cross_session` recall on any section other than
+/// [`MemorySection::Conversation`].
+///
+/// See [`CROSS_SESSION_SECTION_CONFLICT`] for why: the bundled driver's
+/// `cross_session` option only ever surfaces episodic conversational rows, and
+/// relabels them with whatever namespace the call was pinned to — so honouring
+/// it on a document or learning section would return conversational content
+/// mislabeled as that section's own hits.
+fn reject_cross_session_outside_conversation(
+    section: &MemorySection,
+    opts: &OwnedRecallOpts,
+) -> Result<(), MemoryError> {
+    if opts.cross_session && !matches!(section, MemorySection::Conversation) {
+        return Err(MemoryError::Invalid(
+            CROSS_SESSION_SECTION_CONFLICT.to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// `opts` with `namespace` pinned to `namespace`.
 fn pinned_to(opts: &OwnedRecallOpts, namespace: &str) -> OwnedRecallOpts {
     let mut pinned = opts.clone();
