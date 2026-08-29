@@ -56,8 +56,8 @@ pub const NAMESPACE_FILTER_CONFLICT: &str =
 /// [`SectionView::new`](super::SectionView::new) derives through
 /// [`MemorySection::from_prefix`](tinymemory_api::namespace::MemorySection::from_prefix)
 /// — so `Custom("conversation")` is treated exactly like
-/// [`MemorySection::Conversation`], matching every other method on this
-/// surface.
+/// [`Conversation`](tinymemory_api::namespace::MemorySection::Conversation),
+/// matching every other method on this surface.
 ///
 /// [`MemoryError::Invalid`]: tinymemory_api::error::MemoryError::Invalid
 /// [`MemorySection`]: tinymemory_api::namespace::MemorySection
