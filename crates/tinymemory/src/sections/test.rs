@@ -18,6 +18,7 @@ use async_trait::async_trait;
 use tinymemory_api::error::MemoryError;
 use tinymemory_api::namespace::MemorySection;
 use tinymemory_api::null::NullMemoryProvider;
+use tinymemory_api::provider::types::SourceScope;
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::traits::Memory;
 use tinymemory_api::types::{
@@ -645,4 +646,243 @@ async fn the_whole_surface_succeeds_on_a_provider_that_retains_nothing() {
         .expect("across_section must succeed");
     assert!(found.hits.is_empty());
     assert_eq!(found.namespaces_searched, 0);
+}
+
+// ------------------------------------------------ section normalisation
+
+#[tokio::test]
+async fn a_custom_section_spelling_a_known_prefix_is_the_same_view() {
+    let (memory, provider) = ScoredMemory::provider();
+    let sections = Sections::new(&provider);
+    let aliased = MemorySection::Custom("conversation".to_string());
+
+    // A write through the aliased spelling lands in the real section...
+    let namespace = sections
+        .section(aliased.clone())
+        .put(
+            "thread-1",
+            "turn-1",
+            "hello",
+            MemoryCategory::Core,
+            None,
+            MemoryTaint::Internal,
+        )
+        .await
+        .unwrap();
+    assert_eq!(namespace.as_str(), "conversation:thread-1");
+    assert_eq!(
+        memory.rows()[0].namespace.as_deref(),
+        Some("conversation:thread-1")
+    );
+
+    // ...and every enumerating path sees it, through either spelling. Before
+    // the section was normalised at construction, these two disagreed: the
+    // write landed in `conversation:` while the aliased view reported nothing.
+    assert_eq!(
+        sections.section(aliased.clone()).scopes().await.unwrap(),
+        sections.conversations().scopes().await.unwrap()
+    );
+    assert_eq!(sections.section(aliased).scopes().await.unwrap().len(), 1);
+    assert_eq!(
+        sections.conversations().section(),
+        &MemorySection::Conversation
+    );
+}
+
+#[tokio::test]
+async fn an_invalid_custom_prefix_errors_rather_than_reporting_an_empty_section() {
+    let (_memory, provider) = ScoredMemory::provider();
+    let sections = Sections::new(&provider);
+    let bad = MemorySection::Custom("Bad Name".to_string());
+
+    // The addressed path rejects it...
+    assert!(matches!(
+        sections
+            .section(bad.clone())
+            .get("scope", "key")
+            .await
+            .expect_err("an invalid prefix cannot form a namespace"),
+        MemoryError::Invalid(_)
+    ));
+
+    // ...and so must every enumerating path, rather than answering "empty".
+    for outcome in [
+        sections.section(bad.clone()).scopes().await.err(),
+        sections
+            .section(bad.clone())
+            .list_section(None, None)
+            .await
+            .err(),
+        Sections::new(&provider)
+            .recall()
+            .across_section(&bad, "q", 10, &opts(), None)
+            .await
+            .err(),
+    ] {
+        assert!(
+            matches!(outcome, Some(MemoryError::Invalid(_))),
+            "an unusable section must not look empty: {outcome:?}"
+        );
+    }
+}
+
+// ------------------------------------------------ pathological scores
+
+#[test]
+fn merge_sorts_non_finite_scores_with_the_absent_ones() {
+    let merged = merge_hits(
+        vec![
+            entry("learning:a", "nan", "x", Some(f64::NAN)),
+            entry("learning:b", "real", "x", Some(0.2)),
+            entry("learning:c", "infinite", "x", Some(f64::INFINITY)),
+            entry("learning:d", "absent", "x", None),
+        ],
+        10,
+    );
+    let keys: Vec<&str> = merged.iter().map(|e| e.key.as_str()).collect();
+    assert_eq!(
+        keys[0], "real",
+        "a real score must outrank every non-finite one, got {keys:?}"
+    );
+    assert_eq!(merged.len(), 4, "nothing is dropped, only ranked");
+}
+
+// ------------------------------------- the per-namespace limit is the full one
+
+#[tokio::test]
+async fn across_section_asks_each_namespace_for_the_full_limit() {
+    let (memory, provider) = ScoredMemory::provider();
+    // Three strong hits in one namespace, one weak hit in another. A per-
+    // namespace share of the limit (3 / 2 = 1) would return the weak hit;
+    // the full limit ranks it out.
+    memory.seed("learning:deep", "a", "async", Some(0.9));
+    memory.seed("learning:deep", "b", "async", Some(0.8));
+    memory.seed("learning:deep", "c", "async", Some(0.7));
+    memory.seed("learning:shallow", "z", "async", Some(0.1));
+
+    let found = Sections::new(&provider)
+        .recall()
+        .across_section(&MemorySection::Learning, "async", 3, &opts(), None)
+        .await
+        .unwrap();
+
+    let keys: Vec<&str> = found.hits.iter().map(|e| e.key.as_str()).collect();
+    assert_eq!(
+        keys,
+        ["a", "b", "c"],
+        "a share of the limit would have let the weak hit in"
+    );
+}
+
+// ------------------------------------------------ remaining failure paths
+
+#[tokio::test]
+async fn in_scope_rejects_a_scope_that_cannot_form_a_namespace() {
+    let (_memory, provider) = ScoredMemory::provider();
+    let err = Sections::new(&provider)
+        .recall()
+        .in_scope(&MemorySection::Learning, "", "q", 10, &opts(), None)
+        .await
+        .expect_err("an empty scope cannot form a namespace");
+
+    match err {
+        MemoryError::Invalid(message) => assert_ne!(
+            message, NAMESPACE_FILTER_CONFLICT,
+            "an invalid scope must not be reported as a filter conflict"
+        ),
+        other => panic!("expected Invalid, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_source_scoped_recall_propagates_the_drivers_refusal() {
+    let (_memory, provider) = ScoredMemory::provider();
+    let sources = SourceScope::default();
+
+    // A mandatory-composed driver cannot apply the predicate internally, so it
+    // refuses. The façade passes that through rather than pre-empting it.
+    let err = Sections::new(&provider)
+        .recall()
+        .in_scope(
+            &MemorySection::Learning,
+            "rust",
+            "q",
+            10,
+            &opts(),
+            Some(&sources),
+        )
+        .await
+        .expect_err("the driver refuses a scoped recall");
+    assert!(matches!(err, MemoryError::Invalid(_)), "got {err:?}");
+}
+
+#[tokio::test]
+async fn scopes_drops_a_namespace_the_convention_cannot_parse() {
+    let (memory, provider) = ScoredMemory::provider();
+    memory.seed("learning:good", "a", "x", None);
+    memory.seed("learning:has a space", "b", "x", None);
+    memory.seed(&format!("learning:{}", "x".repeat(300)), "c", "x", None);
+
+    let scopes = Sections::new(&provider).learnings().scopes().await.unwrap();
+    let names: Vec<&str> = scopes.iter().map(super::SectionScope::scope).collect();
+    assert_eq!(
+        names,
+        ["good"],
+        "one malformed name must not fail the whole section"
+    );
+}
+
+#[tokio::test]
+async fn list_filters_by_category_and_session() {
+    let (_memory, provider) = ScoredMemory::provider();
+    let sections = Sections::new(&provider);
+    sections
+        .learnings()
+        .put(
+            "rust",
+            "core-a",
+            "x",
+            MemoryCategory::Core,
+            Some("session-1"),
+            MemoryTaint::Internal,
+        )
+        .await
+        .unwrap();
+    sections
+        .learnings()
+        .put(
+            "rust",
+            "core-b",
+            "x",
+            MemoryCategory::Core,
+            Some("session-2"),
+            MemoryTaint::Internal,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        sections
+            .learnings()
+            .list("rust", None, None)
+            .await
+            .unwrap()
+            .len(),
+        2
+    );
+    assert_eq!(
+        sections
+            .learnings()
+            .list("rust", Some(&MemoryCategory::Core), Some("session-1"))
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert!(sections
+        .learnings()
+        .list("rust", None, Some("session-3"))
+        .await
+        .unwrap()
+        .is_empty());
 }
