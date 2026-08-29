@@ -32,8 +32,13 @@ impl UnifiedMemory {
         // The logical (delimiter-preserving) namespace, PII-redacted the same
         // way `sanitize_namespace` redacts the storage address, so
         // `namespace_summaries` can report `conversation:thread-8f21` back
-        // verbatim instead of the path-safe `conversation_thread-8f21`.
-        let logical_namespace = safety::canonical_identifier(input.namespace.trim());
+        // verbatim instead of the path-safe `conversation_thread-8f21`. Uses
+        // the same blank-input fallback as `sanitize_namespace` and strips the
+        // redaction placeholder's brackets so a PII-bearing sectioned
+        // namespace stays `Namespace::parse`-able -- see
+        // `canonical_logical_namespace`'s doc comment for both.
+        let logical_namespace =
+            safety::canonical_logical_namespace(&input.namespace, GLOBAL_NAMESPACE);
         let key = input.key.trim().to_string();
         if key.is_empty() {
             return Err("document key cannot be empty".to_string());
