@@ -184,18 +184,32 @@ unrelated namespaces into a section they were never written to.
 
 The physical address is not injective — `a:b_c` and `a_b:c` both sanitize to
 `a_b_c` — so the logical column has to do more than label a summary. `get`,
-`list`, and `forget` filter on it too: each addressed read is
-`WHERE namespace = ?1 AND (logical_namespace = ?2 OR logical_namespace IS
-NULL)`, not `WHERE namespace = ?1` alone. Without the second predicate, listing
-`a:b_c` would also surface `a_b:c`'s rows — mislabelled as belonging to the
-section that was listed, not the one that wrote them — and the two logical
-names would be indistinguishable once written. The `OR logical_namespace IS
-NULL` arm is required, not incidental: it is what keeps a pre-migration NULL
-row visible under its sanitised address, matching the backfill guarantee above.
+`list`, `forget`, and the query path backing `Memory::recall` all filter on it
+too: each addressed read is `WHERE namespace = ?1 AND (logical_namespace = ?2
+OR (logical_namespace IS NULL AND ?1 = ?2))`, not `WHERE namespace = ?1` alone
+(`safety::LOGICAL_NAMESPACE_FILTER_SQL`). Without the second predicate, listing
+or recalling `a:b_c` would also surface `a_b:c`'s rows — mislabelled as
+belonging to the section that was listed, not the one that wrote them — and
+the two logical names would be indistinguishable once written. `recall`
+derives its logical name the same way `get`/`list` do, from the caller's own
+`opts.namespace` (never sanitized before this derivation), so no new value is
+threaded in from outside the call.
+
+The `logical_namespace IS NULL` arm exists so a pre-migration row without a
+recorded logical name still reads under its sanitised address, matching the
+backfill guarantee above — but it is gated on `?1 = ?2`, not unconditional. A
+legacy NULL row's `namespace` column is its only identity, so it must surface
+only when the caller's logical name equals that physical address directly,
+never under some other logical name that merely happens to sanitize to the
+same address. An earlier version of this predicate omitted that gate
+(`OR logical_namespace IS NULL` alone), which let a legacy row match ANY
+aliasing logical name — reintroducing the same cross-section leak for legacy
+rows that this column exists to close for new ones.
+
 Every returned `MemoryEntry.namespace` is the row's own logical name (falling
-back to the physical address only for a NULL row), never the caller's query
-namespace, so the physical address stays an internal storage detail that never
-reaches a `MemoryEntry`.
+back to the physical address only for a NULL row addressed by that address),
+never the caller's query namespace, so the physical address stays an internal
+storage detail that never reaches a `MemoryEntry`.
 
 `namespace_summaries` groups by `COALESCE(logical_namespace, namespace)` for
 the same reason: once reads are scoped by logical name, two logical names that
