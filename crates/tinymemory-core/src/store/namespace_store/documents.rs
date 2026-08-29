@@ -492,18 +492,22 @@ impl UnifiedMemory {
     /// only ever scores that namespace's own rows, matching the isolation
     /// `get`/`list`/`forget` already have.
     ///
-    /// `namespace` and `logical` are the same pair `Memory::get`/`Memory::list`
-    /// bind: `namespace` is the caller's raw/logical namespace string (used
-    /// here to derive the physical address), and `logical` is
-    /// `canonical_logical_namespace(namespace, GLOBAL_NAMESPACE)` — the exact
-    /// value the write path bound into `logical_namespace`.
+    /// Takes both address forms **already derived**, not a single string to
+    /// derive them from — see [`UnifiedMemory::namespace_address_forms`] and
+    /// [`super::query::UnifiedMemory::query_namespace_hits`]'s doc comment for
+    /// why. This function's only caller already holds both forms explicitly;
+    /// an earlier version of this signature took a single `namespace: &str`
+    /// and re-sanitized it internally, which happened to be a no-op for its
+    /// one real caller (re-sanitizing an already-sanitized string is
+    /// idempotent) but invited a future caller to pass a raw string here
+    /// expecting internal derivation — exactly the silent-mismatch trap this
+    /// signature now makes impossible.
     pub(crate) async fn load_documents_for_scope_matching_logical(
         &self,
-        namespace: &str,
+        ns: &str,
         logical: &str,
     ) -> Result<Vec<StoredMemoryDocument>, String> {
         let conn = self.conn.lock();
-        let ns = Self::sanitize_namespace(namespace);
         let mut stmt = conn
             .prepare(&format!(
                 "SELECT
