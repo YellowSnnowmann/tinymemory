@@ -133,14 +133,14 @@ impl<'a> Sections<'a> {
     /// Turn-by-turn conversational memory — the `conversation:` section.
     #[must_use]
     pub fn conversations(&self) -> SectionView<'a> {
-        self.section(MemorySection::Conversation)
+        self.section(&MemorySection::Conversation)
     }
 
     /// Durable conclusions the agent drew and expects to reuse — the
     /// `learning:` section.
     #[must_use]
     pub fn learnings(&self) -> SectionView<'a> {
-        self.section(MemorySection::Learning)
+        self.section(&MemorySection::Learning)
     }
 
     /// Whole documents and the collections they sit in — the `document:`
@@ -150,7 +150,7 @@ impl<'a> Sections<'a> {
     /// the module docs.
     #[must_use]
     pub fn documents(&self) -> SectionView<'a> {
-        self.section(MemorySection::Document)
+        self.section(&MemorySection::Document)
     }
 
     /// Any section, including the four this type has no named accessor for
@@ -160,8 +160,11 @@ impl<'a> Sections<'a> {
     /// The named accessors are the three sections a host writes to routinely;
     /// this is the same view over the rest of the vocabulary, so nothing is
     /// second-class.
+    ///
+    /// Taken by reference, as every section argument in this module is, so a
+    /// caller never has to remember which side wants which.
     #[must_use]
-    pub fn section(&self, section: MemorySection) -> SectionView<'a> {
+    pub fn section(&self, section: &MemorySection) -> SectionView<'a> {
         SectionView::new(self.provider, section)
     }
 

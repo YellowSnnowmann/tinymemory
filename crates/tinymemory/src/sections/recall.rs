@@ -85,7 +85,7 @@ impl<'a> SectionRecall<'a> {
         sources: Option<&SourceScope>,
     ) -> Result<SectionHits, MemoryError> {
         reject_namespace_filter(opts)?;
-        let namespace = SectionView::new(self.provider, section.clone()).namespace(scope)?;
+        let namespace = SectionView::new(self.provider, section).namespace(scope)?;
         let hits = self
             .provider
             .recall(query, limit, &pinned_to(opts, namespace.as_str()), sources)
@@ -147,9 +147,7 @@ impl<'a> SectionRecall<'a> {
         sources: Option<&SourceScope>,
     ) -> Result<SectionHits, MemoryError> {
         reject_namespace_filter(opts)?;
-        let scopes = SectionView::new(self.provider, section.clone())
-            .scopes()
-            .await?;
+        let scopes = SectionView::new(self.provider, section).scopes().await?;
         let truncated = scopes.len() > MAX_SECTION_NAMESPACES;
 
         let mut gathered = Vec::new();

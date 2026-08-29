@@ -36,10 +36,6 @@ impl fmt::Debug for SectionView<'_> {
 impl<'a> SectionView<'a> {
     /// Bind `section` of `provider`.
     ///
-    /// The section is taken by value because a [`MemorySection::Custom`] owns
-    /// its name, and borrowing one would make [`Sections::section`] unable to
-    /// hand back a view over a section the caller built inline.
-    ///
     /// The section is **normalised** through [`MemorySection::from_prefix`], so
     /// `Custom("conversation")` becomes [`MemorySection::Conversation`] and the
     /// two name one view rather than two. `Namespace::new` normalises the same
@@ -49,7 +45,7 @@ impl<'a> SectionView<'a> {
     ///
     /// [`Sections::section`]: super::Sections::section
     #[must_use]
-    pub fn new(provider: &'a dyn MemoryProvider, section: MemorySection) -> Self {
+    pub fn new(provider: &'a dyn MemoryProvider, section: &MemorySection) -> Self {
         Self {
             provider,
             section: MemorySection::from_prefix(section.as_str()),
