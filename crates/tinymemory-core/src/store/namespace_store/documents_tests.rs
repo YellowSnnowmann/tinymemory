@@ -1257,6 +1257,97 @@ async fn upsert_document_auto_sanitizes_pii_like_namespace() {
     );
 }
 
+/// The `logical_namespace` column carries the delimiter-preserving,
+/// PII-**redacted** namespace, not the caller's raw string: the #5164
+/// PII-redaction step must apply to this column exactly as it does to the
+/// sanitized `namespace` column, so a national ID never becomes a stored
+/// address just because it round-trips through `namespaces()`.
+#[tokio::test]
+async fn upsert_document_redacts_pii_in_logical_namespace() {
+    let tmp = TempDir::new().unwrap();
+    let memory = UnifiedMemory::new(tmp.path(), Arc::new(NoopEmbedding), None).unwrap();
+
+    let doc_id = memory
+        .upsert_document(NamespaceDocumentInput {
+            namespace: "cliente-RFC-VECJ880326XK4".to_string(),
+            key: "k1".to_string(),
+            title: "Title".to_string(),
+            content: "Body".to_string(),
+            source_type: "doc".to_string(),
+            priority: "medium".to_string(),
+            tags: vec![],
+            metadata: json!({}),
+            category: "core".to_string(),
+            session_id: None,
+            document_id: None,
+            taint: crate::MemoryTaint::Internal,
+        })
+        .await
+        .expect("PII-like namespace should be auto-sanitized, not rejected");
+
+    let logical_namespace: Option<String> = {
+        let conn = memory.conn.lock();
+        conn.query_row(
+            "SELECT logical_namespace FROM memory_docs WHERE document_id = ?1",
+            rusqlite::params![doc_id],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    let logical_namespace =
+        logical_namespace.expect("logical_namespace must be populated on a fresh write");
+    assert!(
+        !logical_namespace.contains("VECJ880326XK4"),
+        "the national ID must not become the stored logical namespace, got: {logical_namespace}"
+    );
+    assert!(
+        logical_namespace.contains("REDACTED_PII"),
+        "expected a redaction placeholder, got: {logical_namespace}"
+    );
+}
+
+/// A sectioned namespace's `:` delimiter must survive into
+/// `logical_namespace` untouched — only the filesystem-hostile character
+/// scrub (the sanitized `namespace` column) collapses it.
+#[tokio::test]
+async fn upsert_document_preserves_colon_in_logical_namespace() {
+    let tmp = TempDir::new().unwrap();
+    let memory = UnifiedMemory::new(tmp.path(), Arc::new(NoopEmbedding), None).unwrap();
+
+    let doc_id = memory
+        .upsert_document(NamespaceDocumentInput {
+            namespace: "conversation:thread-8f21".to_string(),
+            key: "k1".to_string(),
+            title: "Title".to_string(),
+            content: "Body".to_string(),
+            source_type: "doc".to_string(),
+            priority: "medium".to_string(),
+            tags: vec![],
+            metadata: json!({}),
+            category: "core".to_string(),
+            session_id: None,
+            document_id: None,
+            taint: crate::MemoryTaint::Internal,
+        })
+        .await
+        .unwrap();
+
+    let (namespace, logical_namespace): (String, Option<String>) = {
+        let conn = memory.conn.lock();
+        conn.query_row(
+            "SELECT namespace, logical_namespace FROM memory_docs WHERE document_id = ?1",
+            rusqlite::params![doc_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .unwrap()
+    };
+    assert_eq!(namespace, "conversation_thread-8f21");
+    assert_eq!(
+        logical_namespace.as_deref(),
+        Some("conversation:thread-8f21")
+    );
+}
+
 #[tokio::test]
 async fn upsert_document_metadata_only_auto_sanitizes_pii_like_key() {
     let tmp = TempDir::new().unwrap();
