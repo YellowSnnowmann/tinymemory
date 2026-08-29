@@ -161,13 +161,10 @@ impl UnifiedMemory {
         // way the write path derived it — no new value threaded in from
         // outside. See `safety::LOGICAL_NAMESPACE_FILTER_SQL` for why the
         // `IS NULL` arm alone would over-match.
-        let logical = safety::canonical_logical_namespace(namespace, GLOBAL_NAMESPACE);
         let exclude_session_id = exclude_session_id
             .map(str::trim)
             .filter(|id| !id.is_empty());
-        let mut docs = self
-            .load_documents_for_scope_matching_logical(&ns, &logical)
-            .await?;
+        let mut docs = self.load_documents_for_scope(&ns).await?;
         if let Some(exclude) = exclude_session_id {
             let before = docs.len();
             docs.retain(|doc| doc.session_id.as_deref() != Some(exclude));
