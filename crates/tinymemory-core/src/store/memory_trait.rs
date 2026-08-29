@@ -619,9 +619,15 @@ impl Memory for UnifiedMemory {
         // changed anything — the caller then reads the row as absent and stores
         // it again, which is the retry loop behind #5164.
         let ns = UnifiedMemory::sanitize_namespace(namespace);
+        // The same delimiter-preserving logical name the write path bound
+        // into `logical_namespace` (`canonical_logical_namespace`), so `get`
+        // addresses the row by both its physical and logical identity — see
+        // `LOGICAL_NAMESPACE_FILTER_SQL`'s doc comment for why the physical
+        // address alone is not enough.
+        let logical = crate::store::safety::canonical_logical_namespace(namespace, GLOBAL_NAMESPACE);
         let key = crate::store::safety::canonical_document_key(key);
         let conn = Arc::clone(&self.conn);
-        tokio::task::spawn_blocking(move || Self::get_blocking(&conn, &ns, &key))
+        tokio::task::spawn_blocking(move || Self::get_blocking(&conn, &ns, &logical, &key))
             .await
             .context("join Memory::get")?
     }
@@ -632,12 +638,20 @@ impl Memory for UnifiedMemory {
         category: Option<&MemoryCategory>,
         session_id: Option<&str>,
     ) -> anyhow::Result<Vec<MemoryEntry>> {
-        let ns = UnifiedMemory::sanitize_namespace(normalize_namespace(namespace));
+        let normalized = normalize_namespace(namespace);
+        let ns = UnifiedMemory::sanitize_namespace(normalized);
+        let logical = crate::store::safety::canonical_logical_namespace(normalized, GLOBAL_NAMESPACE);
         let category = category.cloned();
         let session_id = session_id.map(str::to_owned);
         let conn = Arc::clone(&self.conn);
         tokio::task::spawn_blocking(move || {
-            Self::list_blocking(&conn, &ns, category.as_ref(), session_id.as_deref())
+            Self::list_blocking(
+                &conn,
+                &ns,
+                &logical,
+                category.as_ref(),
+                session_id.as_deref(),
+            )
         })
         .await
         .context("join Memory::list")?
@@ -648,13 +662,17 @@ impl Memory for UnifiedMemory {
         // addresses the raw caller identifiers can never delete a row whose
         // namespace or key was canonicalized on the way in.
         let ns = UnifiedMemory::sanitize_namespace(namespace);
+        let logical = crate::store::safety::canonical_logical_namespace(namespace, GLOBAL_NAMESPACE);
         let key = crate::store::safety::canonical_document_key(key);
         let row: Option<String> = {
             let conn = Arc::clone(&self.conn);
             let ns = ns.clone();
-            tokio::task::spawn_blocking(move || Self::forget_lookup_blocking(&conn, &ns, &key))
-                .await
-                .context("join Memory::forget")??
+            let logical = logical.clone();
+            tokio::task::spawn_blocking(move || {
+                Self::forget_lookup_blocking(&conn, &ns, &logical, &key)
+            })
+            .await
+            .context("join Memory::forget")??
         };
         let Some(document_id) = row else {
             return Ok(false);
