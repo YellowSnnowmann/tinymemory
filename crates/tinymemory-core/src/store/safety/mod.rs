@@ -103,41 +103,6 @@ pub fn canonical_document_key(key: &str) -> String {
     canonical_identifier(key.trim())
 }
 
-/// The addressed-read predicate every `memory_docs` row query filters on,
-/// beyond `WHERE namespace = ?1`: `?2` is the caller's logical namespace
-/// (`canonical_logical_namespace(caller_input, GLOBAL_NAMESPACE)` — the exact
-/// value the write path bound into the `logical_namespace` column, see
-/// `upsert_document_presanitized`).
-///
-/// The physical storage address is not injective: `a:b_c` and `a_b:c` both
-/// sanitize to `a_b_c`. Without this second predicate, a read addressed to
-/// one logical name would also surface — and a `get`/`forget` addressed to
-/// one could delete — the other's rows, because both share the physical
-/// `namespace` column. Filtering on `logical_namespace` too keeps the two
-/// apart. Used by every addressed read on `memory_docs`: `get`, `list`,
-/// `forget`, and the query path backing `Memory::recall`.
-///
-/// The `logical_namespace IS NULL` arm covers rows written before this
-/// column existed: a sanitized `_` cannot be un-collapsed into whatever
-/// delimiter it replaced, so those rows never get a logical name
-/// reconstructed, and excluding them outright would make every pre-migration
-/// row permanently unaddressable by `get`/`forget`/`recall` and invisible to
-/// `list`.
-///
-/// That NULL arm is gated on `?1 = ?2` (the physical address equals the
-/// supplied logical name), not left unconditional. A legacy NULL row's
-/// `namespace` column is its only identity — it has no recorded logical
-/// name — so it must surface only when the caller addressed it *by that
-/// physical name* directly (the common case: a plain namespace with no
-/// delimiter-sanitized characters). An unconditional `OR logical_namespace
-/// IS NULL` let the row match ANY logical name that sanitizes to its
-/// address, so a pre-migration row stored under `a_b_c` surfaced under
-/// `a:b_c`, `a_b:c`, and every other alias — reintroducing the exact
-/// cross-section leak this column exists to close, just for legacy rows
-/// instead of new ones.
-pub(crate) const LOGICAL_NAMESPACE_FILTER_SQL: &str =
-    "(logical_namespace = ?2 OR (logical_namespace IS NULL AND ?1 = ?2))";
-
 /// Scrub a namespace-document input, field by field, via the crate scrubbers.
 ///
 /// Sanitization is content-cleaning only; provenance `taint` survives untouched
