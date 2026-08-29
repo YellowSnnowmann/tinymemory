@@ -59,7 +59,7 @@ pub fn canonical_identifier(value: &str) -> String {
 /// `canonical_identifier` alone does not make:
 ///
 /// * **Bracket stripping.** The `[REDACTED_PII_*]` placeholder is valid
-///   storage-address content but not a valid [`Namespace`](tinymemory) scope —
+///   storage-address content but not a valid `Namespace` scope —
 ///   `Namespace::parse` rejects `[` and `]` — so a PII-bearing sectioned
 ///   namespace would round-trip through redaction and then fail to parse back
 ///   into its own section, reintroducing the exact enumeration gap this
