@@ -28,7 +28,7 @@ use tinymemory_api::error::MemoryError;
 use tinymemory_api::provider::{audit_provider, ExportRecord, MemoryProvider};
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::types::{MemoryCategory, MemoryTaint};
-use tinymemory_bus::namespace::Namespace;
+use tinymemory_api::namespace::Namespace;
 
 /// Runs every assertion in the suite.
 ///
@@ -485,7 +485,7 @@ pub async fn assert_recall_respects_limit_and_namespace(provider: &dyn MemoryPro
 }
 
 /// `namespaces()` reports a sectioned namespace back under the same
-/// [`tinymemory_bus::namespace::MemorySection`] the caller wrote it in.
+/// [`tinymemory_api::namespace::MemorySection`] the caller wrote it in.
 ///
 /// This is the regression the unified SQLite store's own storage-address
 /// sanitiser taught us to check for: a driver whose on-disk address collapses
