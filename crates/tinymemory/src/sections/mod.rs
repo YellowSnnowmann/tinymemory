@@ -104,7 +104,10 @@ mod types;
 mod view;
 
 pub use recall::SectionRecall;
-pub use types::{SectionHits, SectionScope, MAX_SECTION_NAMESPACES, NAMESPACE_FILTER_CONFLICT};
+pub use types::{
+    SectionHits, SectionScope, CROSS_SESSION_SECTION_CONFLICT, MAX_SECTION_NAMESPACES,
+    NAMESPACE_FILTER_CONFLICT,
+};
 pub use view::SectionView;
 
 /// The entry point: a provider, viewed one section at a time.
