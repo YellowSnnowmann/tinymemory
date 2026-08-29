@@ -326,13 +326,26 @@ type MemoryDocRow = (
 // delete — the other's rows, because both share `ns`. Filtering on
 // `logical_namespace` too keeps the two apart.
 //
-// `OR logical_namespace IS NULL` is required, not incidental: rows written
-// before this column existed have it NULL and never get a value
+// The `logical_namespace IS NULL` arm is required, not incidental: rows
+// written before this column existed have it NULL and never get a value
 // reconstructed (a sanitized `_` cannot be un-collapsed into whatever
 // delimiter it replaced), so excluding NULL rows outright would make every
 // pre-migration row permanently unaddressable by `get`/`forget` and
 // invisible to `list`, silently breaking every caller relying on them.
-const LOGICAL_NAMESPACE_FILTER_SQL: &str = "(logical_namespace = ?2 OR logical_namespace IS NULL)";
+//
+// That NULL arm is gated on `?1 = ?2` (physical address equals the supplied
+// logical name), not left unconditional. A legacy NULL row's `namespace`
+// column is its own only identity — it has no recorded logical name — so it
+// must surface only when the caller addressed it *by that physical name*
+// directly, i.e. a caller whose logical name happens to equal the physical
+// address (the common case: a plain namespace with no delimiter-sanitized
+// characters). An unconditional `OR logical_namespace IS NULL` let the row
+// match ANY logical name that sanitizes to its address — so a pre-migration
+// row stored under `a_b_c` surfaced under `a:b_c`, `a_b:c`, and every other
+// alias, reintroducing the exact cross-section leak this column exists to
+// close, just for legacy rows instead of new ones.
+const LOGICAL_NAMESPACE_FILTER_SQL: &str =
+    "(logical_namespace = ?2 OR (logical_namespace IS NULL AND ?1 = ?2))";
 
 impl UnifiedMemory {
     fn get_blocking(
