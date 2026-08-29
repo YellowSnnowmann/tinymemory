@@ -475,36 +475,106 @@ impl UnifiedMemory {
             .next()
             .map_err(|e| format!("row load_documents_for_scope: {e}"))?
         {
-            let tags_json: String = row.get(7).map_err(|e| e.to_string())?;
-            let metadata_json: String = row.get(8).map_err(|e| e.to_string())?;
-            // The `taint` column has a NOT NULL DEFAULT 'internal' clause
-            // from the migration, so legacy rows that pre-date the column
-            // surface as "internal" string and round-trip back to
-            // `MemoryTaint::Internal`. Unknown / corrupted values fail
-            // closed to `MemoryTaint::ExternalSync` inside `from_db_str`,
-            // so a forward-rolled schema variant or a bad UPDATE can't
-            // silently downgrade a row to user-authored content.
-            let taint_str: String = row.get(14).map_err(|e| e.to_string())?;
-            let taint = crate::MemoryTaint::from_db_str(&taint_str);
-            docs.push(StoredMemoryDocument {
-                document_id: row.get(0).map_err(|e| e.to_string())?,
-                namespace: row.get(1).map_err(|e| e.to_string())?,
-                key: row.get(2).map_err(|e| e.to_string())?,
-                title: row.get(3).map_err(|e| e.to_string())?,
-                content: row.get(4).map_err(|e| e.to_string())?,
-                source_type: row.get(5).map_err(|e| e.to_string())?,
-                priority: row.get(6).map_err(|e| e.to_string())?,
-                tags: serde_json::from_str(&tags_json).unwrap_or_default(),
-                metadata: serde_json::from_str(&metadata_json).unwrap_or_else(|_| json!({})),
-                category: row.get(9).map_err(|e| e.to_string())?,
-                session_id: row.get(10).map_err(|e| e.to_string())?,
-                created_at: row.get(11).map_err(|e| e.to_string())?,
-                updated_at: row.get(12).map_err(|e| e.to_string())?,
-                markdown_rel_path: row.get(13).map_err(|e| e.to_string())?,
-                taint,
-            });
+            docs.push(Self::row_to_stored_document(row)?);
         }
         Ok(docs)
+    }
+
+    /// Same as [`Self::load_documents_for_scope`], but also filters on the
+    /// row's **logical** namespace via [`safety::LOGICAL_NAMESPACE_FILTER_SQL`].
+    ///
+    /// `load_documents_for_scope` addresses only the physical `namespace`
+    /// column, and the physical address is not injective (`a:b_c` and
+    /// `a_b:c` both sanitize to `a_b_c`), so it would surface both aliases'
+    /// rows for either caller. This is what `Memory::recall` uses instead —
+    /// the query path is otherwise identical, so a caller pinned to one
+    /// logical namespace (`SectionRecall::in_scope`, `SectionRecall::across_section`)
+    /// only ever scores that namespace's own rows, matching the isolation
+    /// `get`/`list`/`forget` already have.
+    ///
+    /// `namespace` and `logical` are the same pair `Memory::get`/`Memory::list`
+    /// bind: `namespace` is the caller's raw/logical namespace string (used
+    /// here to derive the physical address), and `logical` is
+    /// `canonical_logical_namespace(namespace, GLOBAL_NAMESPACE)` — the exact
+    /// value the write path bound into `logical_namespace`.
+    pub(crate) async fn load_documents_for_scope_matching_logical(
+        &self,
+        namespace: &str,
+        logical: &str,
+    ) -> Result<Vec<StoredMemoryDocument>, String> {
+        let conn = self.conn.lock();
+        let ns = Self::sanitize_namespace(namespace);
+        let mut stmt = conn
+            .prepare(&format!(
+                "SELECT
+                    document_id,
+                    namespace,
+                    key,
+                    title,
+                    content,
+                    source_type,
+                    priority,
+                    tags_json,
+                    metadata_json,
+                    category,
+                    session_id,
+                    created_at,
+                    updated_at,
+                    markdown_rel_path,
+                    taint
+                 FROM memory_docs
+                 WHERE namespace = ?1 AND {}
+                 ORDER BY updated_at DESC",
+                safety::LOGICAL_NAMESPACE_FILTER_SQL
+            ))
+            .map_err(|e| format!("prepare load_documents_for_scope_matching_logical: {e}"))?;
+        let mut rows = stmt
+            .query(params![ns, logical])
+            .map_err(|e| format!("query load_documents_for_scope_matching_logical: {e}"))?;
+        let mut docs = Vec::new();
+        while let Some(row) = rows
+            .next()
+            .map_err(|e| format!("row load_documents_for_scope_matching_logical: {e}"))?
+        {
+            docs.push(Self::row_to_stored_document(row)?);
+        }
+        Ok(docs)
+    }
+
+    /// Map one `memory_docs` row, in the column order both
+    /// [`Self::load_documents_for_scope`] and
+    /// [`Self::load_documents_for_scope_matching_logical`] select it in, into a
+    /// [`StoredMemoryDocument`]. Single-sourced so the two queries' row shapes
+    /// cannot drift apart silently.
+    fn row_to_stored_document(row: &rusqlite::Row<'_>) -> Result<StoredMemoryDocument, String> {
+        let tags_json: String = row.get(7).map_err(|e| e.to_string())?;
+        let metadata_json: String = row.get(8).map_err(|e| e.to_string())?;
+        // The `taint` column has a NOT NULL DEFAULT 'internal' clause
+        // from the migration, so legacy rows that pre-date the column
+        // surface as "internal" string and round-trip back to
+        // `MemoryTaint::Internal`. Unknown / corrupted values fail
+        // closed to `MemoryTaint::ExternalSync` inside `from_db_str`,
+        // so a forward-rolled schema variant or a bad UPDATE can't
+        // silently downgrade a row to user-authored content.
+        let taint_str: String = row.get(14).map_err(|e| e.to_string())?;
+        let taint = crate::MemoryTaint::from_db_str(&taint_str);
+        Ok(StoredMemoryDocument {
+            document_id: row.get(0).map_err(|e| e.to_string())?,
+            namespace: row.get(1).map_err(|e| e.to_string())?,
+            key: row.get(2).map_err(|e| e.to_string())?,
+            title: row.get(3).map_err(|e| e.to_string())?,
+            content: row.get(4).map_err(|e| e.to_string())?,
+            source_type: row.get(5).map_err(|e| e.to_string())?,
+            priority: row.get(6).map_err(|e| e.to_string())?,
+            tags: serde_json::from_str(&tags_json).unwrap_or_default(),
+            metadata: serde_json::from_str(&metadata_json).unwrap_or_else(|_| json!({})),
+            category: row.get(9).map_err(|e| e.to_string())?,
+            session_id: row.get(10).map_err(|e| e.to_string())?,
+            created_at: row.get(11).map_err(|e| e.to_string())?,
+            updated_at: row.get(12).map_err(|e| e.to_string())?,
+            markdown_rel_path: row.get(13).map_err(|e| e.to_string())?,
+            taint,
+        })
     }
 
     /// List documents in a namespace, or across all namespaces when `None`.
