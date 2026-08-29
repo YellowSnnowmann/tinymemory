@@ -438,15 +438,6 @@ impl UnifiedMemory {
         }))
     }
 
-    /// Physical-address-only document load, retained for test fixtures that
-    /// deliberately seed rows without a `logical_namespace` (the pre-migration
-    /// / raw-SQL shape) and need to read them back without a logical filter.
-    /// Every production caller now goes through
-    /// [`Self::load_documents_for_scope_matching_logical`] instead — see its
-    /// doc comment and [`UnifiedMemory::namespace_address_forms`] for why an
-    /// address-only load is not safe to use where two logical namespaces can
-    /// alias one physical address.
-    #[cfg(test)]
     pub(crate) async fn load_documents_for_scope(
         &self,
         namespace: &str,
@@ -489,76 +480,9 @@ impl UnifiedMemory {
         Ok(docs)
     }
 
-    /// Same as [`Self::load_documents_for_scope`], but also filters on the
-    /// row's **logical** namespace via [`safety::LOGICAL_NAMESPACE_FILTER_SQL`].
-    ///
-    /// `load_documents_for_scope` addresses only the physical `namespace`
-    /// column, and the physical address is not injective (`a:b_c` and
-    /// `a_b:c` both sanitize to `a_b_c`), so it would surface both aliases'
-    /// rows for either caller. This is what `Memory::recall` uses instead —
-    /// the query path is otherwise identical, so a caller pinned to one
-    /// logical namespace (`SectionRecall::in_scope`, `SectionRecall::across_section`)
-    /// only ever scores that namespace's own rows, matching the isolation
-    /// `get`/`list`/`forget` already have.
-    ///
-    /// Takes both address forms **already derived**, not a single string to
-    /// derive them from — see [`UnifiedMemory::namespace_address_forms`] and
-    /// [`super::query::UnifiedMemory::query_namespace_hits`]'s doc comment for
-    /// why. This function's only caller already holds both forms explicitly;
-    /// an earlier version of this signature took a single `namespace: &str`
-    /// and re-sanitized it internally, which happened to be a no-op for its
-    /// one real caller (re-sanitizing an already-sanitized string is
-    /// idempotent) but invited a future caller to pass a raw string here
-    /// expecting internal derivation — exactly the silent-mismatch trap this
-    /// signature now makes impossible.
-    pub(crate) async fn load_documents_for_scope_matching_logical(
-        &self,
-        ns: &str,
-        logical: &str,
-    ) -> Result<Vec<StoredMemoryDocument>, String> {
-        let conn = self.conn.lock();
-        let mut stmt = conn
-            .prepare(&format!(
-                "SELECT
-                    document_id,
-                    namespace,
-                    key,
-                    title,
-                    content,
-                    source_type,
-                    priority,
-                    tags_json,
-                    metadata_json,
-                    category,
-                    session_id,
-                    created_at,
-                    updated_at,
-                    markdown_rel_path,
-                    taint
-                 FROM memory_docs
-                 WHERE namespace = ?1 AND {}
-                 ORDER BY updated_at DESC",
-                safety::LOGICAL_NAMESPACE_FILTER_SQL
-            ))
-            .map_err(|e| format!("prepare load_documents_for_scope_matching_logical: {e}"))?;
-        let mut rows = stmt
-            .query(params![ns, logical])
-            .map_err(|e| format!("query load_documents_for_scope_matching_logical: {e}"))?;
-        let mut docs = Vec::new();
-        while let Some(row) = rows
-            .next()
-            .map_err(|e| format!("row load_documents_for_scope_matching_logical: {e}"))?
-        {
-            docs.push(Self::row_to_stored_document(row)?);
-        }
-        Ok(docs)
-    }
-
-    /// Map one `memory_docs` row, in the column order both
-    /// [`Self::load_documents_for_scope`] and
-    /// [`Self::load_documents_for_scope_matching_logical`] select it in, into a
-    /// [`StoredMemoryDocument`]. Single-sourced so the two queries' row shapes
-    /// cannot drift apart silently.
+    /// Map one `memory_docs` row, in the column order
+    /// [`Self::load_documents_for_scope`] selects it in, into a
+    /// [`StoredMemoryDocument`].
     fn row_to_stored_document(row: &rusqlite::Row<'_>) -> Result<StoredMemoryDocument, String> {
         let tags_json: String = row.get(7).map_err(|e| e.to_string())?;
         let metadata_json: String = row.get(8).map_err(|e| e.to_string())?;
