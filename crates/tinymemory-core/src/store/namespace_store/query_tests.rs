@@ -508,7 +508,7 @@ async fn query_scores_relation_entities_found_in_document_content() {
         .unwrap();
 
     let hits = memory
-        .query_namespace_hits("team", "team", "who owns atlas", 5)
+        .query_namespace_hits("team", "who owns atlas", 5)
         .await
         .unwrap();
     let hit = hits
@@ -564,7 +564,7 @@ async fn query_returns_episodic_hits_when_available() {
     .unwrap();
 
     let hits = memory
-        .query_namespace_hits("global", "global", "Tokio async Rust", 10)
+        .query_namespace_hits("global", "Tokio async Rust", 10)
         .await
         .unwrap();
 
@@ -606,7 +606,7 @@ async fn query_returns_event_hits_when_available() {
     .unwrap();
 
     let hits = memory
-        .query_namespace_hits("global", "global", "PostgreSQL database", 10)
+        .query_namespace_hits("global", "PostgreSQL database", 10)
         .await
         .unwrap();
 
@@ -643,7 +643,7 @@ async fn query_episodic_hits_have_correct_kind() {
     .unwrap();
 
     let hits = memory
-        .query_namespace_hits("global", "global", "GitHub Actions deployment", 10)
+        .query_namespace_hits("global", "GitHub Actions deployment", 10)
         .await
         .unwrap();
 
@@ -691,7 +691,7 @@ async fn query_episodic_relevance_tracks_rank_position() {
     }
 
     let hits = memory
-        .query_namespace_hits("global", "global", "Tokio async", 10)
+        .query_namespace_hits("global", "Tokio async", 10)
         .await
         .unwrap();
 
@@ -772,7 +772,7 @@ async fn query_supporting_relations_contain_entity_types() {
 
     // Query path: entity types should appear in supporting_relations attrs.
     let hits = memory
-        .query_namespace_hits("team", "team", "Alice", 5)
+        .query_namespace_hits("team", "Alice", 5)
         .await
         .unwrap();
     assert!(!hits.is_empty(), "should return at least one hit");
@@ -1302,7 +1302,7 @@ async fn excludes_same_session_document_but_keeps_unrelated_useful_doc() {
     // Sanity check: without exclusion, both documents are lexically relevant
     // and both come back (this is the pre-fix, buggy shape).
     let unfiltered = memory
-        .query_namespace_hits("global", "global", query, 10)
+        .query_namespace_hits("global", query, 10)
         .await
         .unwrap();
     assert!(
@@ -1360,7 +1360,7 @@ async fn no_session_context_leaves_results_unchanged() {
     let query = "Jordan Rivera chat platform user ID";
 
     let baseline = memory
-        .query_namespace_hits("global", "global", query, 10)
+        .query_namespace_hits("global", query, 10)
         .await
         .unwrap();
 
@@ -1369,7 +1369,7 @@ async fn no_session_context_leaves_results_unchanged() {
     // identically to the pre-existing `query_namespace_hits` entry point:
     // same hit count, same keys, in the same order.
     let explicit_none = memory
-        .query_namespace_hits_excluding_session("global", "global", query, 10, None)
+        .query_namespace_hits_excluding_session("global", query, 10, None)
         .await
         .unwrap();
 
@@ -1387,7 +1387,7 @@ async fn no_session_context_leaves_results_unchanged() {
     // An empty/whitespace exclude id must also be treated as "no filter",
     // not accidentally matched against a document with `session_id: None`.
     let empty_string = memory
-        .query_namespace_hits_excluding_session("global", "global", query, 10, Some("   "))
+        .query_namespace_hits_excluding_session("global", query, 10, Some("   "))
         .await
         .unwrap();
     let empty_string_keys: Vec<&str> = empty_string.iter().map(|h| h.key.as_str()).collect();
