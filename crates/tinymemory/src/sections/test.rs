@@ -419,7 +419,7 @@ async fn scopes_lists_only_this_sections_namespaces() {
 
     // A custom section is reachable, and is never confused for a known one.
     let ops = sections
-        .section(MemorySection::Custom("ops".to_string()))
+        .section(&MemorySection::Custom("ops".to_string()))
         .scopes()
         .await
         .unwrap();
@@ -658,7 +658,7 @@ async fn a_custom_section_spelling_a_known_prefix_is_the_same_view() {
 
     // A write through the aliased spelling lands in the real section...
     let namespace = sections
-        .section(aliased.clone())
+        .section(&aliased)
         .put(
             "thread-1",
             "turn-1",
@@ -679,10 +679,10 @@ async fn a_custom_section_spelling_a_known_prefix_is_the_same_view() {
     // the section was normalised at construction, these two disagreed: the
     // write landed in `conversation:` while the aliased view reported nothing.
     assert_eq!(
-        sections.section(aliased.clone()).scopes().await.unwrap(),
+        sections.section(&aliased).scopes().await.unwrap(),
         sections.conversations().scopes().await.unwrap()
     );
-    assert_eq!(sections.section(aliased).scopes().await.unwrap().len(), 1);
+    assert_eq!(sections.section(&aliased).scopes().await.unwrap().len(), 1);
     assert_eq!(
         sections.conversations().section(),
         &MemorySection::Conversation
@@ -698,7 +698,7 @@ async fn an_invalid_custom_prefix_errors_rather_than_reporting_an_empty_section(
     // The addressed path rejects it...
     assert!(matches!(
         sections
-            .section(bad.clone())
+            .section(&bad)
             .get("scope", "key")
             .await
             .expect_err("an invalid prefix cannot form a namespace"),
@@ -707,12 +707,8 @@ async fn an_invalid_custom_prefix_errors_rather_than_reporting_an_empty_section(
 
     // ...and so must every enumerating path, rather than answering "empty".
     for outcome in [
-        sections.section(bad.clone()).scopes().await.err(),
-        sections
-            .section(bad.clone())
-            .list_section(None, None)
-            .await
-            .err(),
+        sections.section(&bad).scopes().await.err(),
+        sections.section(&bad).list_section(None, None).await.err(),
         Sections::new(&provider)
             .recall()
             .across_section(&bad, "q", 10, &opts(), None)

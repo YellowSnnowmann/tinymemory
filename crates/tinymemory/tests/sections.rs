@@ -189,7 +189,7 @@ async fn a_custom_section_is_a_first_class_citizen() {
     let ops = MemorySection::Custom("ops".to_string());
 
     let namespace = sections
-        .section(ops.clone())
+        .section(&ops)
         .put(
             "deploys",
             "2026-01-01",
@@ -202,7 +202,7 @@ async fn a_custom_section_is_a_first_class_citizen() {
         .expect("put");
     assert_eq!(namespace.as_str(), "ops:deploys");
 
-    let scopes = sections.section(ops).scopes().await.expect("scopes");
+    let scopes = sections.section(&ops).scopes().await.expect("scopes");
     assert_eq!(scopes.len(), 1);
     assert_eq!(scopes[0].scope(), "deploys");
 
