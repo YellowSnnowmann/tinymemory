@@ -298,7 +298,7 @@ async fn namespace_summaries_deduplicates_when_two_logical_names_alias_one_addre
 /// exact enumeration bug this column exists to fix reappears for precisely
 /// PII-shaped scopes.
 #[tokio::test]
-async fn namespace_summaries_strips_brackets_from_pii_redacted_sectioned_namespace() {
+async fn namespace_summaries_substitutes_brackets_in_pii_redacted_sectioned_namespace() {
     use tinymemory_api::namespace::{MemorySection, Namespace};
 
     let (_tmp, mem) = fresh_mem();
