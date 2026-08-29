@@ -443,6 +443,35 @@ impl UnifiedMemory {
         sanitized
     }
 
+    /// Derive both address forms — the physical storage address and the
+    /// logical (delimiter-preserving) name — from one caller-supplied
+    /// namespace string, in a single call.
+    ///
+    /// This exists so no caller across a query/recall path ever derives one
+    /// form from the other's already-transformed value. That mistake is easy
+    /// to make silently: [`Self::sanitize_namespace`] is idempotent, so
+    /// re-sanitizing an already-sanitized string is invisible, but deriving
+    /// the *logical* name from an already-sanitized string is not — a
+    /// sectioned namespace like `conversation:thread-8f21` sanitizes to
+    /// `conversation_thread-8f21`, and canonicalizing THAT produces
+    /// `conversation_thread-8f21` again (no `:` left to preserve), not the
+    /// original `conversation:thread-8f21`. A read path that did this
+    /// (`query_namespace_context_data` calling `query_namespace_hits` with a
+    /// pre-sanitized string) filtered against a `logical_namespace` value
+    /// that no row actually has, and silently returned empty for every
+    /// sectioned namespace.
+    ///
+    /// Call this once, as close to the original raw namespace as possible,
+    /// and thread both results through explicitly — never re-derive either
+    /// form partway down a call chain from a value that arrived already
+    /// transformed.
+    pub fn namespace_address_forms(namespace: &str) -> (String, String) {
+        (
+            Self::sanitize_namespace(namespace),
+            crate::store::safety::canonical_logical_namespace(namespace, GLOBAL_NAMESPACE),
+        )
+    }
+
     /// Resolved memory subdirectory for this store instance (e.g.
     /// `workspace_dir/memory` for the default store, or a custom subdir for
     /// personality-specific stores).
