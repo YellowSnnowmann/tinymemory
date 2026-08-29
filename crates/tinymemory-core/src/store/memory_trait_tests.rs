@@ -323,6 +323,143 @@ async fn logical_namespaces_stay_isolated_when_they_alias_one_physical_address()
     assert!(mem.get("conversation_x", "k2").await.unwrap().is_some());
 }
 
+/// The same aliasing hazard as
+/// `logical_namespaces_stay_isolated_when_they_alias_one_physical_address`,
+/// but through `recall` and with the exact pair from the report: `a:b_c` and
+/// `a_b:c` both sanitize to `a_b_c` (`:` and the existing `_` both collapse
+/// to `_`). Before `query_namespace_hits_excluding_session` filtered on
+/// `logical_namespace` too, a `recall` pinned to one alias scored the
+/// other's rows into its ranked results as well, because both load from the
+/// same physical namespace.
+#[tokio::test]
+async fn recall_pinned_to_one_aliasing_namespace_does_not_score_the_others_rows() {
+    let (_tmp, mem) = fresh_mem();
+    assert_eq!(
+        UnifiedMemory::sanitize_namespace("a:b_c"),
+        UnifiedMemory::sanitize_namespace("a_b:c"),
+        "test fixture assumption: both must sanitize to the same physical address"
+    );
+
+    mem.store(
+        "a:b_c",
+        "k1",
+        "the roadmap ships on friday",
+        MemoryCategory::Core,
+        None,
+    )
+    .await
+    .unwrap();
+    mem.store(
+        "a_b:c",
+        "k2",
+        "the roadmap ships on monday",
+        MemoryCategory::Core,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let recalled_first = mem
+        .recall(
+            "roadmap",
+            10,
+            RecallOpts {
+                namespace: Some("a:b_c"),
+                min_score: Some(0.0),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert!(
+        recalled_first.iter().any(|e| e.key == "k1"),
+        "recall must still find the namespace's own row, got {recalled_first:#?}"
+    );
+    assert!(
+        !recalled_first.iter().any(|e| e.key == "k2"),
+        "recall pinned to `a:b_c` must not score `a_b:c`'s row, got {recalled_first:#?}"
+    );
+
+    let recalled_second = mem
+        .recall(
+            "roadmap",
+            10,
+            RecallOpts {
+                namespace: Some("a_b:c"),
+                min_score: Some(0.0),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert!(
+        recalled_second.iter().any(|e| e.key == "k2"),
+        "recall must still find the namespace's own row, got {recalled_second:#?}"
+    );
+    assert!(
+        !recalled_second.iter().any(|e| e.key == "k1"),
+        "recall pinned to `a_b:c` must not score `a:b_c`'s row, got {recalled_second:#?}"
+    );
+}
+
+/// A legacy row with `logical_namespace = NULL` has no recorded logical
+/// name — its physical `namespace` column is its only identity. It must be
+/// visible only under a call whose logical name equals that physical
+/// address exactly, never under some other logical name that merely
+/// sanitizes to the same address.
+///
+/// Before `LOGICAL_NAMESPACE_FILTER_SQL` gated its `IS NULL` arm on `?1 =
+/// ?2`, this NULL row matched ANY logical name sanitizing to `a_b_c` —
+/// `list("a:b_c", ...)` and `list("a_b:c", ...)` both saw it, reintroducing
+/// the aliasing leak for legacy rows specifically.
+#[tokio::test]
+async fn legacy_null_logical_namespace_row_is_visible_only_under_its_physical_name() {
+    use rusqlite::params;
+
+    let (_tmp, mem) = fresh_mem();
+    assert_eq!(
+        UnifiedMemory::sanitize_namespace("a:b_c"),
+        UnifiedMemory::sanitize_namespace("a_b:c"),
+    );
+    assert_eq!(UnifiedMemory::sanitize_namespace("a_b_c"), "a_b_c");
+
+    {
+        let conn = mem.conn.lock();
+        conn.execute(
+            "INSERT INTO memory_docs (
+                document_id, namespace, key, title, content, source_type,
+                priority, tags_json, metadata_json, category, session_id,
+                created_at, updated_at, markdown_rel_path
+             ) VALUES (?1, 'a_b_c', ?2, ?3, ?4, 'chat', 'medium', '[]', '{}', 'core', NULL, 0.0, 0.0, '')",
+            params!["legacy-doc", "k1", "title", "legacy content"],
+        )
+        .unwrap();
+    }
+
+    // Addressed by its own physical name: visible, exactly as before this
+    // column existed.
+    let by_physical = mem.list(Some("a_b_c"), None, None).await.unwrap();
+    assert_eq!(by_physical.len(), 1);
+    assert_eq!(by_physical[0].key, "k1");
+    assert!(mem.get("a_b_c", "k1").await.unwrap().is_some());
+
+    // Addressed by either aliasing logical name that merely sanitizes to
+    // the same physical address: must NOT surface the legacy row.
+    let by_colon_alias = mem.list(Some("a:b_c"), None, None).await.unwrap();
+    assert!(
+        by_colon_alias.is_empty(),
+        "legacy NULL row must not surface under an aliasing logical name, got {by_colon_alias:#?}"
+    );
+    assert!(mem.get("a:b_c", "k1").await.unwrap().is_none());
+
+    let by_underscore_alias = mem.list(Some("a_b:c"), None, None).await.unwrap();
+    assert!(
+        by_underscore_alias.is_empty(),
+        "legacy NULL row must not surface under an aliasing logical name, got {by_underscore_alias:#?}"
+    );
+    assert!(mem.get("a_b:c", "k1").await.unwrap().is_none());
+}
+
 /// `canonical_identifier`'s `[REDACTED_PII_*]` placeholder is valid storage
 /// content but not a valid `Namespace` scope (`[`/`]` are rejected). A
 /// sectioned namespace whose scope trips the strict PII gate must still
