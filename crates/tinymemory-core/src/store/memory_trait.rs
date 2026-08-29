@@ -352,7 +352,7 @@ impl UnifiedMemory {
         // reports the row's own logical name rather than the physical address
         // this method happens to have been called with — see `list_blocking`'s
         // doc comment for why that distinction matters.
-        let row: Option<(String, String, String, f64, String, String, Option<String>, Option<String>)> = conn
+        let row: Option<MemoryDocRow> = conn
             .query_row(
                 &format!(
                     "SELECT document_id, key, content, updated_at, category, taint, session_id, logical_namespace
