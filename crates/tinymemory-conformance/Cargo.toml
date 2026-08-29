@@ -15,6 +15,14 @@ repository = "https://github.com/tinyhumansai/tinymemory"
 # one. In particular it must not reach `tinymemory-core`, which links a bundled
 # SQLite and the embedded engine unconditionally (issue #18 §D).
 tinymemory-api = { path = "../tinymemory-api" }
+# Owns the `<section>:<scope>` namespace convention (`Namespace`,
+# `MemorySection`) that `assert_namespaces_preserve_their_section` parses a
+# driver's `namespaces()` output with. Safe alongside the "nothing of
+# substance" rule above: like `tinymemory-api`, it depends on no engine, no
+# SQLite, and no async runtime, so pulling it in still proves nothing about
+# whether a driver is interchangeable — it is a shared vocabulary, not a
+# storage choice.
+tinymemory-bus = { path = "../tinymemory-bus" }
 # `MemoryProvider` and its families are object-safe async traits.
 async-trait = "0.1"
 # `ExportRecord::payload` is a `serde_json::Value`, so the portability
