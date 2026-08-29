@@ -211,6 +211,24 @@ back to the physical address only for a NULL row addressed by that address),
 never the caller's query namespace, so the physical address stays an internal
 storage detail that never reaches a `MemoryEntry`.
 
+Deriving both forms is itself a hazard: sanitizing first and then deriving the
+logical form from the *sanitized* result silently produces the wrong logical
+name, because sanitizing is lossy (a sectioned `conversation:thread-8f21`
+sanitizes to `conversation_thread-8f21`, which has no `:` left to preserve).
+This actually happened — `query_namespace_context_data` sanitized its
+namespace argument before calling into the query path, so every sectioned
+namespace queried through the public `query_namespace` / `query_documents`
+context API silently returned empty. `UnifiedMemory::namespace_address_forms`
+exists to make that mistake structural rather than a one-line slip: it derives
+`(physical, logical)` in one call from the original raw namespace, and the
+functions that filter on `logical_namespace`
+(`query_namespace_hits`/`query_namespace_hits_excluding_session`,
+`load_documents_for_scope_matching_logical`) take both forms as separate,
+already-derived parameters rather than a single string to derive one from the
+other. A caller holding an already-sanitized string cannot silently supply it
+as the source of the logical name — the signature forces both questions to be
+answered, from the same original value, in one place.
+
 `namespace_summaries` groups by `COALESCE(logical_namespace, namespace)` for
 the same reason: once reads are scoped by logical name, two logical names that
 alias one physical address must report two summaries, each with its own count,
