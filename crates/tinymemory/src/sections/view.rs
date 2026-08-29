@@ -40,10 +40,34 @@ impl<'a> SectionView<'a> {
     /// its name, and borrowing one would make [`Sections::section`] unable to
     /// hand back a view over a section the caller built inline.
     ///
+    /// The section is **normalised** through [`MemorySection::from_prefix`], so
+    /// `Custom("conversation")` becomes [`MemorySection::Conversation`] and the
+    /// two name one view rather than two. `Namespace::new` normalises the same
+    /// way and for the same reason; storing the caller's spelling verbatim would
+    /// mean a write landed in `conversation:` while [`Self::scopes`] — which
+    /// compares against this field — reported the section as empty.
+    ///
     /// [`Sections::section`]: super::Sections::section
     #[must_use]
     pub fn new(provider: &'a dyn MemoryProvider, section: MemorySection) -> Self {
-        Self { provider, section }
+        Self {
+            provider,
+            section: MemorySection::from_prefix(section.as_str()),
+        }
+    }
+
+    /// Fail when this view's section cannot form a namespace at all.
+    ///
+    /// The addressed methods get this for free, because each builds the
+    /// namespace it needs. The enumerating ones build none, so without this
+    /// check a section whose prefix fails validation would report an *empty*
+    /// section instead of an error — and [`SectionRecall::across_section`] and
+    /// [`SectionRecall::in_scope`] would disagree about the same section.
+    ///
+    /// [`SectionRecall::across_section`]: super::SectionRecall::across_section
+    /// [`SectionRecall::in_scope`]: super::SectionRecall::in_scope
+    fn validate_section(&self) -> Result<(), MemoryError> {
+        self.namespace("probe").map(|_| ())
     }
 
     /// The section this view is bound to.
@@ -141,9 +165,15 @@ impl<'a> SectionView<'a> {
     /// Every scope this section currently holds.
     ///
     /// Ordered by entry count descending, ties by namespace ascending — the same
-    /// order [`across_section`](super::SectionRecall::across_section) visits them in, so the
-    /// first [`MAX_SECTION_NAMESPACES`](super::MAX_SECTION_NAMESPACES) rows here are exactly the ones a section-wide
-    /// recall would search.
+    /// order [`across_section`](super::SectionRecall::across_section) visits
+    /// them in, so the first
+    /// [`MAX_SECTION_NAMESPACES`](super::MAX_SECTION_NAMESPACES) rows here are
+    /// exactly the ones a section-wide recall would search.
+    ///
+    /// Size, not recency, and deliberately: [`SectionScope::last_updated`] is
+    /// optional and no bundled driver populates it, so ordering on it would be
+    /// ordering on `None` and the cap would stop being deterministic. A caller
+    /// who wants recency has the rows here and can sort them itself.
     ///
     /// Namespaces belonging to another section, and unsectioned namespaces left
     /// over from before the convention existed, are excluded. So are namespaces
@@ -153,8 +183,11 @@ impl<'a> SectionView<'a> {
     ///
     /// # Errors
     ///
-    /// Whatever the backend returns from its namespace enumeration.
+    /// [`MemoryError::Invalid`] when this view's section cannot form a valid
+    /// namespace, so that an unusable section is not mistaken for an empty one.
+    /// Otherwise whatever the backend returns from its namespace enumeration.
     pub async fn scopes(&self) -> Result<Vec<SectionScope>, MemoryError> {
+        self.validate_section()?;
         let mut scopes: Vec<SectionScope> = self
             .provider
             .namespaces()
@@ -180,7 +213,10 @@ impl<'a> SectionView<'a> {
         Ok(scopes)
     }
 
-    /// List every entry in the section, across all of its scopes.
+    /// List the entries across every scope of the section this view can see.
+    ///
+    /// "Can see" is the caveat [`Self::scopes`] documents: a namespace the
+    /// driver does not report, or one this convention cannot parse, is not here.
     ///
     /// Costs one namespace enumeration plus one `list` per scope, and unlike
     /// [`across_section`](super::SectionRecall::across_section) it is **not capped** — a caller asking
