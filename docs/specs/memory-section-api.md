@@ -176,8 +176,9 @@ documentation says so rather than pretending otherwise.
 ## Acceptance criteria
 
 - The full surface works against `NullMemoryProvider`, returning `Ok` and empty.
-- `cross_session` recall is refused on every section but `conversation:`, and
-  allowed on it, at both `in_scope` and `across_section`.
+- `cross_session` and `session_id` recall are each refused on every section
+  but `conversation:` at `in_scope`, and refused on `across_section`
+  unconditionally, including on `conversation:`.
 - A round trip works against `InMemoryProvider` through the public API only.
 - `across_section` returns no hit belonging to another section, orders by score
   descending, reports `namespaces_searched`, and sets `truncated` only when the
