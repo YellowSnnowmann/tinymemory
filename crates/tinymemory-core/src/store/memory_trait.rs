@@ -300,8 +300,18 @@ impl UnifiedMemory {
 // be `'static` and cannot borrow the store.
 
 /// One `memory_docs` row as `get` selects it:
-/// `(document_id, key, content, updated_at, category, taint, session_id)`.
-type MemoryDocRow = (String, String, String, f64, String, String, Option<String>);
+/// `(document_id, key, content, updated_at, category, taint, session_id,
+/// logical_namespace)`.
+type MemoryDocRow = (
+    String,
+    String,
+    String,
+    f64,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+);
 
 // Filters an addressed row query on the row's **logical** namespace, not
 // just its physical one.
