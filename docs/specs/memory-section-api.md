@@ -275,6 +275,9 @@ unnoticed.
   and a PII-bearing namespace is still redacted in both columns.
 - The `logical_namespace` migration is idempotent, and a row predating it still
   enumerates under its sanitised name.
+- Two logical namespaces that sanitize to the same physical address stay
+  isolated from each other in `get`, `list`, `forget`, and `namespace_summaries`
+  — neither's rows are mislabelled as, merged with, or hidden by the other's.
 - The four contract commands pass, and rustdoc builds with `-D warnings`.
 
 ## Open questions
