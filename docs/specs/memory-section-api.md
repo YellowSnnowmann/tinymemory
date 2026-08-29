@@ -284,13 +284,14 @@ unnoticed.
   and a PII-bearing namespace is still redacted in both columns.
 - The `logical_namespace` migration is idempotent, and a row predating it still
   enumerates under its sanitised name.
-- Two logical namespaces that sanitize to the same physical address stay
-  isolated from each other in `get`, `list`, `forget`, `recall`, and
-  `namespace_summaries` — neither's rows are mislabelled as, merged with,
-  scored into, or hidden by the other's.
-- A pre-migration row with `logical_namespace IS NULL` is visible only under
-  a call whose logical name equals its physical address exactly, never under
-  a different logical name that merely sanitizes to the same address.
+- Two logical namespaces that sanitize to the same physical address remain one
+  namespace for every operation — reads, writes, recall, and clearing —
+  exactly as before this change: `list`/`get`/`forget`/`recall` on either
+  spelling return the merged physical namespace's rows, `namespace_summaries`
+  reports one summary for it, and `clear_namespace` deletes it as one unit.
+  Only one of the two colliding logical names is reported by enumeration.
+  This is pre-existing behaviour and explicitly out of scope here — see "The
+  storage address and the logical namespace" above.
 - The public `query_namespace` / `query_documents` context API finds rows
   stored under a sectioned namespace, not just an unsectioned one.
 - The four contract commands pass, and rustdoc builds with `-D warnings`.
