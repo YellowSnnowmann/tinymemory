@@ -28,7 +28,9 @@ use tinymemory_api::types::{
 use crate::mandatory::MemoryTraitProvider;
 
 use super::types::merge_hits;
-use super::{Sections, MAX_SECTION_NAMESPACES, NAMESPACE_FILTER_CONFLICT};
+use super::{
+    Sections, CROSS_SESSION_SECTION_CONFLICT, MAX_SECTION_NAMESPACES, NAMESPACE_FILTER_CONFLICT,
+};
 
 /// Build an entry directly, so a test can set the `score` no API accepts.
 fn entry(namespace: &str, key: &str, content: &str, score: Option<f64>) -> MemoryEntry {
