@@ -50,6 +50,39 @@ pub fn canonical_identifier(value: &str) -> String {
     pii::redact_pii(value).value
 }
 
+/// Canonical form of the delimiter-preserving *logical* namespace that
+/// `namespace_summaries` reports back to callers (`COALESCE(logical_namespace,
+/// namespace)`).
+///
+/// Built on [`canonical_identifier`] so a PII-bearing namespace is redacted
+/// the same way the storage address is (#5164), with two corrections
+/// `canonical_identifier` alone does not make:
+///
+/// * **Bracket stripping.** The `[REDACTED_PII_*]` placeholder is valid
+///   storage-address content but not a valid [`Namespace`](tinymemory) scope —
+///   `Namespace::parse` rejects `[` and `]` — so a PII-bearing sectioned
+///   namespace would round-trip through redaction and then fail to parse back
+///   into its own section, reintroducing the exact enumeration gap this
+///   column exists to close. Stripping the brackets keeps the redacted tokens
+///   (`REDACTED_PII_SSN`, underscores and all) namespace-valid without
+///   reintroducing the PII they replaced.
+/// * **Blank fallback.** `UnifiedMemory::sanitize_namespace` maps blank /
+///   whitespace-only input to `fallback` (in practice `GLOBAL_NAMESPACE`) so
+///   the storage address is never an empty string. `canonical_identifier`
+///   alone does not: trimmed-empty input canonicalizes to `""`, and
+///   `COALESCE` treats an empty string as present, so the logical column
+///   would silently diverge from the storage address for exactly the inputs
+///   that column exists to shadow. Applying the same fallback here keeps them
+///   in sync.
+pub fn canonical_logical_namespace(raw: &str, fallback: &str) -> String {
+    let canonical = canonical_identifier(raw.trim()).replace(['[', ']'], "");
+    if canonical.is_empty() {
+        fallback.to_string()
+    } else {
+        canonical
+    }
+}
+
 /// Canonical storage form of a document key: the exact transform
 /// `upsert_document` / `upsert_document_metadata_only` apply before writing the
 /// `memory_docs.key` column (trim, then [`canonical_identifier`]).
