@@ -115,9 +115,9 @@ impl UnifiedMemory {
                 .map_err(|e| format!("begin tx: {e}"))?;
             tx.execute(
                 "INSERT INTO memory_docs
-                  (document_id, namespace, key, title, content, source_type, priority, tags_json, metadata_json, category, session_id, created_at, updated_at, markdown_rel_path, taint)
+                  (document_id, namespace, key, title, content, source_type, priority, tags_json, metadata_json, category, session_id, created_at, updated_at, markdown_rel_path, taint, logical_namespace)
                  VALUES
-                  (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                  (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
                  ON CONFLICT(namespace, key) DO UPDATE SET
                   title = excluded.title,
                   content = excluded.content,
@@ -129,7 +129,8 @@ impl UnifiedMemory {
                   session_id = excluded.session_id,
                   updated_at = excluded.updated_at,
                   markdown_rel_path = excluded.markdown_rel_path,
-                  taint = excluded.taint",
+                  taint = excluded.taint,
+                  logical_namespace = excluded.logical_namespace",
                 params![
                     document_id,
                     namespace,
@@ -145,7 +146,8 @@ impl UnifiedMemory {
                     created_at,
                     updated_at,
                     markdown_rel,
-                    input.taint.as_db_str()
+                    input.taint.as_db_str(),
+                    logical_namespace
                 ],
             )
             .map_err(|e| format!("upsert memory_docs: {e}"))?;
@@ -316,9 +318,9 @@ impl UnifiedMemory {
             let conn = self.conn.lock();
             conn.execute(
                 "INSERT INTO memory_docs
-                  (document_id, namespace, key, title, content, source_type, priority, tags_json, metadata_json, category, session_id, created_at, updated_at, markdown_rel_path, taint)
+                  (document_id, namespace, key, title, content, source_type, priority, tags_json, metadata_json, category, session_id, created_at, updated_at, markdown_rel_path, taint, logical_namespace)
                  VALUES
-                  (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+                  (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
                  ON CONFLICT(namespace, key) DO UPDATE SET
                   title = excluded.title,
                   content = excluded.content,
@@ -330,7 +332,8 @@ impl UnifiedMemory {
                   session_id = excluded.session_id,
                   updated_at = excluded.updated_at,
                   markdown_rel_path = excluded.markdown_rel_path,
-                  taint = excluded.taint",
+                  taint = excluded.taint,
+                  logical_namespace = excluded.logical_namespace",
                 params![
                     document_id,
                     namespace,
@@ -346,7 +349,8 @@ impl UnifiedMemory {
                     created_at,
                     updated_at,
                     markdown_rel,
-                    input.taint.as_db_str()
+                    input.taint.as_db_str(),
+                    logical_namespace
                 ],
             )
             .map_err(|e| format!("upsert memory_docs: {e}"))?;
