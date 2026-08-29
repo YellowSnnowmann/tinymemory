@@ -48,9 +48,10 @@ against this normalised field — reported the section as empty.
 - `SectionRecall::{in_scope, across_section}`
 - `SectionScope`, `SectionHits` — the value types `scopes()` / recall return
 - `MAX_SECTION_NAMESPACES` — the fan-out cap `across_section` enforces
-- `NAMESPACE_FILTER_CONFLICT`, `CROSS_SESSION_SECTION_CONFLICT` — the exact
-  `MemoryError::Invalid` messages the two recall refusals carry, exposed so a
-  caller's test can assert against the same string it sees
+- `NAMESPACE_FILTER_CONFLICT`, `CROSS_SESSION_SECTION_CONFLICT`,
+  `CROSS_SESSION_FAN_OUT_CONFLICT` — the exact `MemoryError::Invalid` messages
+  the recall refusals carry, exposed so a caller's test can assert against the
+  same string it sees
 
 ## Operational constraints
 
