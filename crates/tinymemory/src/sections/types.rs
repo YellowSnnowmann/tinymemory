@@ -37,6 +37,25 @@ pub const MAX_SECTION_NAMESPACES: usize = 64;
 pub const NAMESPACE_FILTER_CONFLICT: &str =
     "recall options must not set a namespace: the section surface derives it";
 
+/// The message carried by the [`MemoryError::Invalid`] that
+/// [`SectionRecall`](super::SectionRecall) returns when the caller asks for
+/// `cross_session` recall on a section other than [`MemorySection::Conversation`].
+///
+/// The bundled `UnifiedMemory` driver's `cross_session` option only ever
+/// surfaces *episodic conversational* rows from other sessions — it has no
+/// concept of "cross-session" for documents or learnings — and it relabels
+/// every such row with whichever namespace the call was pinned to. Honouring
+/// `cross_session` on a non-conversation section would therefore return
+/// conversational content mislabeled as document or learning hits, and on
+/// [`across_section`](super::SectionRecall::across_section) the same
+/// cross-session rows would be repeated once per scope, crowding genuine hits
+/// out of `limit`. Refused outright rather than silently misrepresented.
+///
+/// [`MemoryError::Invalid`]: tinymemory_api::error::MemoryError::Invalid
+/// [`MemorySection`]: tinymemory_api::namespace::MemorySection
+pub const CROSS_SESSION_SECTION_CONFLICT: &str =
+    "cross-session recall is only meaningful for the conversation section";
+
 /// One namespace within a section, as [`SectionView::scopes`] reports it.
 ///
 /// [`SectionView::scopes`]: super::SectionView::scopes
