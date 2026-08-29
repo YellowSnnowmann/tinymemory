@@ -124,11 +124,13 @@ impl<'a> SectionRecall<'a> {
     ///
     /// [`MemoryError::Invalid`] in three cases: carrying
     /// [`NAMESPACE_FILTER_CONFLICT`] when `opts` already pins a namespace,
-    /// carrying [`CROSS_SESSION_SECTION_CONFLICT`] when `opts.cross_session` is
-    /// set on any section other than [`MemorySection::Conversation`], and
-    /// carrying the namespace validator's own message when the section and
-    /// scope cannot form a valid namespace. Otherwise whatever the backend
-    /// returns.
+    /// carrying [`CROSS_SESSION_SECTION_CONFLICT`] when `opts.cross_session` or
+    /// `opts.session_id` is set on any section other than
+    /// [`MemorySection::Conversation`] (checked against the section's
+    /// normalised form, so `Custom("conversation")` counts as
+    /// [`MemorySection::Conversation`] here too), and carrying the namespace
+    /// validator's own message when the section and scope cannot form a valid
+    /// namespace. Otherwise whatever the backend returns.
     pub async fn in_scope(
         &self,
         section: &MemorySection,
@@ -139,7 +141,7 @@ impl<'a> SectionRecall<'a> {
         sources: Option<&SourceScope>,
     ) -> Result<SectionHits, MemoryError> {
         reject_namespace_filter(opts)?;
-        reject_cross_session_outside_conversation(section, opts)?;
+        reject_episodic_augmentation_outside_conversation(section, opts)?;
         let namespace = SectionView::new(self.provider, section).namespace(scope)?;
         let hits = self
             .provider
@@ -191,10 +193,13 @@ impl<'a> SectionRecall<'a> {
     ///
     /// [`MemoryError::Invalid`] carrying [`NAMESPACE_FILTER_CONFLICT`] when
     /// `opts` already pins a namespace, or carrying
-    /// [`CROSS_SESSION_SECTION_CONFLICT`] when `opts.cross_session` is set on
-    /// any section other than [`MemorySection::Conversation`] — without this,
-    /// the same cross-session rows would be repeated once per scope in the
-    /// fan-out, crowding genuine hits out of `limit`. Otherwise whatever the
+    /// [`CROSS_SESSION_FAN_OUT_CONFLICT`] when `opts.cross_session` or
+    /// `opts.session_id` is set at all — on *every* section, including
+    /// [`MemorySection::Conversation`] — because the driver's episodic
+    /// augmentation for either option runs once, independent of the pinned
+    /// namespace, and would otherwise repeat once per scope in the fan-out,
+    /// crowding genuine hits out of `limit`; use [`Self::in_scope`] for a
+    /// cross-session or session-scoped query instead. Otherwise whatever the
     /// backend returns from the enumeration or from any one recall — a section
     /// recall fails as a whole rather than reporting a partial answer as a
     /// success.
@@ -207,7 +212,7 @@ impl<'a> SectionRecall<'a> {
         sources: Option<&SourceScope>,
     ) -> Result<SectionHits, MemoryError> {
         reject_namespace_filter(opts)?;
-        reject_cross_session_outside_conversation(section, opts)?;
+        reject_episodic_augmentation_fan_out(opts)?;
         let scopes = SectionView::new(self.provider, section).scopes().await?;
         let truncated = scopes.len() > MAX_SECTION_NAMESPACES;
 
