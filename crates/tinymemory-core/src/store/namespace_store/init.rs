@@ -171,6 +171,7 @@ impl UnifiedMemory {
                updated_at REAL NOT NULL,
                markdown_rel_path TEXT NOT NULL,
                taint TEXT NOT NULL DEFAULT 'internal',
+               logical_namespace TEXT,
                UNIQUE(namespace, key)
              );
              CREATE INDEX IF NOT EXISTS idx_memory_docs_ns_updated ON memory_docs(namespace, updated_at DESC);
