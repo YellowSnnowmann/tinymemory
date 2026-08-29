@@ -486,8 +486,17 @@ impl UnifiedMemory {
         namespace: &str,
         limit: u32,
     ) -> Result<Vec<NamespaceMemoryHit>, String> {
-        let ns = Self::sanitize_namespace(namespace);
-        let docs = self.load_documents_for_scope(&ns).await?;
+        // Same logical-namespace isolation as `query_namespace_hits_excluding_session`
+        // (see `UnifiedMemory::namespace_address_forms`'s doc comment) — this is
+        // the query-LESS recency-ranked recall path
+        // (`recall_documents`/`MemoryRetrieval::recall_namespace_recent`), and it
+        // shares the exact same aliasing hazard: two logical namespaces on one
+        // physical address must not have query-less recall for one surface the
+        // other's documents.
+        let (ns, logical) = Self::namespace_address_forms(namespace);
+        let docs = self
+            .load_documents_for_scope_matching_logical(&ns, &logical)
+            .await?;
         let kvs = self.kv_records_for_scope(&ns).await?;
         let graph_relations = self
             .graph_relations_for_scope(&ns)
