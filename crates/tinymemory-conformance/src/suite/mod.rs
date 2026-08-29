@@ -28,6 +28,7 @@ use tinymemory_api::error::MemoryError;
 use tinymemory_api::provider::{audit_provider, ExportRecord, MemoryProvider};
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::types::{MemoryCategory, MemoryTaint};
+use tinymemory_bus::namespace::Namespace;
 
 /// Runs every assertion in the suite.
 ///
