@@ -152,7 +152,7 @@ impl MemoryCore for InMemoryProvider {
         Ok(counts
             .into_iter()
             .map(|(namespace, count)| NamespaceSummary {
-                namespace: namespace.replace(':', "_"), // TEMP: simulate the sanitize_namespace bug
+                namespace,
                 count,
                 last_updated: None,
             })
