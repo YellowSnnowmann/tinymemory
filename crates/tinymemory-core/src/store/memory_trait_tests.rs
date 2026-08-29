@@ -172,12 +172,18 @@ async fn sectioned_namespace_stays_addressable_by_its_original_string() {
     .await
     .unwrap();
 
-    let got = mem.get(namespace, "k1").await.unwrap();
-    assert_eq!(got.unwrap().content, "we should ship on friday");
+    let got = mem.get(namespace, "k1").await.unwrap().unwrap();
+    assert_eq!(got.content, "we should ship on friday");
+    // The returned entry must report the row's own sectioned (logical) name,
+    // not the sanitized physical address (`conversation_thread-8f21`) it is
+    // actually stored under — a caller that fed this back into `get`/`list`
+    // must land on the same row, not a different, unsectioned one.
+    assert_eq!(got.namespace.as_deref(), Some(namespace));
 
     let listed = mem.list(Some(namespace), None, None).await.unwrap();
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].key, "k1");
+    assert_eq!(listed[0].namespace.as_deref(), Some(namespace));
 
     let recalled = mem
         .recall(
