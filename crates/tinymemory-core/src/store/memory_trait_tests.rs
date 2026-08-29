@@ -235,6 +235,93 @@ async fn namespace_summaries_falls_back_to_sanitized_namespace_when_logical_is_n
     assert_eq!(found.count, 1);
 }
 
+/// A blank/whitespace namespace sanitizes to `GLOBAL_NAMESPACE` on the
+/// storage address (`sanitize_namespace`); the logical column must land on
+/// the same fallback rather than an empty string, or `COALESCE(logical_namespace,
+/// namespace)` would report an empty-string namespace instead of `global`.
+#[tokio::test]
+async fn namespace_summaries_normalizes_blank_namespace_to_global() {
+    let (_tmp, mem) = fresh_mem();
+    mem.store("   ", "k1", "content", MemoryCategory::Core, None)
+        .await
+        .unwrap();
+
+    let summaries = mem.namespace_summaries().await.unwrap();
+    assert!(
+        summaries.iter().all(|s| !s.namespace.is_empty()),
+        "no summary should report an empty namespace, got {summaries:?}"
+    );
+    let found = summaries
+        .iter()
+        .find(|s| s.namespace == GLOBAL_NAMESPACE)
+        .unwrap_or_else(|| panic!("expected `{GLOBAL_NAMESPACE}` in {summaries:?}"));
+    assert_eq!(found.count, 1);
+}
+
+/// Two logical names that sanitize to the same physical namespace
+/// (`conversation:x` and `conversation_x` both collapse to
+/// `conversation_x`) must not split into two summaries with two partial
+/// counts: every addressed call (`list`, `export`, ...) already merges
+/// their rows into one physical namespace, so `namespace_summaries` must
+/// report exactly one entry with the true, combined count.
+#[tokio::test]
+async fn namespace_summaries_deduplicates_when_two_logical_names_alias_one_address() {
+    let (_tmp, mem) = fresh_mem();
+    mem.store("conversation:x", "k1", "a", MemoryCategory::Core, None)
+        .await
+        .unwrap();
+    mem.store("conversation_x", "k2", "b", MemoryCategory::Core, None)
+        .await
+        .unwrap();
+
+    let summaries = mem.namespace_summaries().await.unwrap();
+    let matching: Vec<_> = summaries
+        .iter()
+        .filter(|s| s.namespace == "conversation:x" || s.namespace == "conversation_x")
+        .collect();
+    assert_eq!(
+        matching.len(),
+        1,
+        "expected exactly one summary for the aliased address, got {summaries:?}"
+    );
+    assert_eq!(matching[0].count, 2);
+
+    // Both aliases still address the same merged physical namespace.
+    let listed = mem.list(Some("conversation:x"), None, None).await.unwrap();
+    assert_eq!(listed.len(), 2);
+}
+
+/// `canonical_identifier`'s `[REDACTED_PII_*]` placeholder is valid storage
+/// content but not a valid `Namespace` scope (`[`/`]` are rejected). A
+/// sectioned namespace whose scope trips the strict PII gate must still
+/// come back `Namespace::parse`-able and under its original section, or the
+/// exact enumeration bug this column exists to fix reappears for precisely
+/// PII-shaped scopes.
+#[tokio::test]
+async fn namespace_summaries_strips_brackets_from_pii_redacted_sectioned_namespace() {
+    use tinymemory_api::namespace::{MemorySection, Namespace};
+
+    let (_tmp, mem) = fresh_mem();
+    let namespace = "conversation:ssn-123-45-6789";
+    mem.store(namespace, "k1", "content", MemoryCategory::Core, None)
+        .await
+        .unwrap();
+
+    let summaries = mem.namespace_summaries().await.unwrap();
+    let found = summaries
+        .iter()
+        .find(|s| s.namespace.starts_with("conversation:"))
+        .unwrap_or_else(|| panic!("expected a `conversation:` namespace in {summaries:?}"));
+    assert!(
+        !found.namespace.contains('[') && !found.namespace.contains(']'),
+        "logical namespace must stay Namespace-valid (no brackets), got {}",
+        found.namespace
+    );
+    let parsed = Namespace::parse(&found.namespace)
+        .unwrap_or_else(|e| panic!("reported namespace `{}` must parse: {e}", found.namespace));
+    assert_eq!(parsed.section(), &MemorySection::Conversation);
+}
+
 #[tokio::test]
 async fn legacy_namespace_migration_splits_and_is_idempotent() {
     use rusqlite::params;
