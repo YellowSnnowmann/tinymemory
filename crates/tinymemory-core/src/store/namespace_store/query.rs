@@ -186,13 +186,13 @@ impl UnifiedMemory {
                 docs.len()
             );
         }
-        let kvs = self.kv_records_for_scope(&ns).await?;
+        let kvs = self.kv_records_for_scope(ns).await?;
 
         let graph_relations = self
-            .graph_relations_for_scope(&ns)
+            .graph_relations_for_scope(ns)
             .await
             .unwrap_or_default();
-        let chunks = self.load_chunks_for_scope(&ns).await?;
+        let chunks = self.load_chunks_for_scope(ns).await?;
         let plan = self.build_retrieval_plan(query, &docs, &graph_relations);
         let matched_relations = self.collect_relation_matches(&plan, &graph_relations);
         let graph_scores = self.compute_graph_document_scores(&docs, &chunks, &matched_relations);
