@@ -9,8 +9,8 @@ use tinymemory_api::provider::MemoryProvider;
 use tinymemory_api::recall::OwnedRecallOpts;
 
 use super::types::{
-    merge_hits, SectionHits, CROSS_SESSION_SECTION_CONFLICT, MAX_SECTION_NAMESPACES,
-    NAMESPACE_FILTER_CONFLICT,
+    merge_hits, SectionHits, CROSS_SESSION_FAN_OUT_CONFLICT, CROSS_SESSION_SECTION_CONFLICT,
+    MAX_SECTION_NAMESPACES, NAMESPACE_FILTER_CONFLICT,
 };
 use super::view::SectionView;
 
@@ -40,21 +40,50 @@ fn reject_namespace_filter(opts: &OwnedRecallOpts) -> Result<(), MemoryError> {
     Ok(())
 }
 
-/// Refuse `cross_session` recall on any section other than
-/// [`MemorySection::Conversation`].
+/// Whether `opts` carries either of the two options whose bundled-driver
+/// behaviour ignores the pinned namespace: `cross_session`, or a `session_id`
+/// (which triggers the driver's own session-scoped episodic augmentation, not
+/// a filter — see [`CROSS_SESSION_SECTION_CONFLICT`]).
+fn requests_episodic_augmentation(opts: &OwnedRecallOpts) -> bool {
+    opts.cross_session || opts.session_id.is_some()
+}
+
+/// Refuse `cross_session` or a `session_id` on any section other than
+/// [`MemorySection::Conversation`] — checked against the **normalised**
+/// section, so `Custom("conversation")` is not falsely rejected.
 ///
 /// See [`CROSS_SESSION_SECTION_CONFLICT`] for why: the bundled driver's
-/// `cross_session` option only ever surfaces episodic conversational rows, and
-/// relabels them with whatever namespace the call was pinned to — so honouring
-/// it on a document or learning section would return conversational content
+/// `cross_session` and `session_id` options both surface episodic
+/// conversational rows independently of the pinned namespace, and relabel
+/// them with whatever namespace the call was pinned to — so honouring either
+/// on a document or learning section would return conversational content
 /// mislabeled as that section's own hits.
-fn reject_cross_session_outside_conversation(
+fn reject_episodic_augmentation_outside_conversation(
     section: &MemorySection,
     opts: &OwnedRecallOpts,
 ) -> Result<(), MemoryError> {
-    if opts.cross_session && !matches!(section, MemorySection::Conversation) {
+    let normalized = MemorySection::from_prefix(section.as_str());
+    if requests_episodic_augmentation(opts) && !matches!(normalized, MemorySection::Conversation) {
         return Err(MemoryError::Invalid(
             CROSS_SESSION_SECTION_CONFLICT.to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// Refuse `cross_session` or a `session_id` in [`SectionRecall::across_section`]
+/// unconditionally, regardless of section.
+///
+/// See [`CROSS_SESSION_FAN_OUT_CONFLICT`] for why: the driver's episodic
+/// augmentation for either option runs once, independent of the pinned
+/// namespace, so the fan-out would append the same extra rows once per scope —
+/// including for [`MemorySection::Conversation`], where
+/// [`reject_episodic_augmentation_outside_conversation`] alone would let it
+/// through.
+fn reject_episodic_augmentation_fan_out(opts: &OwnedRecallOpts) -> Result<(), MemoryError> {
+    if requests_episodic_augmentation(opts) {
+        return Err(MemoryError::Invalid(
+            CROSS_SESSION_FAN_OUT_CONFLICT.to_string(),
         ));
     }
     Ok(())
