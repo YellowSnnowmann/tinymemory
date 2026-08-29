@@ -93,8 +93,10 @@ impl<'a> SectionRecall<'a> {
     ///
     /// # Errors
     ///
-    /// [`MemoryError::Invalid`] in two cases: carrying
-    /// [`NAMESPACE_FILTER_CONFLICT`] when `opts` already pins a namespace, and
+    /// [`MemoryError::Invalid`] in three cases: carrying
+    /// [`NAMESPACE_FILTER_CONFLICT`] when `opts` already pins a namespace,
+    /// carrying [`CROSS_SESSION_SECTION_CONFLICT`] when `opts.cross_session` is
+    /// set on any section other than [`MemorySection::Conversation`], and
     /// carrying the namespace validator's own message when the section and
     /// scope cannot form a valid namespace. Otherwise whatever the backend
     /// returns.
@@ -108,6 +110,7 @@ impl<'a> SectionRecall<'a> {
         sources: Option<&SourceScope>,
     ) -> Result<SectionHits, MemoryError> {
         reject_namespace_filter(opts)?;
+        reject_cross_session_outside_conversation(section, opts)?;
         let namespace = SectionView::new(self.provider, section).namespace(scope)?;
         let hits = self
             .provider
