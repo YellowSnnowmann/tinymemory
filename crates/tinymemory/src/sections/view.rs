@@ -128,8 +128,8 @@ impl<'a> SectionView<'a> {
     /// Every scope this section currently holds.
     ///
     /// Ordered by entry count descending, ties by namespace ascending — the same
-    /// order [`SectionRecall::across_section`] visits them in, so the first
-    /// [`MAX_SECTION_NAMESPACES`] rows here are exactly the ones a section-wide
+    /// order [`across_section`](super::SectionRecall::across_section) visits them in, so the
+    /// first [`MAX_SECTION_NAMESPACES`](super::MAX_SECTION_NAMESPACES) rows here are exactly the ones a section-wide
     /// recall would search.
     ///
     /// Namespaces belonging to another section, and unsectioned namespaces left
@@ -149,7 +149,10 @@ impl<'a> SectionView<'a> {
             .into_iter()
             .filter_map(|summary| {
                 let namespace = Namespace::parse(&summary.namespace).ok()?;
-                (namespace.section() == Some(self.section)).then(|| SectionScope {
+                if namespace.section() != Some(self.section) {
+                    return None;
+                }
+                Some(SectionScope {
                     namespace,
                     entries: summary.count,
                     last_updated: summary.last_updated,
@@ -167,7 +170,7 @@ impl<'a> SectionView<'a> {
     /// List every entry in the section, across all of its scopes.
     ///
     /// Costs one namespace enumeration plus one `list` per scope, and unlike
-    /// [`SectionRecall::across_section`] it is **not capped** — a caller asking
+    /// [`across_section`](super::SectionRecall::across_section) it is **not capped** — a caller asking
     /// to list a section gets all of it. Use [`Self::scopes`] and [`Self::list`]
     /// to page through a large section under your own control.
     ///
