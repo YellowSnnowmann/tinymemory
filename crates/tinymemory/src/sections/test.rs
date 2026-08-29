@@ -508,6 +508,75 @@ async fn in_scope_rejects_recall_options_that_pin_a_namespace() {
 }
 
 #[tokio::test]
+async fn in_scope_rejects_cross_session_outside_the_conversation_section() {
+    let (_memory, provider) = ScoredMemory::provider();
+    let cross_session = OwnedRecallOpts {
+        cross_session: true,
+        ..OwnedRecallOpts::default()
+    };
+
+    let err = Sections::new(&provider)
+        .recall()
+        .in_scope(&MemorySection::Learning, "rust", "q", 10, &cross_session, None)
+        .await
+        .expect_err("cross_session only means something for conversations");
+
+    match err {
+        MemoryError::Invalid(message) => {
+            assert_eq!(message, CROSS_SESSION_SECTION_CONFLICT);
+        }
+        other => panic!("expected Invalid, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn in_scope_allows_cross_session_on_the_conversation_section() {
+    let (memory, provider) = ScoredMemory::provider();
+    memory.seed("conversation:chat-a", "one", "hello", Some(0.5));
+    let cross_session = OwnedRecallOpts {
+        cross_session: true,
+        ..OwnedRecallOpts::default()
+    };
+
+    let found = Sections::new(&provider)
+        .recall()
+        .in_scope(
+            &MemorySection::Conversation,
+            "chat-a",
+            "hello",
+            10,
+            &cross_session,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(found.hits.len(), 1);
+}
+
+#[tokio::test]
+async fn across_section_rejects_cross_session_outside_the_conversation_section() {
+    let (_memory, provider) = ScoredMemory::provider();
+    let cross_session = OwnedRecallOpts {
+        cross_session: true,
+        ..OwnedRecallOpts::default()
+    };
+
+    let err = Sections::new(&provider)
+        .recall()
+        .across_section(&MemorySection::Document, "q", 10, &cross_session, None)
+        .await
+        .expect_err("cross_session only means something for conversations");
+
+    match err {
+        MemoryError::Invalid(message) => {
+            assert_eq!(message, CROSS_SESSION_SECTION_CONFLICT);
+        }
+        other => panic!("expected Invalid, got {other:?}"),
+    }
+}
+
+#[tokio::test]
 async fn across_section_merges_every_scope_and_ranks_by_score() {
     let (memory, provider) = ScoredMemory::provider();
     memory.seed("learning:rust", "mid", "async", Some(0.5));
