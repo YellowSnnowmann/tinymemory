@@ -644,7 +644,8 @@ impl Memory for UnifiedMemory {
         // addresses the row by both its physical and logical identity — see
         // `LOGICAL_NAMESPACE_FILTER_SQL`'s doc comment for why the physical
         // address alone is not enough.
-        let logical = crate::store::safety::canonical_logical_namespace(namespace, GLOBAL_NAMESPACE);
+        let logical =
+            crate::store::safety::canonical_logical_namespace(namespace, GLOBAL_NAMESPACE);
         let key = crate::store::safety::canonical_document_key(key);
         let conn = Arc::clone(&self.conn);
         tokio::task::spawn_blocking(move || Self::get_blocking(&conn, &ns, &logical, &key))
@@ -660,7 +661,8 @@ impl Memory for UnifiedMemory {
     ) -> anyhow::Result<Vec<MemoryEntry>> {
         let normalized = normalize_namespace(namespace);
         let ns = UnifiedMemory::sanitize_namespace(normalized);
-        let logical = crate::store::safety::canonical_logical_namespace(normalized, GLOBAL_NAMESPACE);
+        let logical =
+            crate::store::safety::canonical_logical_namespace(normalized, GLOBAL_NAMESPACE);
         let category = category.cloned();
         let session_id = session_id.map(str::to_owned);
         let conn = Arc::clone(&self.conn);
@@ -682,7 +684,8 @@ impl Memory for UnifiedMemory {
         // addresses the raw caller identifiers can never delete a row whose
         // namespace or key was canonicalized on the way in.
         let ns = UnifiedMemory::sanitize_namespace(namespace);
-        let logical = crate::store::safety::canonical_logical_namespace(namespace, GLOBAL_NAMESPACE);
+        let logical =
+            crate::store::safety::canonical_logical_namespace(namespace, GLOBAL_NAMESPACE);
         let key = crate::store::safety::canonical_document_key(key);
         let row: Option<String> = {
             let conn = Arc::clone(&self.conn);
