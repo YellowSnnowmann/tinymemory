@@ -61,6 +61,13 @@ impl<'a> SectionRecall<'a> {
     /// through. It is named `sources` rather than `scope` because `scope` here
     /// means the namespace scope, and the two are unrelated.
     ///
+    /// Note that a driver composed from the mandatory families **refuses** a
+    /// `Some(sources)` recall outright — it cannot apply the predicate
+    /// internally, and applying it afterwards would be wrong — so on those
+    /// drivers only `None` succeeds. That refusal is the driver's, passed
+    /// through unchanged rather than pre-empted here, so a driver that does
+    /// implement source scoping is not held back by this façade.
+    ///
     /// # Errors
     ///
     /// [`MemoryError::Invalid`] in two cases: carrying

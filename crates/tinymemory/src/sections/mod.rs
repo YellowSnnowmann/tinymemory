@@ -97,9 +97,11 @@ use std::fmt;
 use tinymemory_api::namespace::MemorySection;
 use tinymemory_api::provider::MemoryProvider;
 
-pub mod recall;
-pub mod types;
-pub mod view;
+// Private, with the whole surface re-exported below: one public path per item,
+// as `registry` does with its own submodules.
+mod recall;
+mod types;
+mod view;
 
 pub use recall::SectionRecall;
 pub use types::{SectionHits, SectionScope, MAX_SECTION_NAMESPACES, NAMESPACE_FILTER_CONFLICT};

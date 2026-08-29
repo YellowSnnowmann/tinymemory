@@ -1,10 +1,10 @@
 //! The value types the section surface returns, and the two constants that
 //! bound and explain its one non-obvious behaviour.
 //!
-//! Kept apart from the handles in [`view`](super::view) and
-//! [`recall`](super::recall) because they are what a caller *stores* — a
-//! [`SectionScope`] outlives the [`SectionView`](super::SectionView) that
-//! produced it, whereas the handles borrow the provider and cannot.
+//! Kept apart from [`SectionView`](super::SectionView) and
+//! [`SectionRecall`](super::SectionRecall) because they are what a caller
+//! *stores* — a [`SectionScope`] outlives the view that produced it, whereas
+//! the handles borrow the provider and cannot.
 
 use tinymemory_api::namespace::Namespace;
 use tinymemory_api::types::MemoryEntry;
@@ -78,20 +78,32 @@ pub struct SectionHits {
     pub truncated: bool,
 }
 
-/// The score a hit sorts on, with an absent score ordering last.
+/// The score a hit sorts on, with absent and non-finite scores ordering last.
 ///
 /// Absent scores map to negative infinity rather than zero: a driver that scores
 /// nothing would otherwise have its hits outrank genuinely poor matches.
+///
+/// `NaN` and the infinities are folded in with them. `f64::total_cmp` would
+/// order them deterministically on its own, but it ranks `+NaN` *above* `+inf` —
+/// so one `NaN` from a misbehaving driver would quietly outrank every real hit.
+/// Treating a score that is not a finite number as no score at all is the same
+/// judgement, applied consistently.
 fn sort_score(entry: &MemoryEntry) -> f64 {
-    entry.score.unwrap_or(f64::NEG_INFINITY)
+    match entry.score {
+        Some(score) if score.is_finite() => score,
+        _ => f64::NEG_INFINITY,
+    }
 }
 
 /// Merge hits gathered from several namespaces into one ranked, bounded list.
 ///
 /// Ordering is score descending, absent scores last, ties broken by namespace
 /// then key — total and deterministic, so a fixed store always yields the same
-/// answer. `f64::total_cmp` is used rather than `partial_cmp` so a `NaN` score
-/// from a misbehaving driver orders predictably instead of poisoning the sort.
+/// answer. It is total because `(namespace, key)` is the store's primary key, so
+/// two distinct entries can never compare equal and the sort's stability is
+/// never load-bearing. `total_cmp` is used rather than `partial_cmp` because
+/// `partial_cmp` returns `None` for `NaN` and would poison the comparator;
+/// `sort_score` has already folded the non-finite cases in with absent scores.
 pub(super) fn merge_hits(mut hits: Vec<MemoryEntry>, limit: usize) -> Vec<MemoryEntry> {
     hits.sort_by(|a, b| {
         sort_score(b)
