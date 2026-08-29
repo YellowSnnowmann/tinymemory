@@ -8,7 +8,10 @@ use tinymemory_api::provider::types::SourceScope;
 use tinymemory_api::provider::MemoryProvider;
 use tinymemory_api::recall::OwnedRecallOpts;
 
-use super::types::{merge_hits, SectionHits, MAX_SECTION_NAMESPACES, NAMESPACE_FILTER_CONFLICT};
+use super::types::{
+    merge_hits, SectionHits, CROSS_SESSION_SECTION_CONFLICT, MAX_SECTION_NAMESPACES,
+    NAMESPACE_FILTER_CONFLICT,
+};
 use super::view::SectionView;
 
 /// A borrowing handle for section-aware recall.
