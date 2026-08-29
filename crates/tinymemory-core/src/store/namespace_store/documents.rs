@@ -10,7 +10,7 @@ use std::collections::BTreeSet;
 use uuid::Uuid;
 
 use crate::store::safety;
-use crate::store::types::{NamespaceDocumentInput, StoredMemoryDocument};
+use crate::store::types::{NamespaceDocumentInput, StoredMemoryDocument, GLOBAL_NAMESPACE};
 
 use super::UnifiedMemory;
 
