@@ -451,14 +451,28 @@ impl UnifiedMemory {
 
     /// Run a hybrid query and return both the rendered context text and the
     /// underlying ranked hits.
+    ///
+    /// Derives both address forms from `namespace` itself, via
+    /// [`UnifiedMemory::namespace_address_forms`] — **not** by sanitizing
+    /// first and then deriving the logical form from the sanitized result.
+    /// That was the actual bug: sanitizing `conversation:thread-8f21` gives
+    /// `conversation_thread-8f21`, which has no `:` left to preserve, so
+    /// canonicalizing it as "the logical name" produces
+    /// `conversation_thread-8f21` again — a value no row's
+    /// `logical_namespace` actually holds, since the write path derives the
+    /// logical form from the *original* namespace. `query_namespace_hits`
+    /// then filtered on that wrong logical name and silently returned empty
+    /// for every sectioned namespace. Both forms must come from the one
+    /// original `namespace` argument, in this one call, at the top of this
+    /// function — never from each other.
     pub async fn query_namespace_context_data(
         &self,
         namespace: &str,
         query: &str,
         limit: u32,
     ) -> Result<NamespaceRetrievalContext, String> {
-        let ns = Self::sanitize_namespace(namespace);
-        let hits = self.query_namespace_hits(&ns, query, limit).await?;
+        let (ns, logical) = Self::namespace_address_forms(namespace);
+        let hits = self.query_namespace_hits(&ns, &logical, query, limit).await?;
         Ok(NamespaceRetrievalContext {
             namespace: ns,
             query: Some(query.to_string()),
