@@ -252,6 +252,19 @@ impl UnifiedMemory {
             "memory_docs",
         )?;
 
+        // Backfill the `logical_namespace` column on existing `memory_docs`
+        // databases. Fresh installs get this via the CREATE TABLE above.
+        // Nullable, no DEFAULT: existing rows get NULL rather than a guessed
+        // value, because a sanitized `_` cannot be reliably un-collapsed back
+        // into whatever delimiter it replaced (`namespace_summaries_blocking`
+        // falls back to the sanitized `namespace` column for those rows via
+        // `COALESCE`).
+        apply_additive_migration(
+            &conn,
+            "ALTER TABLE memory_docs ADD COLUMN logical_namespace TEXT",
+            "memory_docs",
+        )?;
+
         // Create FTS5 episodic tables (episodic_log, episodic_fts, and their
         // triggers) so the Archivist can call episodic_insert immediately after
         // the store is initialised.
