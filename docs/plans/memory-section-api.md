@@ -79,12 +79,12 @@ cargo run -p tinymemory --features tinycortex --example tinycortex
 
 ## Completion checklist
 
-- [ ] 1 `types.rs` and its tests
-- [ ] 2 `SectionView` reads and writes
-- [ ] 3 `scopes` and `list_section`
-- [ ] 4 `SectionRecall::in_scope`
-- [ ] 5 `SectionRecall::across_section`
-- [ ] 6 `Sections`, module docs, doctest
-- [ ] 7 `lib.rs` exports, including `namespace`
-- [ ] 8 integration tests
-- [ ] 9 README and example
+- [x] 1 `types.rs` and its tests
+- [x] 2 `SectionView` reads and writes
+- [x] 3 `scopes` and `list_section`
+- [x] 4 `SectionRecall::in_scope`
+- [x] 5 `SectionRecall::across_section`
+- [x] 6 `Sections`, module docs, doctest
+- [x] 7 `lib.rs` exports, including `namespace`
+- [x] 8 integration tests
+- [x] 9 README and example

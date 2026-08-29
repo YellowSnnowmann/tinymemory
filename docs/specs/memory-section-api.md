@@ -1,6 +1,6 @@
 # The Section API: Conversations, Learnings, Documents, and Recall
 
-**Status:** Draft
+**Status:** Implemented
 **Owner:** TinyMemory maintainers
 
 A typed surface for the three content sections the namespace convention already
