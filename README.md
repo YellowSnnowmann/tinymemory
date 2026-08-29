@@ -214,6 +214,41 @@ Capabilities are asked **once, at bind time, and cached**: a host filters its RP
 surface and its agent-tool list from the answer, so a set that changed
 afterwards would not be noticed.
 
+## The section surface
+
+Namespaces follow a `<section>:<scope>` convention — `conversation:thread-8f21`,
+`learning:rust-async`, `document:handbook` — so "conversational memory",
+"document memory" and "learnings" mean the same thing to every host and every
+engine. `tinymemory::sections` makes that convention a typed surface instead of
+a string every caller concatenates by hand:
+
+```rust
+use tinymemory::sections::Sections;
+
+let sections = Sections::new(provider.as_ref());
+
+sections.conversations().put("thread-8f21", "turn-1", text, category, None, taint).await?;
+let topics = sections.learnings().scopes().await?;
+let hits = sections.recall().across_section(&MemorySection::Learning, "async", 10, &opts, None).await?;
+```
+
+`conversations()`, `learnings()` and `documents()` are the three sections a host
+writes to routinely; `section()` reaches the other four and `Custom`. Every call
+composes the **mandatory** families only, so the whole surface works on every
+driver — nothing to negotiate, and no capability-absent path. On a driver that
+retains nothing, every call succeeds and returns empty.
+
+`across_section` is a fan-out: one namespace enumeration plus one recall per
+scope, capped, reporting what it searched and whether the cap bit. It is not an
+unfinished optimisation — `OwnedRecallOpts::namespace` is an exact match, and
+leaving it unset means the `global` namespace on the embedded engine but *every*
+namespace on the reference driver, so there is no cross-namespace recall to build
+a single call on. See [`docs/specs/memory-section-api.md`](docs/specs/memory-section-api.md).
+
+Handing the layer a **file** is a different path: `DocumentIntake` sniffs the
+format, converts it, and picks the capability family. The section surface is for
+text you already hold.
+
 ## What lives here, and what deliberately does not
 
 | Here | In the host |
