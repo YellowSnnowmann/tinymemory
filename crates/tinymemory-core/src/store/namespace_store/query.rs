@@ -73,14 +73,6 @@ impl UnifiedMemory {
     /// - graph relevance is the primary signal
     /// - vector similarity is the secondary verification signal
     /// - keyword overlap remains as a lexical backstop
-    ///
-    /// Takes a single, un-sanitized `namespace` — the caller's raw/logical
-    /// string — and derives both address forms itself, once, via
-    /// [`UnifiedMemory::namespace_address_forms`]. This is the top of the
-    /// call chain the `Memory::recall` path drives, so it is the correct
-    /// (only) place in this chain to perform that derivation from a string
-    /// argument; everything it calls below takes both forms already derived,
-    /// explicitly, and does not re-derive either from the other.
     pub async fn query_namespace_ranked(
         &self,
         namespace: &str,
@@ -94,9 +86,6 @@ impl UnifiedMemory {
     /// Same as [`Self::query_namespace_ranked`], but excludes same-session
     /// documents — see [`Self::query_namespace_hits_excluding_session`] for
     /// the exact semantics and backward-compatibility guarantee.
-    ///
-    /// Same single-`namespace`-derives-both-forms contract as
-    /// [`Self::query_namespace_ranked`].
     pub async fn query_namespace_ranked_excluding_session(
         &self,
         namespace: &str,
@@ -104,9 +93,8 @@ impl UnifiedMemory {
         limit: u32,
         exclude_session_id: Option<&str>,
     ) -> Result<Vec<NamespaceQueryResult>, String> {
-        let (ns, logical) = Self::namespace_address_forms(namespace);
         let hits = self
-            .query_namespace_hits_excluding_session(&ns, &logical, query, limit, exclude_session_id)
+            .query_namespace_hits_excluding_session(namespace, query, limit, exclude_session_id)
             .await?;
         let mut out = Vec::new();
         for hit in hits {
@@ -127,27 +115,13 @@ impl UnifiedMemory {
     /// Hybrid retrieval: returns ranked hits across documents and KV records,
     /// scored by graph relevance + vector similarity + keyword overlap +
     /// freshness.
-    ///
-    /// Takes both address forms explicitly — `ns` (the physical, sanitized
-    /// storage address) and `logical` (the delimiter-preserving name recorded
-    /// in `logical_namespace`) — rather than one string this function derives
-    /// the other from. Deriving one from the other WITHIN this function is
-    /// exactly the mistake that caused `query_namespace_context_data` to
-    /// silently return empty for every sectioned namespace: it had already
-    /// sanitized its input before calling in, so a from-scratch derivation
-    /// here would have canonicalized the *sanitized* string and produced a
-    /// logical name no row actually has. Forcing both forms into the
-    /// signature makes that impossible to get wrong silently — the caller
-    /// must answer both questions, and [`UnifiedMemory::namespace_address_forms`]
-    /// answers them correctly in one call from the original raw namespace.
     pub async fn query_namespace_hits(
         &self,
-        ns: &str,
-        logical: &str,
+        namespace: &str,
         query: &str,
         limit: u32,
     ) -> Result<Vec<NamespaceMemoryHit>, String> {
-        self.query_namespace_hits_excluding_session(ns, logical, query, limit, None)
+        self.query_namespace_hits_excluding_session(namespace, query, limit, None)
             .await
     }
 
@@ -168,25 +142,18 @@ impl UnifiedMemory {
     /// identical to [`Self::query_namespace_hits`] — no filtering is
     /// applied, so every existing caller (and every caller with no ambient
     /// session context) keeps its exact prior behavior.
-    ///
-    /// `ns` and `logical` must come from the same original caller string via
-    /// [`UnifiedMemory::namespace_address_forms`] — see [`Self::query_namespace_hits`]'s
-    /// doc comment for why this function does not derive one from the other
-    /// itself.
     pub async fn query_namespace_hits_excluding_session(
         &self,
-        ns: &str,
-        logical: &str,
+        namespace: &str,
         query: &str,
         limit: u32,
         exclude_session_id: Option<&str>,
     ) -> Result<Vec<NamespaceMemoryHit>, String> {
+        let ns = Self::sanitize_namespace(namespace);
         let exclude_session_id = exclude_session_id
             .map(str::trim)
             .filter(|id| !id.is_empty());
-        let mut docs = self
-            .load_documents_for_scope_matching_logical(ns, logical)
-            .await?;
+        let mut docs = self.load_documents_for_scope(&ns).await?;
         if let Some(exclude) = exclude_session_id {
             let before = docs.len();
             docs.retain(|doc| doc.session_id.as_deref() != Some(exclude));
@@ -197,10 +164,13 @@ impl UnifiedMemory {
                 docs.len()
             );
         }
-        let kvs = self.kv_records_for_scope(ns).await?;
+        let kvs = self.kv_records_for_scope(&ns).await?;
 
-        let graph_relations = self.graph_relations_for_scope(ns).await.unwrap_or_default();
-        let chunks = self.load_chunks_for_scope(ns).await?;
+        let graph_relations = self
+            .graph_relations_for_scope(&ns)
+            .await
+            .unwrap_or_default();
+        let chunks = self.load_chunks_for_scope(&ns).await?;
         let plan = self.build_retrieval_plan(query, &docs, &graph_relations);
         let matched_relations = self.collect_relation_matches(&plan, &graph_relations);
         let graph_scores = self.compute_graph_document_scores(&docs, &chunks, &matched_relations);
