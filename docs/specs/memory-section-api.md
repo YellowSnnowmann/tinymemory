@@ -121,7 +121,12 @@ It promises, and its rustdoc states:
 - **Each namespace is asked for the full `limit`**, never a share of it: a share
   would let one namespace's best hit lose to another's worst.
 - **Merge order** is score descending, absent scores last, ties by
-  `(namespace, key)` ascending — then truncate to `limit`.
+  `(namespace, key)` ascending — then truncate to `limit`. Total, because
+  `(namespace, key)` is the store's primary key. Scores that are not finite
+  numbers rank with the absent ones rather than above every real hit.
+- **Visit order is by size, not recency**, because `last_updated` is optional
+  and no bundled driver populates it; ordering on it would be ordering on
+  `None` and would cost the cap its determinism.
 - **`truncated` means namespaces were skipped**, never that hits exceeded `limit`.
 - **`opts.namespace` must be `None`.** `Some` is `MemoryError::Invalid` carrying
   `NAMESPACE_FILTER_CONFLICT`, rather than a silent override of the caller's filter.
@@ -133,6 +138,13 @@ documentation says so rather than pretending otherwise.
 ## Invariants and constraints
 
 - A `SectionView` never reads or writes a namespace outside its own section.
+- A section is normalised at construction, so `Custom("conversation")` and
+  `Conversation` name one view and not two. Without this a write lands in
+  `conversation:` while the aliased view reports the section empty — the same
+  hazard `Namespace::new` normalises to prevent, one layer up.
+- An unusable section is an error, never an empty one: if a section's prefix
+  fails validation, the enumerating calls fail rather than reporting no scopes,
+  so they agree with the addressed calls about the same section.
 - `put` then `get` on the same `(scope, key)` round-trips on any retaining driver.
 - Every call succeeds on a driver that retains nothing, returning empty rather
   than an error — the surface has no capability-absent path.
@@ -161,3 +173,7 @@ documentation says so rather than pretending otherwise.
   namespace. It cannot be built on `namespace: None` while that means two things.
 - **Should the conformance suite pin the `namespace: None` semantics?** Yes — in
   its own change.
+- **Should `across_section` visit by recency rather than size?** For
+  `conversation:` recency is usually what a caller means, and a host with more
+  than `MAX_SECTION_NAMESPACES` conversations currently searches the largest
+  rather than the latest. It needs drivers to populate `last_updated` first.
