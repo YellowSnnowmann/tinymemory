@@ -63,9 +63,11 @@ impl<'a> SectionRecall<'a> {
     ///
     /// # Errors
     ///
-    /// [`MemoryError::Invalid`] carrying [`NAMESPACE_FILTER_CONFLICT`] when
-    /// `opts` already pins a namespace, or when the section and scope cannot
-    /// form a valid namespace. Otherwise whatever the backend returns.
+    /// [`MemoryError::Invalid`] in two cases: carrying
+    /// [`NAMESPACE_FILTER_CONFLICT`] when `opts` already pins a namespace, and
+    /// carrying the namespace validator's own message when the section and
+    /// scope cannot form a valid namespace. Otherwise whatever the backend
+    /// returns.
     pub async fn in_scope(
         &self,
         section: &MemorySection,
