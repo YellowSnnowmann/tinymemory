@@ -449,7 +449,7 @@ impl UnifiedMemory {
     ///
     /// This exists so no caller across a query/recall path ever derives one
     /// form from the other's already-transformed value. That mistake is easy
-    /// to make silently: [`Self::sanitize_namespace`] is idempotent, so
+    /// to make silently: `Self::sanitize_namespace` is idempotent, so
     /// re-sanitizing an already-sanitized string is invisible, but deriving
     /// the *logical* name from an already-sanitized string is not — a
     /// sectioned namespace like `conversation:thread-8f21` sanitizes to
