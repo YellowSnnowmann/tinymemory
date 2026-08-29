@@ -38,24 +38,50 @@ pub const NAMESPACE_FILTER_CONFLICT: &str =
     "recall options must not set a namespace: the section surface derives it";
 
 /// The message carried by the [`MemoryError::Invalid`] that
-/// [`SectionRecall`](super::SectionRecall) returns when the caller asks for
-/// `cross_session` recall on a section other than
+/// [`SectionRecall::in_scope`](super::SectionRecall::in_scope) returns when the
+/// caller asks for `cross_session` or `session_id`-scoped recall on a section
+/// other than
 /// [`Conversation`](tinymemory_api::namespace::MemorySection::Conversation).
 ///
-/// The bundled `UnifiedMemory` driver's `cross_session` option only ever
-/// surfaces *episodic conversational* rows from other sessions — it has no
-/// concept of "cross-session" for documents or learnings — and it relabels
-/// every such row with whichever namespace the call was pinned to. Honouring
-/// `cross_session` on a non-conversation section would therefore return
-/// conversational content mislabeled as document or learning hits, and on
-/// [`across_section`](super::SectionRecall::across_section) the same
-/// cross-session rows would be repeated once per scope, crowding genuine hits
-/// out of `limit`. Refused outright rather than silently misrepresented.
+/// The bundled `UnifiedMemory` driver's `cross_session` and `session_id`
+/// options both append *episodic conversational* rows independently of the
+/// pinned namespace, then relabel every such row with whichever namespace the
+/// call was pinned to (`crates/tinymemory-core/src/store/memory_trait.rs`) —
+/// it has no concept of "cross-session" or "session-scoped" for documents or
+/// learnings. Honouring either option on a non-conversation section would
+/// therefore return conversational content mislabeled as document or learning
+/// hits. Refused outright rather than silently misrepresented.
+///
+/// The section this checks against is the **normalised** one — the same one
+/// [`SectionView::new`](super::SectionView::new) derives through
+/// [`MemorySection::from_prefix`](tinymemory_api::namespace::MemorySection::from_prefix)
+/// — so `Custom("conversation")` is treated exactly like
+/// [`MemorySection::Conversation`], matching every other method on this
+/// surface.
 ///
 /// [`MemoryError::Invalid`]: tinymemory_api::error::MemoryError::Invalid
 /// [`MemorySection`]: tinymemory_api::namespace::MemorySection
 pub const CROSS_SESSION_SECTION_CONFLICT: &str =
-    "cross-session recall is only meaningful for the conversation section";
+    "cross-session and session-scoped recall are only meaningful for the conversation section";
+
+/// The message carried by the [`MemoryError::Invalid`] that
+/// [`SectionRecall::across_section`](super::SectionRecall::across_section)
+/// returns when the caller sets `cross_session` or `session_id`, on *any*
+/// section including [`Conversation`](tinymemory_api::namespace::MemorySection::Conversation).
+///
+/// Unlike [`CROSS_SESSION_SECTION_CONFLICT`], this is refused unconditionally,
+/// because the problem is the fan-out itself rather than the section: the
+/// bundled driver's cross-session and session-scoped augmentation runs once,
+/// independent of the pinned namespace, and `across_section` issues one call
+/// per scope — so the exact same extra rows would be appended once per scope,
+/// repeating in the merged result and crowding out genuine hits before
+/// `limit` truncates them. A caller who wants cross-session or session-scoped
+/// recall should use [`SectionRecall::in_scope`](super::SectionRecall::in_scope)
+/// instead, which issues exactly one call.
+///
+/// [`MemoryError::Invalid`]: tinymemory_api::error::MemoryError::Invalid
+pub const CROSS_SESSION_FAN_OUT_CONFLICT: &str =
+    "cross-session and session-scoped recall are not supported by across_section: use in_scope instead";
 
 /// One namespace within a section, as [`SectionView::scopes`] reports it.
 ///
