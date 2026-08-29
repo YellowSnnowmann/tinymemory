@@ -29,6 +29,11 @@ impl UnifiedMemory {
         input: NamespaceDocumentInput,
     ) -> Result<String, String> {
         let namespace = Self::sanitize_namespace(&input.namespace);
+        // The logical (delimiter-preserving) namespace, PII-redacted the same
+        // way `sanitize_namespace` redacts the storage address, so
+        // `namespace_summaries` can report `conversation:thread-8f21` back
+        // verbatim instead of the path-safe `conversation_thread-8f21`.
+        let logical_namespace = safety::canonical_identifier(input.namespace.trim());
         let key = input.key.trim().to_string();
         if key.is_empty() {
             return Err("document key cannot be empty".to_string());
@@ -238,6 +243,9 @@ impl UnifiedMemory {
         input: NamespaceDocumentInput,
     ) -> Result<String, String> {
         let namespace = Self::sanitize_namespace(&input.namespace);
+        // See `upsert_document_presanitized` — same delimiter-preserving,
+        // PII-redacted logical namespace, same reason.
+        let logical_namespace = safety::canonical_identifier(input.namespace.trim());
         let key = input.key.trim().to_string();
         if key.is_empty() {
             return Err("document key cannot be empty".to_string());
