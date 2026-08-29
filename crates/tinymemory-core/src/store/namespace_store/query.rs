@@ -9,9 +9,10 @@
 use rusqlite::params;
 use std::collections::{HashMap, HashSet};
 
+use crate::store::safety;
 use crate::store::types::{
     GraphRelationRecord, MemoryItemKind, NamespaceMemoryHit, NamespaceQueryResult,
-    NamespaceRetrievalContext, RetrievalScoreBreakdown,
+    NamespaceRetrievalContext, RetrievalScoreBreakdown, GLOBAL_NAMESPACE,
 };
 
 use super::events;
@@ -150,10 +151,23 @@ impl UnifiedMemory {
         exclude_session_id: Option<&str>,
     ) -> Result<Vec<NamespaceMemoryHit>, String> {
         let ns = Self::sanitize_namespace(namespace);
+        // The physical address is not injective (`a:b_c` and `a_b:c` both
+        // sanitize to `a_b_c`), so addressing only by `ns` would score
+        // another logical namespace's rows into this recall. `namespace`
+        // here is still the caller's raw/logical string (this function's
+        // only caller, `Memory::recall` via `recall_excluding_session`,
+        // passes `normalize_namespace(opts.namespace)` straight through
+        // without sanitizing it), so the logical name is derived the same
+        // way the write path derived it — no new value threaded in from
+        // outside. See `safety::LOGICAL_NAMESPACE_FILTER_SQL` for why the
+        // `IS NULL` arm alone would over-match.
+        let logical = safety::canonical_logical_namespace(namespace, GLOBAL_NAMESPACE);
         let exclude_session_id = exclude_session_id
             .map(str::trim)
             .filter(|id| !id.is_empty());
-        let mut docs = self.load_documents_for_scope(&ns).await?;
+        let mut docs = self
+            .load_documents_for_scope_matching_logical(&ns, &logical)
+            .await?;
         if let Some(exclude) = exclude_session_id {
             let before = docs.len();
             docs.retain(|doc| doc.session_id.as_deref() != Some(exclude));
