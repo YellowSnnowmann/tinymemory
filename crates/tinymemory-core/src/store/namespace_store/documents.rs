@@ -438,6 +438,15 @@ impl UnifiedMemory {
         }))
     }
 
+    /// Physical-address-only document load, retained for test fixtures that
+    /// deliberately seed rows without a `logical_namespace` (the pre-migration
+    /// / raw-SQL shape) and need to read them back without a logical filter.
+    /// Every production caller now goes through
+    /// [`Self::load_documents_for_scope_matching_logical`] instead — see its
+    /// doc comment and [`UnifiedMemory::namespace_address_forms`] for why an
+    /// address-only load is not safe to use where two logical namespaces can
+    /// alias one physical address.
+    #[cfg(test)]
     pub(crate) async fn load_documents_for_scope(
         &self,
         namespace: &str,
