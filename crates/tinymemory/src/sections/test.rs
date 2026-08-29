@@ -517,7 +517,14 @@ async fn in_scope_rejects_cross_session_outside_the_conversation_section() {
 
     let err = Sections::new(&provider)
         .recall()
-        .in_scope(&MemorySection::Learning, "rust", "q", 10, &cross_session, None)
+        .in_scope(
+            &MemorySection::Learning,
+            "rust",
+            "q",
+            10,
+            &cross_session,
+            None,
+        )
         .await
         .expect_err("cross_session only means something for conversations");
 
