@@ -9,10 +9,9 @@
 use rusqlite::params;
 use std::collections::{HashMap, HashSet};
 
-use crate::store::safety;
 use crate::store::types::{
     GraphRelationRecord, MemoryItemKind, NamespaceMemoryHit, NamespaceQueryResult,
-    NamespaceRetrievalContext, RetrievalScoreBreakdown, GLOBAL_NAMESPACE,
+    NamespaceRetrievalContext, RetrievalScoreBreakdown,
 };
 
 use super::events;
