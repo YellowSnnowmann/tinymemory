@@ -62,6 +62,7 @@ pub async fn assert_provider(provider: Arc<dyn MemoryProvider>) {
     assert_list_filters_narrow(p).await;
     assert_taint_is_preserved(p).await;
     assert_recall_respects_limit_and_namespace(p).await;
+    assert_namespaces_preserve_their_section(p).await;
     assert_export_import_round_trip(p).await;
     assert_awkward_content_round_trips(p).await;
     assert_kv_round_trip(p).await;
