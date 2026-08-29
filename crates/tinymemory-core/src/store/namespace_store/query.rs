@@ -386,7 +386,7 @@ impl UnifiedMemory {
         }
 
         // Event FTS5 search — search extracted facts, decisions, preferences.
-        let event_hits = events::event_search_fts(&self.conn, &ns, query, limit as usize)
+        let event_hits = events::event_search_fts(&self.conn, ns, query, limit as usize)
             .unwrap_or_else(|e| {
                 tracing::warn!("[query] event search failed: {e}");
                 Vec::new()
