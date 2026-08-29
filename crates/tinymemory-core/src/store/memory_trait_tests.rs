@@ -258,14 +258,22 @@ async fn namespace_summaries_normalizes_blank_namespace_to_global() {
     assert_eq!(found.count, 1);
 }
 
-/// Two logical names that sanitize to the same physical namespace
+/// Two logical names that sanitize to the same physical address
 /// (`conversation:x` and `conversation_x` both collapse to
-/// `conversation_x`) must not split into two summaries with two partial
-/// counts: every addressed call (`list`, `export`, ...) already merges
-/// their rows into one physical namespace, so `namespace_summaries` must
-/// report exactly one entry with the true, combined count.
+/// `conversation_x`) are NOT the same namespace and must not be merged:
+/// `namespace_summaries` must report one summary per logical name, each
+/// with only its own rows counted, and `list` addressed to one logical name
+/// must return only that name's rows — never the other alias's.
+///
+/// This is the corrected behavior. Before `list`/`get`/`forget` filtered on
+/// `logical_namespace` (not just the physical `namespace` column), both
+/// aliases' rows were indistinguishable once written, so every addressed
+/// call silently merged them: listing `conversation:x` also returned
+/// `conversation_x`'s rows mislabelled as belonging to it, and
+/// `namespace_summaries` reported one summary hiding the losing alias
+/// entirely from enumeration.
 #[tokio::test]
-async fn namespace_summaries_deduplicates_when_two_logical_names_alias_one_address() {
+async fn logical_namespaces_stay_isolated_when_they_alias_one_physical_address() {
     let (_tmp, mem) = fresh_mem();
     mem.store("conversation:x", "k1", "a", MemoryCategory::Core, None)
         .await
@@ -274,21 +282,39 @@ async fn namespace_summaries_deduplicates_when_two_logical_names_alias_one_addre
         .await
         .unwrap();
 
+    // Each logical name gets its own summary with its own count — neither
+    // hides nor merges with the other.
     let summaries = mem.namespace_summaries().await.unwrap();
-    let matching: Vec<_> = summaries
+    let colon = summaries
         .iter()
-        .filter(|s| s.namespace == "conversation:x" || s.namespace == "conversation_x")
-        .collect();
-    assert_eq!(
-        matching.len(),
-        1,
-        "expected exactly one summary for the aliased address, got {summaries:?}"
-    );
-    assert_eq!(matching[0].count, 2);
+        .find(|s| s.namespace == "conversation:x")
+        .unwrap_or_else(|| panic!("expected `conversation:x` in {summaries:?}"));
+    let underscore = summaries
+        .iter()
+        .find(|s| s.namespace == "conversation_x")
+        .unwrap_or_else(|| panic!("expected `conversation_x` in {summaries:?}"));
+    assert_eq!(colon.count, 1);
+    assert_eq!(underscore.count, 1);
 
-    // Both aliases still address the same merged physical namespace.
-    let listed = mem.list(Some("conversation:x"), None, None).await.unwrap();
-    assert_eq!(listed.len(), 2);
+    // Listing one alias must return only its own row, not the other's.
+    let listed_colon = mem.list(Some("conversation:x"), None, None).await.unwrap();
+    assert_eq!(listed_colon.len(), 1);
+    assert_eq!(listed_colon[0].key, "k1");
+    assert_eq!(listed_colon[0].namespace.as_deref(), Some("conversation:x"));
+
+    let listed_underscore = mem.list(Some("conversation_x"), None, None).await.unwrap();
+    assert_eq!(listed_underscore.len(), 1);
+    assert_eq!(listed_underscore[0].key, "k2");
+    assert_eq!(
+        listed_underscore[0].namespace.as_deref(),
+        Some("conversation_x")
+    );
+
+    // `get`/`forget` must not cross the alias boundary either.
+    assert!(mem.get("conversation:x", "k2").await.unwrap().is_none());
+    assert!(mem.get("conversation_x", "k1").await.unwrap().is_none());
+    assert!(!mem.forget("conversation:x", "k2").await.unwrap());
+    assert!(mem.get("conversation_x", "k2").await.unwrap().is_some());
 }
 
 /// `canonical_identifier`'s `[REDACTED_PII_*]` placeholder is valid storage
