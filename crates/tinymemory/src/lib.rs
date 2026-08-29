@@ -138,10 +138,10 @@ pub use tinymemory_conformance as conformance;
 
 pub mod registry;
 
-/// Typed surfaces for the sections the namespace convention names —
-/// conversations, learnings, documents — plus a section-aware recall.
-///
-/// Composes the mandatory families only, so it works on every driver.
+// Typed surfaces for the sections the namespace convention names —
+// conversations, learnings, documents — plus a section-aware recall. Documented
+// by its own `//!` docs; an outer doc comment here as well would merge the two
+// and resolve the module's intra-doc links in this file's scope instead.
 pub mod sections;
 
 // The contract, re-exported wholesale. Listed module by module rather than as a
