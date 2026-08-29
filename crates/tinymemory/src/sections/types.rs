@@ -39,7 +39,8 @@ pub const NAMESPACE_FILTER_CONFLICT: &str =
 
 /// The message carried by the [`MemoryError::Invalid`] that
 /// [`SectionRecall`](super::SectionRecall) returns when the caller asks for
-/// `cross_session` recall on a section other than [`MemorySection::Conversation`].
+/// `cross_session` recall on a section other than
+/// [`Conversation`](tinymemory_api::namespace::MemorySection::Conversation).
 ///
 /// The bundled `UnifiedMemory` driver's `cross_session` option only ever
 /// surfaces *episodic conversational* rows from other sessions — it has no
