@@ -89,7 +89,14 @@ impl<'a> SectionView<'a> {
     ) -> Result<Namespace, MemoryError> {
         let namespace = self.namespace(scope)?;
         self.provider
-            .store(namespace.as_str(), key, content, category, session_id, taint)
+            .store(
+                namespace.as_str(),
+                key,
+                content,
+                category,
+                session_id,
+                taint,
+            )
             .await?;
         Ok(namespace)
     }
@@ -199,7 +206,11 @@ impl<'a> SectionView<'a> {
                     .await?,
             );
         }
-        entries.sort_by(|a, b| a.namespace.cmp(&b.namespace).then_with(|| a.key.cmp(&b.key)));
+        entries.sort_by(|a, b| {
+            a.namespace
+                .cmp(&b.namespace)
+                .then_with(|| a.key.cmp(&b.key))
+        });
         Ok(entries)
     }
 }

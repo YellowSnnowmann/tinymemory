@@ -375,7 +375,10 @@ async fn an_empty_scope_is_rejected_without_storing() {
         .expect_err("an empty scope cannot form a namespace");
 
     assert!(matches!(err, MemoryError::Invalid(_)), "got {err:?}");
-    assert!(memory.rows().is_empty(), "a rejected put must store nothing");
+    assert!(
+        memory.rows().is_empty(),
+        "a rejected put must store nothing"
+    );
 }
 
 #[tokio::test]
@@ -465,7 +468,14 @@ async fn in_scope_recall_is_confined_to_one_namespace() {
 
     let found = Sections::new(&provider)
         .recall()
-        .in_scope(&MemorySection::Learning, "rust", "shipping", 10, &opts(), None)
+        .in_scope(
+            &MemorySection::Learning,
+            "rust",
+            "shipping",
+            10,
+            &opts(),
+            None,
+        )
         .await
         .unwrap();
 
@@ -542,7 +552,12 @@ async fn across_section_truncates_the_hits_to_the_limit() {
 async fn across_section_reports_truncation_past_the_namespace_cap() {
     let (memory, provider) = ScoredMemory::provider();
     for index in 0..=MAX_SECTION_NAMESPACES {
-        memory.seed(&format!("learning:topic-{index:03}"), "k", "async", Some(0.5));
+        memory.seed(
+            &format!("learning:topic-{index:03}"),
+            "k",
+            "async",
+            Some(0.5),
+        );
     }
 
     let found = Sections::new(&provider)
@@ -610,7 +625,11 @@ async fn the_whole_surface_succeeds_on_a_provider_that_retains_nothing() {
         .expect("put must succeed");
         assert!(view.get("scope", "key").await.expect("get").is_none());
         assert!(!view.forget("scope", "key").await.expect("forget"));
-        assert!(view.list("scope", None, None).await.expect("list").is_empty());
+        assert!(view
+            .list("scope", None, None)
+            .await
+            .expect("list")
+            .is_empty());
         assert!(view.scopes().await.expect("scopes").is_empty());
         assert!(view
             .list_section(None, None)
