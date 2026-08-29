@@ -319,7 +319,7 @@ async fn namespace_summaries_strips_brackets_from_pii_redacted_sectioned_namespa
     );
     let parsed = Namespace::parse(&found.namespace)
         .unwrap_or_else(|e| panic!("reported namespace `{}` must parse: {e}", found.namespace));
-    assert_eq!(parsed.section(), &MemorySection::Conversation);
+    assert_eq!(parsed.section(), Some(&MemorySection::Conversation));
 }
 
 #[tokio::test]
