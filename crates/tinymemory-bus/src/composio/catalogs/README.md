@@ -49,7 +49,7 @@ and from `tinymemory-core::sync::composio::providers::catalogs` for the historic
 see [`catalogs_compat`](../../../../../tinymemory-core/src/sync/composio/providers/catalogs_compat.rs)
 for the six category module names that predate this move):
 
-- `catalog_for_toolkit`, `is_action_visible_with_pref`, `curated_scope_for`, `toolkit_has_scope`
+- `catalog_for_toolkit`, `is_action_visible_with_pref`, `curated_scope_for`, `toolkit_has_scope`, `has_native_provider`
 - `CAPABILITY_TOOLKITS`, `NATIVE_PROVIDERS`
 - `toolkit_description`
 - `sync_interval_env_var`, `parse_sync_interval_override`, `native_provider_sync_interval_secs`
