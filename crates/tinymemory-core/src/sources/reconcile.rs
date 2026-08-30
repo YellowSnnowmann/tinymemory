@@ -119,14 +119,7 @@ pub async fn apply_composio_source_caps_migration() -> Result<(), String> {
     Ok(())
 }
 
-fn title_case(s: &str) -> String {
-    let mut chars = s.chars();
-    match chars.next() {
-        None => String::new(),
-        Some(c) => c.to_uppercase().chain(chars).collect(),
-    }
-}
-
+#[cfg(test)]
 fn short_id(id: &str) -> &str {
     // Show only the last 8 Unicode scalar values to keep labels compact.
     // Byte-slicing would panic if the cut point isn't a UTF-8 boundary.

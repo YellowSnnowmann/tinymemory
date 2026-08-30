@@ -527,56 +527,6 @@ fn the_sync_loops_are_claimed_once_and_a_foreign_workspace_is_refused() {
     );
 }
 
-/// The Composio gate answers for exactly the branch the pipeline would take.
-///
-/// Worth pinning because the two ways it can be wrong are both quiet. A gate
-/// that started the loop for a mode with no credential path would list the
-/// user's connections every 20 minutes and fail every due one, appending a
-/// failed row to the sync audit each time; a gate that refused a mode that CAN
-/// resolve one would leave a host whose Composio sources simply stop updating,
-/// with a single line at boot to explain it.
-///
-/// Backend mode moved from the second category to the first when
-/// `ComposioHost::session_bearer` landed. It used to be excluded because
-/// `EngineRuntimeConfig::session_token` refuses by design — which meant the
-/// loop did not start for a host whose default mode is backend, and neither the
-/// host nor the module reported it, because neither thought it was responsible.
-///
-/// Asserted through `composio_sync_can_run` rather than
-/// `start_composio_periodic_sync` for the reason the claim tests above give:
-/// the decision is the whole of what is worth checking, and the call after it
-/// spawns a real 20-minute tick loop for the life of the test binary.
-#[test]
-fn composio_periodic_sync_starts_for_any_mode_that_can_resolve_a_credential() {
-    let mut config = test_config(std::path::Path::new("/tinymemory-module/composio-gate"));
-
-    assert!(
-        !crate::composio_sync_can_run(&config),
-        "a host that states no mode is not direct — and has no bearer either"
-    );
-
-    config.composio_mode = tinymemory_api::host::COMPOSIO_MODE_BACKEND.to_string();
-    assert!(
-        crate::composio_sync_can_run(&config),
-        "backend mode resolves its bearer through ComposioHost::session_bearer"
-    );
-
-    config.composio_mode = tinymemory_api::host::COMPOSIO_MODE_DIRECT.to_string();
-    assert!(
-        crate::composio_sync_can_run(&config),
-        "direct mode resolves its key through ComposioHost::api_key"
-    );
-
-    // The pipeline's own branch test is case-insensitive. If the gate were not,
-    // this host would be started and would then fail every tick — the exact
-    // shape the gate exists to prevent.
-    config.composio_mode = "Direct".to_string();
-    assert!(
-        crate::composio_sync_can_run(&config),
-        "the gate must match `composio_config` on case, or it starts a loop that cannot work"
-    );
-}
-
 /// A second store opens normally, and needs no pool of its own to do it.
 ///
 /// The pairing with the test above is the point. `queue::start` is guarded by a
@@ -768,36 +718,4 @@ async fn the_two_new_families_are_gated_on_their_own_capability() {
         .await
         .expect_err("a driver without the maintenance family must refuse");
     assert_eq!(refusal(error), wire::UNSUPPORTED);
-}
-
-/// The Composio provider registry is filled by this process, not by the host.
-///
-/// It is a process-global, and before the memory engine moved into a module the
-/// host's own boot was what called `init_default_providers`. A `cdylib` has its
-/// own statics, so that call does nothing for this process — and the failure is
-/// silent in the worst way: `get_provider` answers `None` rather than erroring,
-/// so `BootstrapConnection` would report "no composio provider registered for
-/// 'gmail'" on a perfectly good connection, and nothing in a build or a type
-/// check would have said so.
-///
-/// This pins the call the module's startup makes. It is deliberately asserting
-/// a toolkit the registry's own `init_default_providers` registers rather than
-/// an arbitrary string, so that a rename upstream fails here instead of in the
-/// field.
-#[test]
-fn the_default_composio_providers_populate_the_registry() {
-    use tinymemory_core::sync::composio::providers::{get_provider, init_default_providers};
-
-    init_default_providers();
-
-    assert!(
-        get_provider("gmail").is_some(),
-        "init_default_providers must register the gmail provider; BootstrapConnection \
-         resolves through this registry and answers Invalid when it is empty"
-    );
-    assert!(
-        get_provider("__definitely_not_a_real_toolkit__").is_none(),
-        "an unregistered toolkit must stay unregistered — otherwise the assertion above \
-         would pass against a registry that returns something for everything"
-    );
 }
