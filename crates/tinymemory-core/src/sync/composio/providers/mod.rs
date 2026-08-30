@@ -71,6 +71,14 @@ pub mod sync_state;
 /// `providers::agent_ready_toolkits()` call keeps resolving.
 pub use tinymemory_api::composio::scopes::agent_ready_toolkits;
 
+// Historical per-category module paths (`providers::catalogs_business::…`,
+// pre-#5560). See [`catalogs_compat`] for why these stay as thin re-exports
+// rather than a semver bump.
+pub use catalogs_compat::{
+    catalogs_business, catalogs_google, catalogs_messaging, catalogs_microsoft,
+    catalogs_productivity, catalogs_social_media,
+};
+
 pub use descriptions::toolkit_description;
 pub(crate) use helpers::{first_array_str, merge_extra};
 pub use tinymemory_api::composio::catalogs::{catalog_for_toolkit, is_action_visible_with_pref};
