@@ -19,6 +19,10 @@
 //!   rather than re-deriving the same four subtleties.
 //! - **[`registry`]** — driver admission. Which driver ids exist, what class
 //!   each binds as, and the fail-closed rule for out-of-process drivers.
+//! - **[`sections`]** — typed surfaces for the sections the namespace
+//!   convention names: conversations, learnings, documents, and a
+//!   section-aware recall. Composes the mandatory families only, so it works
+//!   on every driver.
 //! - **Engine adapters** — one crate per engine under `crates/`, each
 //!   implementing [`provider::MemoryProvider`] over a concrete engine, and
 //!   each selected by the feature named after it.
@@ -84,13 +88,18 @@ pub use tinymemory_api::mandatory;
 #[cfg(feature = "tinycortex")]
 pub use tinymemory_tinycortex as tinycortex;
 
-/// The hosted HTTP engines, when any of `supermemory`, `mem0` or `cognee` is on.
+/// The HTTP engines, when any remote-engine feature is on.
 ///
 /// One module for all three because they share one adapter crate — enabling
 /// two of them costs one dependency, not two. The per-engine features still
 /// exist so a host states which it actually uses, and so a future split can
 /// happen without changing how hosts ask for them.
-#[cfg(any(feature = "supermemory", feature = "mem0", feature = "cognee"))]
+#[cfg(any(
+    feature = "supermemory",
+    feature = "mem0",
+    feature = "cognee",
+    feature = "agentmemory"
+))]
 pub use tinymemory_remote as remote;
 
 /// The engine-neutral memory subsystem, when the `core` feature is on.
@@ -138,12 +147,18 @@ pub use tinymemory_conformance as conformance;
 
 pub mod registry;
 
+// Typed surfaces for the sections the namespace convention names —
+// conversations, learnings, documents — plus a section-aware recall. Documented
+// by its own `//!` docs; an outer doc comment here as well would merge the two
+// and resolve the module's intra-doc links in this file's scope instead.
+pub mod sections;
+
 // The contract, re-exported wholesale. Listed module by module rather than as a
 // glob so the crate's own surface is visible in one place and rustdoc links
 // resolve — and so adding a module to the contract is a deliberate act here too.
 pub use tinymemory_api::{
-    capabilities, chunks, error, goals, health, null, provider, recall, tool_memory, traits, tree,
-    types,
+    capabilities, chunks, error, goals, health, namespace, null, provider, recall, tool_memory,
+    traits, tree, types,
 };
 pub use tinymemory_api::{is_compatible, CONTRACT_VERSION};
 

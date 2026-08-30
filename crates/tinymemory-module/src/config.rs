@@ -24,6 +24,15 @@
 //! split is not a hard isolation boundary and is not claimed as one — it is a
 //! refusal to widen what crosses a boundary that already exists.
 //!
+//! The Composio fields are where that line is easiest to misread, so it is drawn
+//! explicitly: [`ModuleConfig::composio_mode`] and
+//! [`ModuleConfig::composio_entity_id`] are *routing*, not access. The mode says
+//! which branch the sync pipelines take and the entity says whose connected
+//! accounts a call addresses; neither authorises anything. The direct-mode API
+//! key and the backend session bearer both stay out — the first is fetched over
+//! the bus per call ([`crate::composio`]), and the second is refused outright,
+//! which is why backend-mode Composio sync cannot run inside this module.
+//!
 //! # `MemoryConfig` travels whole
 //!
 //! The engine's own configuration is `tinymemory_api::host::MemoryConfig`,
@@ -52,6 +61,20 @@ pub struct ModuleConfig {
     /// resolved against the process working directory, which would put a user's
     /// memory store somewhere nobody would look for it.
     pub workspace_dir: PathBuf,
+
+    /// Path of the host's `config.toml` — the file that holds the
+    /// `[[memory_sources]]` registry the host writes.
+    ///
+    /// The engine's source registry is a TOML file, and the host and this
+    /// module must read and write the *same one*: `get_source_in` looks a
+    /// source up by id in that file, so a module reading a different path
+    /// answers `NotFound` for every source the host registered
+    /// (openhuman#5820, the "no memory source registered as src_…" strand).
+    /// A host too old to send this field deserializes as `None`, and
+    /// `provider::host_config_path` then falls back to the host's documented
+    /// layout — `config.toml` beside the `workspace/` directory — before the
+    /// historical (and wrong) `workspace_dir/config.toml`.
+    pub config_path: Option<PathBuf>,
 
     /// The engine's own configuration, passed through unchanged.
     pub memory: MemoryConfig,
@@ -122,18 +145,97 @@ pub struct ModuleConfig {
     /// never embed a URL or a token — it appears in status output and audit
     /// events.
     pub driver_id: String,
+
+    /// The user's global memory-sync cadence, in seconds.
+    ///
+    /// `None` means the host stated no choice, and the engine falls back to
+    /// `DEFAULT_MEMORY_SYNC_INTERVAL_SECS` — 24h, floored at each provider's own
+    /// minimum. `Some(0)` is "Manual only" and stops the periodic loops from
+    /// firing any source. Anything else is the user's own cadence.
+    ///
+    /// # Why the default is `None` and not `Some(0)`
+    ///
+    /// A host too old to send this field is deserialized through the struct's
+    /// `#[serde(default)]`, so whatever [`Default`] says here is what an older
+    /// host silently means. The two candidates fail in opposite directions and
+    /// they are not symmetrical:
+    ///
+    /// - `Some(0)` reads as manual-only, which is the exact failure this field
+    ///   exists to remove: every source skipped on every tick, with no error, no
+    ///   warning, and nothing to distinguish it from a sync that ran and found
+    ///   nothing new. A memory that has quietly stopped updating looks identical
+    ///   to one that is up to date.
+    /// - `None` reads as "the user chose nothing", which is *true* of a host
+    ///   that sent nothing, and lands on the same 24h default the host applies
+    ///   to a user who never set one.
+    ///
+    /// So this defaults to `None`. The cost of getting that wrong is bounded and
+    /// visible — a user who picked "Manual only" gets a 24h background sync
+    /// until their host learns to send the field, and every one of those syncs
+    /// is still gated by the per-source `enabled` toggle, which *does* travel
+    /// here in [`Self::memory_sources`]. The cost of getting `Some(0)` wrong is
+    /// invisible by construction. Between a bounded over-sync a user can see and
+    /// a no-sync nobody can, this picks the one that can be noticed.
+    pub memory_sync_interval_secs: Option<u64>,
+
+    /// Base URL of the OpenHuman backend, for proxied ("backend") Composio.
+    ///
+    /// A field rather than a seam member, unlike the session bearer beside it,
+    /// and the difference is what each thing is. A bearer is a credential that
+    /// expires and gets refreshed, so a snapshot of it goes stale and has to be
+    /// asked for per call. A base URL is routing configuration: it changes when
+    /// an operator points the host at a different backend, which is a restart,
+    /// not a mid-session event.
+    ///
+    /// Empty means the host named none. The proxied branch of `composio_config`
+    /// then builds its request against an empty base and fails inside the HTTP
+    /// client with a builder error that names no cause — so a host that intends
+    /// proxied mode must send this.
+    #[serde(default)]
+    pub backend_api_url: String,
+
+    /// How the host routes Composio calls: `backend` or `direct`.
+    ///
+    /// Empty means the host stated no mode — an older host, or one with no
+    /// Composio integration configured — and is treated exactly as `backend` is:
+    /// not direct.
+    ///
+    /// # Only `direct` can be served from inside the module
+    ///
+    /// `sync::pipelines::host::composio_config` selects its direct branch on
+    /// this value, and its other branch needs a backend session bearer. This
+    /// struct has no field for one and deliberately never will: a bearer is a
+    /// credential, and a load-time snapshot could not follow one the host
+    /// refreshes mid-session in any case. See `EngineRuntimeConfig`'s
+    /// `session_token`, which names that refusal rather than reporting a
+    /// signed-out user.
+    ///
+    /// This is a *mode*, not a credential, and the distinction is load-bearing:
+    /// the direct-mode API key still does not travel here. It is fetched from
+    /// the host over the bus for the duration of one call — see
+    /// [`crate::composio`] — which is why this field can exist at all.
+    pub composio_mode: String,
+
+    /// The Composio entity the host authenticates as.
+    ///
+    /// An identifier rather than a credential: it selects whose connected
+    /// accounts a direct-mode call addresses, and holding it grants nothing on
+    /// its own. Empty is sent as no entity at all rather than as an empty one.
+    pub composio_entity_id: String,
 }
 
 impl Default for ModuleConfig {
     fn default() -> Self {
         Self {
             workspace_dir: PathBuf::new(),
+            config_path: None,
             memory: MemoryConfig::default(),
             memory_tree: MemoryTreeConfig::default(),
             scheduler_gate: SchedulerGateConfig::default(),
             local_ai: LocalAiConfig::default(),
             embeddings_provider: None,
             memory_provider: None,
+            backend_api_url: String::new(),
             default_model: None,
             default_temperature: 0.0,
             output_language: None,
@@ -145,6 +247,13 @@ impl Default for ModuleConfig {
             cloud_embedding_dimensions: 0,
             models_supporting_dimensions: Vec::new(),
             driver_id: tinymemory::registry::TINYCORTEX_DRIVER_ID.to_string(),
+            // The two below are what an older host means, and both are argued
+            // for on their own fields. In short: an absent cadence is "no
+            // choice", never "manual only"; an absent Composio mode is "not
+            // direct".
+            memory_sync_interval_secs: None,
+            composio_mode: String::new(),
+            composio_entity_id: String::new(),
         }
     }
 }

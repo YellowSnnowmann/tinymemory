@@ -68,7 +68,7 @@ pub use embeddings::{format_embedding_signature, EmbeddingProvider, NoopEmbeddin
 pub use error_reporter::ErrorReporter;
 pub use events::{
     EmbeddingHealthReason, MemoryEvent, MemoryEventSink, NoopEventSink, SyncTrigger,
-    LOCAL_MODEL_UNAVAILABLE_KIND, MEMORY_USER_ERROR_SOURCE,
+    LOCAL_MODEL_UNAVAILABLE_KIND, MEMORY_USER_ERROR_SOURCE, STORE_CORRUPT_KIND,
 };
 pub use local_ai::{LocalAiConfig, LocalAiUsage};
 pub use nlp::{SpacyEntity, SpacyResponse};

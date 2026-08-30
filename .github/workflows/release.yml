@@ -52,7 +52,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           submodules: true
@@ -221,7 +221,7 @@ jobs:
       tag: ${{ steps.resolve.outputs.tag }}
       next_version: ${{ steps.resolve.outputs.next_version }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
@@ -298,7 +298,7 @@ jobs:
             target: aarch64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ needs.release-target.outputs.tag }}
           persist-credentials: false
@@ -402,7 +402,7 @@ jobs:
       && needs.native-bundles.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ needs.release-target.outputs.tag }}
           persist-credentials: false

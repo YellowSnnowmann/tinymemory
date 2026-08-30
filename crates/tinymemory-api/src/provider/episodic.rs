@@ -48,7 +48,9 @@ use crate::error::MemoryError;
 // — they cross the module boundary, and a host that only makes calls must be
 // able to name them without compiling this trait — and re-exported here so
 // every historical path keeps resolving and the types stay the same types.
-pub use tinymemory_bus::provider::episodic::{ConversationSegment, EpisodicTurn};
+pub use tinymemory_bus::provider::episodic::{
+    ConversationSegment, EpisodicEvent, EpisodicTurn, EventKind,
+};
 
 /// The turn-by-turn conversation record.
 ///
@@ -89,12 +91,17 @@ pub trait MemoryEpisodic: Send + Sync {
     /// # Errors
     ///
     /// Backend failures only.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "mirrors the engine row it creates; a params struct would be its only caller's"
+    )]
     async fn create_segment(
         &self,
         segment_id: &str,
         session_id: &str,
         namespace: &str,
         start_episodic_id: i64,
+        start_seq: Option<u32>,
         start_timestamp: f64,
         now: f64,
     ) -> Result<(), MemoryError>;
@@ -108,6 +115,7 @@ pub trait MemoryEpisodic: Send + Sync {
         &self,
         segment_id: &str,
         episodic_id: i64,
+        seq: Option<u32>,
         timestamp: f64,
         now: f64,
     ) -> Result<(), MemoryError>;
@@ -148,6 +156,16 @@ pub trait MemoryEpisodic: Send + Sync {
     /// # Errors
     ///
     /// Backend failures only.
+    /// Record one extracted event against its segment.
+    ///
+    /// Keyed on `event_id`, so re-running extraction over the same segment
+    /// replaces its own rows rather than duplicating them.
+    ///
+    /// # Errors
+    ///
+    /// Backend failures only.
+    async fn insert_event(&self, event: &EpisodicEvent) -> Result<(), MemoryError>;
+
     async fn upsert_segment_embedding(
         &self,
         segment_id: &str,

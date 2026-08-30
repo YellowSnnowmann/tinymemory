@@ -2,7 +2,7 @@
 //!
 //! Three properties are load-bearing and each has its own test:
 //!
-//! 1. the enum has exactly the sixteen contract families and no more;
+//! 1. the enum has exactly the twenty-one contract families and no more;
 //! 2. the serialized form is stable snake_case **strings**, never discriminant
 //!    integers — a driver deployed against an older build must keep advertising
 //!    the same set after a variant is inserted mid-enum;
@@ -19,9 +19,9 @@ use super::*;
 use serde_json::json;
 
 #[test]
-fn capability_has_exactly_the_eighteen_contract_families() {
-    assert_eq!(Capability::ALL.len(), 18);
-    assert_eq!(Capability::all().len(), 18);
+fn capability_has_exactly_the_twenty_one_contract_families() {
+    assert_eq!(Capability::ALL.len(), 21);
+    assert_eq!(Capability::all().len(), 21);
 
     let names: Vec<&str> = Capability::ALL.iter().map(|c| c.as_str()).collect();
     assert_eq!(
@@ -45,6 +45,9 @@ fn capability_has_exactly_the_eighteen_contract_families() {
             "retrieval",
             "profile",
             "episodic",
+            "source_sync",
+            "coding_sessions",
+            "scoring",
         ]
     );
 }
@@ -152,12 +155,14 @@ fn capabilities_empty_contains_nothing() {
 }
 
 #[test]
-fn capabilities_bit_width_has_room_well_beyond_the_current_sixteen_families() {
-    // A `u16` bitset (the original representation) has exactly 16 bit
-    // positions, leaving room for only 3 more families before a family's
-    // `1 << index` bit-shift overflows. Pin the wider `u64` representation so
-    // a future family addition doesn't have to rediscover that ceiling.
+fn capabilities_bit_width_has_room_well_beyond_the_current_family_count() {
+    // A `u16` bitset (the original representation) had exactly 16 bit
+    // positions — already fewer than the contract now has, so a family's
+    // `1 << index` bit-shift would overflow today. Pin the wider `u64`
+    // representation, and pin that the current count still fits inside it, so
+    // the next addition does not have to rediscover the ceiling.
     assert!(std::mem::size_of::<Capabilities>() * 8 >= 64);
+    assert!(Capability::ALL.len() < std::mem::size_of::<Capabilities>() * 8);
 }
 
 #[test]

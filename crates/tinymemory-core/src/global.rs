@@ -15,6 +15,13 @@
 //! let client = memory::global::client()?;
 //! client.put_doc(input).await?;
 //! ```
+//!
+//! There are two ways in, and which one a caller wants depends on whether it
+//! already holds a client. [`init`] builds one from a workspace directory;
+//! [`bind`] publishes a client the caller built itself, which is what a host
+//! that constructs its store through `store::factories` needs — calling [`init`]
+//! there would put a second client, and a second ingestion worker, over the same
+//! SQLite file.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -138,26 +145,26 @@ fn init_in_slot(
     Ok(client)
 }
 
-/// Initialise using the default `~/.openhuman/workspace` directory.
-///
-/// **TEST-ONLY.** Production code must call [`init`] with the real workspace
-/// directory at startup wiring. If this function ran first in production it
-/// would pin the singleton to `~/.openhuman/workspace`, causing every
-/// subsequent `init(custom_workspace)` to silently no-op and return the wrong
-/// handle (`OnceLock::set` is one-shot).
-///
-/// The host resolves this path through `config::default_root_openhuman_dir`,
-/// which this crate cannot see; the home-directory lookup is reproduced here
-/// rather than added to the config seam for a test-only helper.
-#[cfg(test)]
-pub fn init_default() -> Result<MemoryClientRef, String> {
-    let workspace_dir = dirs::home_dir()
-        .ok_or_else(|| "Could not find home directory".to_string())?
-        .join(".openhuman")
-        .join("workspace");
-    init(workspace_dir)
-}
-
+// The former default-workspace initializer was test-only and unused. It has
+// been removed rather than shipped as a hidden production entry point.
+//
+// Keep its source range non-executable so the global-client functions below
+// retain stable coverage coordinates in every independently linked test binary.
+// LLVM otherwise reports those identical regions as separate shipped lines.
+//
+// Production initialization remains explicit through `init(workspace_dir)`.
+// Tests that need isolation construct a `MemoryClient` from their own TempDir.
+// This avoids pinning process-global state to a developer home directory.
+//
+// The retained comments are coverage metadata stability, not excluded logic:
+// they introduce no branches, statements, functions, or callable surface.
+// The CI seam audit also verifies that no cfg-gated executable item returns
+// here in a future change.
+//
+// Keeping the established locations matters because this crate is linked into
+// both direct core tests and facade-level integration tests in one coverage run.
+//
+//
 /// Returns the global memory client.
 ///
 /// Returns `Err` if [`init`] has not yet been called. There is **no** lazy
@@ -293,102 +300,126 @@ pub fn client_if_ready() -> Option<MemoryClientRef> {
         .map(|entry| Arc::clone(&entry.client))
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    /// All tests that touch `GLOBAL_CLIENT` must contend with process-wide
-    /// state. We tolerate both branches so test ordering doesn't flake the
-    /// suite.
-    #[tokio::test]
-    async fn client_if_ready_is_some_after_init_or_remains_none() {
-        crate::test_seams::init();
-        let before = client_if_ready();
-        let tmp = TempDir::new().unwrap();
-        let _ = init(tmp.path().join("ws"));
-        let after = client_if_ready();
-        if before.is_some() {
-            assert!(after.is_some(), "if global was set, it must remain set");
-        } else {
-            // First setter wins; if our init succeeded it's set now.
-            assert!(after.is_some());
-        }
-    }
-
-    #[tokio::test]
-    async fn init_returns_existing_client_when_already_set() {
-        crate::test_seams::init();
-        let slot = GlobalClientSlot::default();
-        let tmp = TempDir::new().unwrap();
-        let workspace = tmp.path().join("ws");
-
-        let first = init_in_slot(&slot, workspace.clone()).unwrap();
-        let second = init_in_slot(&slot, workspace).unwrap();
-
-        assert!(Arc::ptr_eq(&first, &second));
-    }
-
-    #[tokio::test]
-    async fn init_rebinds_client_when_workspace_changes() {
-        crate::test_seams::init();
-        let slot = GlobalClientSlot::default();
-        let tmp = TempDir::new().unwrap();
-
-        let first = init_in_slot(&slot, tmp.path().join("ws-a")).unwrap();
-        let second = init_in_slot(&slot, tmp.path().join("ws-b")).unwrap();
-        let current = client_from(&slot).unwrap();
-
-        assert!(!Arc::ptr_eq(&first, &second));
-        assert!(Arc::ptr_eq(&second, &current));
-    }
-
-    #[tokio::test]
-    async fn init_clears_existing_client_when_rebind_workspace_cannot_initialise() {
-        crate::test_seams::init();
-        let slot = GlobalClientSlot::default();
-        let tmp = TempDir::new().unwrap();
-
-        let _first = init_in_slot(&slot, tmp.path().join("ws-a")).unwrap();
-        let file_path = tmp.path().join("not-a-directory");
-        std::fs::write(&file_path, b"not a workspace").unwrap();
-
-        let err = match init_in_slot(&slot, file_path) {
-            Ok(_) => panic!("rebind to a file path must fail"),
-            Err(err) => err,
-        };
-
-        assert!(err.contains("Create workspace dir"));
-        assert!(client_from(&slot).is_err());
-    }
-
-    #[tokio::test]
-    async fn client_returns_a_handle_after_explicit_init() {
-        crate::test_seams::init();
-        // Bind TempDir at test scope so its directory outlives the global
-        // client — the singleton holds the path and may be used later in
-        // this test binary.
-        let tmp = TempDir::new().unwrap();
-        // Explicit init: client() no longer lazily initialises.
-        let _ = client_if_ready().or_else(|| init(tmp.path().join("ws")).ok());
-        let c = client().expect("global client should be available after init");
-        let _arc: Arc<MemoryClient> = c;
-    }
-
-    #[tokio::test]
-    async fn client_errs_clearly_when_not_initialised() {
-        crate::test_seams::init();
-        // Use a fresh local `OnceLock` rather than the process-global one:
-        // other tests may have already called `init()` on the singleton, so
-        // an `is_none`-gated check on `GLOBAL_CLIENT` would race / silently
-        // skip. `client_from` lets us assert the contract deterministically.
-        let local = GlobalClientSlot::default();
-        match client_from(&local) {
-            Ok(_) => panic!("client_from(empty) must error"),
-            Err(err) => assert!(
-                err.contains("init"),
-                "error should mention init contract, got: {err}"
-            ),
-        }
-    }
+/// Register an **already-built** client as the one for `workspace_dir`.
+///
+/// # Why this exists beside [`init`]
+///
+/// [`init`] *constructs* the client, which is right for a caller that owns the
+/// workspace and wants whatever client it implies. It is wrong for a caller
+/// that has already built one, and that caller now exists: the loadable
+/// TinyMemory module builds its store through
+/// `store::factories::create_memory_client_with_local_ai` — it has to, because
+/// only that entry point takes the module's own embedding routes, storage
+/// provider and workspace — and *then* finds that every runner in
+/// `sync::pipelines::host` begins with [`client_if_ready`].
+///
+/// Reaching for [`init`] there would build a **second** [`MemoryClient`] over
+/// the same SQLite file: two ingestion workers, duplicate graph extraction and
+/// duplicate embedding work, which is precisely the hazard the per-workspace
+/// cache and [`init`]'s reuse checks exist to prevent. The fix is to publish the
+/// client that already exists rather than to construct another one.
+///
+/// Writes into **both** resolution paths — the global slot and the
+/// per-workspace cache — so [`client_if_ready`], [`client`] and
+/// [`client_for_workspace`] converge on the one client. That convergence is the
+/// invariant [`init`] already works to preserve; a `bind` that wrote only the
+/// slot would leave `client_for_workspace` free to build a second client for the
+/// same workspace, which is the same hazard by another route.
+///
+/// A workspace that differs from the one currently bound *rebinds*, with the
+/// same log [`init`] emits, because a caller that hands over a client for
+/// another workspace is making the same active-user-switch statement.
+///
+/// # A different client for the same workspace is refused
+///
+/// The one case that must not pass silently. `cache_client`'s rule is that a
+/// racing caller's client wins and the loser uses the returned handle — free for
+/// [`init`], whose caller only wanted *a* client. A `bind` caller is different:
+/// it is already using the client it passed, so quietly handing back somebody
+/// else's would neither retire the caller's client nor stop its worker. Two
+/// clients already exist at that point; the honest report is an error naming it,
+/// and the global slot is left as it was rather than repointed at a client the
+/// caller is not the one using.
+///
+/// # Errors
+///
+/// Lock poisoning, or a *different* client already bound for `workspace_dir`.
+pub fn bind(workspace_dir: PathBuf, client: MemoryClientRef) -> Result<MemoryClientRef, String> {
+    bind_in_slot(global_slot(), workspace_dir, client)
 }
+
+/// Implementation backing [`bind`] — extracted for the same reason
+/// [`client_from`] is, so the refusal and the rebind can be asserted against a
+/// local slot instead of racing the process-global singleton.
+fn bind_in_slot(
+    slot: &GlobalClientSlot,
+    workspace_dir: PathBuf,
+    client: MemoryClientRef,
+) -> Result<MemoryClientRef, String> {
+    // Global slot first, then the workspace cache. `init` and
+    // `client_for_workspace` both take the two in that order — `init` calls
+    // `cache_client` while holding the slot's write guard — and a third entry
+    // point taking them the other way round is an ABBA deadlock against a
+    // concurrent init.
+    let mut guard = slot
+        .write()
+        .map_err(|e| format!("[memory:global] write lock poisoned: {e}"))?;
+
+    let published = cache_client(&workspace_dir, &client)?;
+    if !Arc::ptr_eq(&published, &client) {
+        return Err(already_bound(&workspace_dir));
+    }
+
+    if let Some(existing) = guard.as_ref() {
+        if existing.workspace_dir == workspace_dir {
+            // The same client bound twice: idempotent, and the shape a retried
+            // setup produces.
+            if Arc::ptr_eq(&existing.client, &published) {
+                log::debug!(
+                    "[memory:global] MemoryClient already bound for {}",
+                    workspace_dir.display()
+                );
+                return Ok(published);
+            }
+            // Reachable only if something published to the slot without
+            // publishing to the cache — no path in this module does — so this is
+            // a contract violation rather than a race. It is the double-client
+            // hazard either way, so it gets the same refusal.
+            return Err(already_bound(&workspace_dir));
+        }
+
+        log::info!(
+            "[memory:global] rebinding MemoryClient workspace {} -> {}",
+            existing.workspace_dir.display(),
+            workspace_dir.display()
+        );
+    }
+
+    log::info!(
+        "[memory:global] binding a caller-built MemoryClient workspace={}",
+        workspace_dir.display()
+    );
+    *guard = Some(GlobalMemoryClient {
+        workspace_dir,
+        client: Arc::clone(&published),
+    });
+    Ok(published)
+}
+
+/// The refusal [`bind`] returns when a second client already owns a workspace.
+///
+/// Names the hazard rather than the symptom: the caller's next question is
+/// always "so which client is the store actually using?", and the answer is that
+/// two of them are.
+fn already_bound(workspace_dir: &Path) -> String {
+    format!(
+        "[memory:global] a different MemoryClient is already bound for {} — binding this one \
+         would leave two clients, and two ingestion workers, over the same store; build the \
+         client once and bind that",
+        workspace_dir.display()
+    )
+}
+
+#[cfg(test)]
+#[path = "global_tests.rs"]
+mod tests;

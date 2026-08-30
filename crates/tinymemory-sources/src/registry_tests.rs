@@ -309,3 +309,203 @@ fn update_rejects_fields_that_do_not_apply_to_source_kind() {
     .unwrap();
     assert!(reg.update("src_kind", patch).is_err());
 }
+
+// ── File permissions ────────────────────────────────────────────────────────
+//
+// `atomic_write` renames its temp file over the host's `config.toml`, so the
+// temp file's mode becomes the live config's mode. Created with plain
+// `File::create` that was `0o666 & ~umask` — 0644 under the usual 022 — which
+// silently re-widened a config the host had deliberately written owner-only,
+// on every single source mutation. These tests pin the mode of the file this
+// registry leaves behind, not the mode it was handed.
+
+/// The mode bits of `path`, or `None` on a platform without file modes.
+#[cfg(unix)]
+fn mode_of(path: &std::path::Path) -> u32 {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).unwrap().permissions().mode() & 0o777
+}
+
+#[cfg(unix)]
+#[test]
+fn first_write_creates_an_owner_only_config() {
+    let (tmp, reg) = registry();
+    let path = tmp.path().join("config.toml");
+    assert!(
+        !path.exists(),
+        "precondition: the config does not exist yet"
+    );
+
+    reg.add(folder_entry("src_1")).unwrap();
+
+    let mode = mode_of(&path);
+    assert_eq!(
+        mode & 0o077,
+        0,
+        "a freshly created config.toml must not be group- or world-accessible, got {mode:o}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_mutation_does_not_widen_an_owner_only_config() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (tmp, reg) = registry();
+    let path = tmp.path().join("config.toml");
+
+    // Stand in for a host that wrote the config itself and hardened it, which
+    // is exactly what OpenHuman's `Config::save` does.
+    std::fs::write(&path, "[some_other_section]\nkept = true\n").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
+    reg.add(folder_entry("src_1")).unwrap();
+
+    let mode = mode_of(&path);
+    assert_eq!(
+        mode & 0o077,
+        0,
+        "a source mutation must not re-widen a config the host hardened, got {mode:o}"
+    );
+    // The whole point of the preserving re-read: unrelated keys survive.
+    let text = std::fs::read_to_string(&path).unwrap();
+    assert!(
+        text.contains("[some_other_section]"),
+        "unrelated config sections must survive the rewrite"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn a_mutation_narrows_a_config_that_was_already_world_readable() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (tmp, reg) = registry();
+    let path = tmp.path().join("config.toml");
+
+    // A config left at 0644 by an older build. The mode under test belongs to
+    // the temp file, not to this one, so the pre-existing width must not be
+    // inherited through the rename.
+    std::fs::write(&path, "[some_other_section]\nkept = true\n").unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert_eq!(
+        mode_of(&path) & 0o077,
+        0o044,
+        "precondition: starts at 0644"
+    );
+
+    reg.add(folder_entry("src_1")).unwrap();
+
+    let mode = mode_of(&path);
+    assert_eq!(
+        mode & 0o077,
+        0,
+        "the rename must not carry the old file's 0644 onto the new one, got {mode:o}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn every_mutation_path_leaves_the_config_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (tmp, reg) = registry();
+    let path = tmp.path().join("config.toml");
+
+    reg.add(folder_entry("src_1")).unwrap();
+    reg.add(folder_entry("src_2")).unwrap();
+
+    // Re-widen between mutations so each assertion is about the write that
+    // follows it rather than about a mode set once at creation.
+    let widen = |p: &std::path::Path| {
+        std::fs::set_permissions(p, std::fs::Permissions::from_mode(0o644)).unwrap()
+    };
+
+    widen(&path);
+    reg.update(
+        "src_1",
+        MemorySourcePatch {
+            enabled: Some(false),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    assert_eq!(mode_of(&path) & 0o077, 0, "update() widened the config");
+
+    widen(&path);
+    assert!(reg.remove("src_2").unwrap());
+    assert_eq!(mode_of(&path) & 0o077, 0, "remove() widened the config");
+}
+
+// ── apply_kind_defaults ─────────────────────────────────────────────────────
+//
+// Moved here from the engine crate in #5560 so a host can fill a new entry's
+// caps without linking the engine. The defaults are the ones the retroactive
+// Composio caps migration also applies, so any change here is a change to what
+// already-registered sources are reconciled against.
+
+fn entry_of_kind(kind: SourceKind) -> MemorySourceEntry {
+    let mut entry = folder_entry("defaults");
+    entry.kind = kind;
+    entry
+}
+
+#[test]
+fn github_defaults_fill_only_the_caps_left_unset() {
+    let mut entry = entry_of_kind(SourceKind::GithubRepo);
+    entry.max_issues = Some(3);
+    apply_kind_defaults(&mut entry);
+    assert_eq!(entry.max_prs, Some(10));
+    assert_eq!(entry.max_issues, Some(3), "a user-set cap must survive");
+    assert_eq!(entry.max_commits, Some(50));
+}
+
+#[test]
+fn an_rss_feed_gets_an_item_cap() {
+    let mut entry = entry_of_kind(SourceKind::RssFeed);
+    apply_kind_defaults(&mut entry);
+    assert_eq!(entry.max_items, Some(20));
+}
+
+#[test]
+fn a_twitter_query_gets_a_lookback_window() {
+    let mut entry = entry_of_kind(SourceKind::TwitterQuery);
+    apply_kind_defaults(&mut entry);
+    assert_eq!(entry.since_days, Some(7));
+
+    entry.since_days = Some(2);
+    apply_kind_defaults(&mut entry);
+    assert_eq!(entry.since_days, Some(2), "a user-set window must survive");
+}
+
+#[test]
+fn kinds_with_no_defaults_are_left_alone() {
+    // Composio caps come from the toolkit slug at upsert time, which this
+    // function does not have; folders and web pages have no caps at all.
+    for kind in [
+        SourceKind::Composio,
+        SourceKind::Conversation,
+        SourceKind::Folder,
+        SourceKind::WebPage,
+    ] {
+        let mut entry = entry_of_kind(kind.clone());
+        apply_kind_defaults(&mut entry);
+        assert!(entry.max_items.is_none(), "{kind:?} gained an item cap");
+        assert!(entry.since_days.is_none(), "{kind:?} gained a lookback");
+        assert!(
+            entry.max_prs.is_none(),
+            "{kind:?} gained a pull-request cap"
+        );
+    }
+}
+
+#[test]
+fn applying_the_defaults_twice_changes_nothing() {
+    let mut once = entry_of_kind(SourceKind::GithubRepo);
+    apply_kind_defaults(&mut once);
+    let mut twice = once.clone();
+    apply_kind_defaults(&mut twice);
+    assert_eq!(twice.max_prs, once.max_prs);
+    assert_eq!(twice.max_issues, once.max_issues);
+    assert_eq!(twice.max_commits, once.max_commits);
+}

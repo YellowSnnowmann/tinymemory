@@ -33,6 +33,13 @@
 //! `MemoryRetrieval::search_entities`'s filter is a caller mistake the driver
 //! reports as [`MemoryError::Invalid`](crate::error::MemoryError::Invalid), because silently matching nothing would
 //! look identical to a genuine empty result.
+//!
+//! [`RetrievalHit::tree_kind`] travels the same way and for the same reason.
+//! The engine's `TreeKind` is `#[non_exhaustive]` too and has already grown a
+//! fourth variant (`flavoured`); a closed enum here would mean the first hit
+//! from a tree kind this build predates fails to decode, taking the entire
+//! response with it. Known values today are `source`, `topic`, `global`,
+//! `flavoured`.
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -59,6 +66,21 @@ pub struct RetrievalHit {
     /// Provenance tree id; empty for a bare leaf not yet sealed into a tree.
     #[serde(default)]
     pub tree_id: String,
+    /// Kind of the provenance tree, or `None` when the hit has no tree to
+    /// report one for.
+    ///
+    /// Optional because two different absences land here and neither is an
+    /// error. A hit that is not tree-derived has no kind at all, and a payload
+    /// encoded by a peer built before this field existed carries none either;
+    /// both decode to `None`, which is the honest reading of each. A caller
+    /// that needs a kind must therefore handle its absence rather than assume
+    /// the field is always populated.
+    ///
+    /// Skipped when empty so a hit without one encodes exactly as it did
+    /// before the field existed, and an older peer parsing this payload sees
+    /// the shape it was written against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tree_kind: Option<String>,
     /// Human-readable tree scope, e.g. `slack:#eng`; empty for a bare leaf.
     #[serde(default)]
     pub tree_scope: String,

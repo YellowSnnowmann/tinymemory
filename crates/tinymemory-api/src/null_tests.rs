@@ -168,6 +168,8 @@ fn every_unadvertised_family_is_unreachable_through_the_trait_object() {
     assert!(provider.as_tool_memory().is_none());
     assert!(provider.as_sources().is_none());
     assert!(provider.as_maintenance().is_none());
+    assert!(provider.as_source_sync().is_none());
+    assert!(provider.as_coding_sessions().is_none());
 }
 
 #[test]
@@ -223,6 +225,348 @@ fn unadvertised_families_return_unsupported_naming_their_capability() {
         Capability::Sources,
     );
     assert_unsupported(block_on(driver.doctor()), Capability::Maintenance);
+}
+
+#[test]
+fn every_optional_method_fails_with_its_advertised_family_name() {
+    use crate::chunks::DataSource;
+    use crate::goals::GoalsDoc;
+    use crate::provider::types::{IngestItem, SourceItem};
+    use crate::provider::{
+        ChunkQuery, CodingSessionIngestRequest, CoverWindowQuery, FacetType, FastRetrieveQuery,
+        PersonHandle, PersonInteraction, SourceRetrievalQuery, UserState,
+    };
+    use crate::tool_memory::{ToolMemoryPriority, ToolMemoryRule, ToolMemorySource};
+    use crate::tree::IngestRequest;
+    use crate::types::{GraphRelationRecord, NamespaceDocumentInput};
+
+    let driver = NullMemoryProvider::new();
+    let ingest = IngestItem {
+        namespace: Some("ns".into()),
+        source: DataSource::Upload,
+        source_id: "source".into(),
+        owner: "owner".into(),
+        source_ref: None,
+        content: "body".into(),
+        mime: Some("text/plain".into()),
+        timestamp: None,
+        tags: Vec::new(),
+        taint: MemoryTaint::Internal,
+        path_scope: None,
+        author: None,
+        channel_label: None,
+        platform: None,
+        to: Vec::new(),
+        cc: Vec::new(),
+        subject: None,
+        list_unsubscribe: None,
+    };
+    assert_unsupported(block_on(driver.ingest_document(ingest)), Capability::Ingest);
+
+    let document = NamespaceDocumentInput {
+        namespace: "ns".into(),
+        key: "key".into(),
+        title: "title".into(),
+        content: "body".into(),
+        source_type: "upload".into(),
+        priority: "normal".into(),
+        tags: Vec::new(),
+        metadata: serde_json::Value::Null,
+        category: "core".into(),
+        session_id: None,
+        document_id: None,
+        taint: MemoryTaint::Internal,
+    };
+    assert_unsupported(
+        block_on(driver.put_document(document)),
+        Capability::Documents,
+    );
+    assert_unsupported(block_on(driver.list_documents(None)), Capability::Documents);
+    assert_unsupported(block_on(driver.list_namespaces()), Capability::Documents);
+    assert_unsupported(
+        block_on(driver.delete_document("ns", "doc")),
+        Capability::Documents,
+    );
+    assert_unsupported(
+        block_on(driver.clear_namespace("ns")),
+        Capability::Documents,
+    );
+    assert_unsupported(
+        block_on(driver.query_documents("ns", "q", 5)),
+        Capability::Documents,
+    );
+    assert_unsupported(
+        block_on(driver.recall_documents("ns", 5)),
+        Capability::Documents,
+    );
+
+    assert_unsupported(
+        block_on(driver.append(IngestRequest {
+            namespace: "ns".into(),
+            content: "body".into(),
+            timestamp: None,
+            metadata: None,
+        })),
+        Capability::Tree,
+    );
+    assert_unsupported(
+        block_on(driver.query_source("ns", "source", 5, None)),
+        Capability::Tree,
+    );
+    assert_unsupported(block_on(driver.drill_down("ns", "node")), Capability::Tree);
+    assert_unsupported(block_on(driver.cascade("ns")), Capability::Tree);
+
+    assert_unsupported(
+        block_on(driver.entity_edges("ns", "entity", 5)),
+        Capability::Entities,
+    );
+    assert_unsupported(
+        block_on(driver.touch_entities("ns", &["entity".into()])),
+        Capability::Entities,
+    );
+
+    assert_unsupported(
+        block_on(driver.kv_put(Some("ns"), "key", serde_json::json!(1))),
+        Capability::Graph,
+    );
+    assert_unsupported(
+        block_on(driver.kv_delete(Some("ns"), "key")),
+        Capability::Graph,
+    );
+    assert_unsupported(
+        block_on(driver.kv_list(Some("ns"), Some("k"), 5)),
+        Capability::Graph,
+    );
+    assert_unsupported(
+        block_on(driver.relations(Some("ns"), Some("a"), Some("p"), 5)),
+        Capability::Graph,
+    );
+    assert_unsupported(
+        block_on(driver.put_relation(GraphRelationRecord {
+            namespace: Some("ns".into()),
+            subject: "a".into(),
+            predicate: "p".into(),
+            object: "b".into(),
+            attrs: serde_json::Value::Null,
+            updated_at: 0.0,
+            evidence_count: 0,
+            order_index: None,
+            document_ids: Vec::new(),
+            chunk_ids: Vec::new(),
+        })),
+        Capability::Graph,
+    );
+
+    assert_unsupported(block_on(driver.snapshots("source", 5)), Capability::Diff);
+    assert_unsupported(
+        block_on(driver.diff("source", None, "snapshot")),
+        Capability::Diff,
+    );
+    assert_unsupported(
+        block_on(driver.set_goals(GoalsDoc::default())),
+        Capability::Goals,
+    );
+
+    let rule = ToolMemoryRule::new(
+        "shell",
+        "be careful",
+        ToolMemoryPriority::High,
+        ToolMemorySource::UserExplicit,
+    );
+    assert_unsupported(block_on(driver.put_tool_rule(rule)), Capability::ToolMemory);
+    assert_unsupported(
+        block_on(driver.delete_tool_rule("shell", "rule")),
+        Capability::ToolMemory,
+    );
+
+    assert_unsupported(
+        block_on(driver.accept_source_items(
+            "source",
+            "folder",
+            vec![SourceItem {
+                item_id: "item".into(),
+                title: "title".into(),
+                content: "body".into(),
+                mime: None,
+                url: None,
+                updated_at_ms: None,
+                tags: Vec::new(),
+            }],
+            MemoryTaint::Internal,
+        )),
+        Capability::Sources,
+    );
+    for result in [
+        block_on(driver.reembed()),
+        block_on(driver.compact()),
+        block_on(driver.consolidate()),
+    ] {
+        assert_unsupported(result, Capability::Maintenance);
+    }
+
+    let handle = PersonHandle::Email("person@example.com".into());
+    assert_unsupported(block_on(driver.list_people(Some(5))), Capability::People);
+    assert_unsupported(block_on(driver.get_person("person")), Capability::People);
+    assert_unsupported(
+        block_on(driver.resolve_handle(&handle, true)),
+        Capability::People,
+    );
+    assert_unsupported(
+        block_on(driver.add_handle_alias("person", &handle)),
+        Capability::People,
+    );
+    assert_unsupported(block_on(driver.score_person("person")), Capability::People);
+    assert_unsupported(
+        block_on(driver.record_interaction(&PersonInteraction {
+            person_id: "person".into(),
+            at: "2026-01-01T00:00:00Z".into(),
+            is_outbound: false,
+            length: 10,
+        })),
+        Capability::People,
+    );
+    assert_unsupported(
+        block_on(driver.seed_from_address_book()),
+        Capability::People,
+    );
+
+    assert_unsupported(
+        block_on(driver.list_chunks(&ChunkQuery::default(), None)),
+        Capability::Chunks,
+    );
+    assert_unsupported(block_on(driver.get_chunk("chunk")), Capability::Chunks);
+    assert_unsupported(block_on(driver.chunk_detail("chunk")), Capability::Chunks);
+    assert_unsupported(block_on(driver.storage_kinds()), Capability::Chunks);
+    assert_unsupported(
+        block_on(driver.chunk_embeddings(&["chunk".into()], "model:8")),
+        Capability::Chunks,
+    );
+
+    assert_unsupported(
+        block_on(driver.fast_retrieve(
+            "query",
+            FastRetrieveQuery {
+                limit: 5,
+                max_hops: 1,
+                time_window_days: None,
+            },
+            None,
+        )),
+        Capability::Retrieval,
+    );
+    assert_unsupported(
+        block_on(driver.cover_window(&CoverWindowQuery::default(), None)),
+        Capability::Retrieval,
+    );
+    assert_unsupported(
+        block_on(driver.retrieve_source(&SourceRetrievalQuery::default(), None)),
+        Capability::Retrieval,
+    );
+    assert_unsupported(
+        block_on(driver.retrieve_children("node", 1, None, Some(5), None)),
+        Capability::Retrieval,
+    );
+    assert_unsupported(
+        block_on(driver.retrieve_leaves(&["chunk".into()], None)),
+        Capability::Retrieval,
+    );
+    assert_unsupported(
+        block_on(driver.recall_namespace_scored("ns", "query", 5, None)),
+        Capability::Retrieval,
+    );
+    assert_unsupported(
+        block_on(driver.search_entities("query", None, 5)),
+        Capability::Retrieval,
+    );
+
+    assert_unsupported(block_on(driver.list_active_facets()), Capability::Profile);
+    assert_unsupported(block_on(driver.list_all_facets()), Capability::Profile);
+    assert_unsupported(block_on(driver.get_facet("key")), Capability::Profile);
+    assert_unsupported(
+        block_on(driver.facets_by_type(FacetType::Preference)),
+        Capability::Profile,
+    );
+    assert_unsupported(
+        block_on(driver.upsert_provider_facet(
+            "facet",
+            FacetType::Preference,
+            "key",
+            "value",
+            0.8,
+            None,
+            0.0,
+        )),
+        Capability::Profile,
+    );
+    assert_unsupported(
+        block_on(driver.set_facet_user_state("key", UserState::Pinned)),
+        Capability::Profile,
+    );
+    assert_unsupported(block_on(driver.delete_facet("key")), Capability::Profile);
+    assert_unsupported(
+        block_on(driver.delete_facet_by_id("facet")),
+        Capability::Profile,
+    );
+    assert_unsupported(block_on(driver.drop_facets_below(0.5)), Capability::Profile);
+    assert!(!block_on(driver.workflow_identity_matches("*", "value")));
+
+    assert_unsupported(
+        block_on(driver.run_connection_sync("gmail", "conn-1")),
+        Capability::SourceSync,
+    );
+    assert_unsupported(
+        block_on(driver.bootstrap_connection("gmail", "conn-1")),
+        Capability::SourceSync,
+    );
+    assert_unsupported(
+        block_on(driver.is_toolkit_syncable("gmail")),
+        Capability::SourceSync,
+    );
+    assert_unsupported(
+        block_on(driver.source_sync_state("gmail", "conn-1")),
+        Capability::SourceSync,
+    );
+    assert_unsupported(
+        block_on(driver.sync_audit_log(None)),
+        Capability::SourceSync,
+    );
+    assert_unsupported(
+        block_on(driver.estimate_sync_cost_usd(1_000, 100)),
+        Capability::SourceSync,
+    );
+    assert_unsupported(block_on(driver.sync_statuses()), Capability::SourceSync);
+    assert_unsupported(
+        block_on(driver.raw_archive_coverage("gmail:conn-1", "archive")),
+        Capability::SourceSync,
+    );
+    assert_unsupported(
+        block_on(driver.rebuild_from_raw_archive("gmail:conn-1", "archive")),
+        Capability::SourceSync,
+    );
+
+    assert_unsupported(
+        block_on(driver.coding_session_status()),
+        Capability::CodingSessions,
+    );
+    assert_unsupported(
+        block_on(driver.ingest_coding_sessions(CodingSessionIngestRequest::default())),
+        Capability::CodingSessions,
+    );
+}
+
+#[test]
+fn the_two_members_added_to_existing_families_refuse_rather_than_report_nothing() {
+    // Both inherit their trait's default body, and both defaults are a refusal
+    // on purpose. A `flush_source_tree` answering `Ok(0)` would tell a user
+    // their source was flushed and had nothing to write; a `diagnose`
+    // answering an empty report would have to claim `healthy` one way or the
+    // other, and both claims are untrue of a driver that never looked.
+    let driver = NullMemoryProvider::new();
+    assert_unsupported(
+        block_on(driver.flush_source_tree("gmail:conn-1")),
+        Capability::Tree,
+    );
+    assert_unsupported(block_on(driver.diagnose()), Capability::Maintenance);
 }
 
 #[test]

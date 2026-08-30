@@ -61,6 +61,26 @@ pub struct RecallOpts<'a> {
     pub session_id: Option<&'a str>,
     /// Drop hits scoring below this threshold (typically 0.0–1.0).
     pub min_score: Option<f64>,
+    /// Drop hits belonging to this session — the **self-echo exclusion**.
+    ///
+    /// An agent recalling mid-turn must not be handed back what it just said,
+    /// so a live turn excludes its own chat thread. Distinct from
+    /// [`session_id`](Self::session_id), which *restricts* recall to a session;
+    /// this one *removes* one, and the two are independently settable.
+    ///
+    /// # Why this is a field and not ambient state
+    ///
+    /// The engine used to resolve it from a `thread_context` task-local. That
+    /// is correct only while the caller and the store share a task — an
+    /// in-process embedded engine. A host reaching memory through the loadable
+    /// module is on the other side of a bus call, and a `cdylib` has its own
+    /// statics, so the task-local reads as absent there. Absent means "no
+    /// exclusion", so the agent's own turn silently comes back as a memory hit:
+    /// a self-echo loop that looks like recall working.
+    ///
+    /// Same reasoning as `SourceScope` on the scoped retrieval methods, and the
+    /// change `store::recall_policy` anticipated in its module docs.
+    pub exclude_session_id: Option<&'a str>,
     /// When `true`, include conversational hits from other sessions in the same
     /// workspace alongside the namespace recall.
     pub cross_session: bool,
@@ -97,6 +117,27 @@ pub struct OwnedRecallOpts {
     /// Drop hits scoring below this threshold (typically 0.0–1.0).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub min_score: Option<f64>,
+    /// Drop hits belonging to this session — the **self-echo exclusion**.
+    ///
+    /// An agent recalling mid-turn must not be handed back what it just said,
+    /// so a live turn excludes its own chat thread. Distinct from
+    /// [`session_id`](Self::session_id), which *restricts* recall to a session;
+    /// this one *removes* one, and the two are independently settable.
+    ///
+    /// # Why this is a field and not ambient state
+    ///
+    /// The engine used to resolve it from a `thread_context` task-local. That
+    /// is correct only while the caller and the store share a task — an
+    /// in-process embedded engine. A host reaching memory through the loadable
+    /// module is on the other side of a bus call, and a `cdylib` has its own
+    /// statics, so the task-local reads as absent there. Absent means "no
+    /// exclusion", so the agent's own turn silently comes back as a memory hit:
+    /// a self-echo loop that looks like recall working.
+    ///
+    /// Same reasoning as `SourceScope` on the scoped retrieval methods, and the
+    /// change `store::recall_policy` anticipated in its module docs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exclude_session_id: Option<String>,
     /// When `true`, include conversational hits from other sessions in the same
     /// workspace alongside the namespace recall.
     #[serde(default)]
@@ -116,6 +157,7 @@ impl<'a> From<&'a OwnedRecallOpts> for RecallOpts<'a> {
             category,
             session_id,
             min_score,
+            exclude_session_id,
             cross_session,
         } = owned;
         RecallOpts {
@@ -123,6 +165,7 @@ impl<'a> From<&'a OwnedRecallOpts> for RecallOpts<'a> {
             category: category.clone(),
             session_id: session_id.as_deref(),
             min_score: *min_score,
+            exclude_session_id: exclude_session_id.as_deref(),
             cross_session: *cross_session,
         }
     }
@@ -140,6 +183,7 @@ impl From<RecallOpts<'_>> for OwnedRecallOpts {
             category,
             session_id,
             min_score,
+            exclude_session_id,
             cross_session,
         } = borrowed;
         OwnedRecallOpts {
@@ -147,6 +191,7 @@ impl From<RecallOpts<'_>> for OwnedRecallOpts {
             category,
             session_id: session_id.map(str::to_string),
             min_score,
+            exclude_session_id: exclude_session_id.map(str::to_string),
             cross_session,
         }
     }

@@ -69,6 +69,8 @@ pub use sync::{
     run_github_sync, run_source_pipeline, sync_context, HostSyncAdapter, RawCoverage, RawFileRef,
     RealCostAccumulator, RebuildOutcome, SourcePipelineFailure, HOST_SYNC_STATE_NAMESPACE,
 };
+// Crate-private seam for `crate::sources::sync` (openhuman#5820); not host surface.
+pub(crate) use sync::run_source_pipeline_core;
 // The audit type, under the seam path OpenHuman already names
 // (`memory::tinycortex::SyncAuditEntry` embeds it in an RPC response type).
 // The type itself is core-owned (#18 §B1a); only the address is preserved.

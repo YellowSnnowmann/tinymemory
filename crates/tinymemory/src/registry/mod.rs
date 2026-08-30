@@ -68,8 +68,8 @@ pub use tinymemory_api::null::NULL_DRIVER_ID;
 /// crates would mean the next one lands in whichever place its author happened
 /// to be reading.
 pub use tinymemory_api::drivers::{
-    COGNEE_DRIVER_ID, MEM0_DRIVER_ID, NAMESPACE_DRIVER_ID, SUPERMEMORY_DRIVER_ID,
-    TINYCORTEX_DRIVER_ID,
+    AGENTMEMORY_DRIVER_ID, COGNEE_DRIVER_ID, MEM0_DRIVER_ID, NAMESPACE_DRIVER_ID,
+    SUPERMEMORY_DRIVER_ID, TINYCORTEX_DRIVER_ID,
 };
 
 /// The trust state a driver entry must carry for an external class to bind.
@@ -183,6 +183,7 @@ impl DriverRegistry {
         reserved.insert(SUPERMEMORY_DRIVER_ID.to_string(), DriverClass::External);
         reserved.insert(MEM0_DRIVER_ID.to_string(), DriverClass::External);
         reserved.insert(COGNEE_DRIVER_ID.to_string(), DriverClass::External);
+        reserved.insert(AGENTMEMORY_DRIVER_ID.to_string(), DriverClass::External);
         Self { reserved }
     }
 

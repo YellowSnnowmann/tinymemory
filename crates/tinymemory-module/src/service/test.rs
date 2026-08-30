@@ -18,6 +18,75 @@ use tinymemory_api::wire;
 
 use super::into_bus_error;
 
+fn test_provider() -> std::sync::Arc<dyn tinymemory_api::provider::MemoryProvider> {
+    std::sync::Arc::new(tinymemory_tinycortex::provider(std::sync::Arc::new(
+        tinycortex::memory::store::InMemoryMemoryStore::new(),
+    )))
+}
+
+async fn test_connection() -> tinybus::Connection {
+    use tinybus::transport::memory::MemoryBus;
+
+    let bus = MemoryBus::new();
+    let broker = tinybus::broker::Broker::new();
+    let _broker_task = broker.spawn(bus.clone());
+    let connection = tinybus::Connection::connect(bus.connect().await.expect("test transport"))
+        .await
+        .expect("test connection");
+    connection
+        .request_name(super::BUS_NAME)
+        .await
+        .expect("claim test service name");
+    connection
+}
+
+fn test_config(workspace: &std::path::Path) -> crate::config::ModuleConfig {
+    crate::config::ModuleConfig {
+        workspace_dir: workspace.to_path_buf(),
+        ..crate::config::ModuleConfig::default()
+    }
+}
+
+/// Holds the embedding-host test mutex while a temporary host is installed.
+///
+/// Restoring in `Drop` keeps the process global correct even when an assertion
+/// panics. The mutex guard is deliberately retained for the whole scope: the
+/// factory reads the host during each `OpenStore`, not just during setup.
+struct EmbeddingHostRestore {
+    _lock: std::sync::MutexGuard<'static, ()>,
+    previous: Option<std::sync::Arc<dyn tinymemory_core::embedding_host::EmbeddingHost>>,
+}
+
+impl EmbeddingHostRestore {
+    fn install(connection: tinybus::Connection, config: &crate::config::ModuleConfig) -> Self {
+        let lock = tinymemory_core::embedding_host::embedding_test_guard();
+        let previous = tinymemory_core::embedding_host::embedding_host();
+        tinymemory_core::embedding_host::set_embedding_host(std::sync::Arc::new(
+            crate::embedding::BusEmbeddingHost::new(connection, config),
+        ));
+        Self {
+            _lock: lock,
+            previous,
+        }
+    }
+}
+
+impl Drop for EmbeddingHostRestore {
+    fn drop(&mut self) {
+        match self.previous.take() {
+            Some(previous) => tinymemory_core::embedding_host::set_embedding_host(previous),
+            None => tinymemory_core::embedding_host::clear_embedding_host(),
+        }
+    }
+}
+
+fn test_opener(
+    connection: tinybus::Connection,
+    config: crate::config::ModuleConfig,
+) -> std::sync::Arc<super::StoreOpener> {
+    std::sync::Arc::new(super::StoreOpener::new(connection, config))
+}
+
 /// The name and message a mapped error carries on the wire.
 fn mapped(error: &MemoryError) -> (String, String) {
     match into_bus_error(error) {
@@ -224,6 +293,324 @@ fn the_per_entry_overhead_is_counted_so_many_tiny_entries_still_trip_it() {
     );
 }
 
+#[test]
+fn store_object_paths_accept_only_one_safe_identifier_component() {
+    let valid = [
+        ("profile-1", "profile_2d1".to_string()),
+        ("profile_one", "profile_5fone".to_string()),
+        ("A9", "A9".to_string()),
+        (&"x".repeat(128), "x".repeat(128)),
+    ];
+    for (subdir, component) in valid {
+        assert_eq!(
+            super::object_path_for_subdir(subdir),
+            Some(format!("{}/stores/{component}", super::OBJECT_PATH))
+        );
+    }
+
+    assert_ne!(
+        super::object_path_for_subdir("a-b"),
+        super::object_path_for_subdir("a_2db"),
+        "escaped identifiers must not collide"
+    );
+
+    for invalid in [
+        "",
+        ".",
+        "..",
+        "../escape",
+        "nested/store",
+        "nested\\store",
+        "profile.name",
+        "profile name",
+        "pröfile",
+        &"x".repeat(129),
+    ] {
+        assert!(
+            super::object_path_for_subdir(invalid).is_none(),
+            "unsafe subdirectory was admitted: {invalid:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn a_leaf_store_cannot_recursively_open_another_store() {
+    let service = super::MemoryService::new(test_provider());
+    let error = service
+        .open_store("child".to_string())
+        .await
+        .expect_err("leaf stores must not recursively open stores");
+    let tinybus::Error::MethodFailed { name, message } = error else {
+        panic!("expected MethodFailed");
+    };
+    assert_eq!(name, tinymemory_api::wire::INVALID);
+    assert!(message.contains("root"));
+}
+
+#[tokio::test]
+async fn repeated_and_concurrent_opens_reuse_the_registered_object_path() {
+    use std::sync::Arc;
+
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let connection = test_connection().await;
+    let config = test_config(workspace.path());
+    let _embedding_host = EmbeddingHostRestore::install(connection.clone(), &config);
+    let opener = test_opener(connection.clone(), config);
+    let expected = format!("{}/stores/profile_2d1", super::OBJECT_PATH);
+    let service = Arc::new(super::MemoryService::root(
+        test_provider(),
+        Arc::clone(&opener),
+    ));
+
+    let mut tasks = Vec::new();
+    for _ in 0..16 {
+        let service = Arc::clone(&service);
+        tasks.push(tokio::spawn(async move {
+            service.open_store("profile-1".to_string()).await
+        }));
+    }
+    for task in tasks {
+        assert_eq!(task.await.expect("join").expect("reused store"), expected);
+    }
+    assert_eq!(opener.instrumentation.allocation_attempts(), 1);
+    assert_eq!(opener.instrumentation.registration_attempts(), 1);
+    assert_eq!(opener.served.lock().await.len(), 1);
+
+    let driver_id: String = connection
+        .proxy(super::BUS_NAME, &expected, super::BUS_NAME)
+        .expect("store proxy")
+        .call("DriverId", ())
+        .await
+        .expect("the newly registered object must answer");
+    assert_eq!(driver_id, "tinycortex");
+}
+
+#[tokio::test]
+async fn a_failed_registration_is_retried_and_only_success_counts_toward_the_cap() {
+    use std::sync::Arc;
+
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let connection = test_connection().await;
+    let config = test_config(workspace.path());
+    let _embedding_host = EmbeddingHostRestore::install(connection.clone(), &config);
+    let opener = test_opener(connection, config);
+    opener.instrumentation.fail_registrations(1);
+    let service = super::MemoryService::root(test_provider(), Arc::clone(&opener));
+    service
+        .open_store("retry".to_string())
+        .await
+        .expect_err("the first registration is injected to fail");
+    assert!(opener.served.lock().await.is_empty());
+
+    let path = service
+        .open_store("retry".to_string())
+        .await
+        .expect("the same subtree must be retried");
+    assert_eq!(path, format!("{}/stores/retry", super::OBJECT_PATH));
+    assert_eq!(opener.instrumentation.allocation_attempts(), 2);
+    assert_eq!(opener.instrumentation.registration_attempts(), 2);
+    assert_eq!(opener.served.lock().await.len(), 1);
+}
+
+#[tokio::test]
+async fn the_open_store_cap_is_reached_through_successful_opens() {
+    use std::sync::Arc;
+
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let connection = test_connection().await;
+    let config = test_config(workspace.path());
+    let _embedding_host = EmbeddingHostRestore::install(connection.clone(), &config);
+    let opener = test_opener(connection, config);
+    let service = super::MemoryService::root(test_provider(), Arc::clone(&opener));
+
+    for index in 0..super::MAX_OPEN_STORES {
+        service
+            .open_store(format!("profile-{index}"))
+            .await
+            .unwrap_or_else(|error| panic!("successful open {index} failed: {error}"));
+    }
+    let error = service
+        .open_store("one-more".to_string())
+        .await
+        .expect_err("the store cap must be enforced");
+    let tinybus::Error::MethodFailed { name, message } = error else {
+        panic!("expected MethodFailed");
+    };
+    assert_eq!(name, tinymemory_api::wire::INVALID);
+    assert!(message.contains(&super::MAX_OPEN_STORES.to_string()));
+    assert_eq!(opener.served.lock().await.len(), super::MAX_OPEN_STORES);
+    assert_eq!(
+        opener.instrumentation.allocation_attempts(),
+        super::MAX_OPEN_STORES,
+        "the refused open must not allocate"
+    );
+    assert_eq!(
+        opener.instrumentation.registration_attempts(),
+        super::MAX_OPEN_STORES,
+        "the refused open must not register"
+    );
+}
+
+/// The queue worker pool is claimed once per process, and a store under a
+/// second workspace is refused loudly rather than left with no pool.
+///
+/// Asserted through `claim_queue_pool` rather than `start_queue_pool` on
+/// purpose. Starting the pool for real spawns four job workers and a daily
+/// scheduler against a temporary directory the test deletes while they are
+/// still polling it; they then mark the store degraded process-wide, which
+/// every later test that reads health would inherit. The claim is the whole of
+/// the decision — what follows it is one call into `tinymemory-core`, whose own
+/// `Once` guards it a second time.
+///
+/// The three outcomes are asserted in one test because the cell behind them is
+/// a process-global `OnceLock`: split across three tests they would race, and
+/// only the first to run would see `Start`.
+#[test]
+fn the_queue_pool_is_claimed_once_and_a_foreign_workspace_is_refused() {
+    let workspace = std::path::Path::new("/tinymemory-module/queue-pool-claim");
+    let elsewhere = std::path::Path::new("/tinymemory-module/queue-pool-elsewhere");
+
+    assert_eq!(
+        crate::claim_queue_pool(workspace),
+        crate::WorkspaceClaim::Start,
+        "the first claim must be the one that starts the pool"
+    );
+    assert_eq!(
+        crate::claim_queue_pool(workspace),
+        crate::WorkspaceClaim::AlreadyRunning,
+        "a second claim for the same workspace must not start a second pool"
+    );
+    assert_eq!(
+        crate::claim_queue_pool(elsewhere),
+        crate::WorkspaceClaim::Foreign,
+        "a claim for another workspace must be named, not silently swallowed — \
+         `queue::start` would no-op and that store's queue would never drain"
+    );
+}
+
+/// The periodic sync loops are claimed the same way, and for the same reason.
+///
+/// Asserted through `claim_sync_loops` rather than `start_sync_loops` for the
+/// reason above and one more: starting them for real spawns two 20-minute tick
+/// loops that reload config and walk the source registry for the rest of the
+/// test binary's life.
+///
+/// This also pins that the two services claim *independent* cells, without a
+/// fourth test that would have to assume an execution order. The workspace here
+/// differs from the queue pool's, so a single shared cell would make whichever
+/// of these two tests ran second read `Foreign` where it expects `Start`.
+///
+/// The `Foreign` outcome is what a second module setup in one process would hit.
+/// `claim_process_setup` already refuses that, so this is a second guard on a
+/// case the first one covers — kept because the cost is one `OnceLock` and the
+/// failure it guards is a store that silently never syncs.
+#[test]
+fn the_sync_loops_are_claimed_once_and_a_foreign_workspace_is_refused() {
+    let workspace = std::path::Path::new("/tinymemory-module/sync-loops-claim");
+    let elsewhere = std::path::Path::new("/tinymemory-module/sync-loops-elsewhere");
+
+    assert_eq!(
+        crate::claim_sync_loops(workspace),
+        crate::WorkspaceClaim::Start,
+        "the first claim must be the one that starts the loops"
+    );
+    assert_eq!(
+        crate::claim_sync_loops(workspace),
+        crate::WorkspaceClaim::AlreadyRunning,
+        "a second claim for the same workspace must not start a second pair"
+    );
+    assert_eq!(
+        crate::claim_sync_loops(elsewhere),
+        crate::WorkspaceClaim::Foreign,
+        "a claim for another workspace must be named, not silently swallowed — \
+         both loops guard themselves process-wide and that store would never sync"
+    );
+}
+
+/// The Composio gate answers for exactly the branch the pipeline would take.
+///
+/// Worth pinning because the two ways it can be wrong are both quiet. A gate
+/// that started the loop for a mode with no credential path would list the
+/// user's connections every 20 minutes and fail every due one, appending a
+/// failed row to the sync audit each time; a gate that refused a mode that CAN
+/// resolve one would leave a host whose Composio sources simply stop updating,
+/// with a single line at boot to explain it.
+///
+/// Backend mode moved from the second category to the first when
+/// `ComposioHost::session_bearer` landed. It used to be excluded because
+/// `EngineRuntimeConfig::session_token` refuses by design — which meant the
+/// loop did not start for a host whose default mode is backend, and neither the
+/// host nor the module reported it, because neither thought it was responsible.
+///
+/// Asserted through `composio_sync_can_run` rather than
+/// `start_composio_periodic_sync` for the reason the claim tests above give:
+/// the decision is the whole of what is worth checking, and the call after it
+/// spawns a real 20-minute tick loop for the life of the test binary.
+#[test]
+fn composio_periodic_sync_starts_for_any_mode_that_can_resolve_a_credential() {
+    let mut config = test_config(std::path::Path::new("/tinymemory-module/composio-gate"));
+
+    assert!(
+        !crate::composio_sync_can_run(&config),
+        "a host that states no mode is not direct — and has no bearer either"
+    );
+
+    config.composio_mode = tinymemory_api::host::COMPOSIO_MODE_BACKEND.to_string();
+    assert!(
+        crate::composio_sync_can_run(&config),
+        "backend mode resolves its bearer through ComposioHost::session_bearer"
+    );
+
+    config.composio_mode = tinymemory_api::host::COMPOSIO_MODE_DIRECT.to_string();
+    assert!(
+        crate::composio_sync_can_run(&config),
+        "direct mode resolves its key through ComposioHost::api_key"
+    );
+
+    // The pipeline's own branch test is case-insensitive. If the gate were not,
+    // this host would be started and would then fail every tick — the exact
+    // shape the gate exists to prevent.
+    config.composio_mode = "Direct".to_string();
+    assert!(
+        crate::composio_sync_can_run(&config),
+        "the gate must match `composio_config` on case, or it starts a loop that cannot work"
+    );
+}
+
+/// A second store opens normally, and needs no pool of its own to do it.
+///
+/// The pairing with the test above is the point. `queue::start` is guarded by a
+/// process-global `Once`, so the obvious failure of moving the pool into the
+/// module is a second store silently getting no worker at all. It cannot happen
+/// here: the engine's queue is rooted at the workspace — `queue::store` resolves
+/// its database through `engine_config`, which is `memory_config_from(config,
+/// config.workspace_dir())` — while `memory_subdir` reaches only
+/// `UnifiedMemory::new_with_memory_dir`. Both stores below therefore share the
+/// one queue `setup` started a pool for.
+#[tokio::test]
+async fn a_second_store_opens_under_the_one_workspace_queue() {
+    use std::sync::Arc;
+
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let connection = test_connection().await;
+    let config = test_config(workspace.path());
+    let _embedding_host = EmbeddingHostRestore::install(connection.clone(), &config);
+    let opener = test_opener(connection, config);
+    let service = super::MemoryService::root(test_provider(), Arc::clone(&opener));
+
+    let first = service
+        .open_store("profile-one".to_string())
+        .await
+        .expect("the first store must open");
+    let second = service
+        .open_store("profile-two".to_string())
+        .await
+        .expect("a second store must open rather than panic or be refused");
+
+    assert_ne!(first, second, "each subtree gets its own object path");
+    assert_eq!(opener.served.lock().await.len(), 2);
+}
+
 /// Every method the service implements must also be declared in the manifest.
 ///
 /// The manifest's `methods` list is admission surface: the host may only call a
@@ -317,7 +704,7 @@ fn the_served_members_are_exactly_the_published_contract() {
         .map(|member| (*member).to_string())
         .collect();
 
-    // Reported as differences rather than as a 89-element inequality, so the
+    // Reported as differences rather than as a 109-element inequality, so the
     // failure names the method that moved instead of printing both lists.
     let missing: Vec<&String> = served.iter().filter(|m| !published.contains(m)).collect();
     assert!(
@@ -333,5 +720,84 @@ fn the_served_members_are_exactly_the_published_contract() {
     assert_eq!(
         served, published,
         "the two lists hold the same members in different orders"
+    );
+}
+
+#[tokio::test]
+async fn the_two_new_families_are_gated_on_their_own_capability() {
+    // `test_provider` wraps a bare `Memory` backend through the mandatory
+    // composition, so it advertises Core/Recall/Portability and nothing else.
+    // The gate has to be per family: a method reached on a driver that does not
+    // serve its family must refuse by name, not fall through to whatever the
+    // trait's default body happens to return.
+    let service = super::MemoryService::new(test_provider());
+
+    let refusal = |error: BusError| match error {
+        BusError::MethodFailed { name, .. } => name,
+        other => panic!("expected a named MethodFailed, got {other:?}"),
+    };
+
+    let error = service
+        .run_connection_sync("gmail".to_string(), "conn-1".to_string())
+        .await
+        .expect_err("a driver without the source-sync family must refuse");
+    assert_eq!(refusal(error), wire::UNSUPPORTED);
+
+    let error = service
+        .bootstrap_connection("gmail".to_string(), "conn-1".to_string())
+        .await
+        .expect_err("a driver without the source-sync family must refuse");
+    assert_eq!(refusal(error), wire::UNSUPPORTED);
+
+    let error = service
+        .coding_session_status()
+        .await
+        .expect_err("a driver without the coding-sessions family must refuse");
+    assert_eq!(refusal(error), wire::UNSUPPORTED);
+
+    // The two members added to *existing* families refuse through their own
+    // family's gate — Tree and Maintenance — rather than through a new one.
+    let error = service
+        .flush_source_tree("gmail:conn-1".to_string())
+        .await
+        .expect_err("a driver without the tree family must refuse");
+    assert_eq!(refusal(error), wire::UNSUPPORTED);
+
+    let error = service
+        .diagnose()
+        .await
+        .expect_err("a driver without the maintenance family must refuse");
+    assert_eq!(refusal(error), wire::UNSUPPORTED);
+}
+
+/// The Composio provider registry is filled by this process, not by the host.
+///
+/// It is a process-global, and before the memory engine moved into a module the
+/// host's own boot was what called `init_default_providers`. A `cdylib` has its
+/// own statics, so that call does nothing for this process — and the failure is
+/// silent in the worst way: `get_provider` answers `None` rather than erroring,
+/// so `BootstrapConnection` would report "no composio provider registered for
+/// 'gmail'" on a perfectly good connection, and nothing in a build or a type
+/// check would have said so.
+///
+/// This pins the call the module's startup makes. It is deliberately asserting
+/// a toolkit the registry's own `init_default_providers` registers rather than
+/// an arbitrary string, so that a rename upstream fails here instead of in the
+/// field.
+#[test]
+fn the_default_composio_providers_populate_the_registry() {
+    use tinymemory_core::sync::composio::providers::{get_provider, init_default_providers};
+
+    init_default_providers();
+
+    assert!(
+        get_provider("gmail").is_some(),
+        "init_default_providers must register the gmail provider; BootstrapConnection \
+         resolves through this registry and answers Invalid when it is empty"
+    );
+    assert!(
+        get_provider("__definitely_not_a_real_toolkit__").is_none(),
+        "an unregistered toolkit must stay unregistered — otherwise the assertion above \
+         would pass against a registry that returns something for everything"
     );
 }

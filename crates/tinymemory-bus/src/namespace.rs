@@ -3,7 +3,7 @@
 //! Namespaces are the only partitioning primitive this contract has, and every
 //! family takes them as a bare `&str`. That is deliberate — a driver's
 //! container vocabulary is its own, and a typed namespace threaded through
-//! eighteen trait families would force every engine to agree on a shape none of
+//! twenty trait families would force every engine to agree on a shape none of
 //! them share. What was missing was not a type in the signatures but a *shared
 //! convention* for what goes in the string, so that "conversational memory",
 //! "document memory", and "learnings" mean the same thing to every caller and

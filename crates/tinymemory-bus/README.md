@@ -4,7 +4,7 @@ Every type that crosses the TinyMemory `TinyBus` boundary, and the names of the
 members that carry them.
 
 TinyMemory ships as a loadable module so a host does not compile the engine:
-`crates/tinymemory-module` exports one object with 89 members on it, built as a
+`crates/tinymemory-module` exports one object with 120 members on it, built as a
 `cdylib`. A host can load that binary but cannot `use` anything out of it, so
 the payload vocabulary has to be published as an ordinary library. This is it.
 
@@ -13,6 +13,8 @@ the payload vocabulary has to be published as an ordinary library. This is it.
 | `names`                                                          | bus name, object path, one constant per member |
 | `types`, `chunks`, `recall`, `tree`, `goals`, `tool_memory`, `health`, `capabilities`, `evidence` | the value vocabulary       |
 | `provider`                                                       | the value types each capability family exchanges |
+| `learning`                                                       | the learning-candidate taxonomy — what a producer asserts about the user, and how strongly |
+| `composio`                                                       | the connector-sync vocabulary: run reports, task envelopes, per-connection sync state, scope preferences |
 | `error`, `wire`                                                  | `MemoryError` and the name table it round-trips through |
 | `version`                                                        | `CONTRACT_VERSION` and the bind rule           |
 
@@ -47,7 +49,7 @@ A host depends on `tinymemory-bus` and gets vocabulary alone.
 
 ## What is deliberately absent
 
-**No traits.** `MemoryProvider` and the eighteen capability-family traits
+**No traits.** `MemoryProvider` and the twenty capability-family traits
 describe what an engine must implement, not what a frame carries. They stay in
 `tinymemory-api`. The split is readable off the path: a name here is data, a
 name there is an obligation.

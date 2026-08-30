@@ -13,4 +13,6 @@ doc-valid-idents = [
     # Product names in `chunks::SourceKind`'s prose, not Rust items.
     "WhatsApp",
     "FastMail",
+    # Toolkit names in `composio`'s prose, likewise.
+    "ClickUp",
 ]

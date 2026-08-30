@@ -1,6 +1,54 @@
 name: tinymemory-remote-engines
 
 services:
+  agentmemory:
+    profiles: [agentmemory]
+    build:
+      context: https://github.com/rohitg00/agentmemory.git#v0.9.29
+      dockerfile_inline: |
+        FROM node:22-bookworm-slim
+        WORKDIR /app
+        COPY package.json .
+        # The image's bundled npm (10.9.8) fails resolving this package.json
+        # with "Cannot read properties of null (reading 'edgesOut')" — an
+        # arborist bug, not a bad dependency: npm 11.12.1 resolves the exact
+        # same file to 276 packages. It surfaced without any change here, on a
+        # day when this job went from green at 10:47 to red at 15:39, because
+        # the build has no lockfile and resolves against a registry that moves.
+        # Pinned rather than floated for the same reason.
+        RUN npm install -g npm@11.12.1 && npm install
+        COPY . .
+        RUN npm run build
+        CMD ["node", "dist/index.mjs"]
+    environment:
+      III_ENGINE_URL: ws://agentmemory-engine:49134
+      III_REST_PORT: "3111"
+      AGENTMEMORY_AUTO_COMPRESS: "false"
+      AGENTMEMORY_INJECT_CONTEXT: "false"
+    depends_on:
+      agentmemory-engine:
+        condition: service_started
+
+  agentmemory-engine:
+    profiles: [agentmemory]
+    image: iiidev/iii:0.11.2
+    user: "65532:65532"
+    ports: ["3111:3111", "49134:49134"]
+    depends_on:
+      agentmemory-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./agentmemory-iii-config.yaml:/app/config.yaml:ro
+      - agentmemory-data:/data
+
+  agentmemory-init:
+    profiles: [agentmemory]
+    image: busybox:1.36
+    user: "0:0"
+    volumes: ["agentmemory-data:/data"]
+    entrypoint: ["sh", "-c", "chown -R 65532:65532 /data && chmod 755 /data"]
+    restart: "no"
+
   supermemory:
     profiles: [supermemory]
     build:
@@ -99,3 +147,4 @@ volumes:
   supermemory-data:
   mem0-postgres:
   cognee-data:
+  agentmemory-data:
