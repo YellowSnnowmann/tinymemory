@@ -1,8 +1,8 @@
 //! Tests for the host-owned chat bridge over an in-memory TinyBus.
 
-use tinyagents::harness::message::{AssistantMessage, ContentBlock, Message};
-use tinyagents::harness::model::{ModelRequest, ModelResponse};
-use tinyagents::harness::usage::Usage;
+use tinyinference::message::{AssistantMessage, ContentBlock, Message};
+use tinyinference::model::{ModelRequest, ModelResponse};
+use tinyinference::usage::Usage;
 use tinybus::broker::Broker;
 use tinybus::transport::memory::MemoryBus;
 use tinybus::{Connection, Result as BusResult};
@@ -29,9 +29,6 @@ impl FakeChatHost {
             usage: Some(Usage::new(2, 1)),
             finish_reason: Some("stop".into()),
             raw: None,
-            resolved_model: None,
-            continue_turn: None,
-            served_from_cache: false,
         })
     }
 }

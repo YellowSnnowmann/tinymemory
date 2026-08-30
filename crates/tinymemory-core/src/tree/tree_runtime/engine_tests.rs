@@ -5,7 +5,7 @@ use crate::tree::tree_runtime::store;
 use chrono::TimeZone;
 use std::sync::Mutex;
 use tempfile::TempDir;
-use tinyagents::harness::model::ModelResponse;
+use tinyinference::model::ModelResponse;
 use tinymemory_api::host::test_support::TestHostConfig;
 
 struct RecordingModel {
@@ -28,11 +28,11 @@ impl ChatModel<()> for RecordingModel {
         &self,
         _state: &(),
         request: ModelRequest,
-    ) -> tinyagents::Result<ModelResponse> {
+    ) -> tinyinference::Result<ModelResponse> {
         self.requests.lock().unwrap().push(request);
         match &self.reply {
             Ok(reply) => Ok(ModelResponse::assistant(reply.clone())),
-            Err(message) => Err(tinyagents::TinyAgentsError::Memory(message.clone())),
+            Err(message) => Err(tinyinference::Error::Model(message.clone())),
         }
     }
 }

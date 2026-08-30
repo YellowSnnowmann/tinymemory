@@ -29,7 +29,8 @@ default-members = [
     "crates/tinymemory-sync",
     "crates/tinymemory-tinycortex",
 ]
-# `vendor/` holds engine submodules (tinycortex, tinybus, tinyagents), each of
+# `vendor/` holds pinned source submodules (tinycortex, tinybus,
+# tinyinference), each of
 # which is its own workspace with its own lockfile. Same exclusion
 # `vendor/tinycortex` uses for its own nested vendor directory.
 #
@@ -76,21 +77,14 @@ tinymemory-api = { path = "crates/tinymemory-api" }
 [patch.crates-io]
 tinycortex = { path = "vendor/tinycortex" }
 tinycortex-api = { path = "vendor/tinycortex/api" }
-# `tinymemory-core`'s summariser and embedder factory name tinyagents' chat and
-# embedding model traits. It is not published, so a standalone build of this
-# workspace has to be told where it is — hence its own submodule alongside
-# tinycortex and tinybus.
-#
-# Deliberately NOT `vendor/tinycortex/vendor/tinyagents`: the engine pins v2.1.0
-# there, which predates `RECOMMENDED_OLLAMA_CONTEXT_TOKENS` that the embedder
-# factory needs. Reaching through another submodule's pin also makes this
-# crate's dependency an accident of the engine's, which is not a relationship
-# worth having.
-#
-# A host that embeds this crate patches tinyagents itself — patch tables only
-# apply from the workspace root being built — so this entry affects standalone
-# builds and `cargo test` here, and nothing downstream.
-tinyagents = { path = "vendor/tinyagents" }
+# `tinymemory-core` names the provider-neutral chat and embedding contracts
+# from TinyInference. It is not published, so standalone builds resolve the
+# version requirement to the pinned checkout here.
+tinyinference = { path = "vendor/tinyinference/crates/tinyinference" }
+# TinyCortex still names TinyAgents internally. That is an engine implementation
+# detail rather than a TinyMemory API dependency, so resolve it to TinyCortex's
+# own recursive pin instead of carrying a second top-level checkout.
+tinyagents = { path = "vendor/tinycortex/vendor/tinyagents" }
 
 [profile.release]
 # Cross-crate optimization and smaller, faster binaries for release builds.
