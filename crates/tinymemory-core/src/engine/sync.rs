@@ -309,45 +309,19 @@ pub async fn run_source_pipeline(
     source: &MemorySourceEntry,
     config: &Config,
 ) -> Result<SyncOutcome, SourcePipelineFailure> {
-    // Composio sources run on the engine-free pipelines (#18 §B1); this seam
-    // keeps only the tree-coupled kinds (folder/repo/rss/web — they summarise
-    // into the engine tree by design) and converts at the boundary for its
-    // OpenHuman-facing callers.
+    // Composio sources are read by the connector module, not here: reaching a
+    // connected account needs a credential this crate does not hold and must
+    // not. The host fetches through `tinyconnectors` and hands the records
+    // back through `MemorySourceSink::accept_source_items`.
+    //
+    // Refused rather than skipped. A pipeline that answered "0 records, no
+    // error" for a source it never read would advance the caller's cursor past
+    // items nobody looked at, and report a healthy sync while the user's mail
+    // stopped arriving.
     if source.kind == SourceKind::Composio {
-        let toolkit = source
-            .toolkit
-            .as_deref()
-            .map(str::trim)
-            .filter(|toolkit| !toolkit.is_empty())
-            .ok_or_else(|| SourcePipelineFailure::without_usage("composio source missing toolkit"))?
-            .to_ascii_lowercase();
-        let connection_id = source
-            .connection_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|connection_id| !connection_id.is_empty())
-            .ok_or_else(|| {
-                SourcePipelineFailure::without_usage("composio source missing connection_id")
-            })?;
-        let outcome = crate::sync::pipelines::host::run_composio_connection_with_caps(
-            &toolkit,
-            connection_id,
-            config,
-            crate::sync::pipelines::host::SourceCaps::from_source(source),
-        )
-        .await
-        .map_err(|failure| SourcePipelineFailure {
-            message: failure.message,
-            actions_called: failure.actions_called,
-            provider_cost_usd: failure.provider_cost_usd,
-        })?;
-        return Ok(SyncOutcome {
-            records_ingested: outcome.records_ingested,
-            more_pending: outcome.more_pending,
-            actions_called: outcome.actions_called,
-            provider_cost_usd: outcome.provider_cost_usd,
-            note: outcome.note,
-        });
+        return Err(SourcePipelineFailure::without_usage(
+            "composio sources are synced through the connector module, not this pipeline",
+        ));
     }
 
     let memory = crate::global::client_if_ready()
@@ -383,121 +357,9 @@ pub async fn run_source_pipeline(
         })
 }
 
-/// Run a Composio connection through tinycortex, preserving any source-level
-/// budgets already configured in OpenHuman's registry.
-pub async fn run_composio_connection(
-    toolkit: &str,
-    connection_id: &str,
-    config: &Config,
-) -> Result<SyncOutcome, SourcePipelineFailure> {
-    run_composio_connection_with_budgets(toolkit, connection_id, config, None, None).await
-}
 
-/// Run a Composio connection with request-scoped budget overrides.
-///
-/// Provider RPCs carry these values in `ProviderContext`, before a source has
-/// necessarily been persisted in the registry. Explicit values therefore take
-/// precedence, while `None` preserves the registered/default source budget.
-pub async fn run_composio_connection_with_budgets(
-    toolkit: &str,
-    connection_id: &str,
-    config: &Config,
-    max_items: Option<u32>,
-    sync_depth_days: Option<u32>,
-) -> Result<SyncOutcome, SourcePipelineFailure> {
-    let mut source = crate::sources::decode_memory_sources(config)
-        .iter()
-        .find(|source| {
-            source.kind == SourceKind::Composio
-                && source.connection_id.as_deref() == Some(connection_id)
-        })
-        .cloned()
-        .unwrap_or_else(|| {
-            let (max_items, sync_depth_days) =
-                crate::sources::memory_sync_defaults_for_toolkit(toolkit);
-            MemorySourceEntry {
-                id: format!("composio:{toolkit}:{connection_id}"),
-                kind: SourceKind::Composio,
-                label: format!("{toolkit} connection"),
-                enabled: true,
-                toolkit: Some(toolkit.to_ascii_lowercase()),
-                connection_id: Some(connection_id.to_string()),
-                path: None,
-                glob: None,
-                url: None,
-                branch: None,
-                paths: Vec::new(),
-                max_commits: None,
-                max_issues: None,
-                max_prs: None,
-                query: None,
-                since_days: None,
-                max_items,
-                selector: None,
-                max_tokens_per_sync: None,
-                max_cost_per_sync_usd: None,
-                sync_depth_days,
-            }
-        });
 
-    source.max_items = max_items;
-    source.sync_depth_days = sync_depth_days;
 
-    tracing::debug!(
-        toolkit,
-        connection_id,
-        source_id = %source.id,
-        max_items = ?source.max_items,
-        sync_depth_days = ?source.sync_depth_days,
-        "[tinycortex:sync] dispatching Composio connection"
-    );
-    run_source_pipeline(&source, config).await
-}
-
-/// Load the persisted Composio sync state, in core's own vocabulary.
-///
-/// Was typed with the engine's `SyncState`; the copies share one serde shape
-/// and one KV namespace (pinned by tests in
-/// `sync::composio::providers::sync_state`), so the retype changes no bytes.
-/// Kept in the engine module only because OpenHuman reaches it through the
-/// engine shim path.
-pub async fn load_composio_sync_state(
-    toolkit: &str,
-    connection_id: &str,
-) -> anyhow::Result<crate::sync::composio::providers::sync_state::SyncState> {
-    let memory = crate::global::client_if_ready()
-        .ok_or_else(|| anyhow::anyhow!("memory client is not ready"))?;
-    let host = crate::sync::pipelines::host::PipelineHost::without_tree_ingest(memory);
-    crate::sync::composio::providers::sync_state::SyncState::load(&host, toolkit, connection_id)
-        .await
-}
-
-pub async fn run_slack_search_backfill(
-    connection_id: &str,
-    backfill_days: i64,
-    config: &Config,
-) -> Result<SyncOutcome, SourcePipelineFailure> {
-    // Delegates to the engine-free pipelines (#18 §B1); kept here because
-    // OpenHuman reaches this function through the engine shim path.
-    let outcome = crate::sync::pipelines::host::run_slack_search_backfill(
-        connection_id,
-        backfill_days,
-        config,
-    )
-    .await
-    .map_err(|failure| SourcePipelineFailure {
-        message: failure.message,
-        actions_called: failure.actions_called,
-        provider_cost_usd: failure.provider_cost_usd,
-    })?;
-    Ok(SyncOutcome {
-        records_ingested: outcome.records_ingested,
-        more_pending: outcome.more_pending,
-        actions_called: outcome.actions_called,
-        provider_cost_usd: outcome.provider_cost_usd,
-        note: outcome.note,
-    })
-}
 
 /// Delegates to the engine-free pipelines (#18 §B1); kept because OpenHuman's
 /// backfill binary reaches it through the engine shim path.
