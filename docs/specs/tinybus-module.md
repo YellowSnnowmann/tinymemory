@@ -13,19 +13,24 @@ Cutting the whole memory-engine cohort (`tinycortex`, `tinycortex-api`,
 `tinymemory-core`, `tinymemory-tinycortex`) from OpenHuman, via
 `scripts/dep-sim.py`:
 
+> Historical measurement: these dependency counts and timings were captured
+> before the TinyInference migration. They document why the module boundary was
+> introduced, not the current dependency graph. Re-measure before using them as
+> present-day performance or dependency claims.
+
 | Profile | Before | After | Delta |
 | --- | --- | --- | --- |
 | kernel (`flows`) | 307 pkg / 284 names / 2 native | 297 / 278 / 2 | −6 names, **0 native** |
 | product (ships) | 431 / 398 / 5 native | 427 / 394 / 5 | −4 names, **0 native** |
 
-All four names leaving the shipping profile are first-party. `libsqlite3-sys`
-does not leave, because `rusqlite` has five parents there — the host crate
+At that snapshot, all four names leaving the shipping profile were first-party.
+`libsqlite3-sys` did not leave, because `rusqlite` had five parents there — the host crate
 directly, plus `tinyagents` (its session store), `tinychannels` and `tinyflows`.
-Everything else the engine uses (`reqwest`, `chrono`, `regex`, `uuid`,
-`walkdir`, `sha2`, `tokio`, `git2`) is shared with surface the host keeps.
+Everything else the engine used (`reqwest`, `chrono`, `regex`, `uuid`,
+`walkdir`, `sha2`, `tokio`, `git2`) was shared with surface the host kept.
 
-**What it does buy is compile time on the critical path.** `cargo build
---timings` on the host shows a strictly serial chain, each link starting as the
+**What it demonstrated was compile time on the critical path.** The historical
+`cargo build --timings` snapshot showed a strictly serial chain, each link starting as the
 previous one ends:
 
 ```text
@@ -36,9 +41,9 @@ host crate        40.1 -> 174.7
 wall                             176.0s
 ```
 
-The engine therefore puts **14.7s directly in front of** the host's own
-compilation. Removing it from the host's graph moves a full build to roughly
-161s, about 8.4%.
+In that snapshot, the engine put **14.7s directly in front of** the host's own
+compilation. Removing it from the host's graph moved a full build to roughly
+161s, about 8.4%. The current TinyInference-based graph has not been re-measured.
 
 Do not re-justify this module on dependency count.
 
