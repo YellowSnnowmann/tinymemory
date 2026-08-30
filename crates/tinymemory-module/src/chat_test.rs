@@ -29,6 +29,9 @@ impl FakeChatHost {
             usage: Some(Usage::new(2, 1)),
             finish_reason: Some("stop".into()),
             raw: None,
+            resolved_model: None,
+            continue_turn: None,
+            served_from_cache: false,
         })
     }
 }
