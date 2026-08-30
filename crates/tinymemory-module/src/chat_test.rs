@@ -86,6 +86,10 @@ async fn configured_role_and_model_cross_the_chat_bridge() {
         .create_chat_model_with_model_id("summarizer", &runtime, 0.2)
         .expect("create bus model");
     assert_eq!(model_id, "host-model");
+    assert_eq!(
+        model.cache_identity().as_deref(),
+        Some("tinymemory-module-host:summarizer")
+    );
     let response = model
         .invoke(&(), ModelRequest::new(vec![Message::user("summarize")]))
         .await
