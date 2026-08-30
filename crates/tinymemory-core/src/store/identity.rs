@@ -102,24 +102,6 @@ pub fn canonicalize(kind: IdentityKind, raw: &str) -> Option<String> {
     })
 }
 
-pub fn canonicalize(kind: IdentityKind, raw: &str) -> Option<String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    Some(match kind {
-        IdentityKind::Email => trimmed.to_lowercase(),
-        IdentityKind::Handle => trimmed.trim_start_matches('@').to_lowercase(),
-        IdentityKind::Phone => trimmed
-            .chars()
-            .filter(|c| c.is_ascii_digit() || *c == '+')
-            .collect(),
-        IdentityKind::DisplayName => trimmed.split_whitespace().collect::<Vec<_>>().join(" "),
-        IdentityKind::UserId | IdentityKind::AvatarUrl | IdentityKind::ProfileUrl => {
-            trimmed.to_string()
-        }
-    })
-}
 
 /// Cross-toolkit variant — matches against every connected provider's
 /// rows of this kind. Used for marking memory-tree entity rows: an email
