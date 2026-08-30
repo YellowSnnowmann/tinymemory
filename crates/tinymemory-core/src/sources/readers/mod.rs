@@ -36,8 +36,7 @@ pub trait SourceReader: Send + Sync {
 /// forgotten under it, and removing it would orphan every row already written.
 /// What left is the *reading*: an OAuth connector is reached with a credential
 /// this crate does not hold and must not, so the host fetches through
-/// `tinyconnectors` and hands the records here through
-/// [`crate::provider::MemorySourceSink`].
+/// `tinyconnectors` and hands the records to the memory provider.
 ///
 /// Returning `Option` rather than a stub reader that always errors is
 /// deliberate: a caller has to decide what to do about a kind it cannot read,
