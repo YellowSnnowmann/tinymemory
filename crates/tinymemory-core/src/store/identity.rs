@@ -124,7 +124,6 @@ pub fn is_self_identity_any_toolkit(kind: IdentityKind, raw_value: &str) -> bool
 
 /// Render a compact section for prompt injection. Skips `user_id` (not
 /// human-readable), prefixes `handle` with `@`.
-
 /// Fold a token to the shape used in a profile-store key.
 pub fn normalize_token(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
