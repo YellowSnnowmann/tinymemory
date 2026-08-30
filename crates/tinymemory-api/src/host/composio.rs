@@ -488,10 +488,6 @@ pub struct ComposioTriggerHistoryResult {
     pub entries: Vec<ComposioTriggerHistoryEntry>,
 }
 
-#[cfg(test)]
-#[path = "composio_tests.rs"]
-mod tests;
-
 /// Static overview of the Composio integrations this build supports.
 ///
 /// Deliberately does not consult the live Composio backend or a direct tenant:
@@ -538,3 +534,7 @@ pub fn capability_matrix() -> Vec<ComposioCapability> {
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "composio_tests.rs"]
+mod tests;
