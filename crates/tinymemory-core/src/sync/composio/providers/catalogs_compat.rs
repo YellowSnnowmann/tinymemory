@@ -1,0 +1,78 @@
+//! Historical per-category catalog module paths.
+//!
+//! Before OpenHuman#5560 moved the curated catalogs into the contract crate,
+//! each category lived in its own `pub mod catalogs_<category>` here (e.g.
+//! `providers::catalogs_business::SHOPIFY_CURATED`). The move consolidated
+//! them into [`super::catalogs`], which flattens every constant to one level
+//! (`providers::catalogs::SHOPIFY_CURATED`) rather than nesting them by
+//! category — so the six original module names stopped resolving even though
+//! [`super::catalogs`] kept every constant reachable under a different path.
+//!
+//! `AGENTS.md`'s SemVer policy treats a removed public path as a breaking
+//! change unless the crate takes a major (pre-1.0: minor) bump for it. Rather
+//! than force that bump for a rename, these six modules re-export the same
+//! constants under their historical names — pure re-exports, no behavior, no
+//! new dependency.
+
+pub mod catalogs_business {
+    //! See [`super`].
+    pub use tinymemory_api::composio::catalogs::business::*;
+}
+
+pub mod catalogs_google {
+    //! See [`super`].
+    pub use tinymemory_api::composio::catalogs::google::*;
+}
+
+pub mod catalogs_messaging {
+    //! See [`super`].
+    pub use tinymemory_api::composio::catalogs::messaging::*;
+}
+
+pub mod catalogs_microsoft {
+    //! See [`super`].
+    pub use tinymemory_api::composio::catalogs::microsoft::*;
+}
+
+pub mod catalogs_productivity {
+    //! See [`super`].
+    pub use tinymemory_api::composio::catalogs::productivity::*;
+}
+
+pub mod catalogs_social_media {
+    //! See [`super`].
+    pub use tinymemory_api::composio::catalogs::social_media::*;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn historical_module_paths_resolve_to_the_same_constants_as_the_new_path() {
+        assert_eq!(
+            catalogs_business::SHOPIFY_CURATED.len(),
+            crate::sync::composio::providers::catalogs::SHOPIFY_CURATED.len()
+        );
+        assert_eq!(
+            catalogs_google::GOOGLEDRIVE_CURATED.len(),
+            crate::sync::composio::providers::catalogs::GOOGLEDRIVE_CURATED.len()
+        );
+        assert_eq!(
+            catalogs_messaging::SLACK_CURATED.len(),
+            crate::sync::composio::providers::catalogs::SLACK_CURATED.len()
+        );
+        assert_eq!(
+            catalogs_microsoft::EXCEL_CURATED.len(),
+            crate::sync::composio::providers::catalogs::EXCEL_CURATED.len()
+        );
+        assert_eq!(
+            catalogs_productivity::JIRA_CURATED.len(),
+            crate::sync::composio::providers::catalogs::JIRA_CURATED.len()
+        );
+        assert_eq!(
+            catalogs_social_media::TWITTER_CURATED.len(),
+            crate::sync::composio::providers::catalogs::TWITTER_CURATED.len()
+        );
+    }
+}
