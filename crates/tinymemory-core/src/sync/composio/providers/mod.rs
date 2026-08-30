@@ -52,11 +52,11 @@ pub mod registry;
 pub mod slack;
 pub mod sync_state;
 
-//! The capability matrix, the curated-catalog lookup and the visibility gate
-//! all moved to the contract crate (OpenHuman#5560) — see [`catalogs`] and
-//! [`tinymemory_api::host::composio::capability_matrix`]. They are re-exported
-//! at the bottom of this file, so every historical `providers::…` path keeps
-//! resolving and the wire surface is unchanged.
+// The capability matrix, the curated-catalog lookup and the visibility gate
+// all moved to the contract crate (OpenHuman#5560) — see [`catalogs`] and
+// [`tinymemory_api::host::composio::capability_matrix`]. They are re-exported
+// at the bottom of this file, so every historical `providers::…` path keeps
+// resolving and the wire surface is unchanged.
 
 /// All toolkit slugs that have a curated agent-ready catalog.
 ///
