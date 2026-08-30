@@ -24,14 +24,15 @@ Cutting the whole memory-engine cohort (`tinycortex`, `tinycortex-api`,
 | product (ships) | 431 / 398 / 5 native | 427 / 394 / 5 | −4 names, **0 native** |
 
 At that snapshot, all four names leaving the shipping profile were first-party.
-`libsqlite3-sys` did not leave, because `rusqlite` had five parents there — the host crate
-directly, plus `tinyagents` (its session store), `tinychannels` and `tinyflows`.
+`libsqlite3-sys` did not leave, because `rusqlite` had five parents there — the
+host crate directly, plus `tinyagents` (its session store), `tinychannels` and
+`tinyflows`.
 Everything else the engine used (`reqwest`, `chrono`, `regex`, `uuid`,
 `walkdir`, `sha2`, `tokio`, `git2`) was shared with surface the host kept.
 
 **What it demonstrated was compile time on the critical path.** The historical
-`cargo build --timings` snapshot showed a strictly serial chain, each link starting as the
-previous one ends:
+`cargo build --timings` snapshot showed a strictly serial chain, each link
+starting as the previous one ends:
 
 ```text
 tinyagents        12.8 -> 25.4   (12.6s)
