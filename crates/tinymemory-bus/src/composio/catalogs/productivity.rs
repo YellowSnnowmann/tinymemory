@@ -2,7 +2,7 @@
 //! Trello, Asana, Dropbox, Todoist.
 //!
 //! Catalog-only toolkits (Linear, Jira, Trello, Asana, Dropbox,
-//! Todoist) don't ship a native [`super::ComposioProvider`] — they
+//! Todoist) don't ship a native `ComposioProvider` (in `tinymemory-core`) — they
 //! have no user-profile fetch, no initial/periodic sync, no trigger
 //! webhooks, and no memory ingestion. The agent invokes their actions
 //! through Composio's API, but their data is not pre-ingested into
