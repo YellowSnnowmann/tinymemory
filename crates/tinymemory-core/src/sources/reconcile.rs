@@ -246,11 +246,8 @@ mod tests {
         }
     }
 
-    
     #[test]
-    
     #[test]
-    
     #[test]
     fn short_id_truncates_ascii() {
         assert_eq!(short_id("ca_WaktIDFlZwXO"), "IDFlZwXO");
