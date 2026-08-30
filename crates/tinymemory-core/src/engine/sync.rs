@@ -251,7 +251,15 @@ impl ExternalSourceReader for HostSyncAdapter {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("external source reader requires host config"))?;
         let host_source: MemorySourceEntry = serde_json::from_value(serde_json::to_value(source)?)?;
-        let reader = crate::sources::readers::reader_for(&host_source.kind);
+        // A kind with no reader is an error, not an empty listing: answering
+        // "0 items" for a source nobody read would let the caller record the
+        // sync as complete and move its cursor past everything it skipped.
+        let reader = crate::sources::readers::reader_for(&host_source.kind).ok_or_else(|| {
+            anyhow::anyhow!(
+                "no reader for source kind {:?}: it is fetched outside this crate",
+                host_source.kind
+            )
+        })?;
         let items = reader
             .list_items(&host_source, &**config)
             .await
@@ -269,7 +277,12 @@ impl ExternalSourceReader for HostSyncAdapter {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("external source reader requires host config"))?;
         let host_source: MemorySourceEntry = serde_json::from_value(serde_json::to_value(source)?)?;
-        let reader = crate::sources::readers::reader_for(&host_source.kind);
+        let reader = crate::sources::readers::reader_for(&host_source.kind).ok_or_else(|| {
+            anyhow::anyhow!(
+                "no reader for source kind {:?}: it is fetched outside this crate",
+                host_source.kind
+            )
+        })?;
         let content = reader
             .read_item(&host_source, item_id, &**config)
             .await
