@@ -13,6 +13,16 @@
 //! than force that bump for a rename, these six modules re-export the same
 //! constants under their historical names — pure re-exports, no behavior, no
 //! new dependency.
+//!
+//! # Deletion
+//!
+//! This module is a deprecation shim, not a permanent home. It may be deleted
+//! in the next minor version bump that is *already* taking other breaking
+//! changes (so the cost is paid once), or once nothing in this workspace or a
+//! known downstream consumer (the OpenHuman host) still names a
+//! `catalogs_<category>` path — check with
+//! `grep -rn 'catalogs_business\|catalogs_google\|catalogs_messaging\|catalogs_microsoft\|catalogs_productivity\|catalogs_social_media'`
+//! across both repositories before removing it.
 
 pub mod catalogs_business {
     //! Historical compat shim — see the module docs above.
