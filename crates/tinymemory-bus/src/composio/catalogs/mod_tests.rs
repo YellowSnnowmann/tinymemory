@@ -178,6 +178,20 @@ fn toolkit_description_is_populated_for_every_capability_toolkit() {
 }
 
 #[test]
+fn toolkit_description_recognizes_the_legacy_microsoft_alias() {
+    // `catalog_for_toolkit` resolves both "microsoft" and "microsoft_teams" to
+    // the same Teams catalog; the description must not diverge for the alias.
+    assert_eq!(
+        toolkit_description("microsoft"),
+        toolkit_description("microsoft_teams")
+    );
+    assert_ne!(
+        toolkit_description("microsoft"),
+        toolkit_description("definitely-not-a-real-toolkit")
+    );
+}
+
+#[test]
 fn curated_catalogs_carry_no_duplicate_slugs() {
     // `find_curated` returns the first match, so a duplicate with a different
     // scope would make the gate's answer depend on table order.
