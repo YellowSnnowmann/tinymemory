@@ -13,8 +13,8 @@ use async_trait::async_trait;
 
 use crate::chat_host::{create_chat_model_with_model_id, provider_for_role, UsageInfo};
 use crate::Config;
-use tinyagents::harness::message::Message;
-use tinyagents::harness::model::{ChatModel, ModelRequest};
+use tinyinference::message::Message;
+use tinyinference::model::{ChatModel, ModelRequest};
 
 /// One pair of prompt messages handed to the memory LLM backend.
 #[derive(Debug, Clone)]

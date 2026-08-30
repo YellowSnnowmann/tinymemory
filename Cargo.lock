@@ -1819,24 +1819,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tinyagents"
-version = "2.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "chrono",
- "futures",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "thiserror 2.0.20",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "tinycortex"
 version = "0.1.1"
 dependencies = [
@@ -1862,8 +1844,8 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.20",
- "tinyagents",
  "tinycortex-api",
+ "tinyinference",
  "tokio",
  "toml",
  "tracing",
@@ -1876,6 +1858,22 @@ name = "tinycortex-api"
 version = "0.1.1"
 dependencies = [
  "tinymemory-api",
+]
+
+[[package]]
+name = "tinyinference"
+version = "0.2.1"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "httpdate",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -1958,9 +1956,9 @@ dependencies = [
  "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.20",
- "tinyagents",
  "tinycortex",
  "tinycortex-api",
+ "tinyinference",
  "tinymemory",
  "tinymemory-api",
  "tinymemory-conformance",

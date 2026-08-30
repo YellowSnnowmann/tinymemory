@@ -8,10 +8,10 @@
 //!
 //! # Why this trait is here and not in `tinymemory-api`
 //!
-//! It names `tinyagents::harness::model::ChatModel`, and the contract crate is
-//! deliberately dependency-light — it must not pull in tinyagents. This crate
-//! already depends on tinyagents, so it is the one place that can name both the
-//! model trait and the config seam. The host implements it here.
+//! It names [`tinyinference::model::ChatModel`], and the contract crate is
+//! deliberately dependency-light — it must not pull in an inference SDK. This
+//! crate already depends on TinyInference, so it is the one place that can name
+//! both the model trait and the config seam. The host implements it here.
 //!
 //! Reached through a process-global for the same reason as
 //! [`crate::embedding_host`]; see that module for the rationale, and for why an
@@ -20,7 +20,7 @@
 use std::sync::Arc;
 
 use parking_lot::RwLock;
-use tinyagents::harness::model::{ChatModel, ModelResponse};
+use tinyinference::model::{ChatModel, ModelResponse};
 
 use crate::Config;
 

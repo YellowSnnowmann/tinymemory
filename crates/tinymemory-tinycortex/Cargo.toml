@@ -7,7 +7,7 @@ publish = false
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.96"
-license = "MIT"
+license = "GPL-3.0-only"
 description = "TinyCortex engine adapter for the TinyMemory contract"
 repository = "https://github.com/tinyhumansai/tinymemory"
 

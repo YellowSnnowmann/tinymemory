@@ -120,18 +120,5 @@ pub async fn apply_composio_source_caps_migration() -> Result<(), String> {
 }
 
 #[cfg(test)]
-fn short_id(id: &str) -> &str {
-    // Show only the last 8 Unicode scalar values to keep labels compact.
-    // Byte-slicing would panic if the cut point isn't a UTF-8 boundary.
-    let n = id.chars().count();
-    if n <= 8 {
-        return id;
-    }
-    let skip = n - 8;
-    let start = id.char_indices().nth(skip).map(|(idx, _)| idx).unwrap_or(0);
-    &id[start..]
-}
-
-#[cfg(test)]
 #[path = "reconcile_tests.rs"]
 mod tests;

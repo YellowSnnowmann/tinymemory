@@ -57,7 +57,7 @@ crates/
                         workspace on purpose — see the note in `Cargo.toml`.
 vendor/
 ├── tinycortex/         the engine, pinned as a submodule
-├── tinyagents/         pinned TinyAgents submodule
+├── tinyinference/      provider-neutral inference APIs, pinned as a submodule
 └── tinybus/            pinned TinyBus submodule
 ```
 
@@ -103,8 +103,8 @@ families answer — see the engine table under
 
 
 Run `git submodule update --init --recursive` after cloning. Nothing in the
-workspace builds without it — `tinymemory-core` names `tinyagents` and
-`tinycortex` by path through `vendor/`, so an uninitialized checkout fails at
+workspace builds without it — `tinymemory-core` names `tinyinference` and
+`tinycortex` by path through `vendor/`. An uninitialized checkout therefore fails at
 manifest resolution rather than at compile time, which reads as a confusing
 error.
 
@@ -134,7 +134,7 @@ without any `[patch]` entries.
 
 The remote recipe above works by git because the remote adapter reaches only
 published crates. The embedded engine does not: it pulls `tinycortex`,
-`tinycortex-api` and `tinyagents`, none of which are published, and
+`tinycortex-api` and `tinyinference`, none of which are published, and
 `tinycortex-api` takes `tinymemory-api` *by git*, which cargo will resolve as a
 second copy of a crate this workspace also provides by path. Patching that away
 needs the crates on disk, so the embedded path is a submodule dependency until
@@ -149,21 +149,25 @@ git -C vendor/tinymemory submodule update --init --recursive
 [dependencies]
 tinymemory = { path = "vendor/tinymemory", features = ["tinycortex"] }
 
-# All four are required. The first three are unpublished crates the engine
-# needs; the fourth collapses `tinycortex-api`'s git dependency on
-# `tinymemory-api` onto the copy in this tree — without it two distinct
+# All five entries are required. The three crates.io patches resolve unpublished
+# crates used by the memory layer and embedded engine. The TinyInference source
+# patch collapses TinyCortex's git dependency onto that same crate identity. The
+# fifth entry collapses `tinycortex-api`'s git dependency on `tinymemory-api`
+# onto the copy in this tree — without it two distinct
 # `tinymemory_api::MemoryEntry` types exist and the seam stops type-checking.
 [patch.crates-io]
 tinycortex = { path = "vendor/tinymemory/vendor/tinycortex" }
 tinycortex-api = { path = "vendor/tinymemory/vendor/tinycortex/api" }
-tinyagents = { path = "vendor/tinymemory/vendor/tinyagents" }
+tinyinference = { path = "vendor/tinymemory/vendor/tinyinference/crates/tinyinference" }
+[patch."https://github.com/tinyhumansai/tinyinference"]
+tinyinference = { path = "vendor/tinymemory/vendor/tinyinference/crates/tinyinference" }
 [patch."https://github.com/tinyhumansai/tinymemory"]
 tinymemory-api = { path = "vendor/tinymemory/api" }
 ```
 
 This exact patch set is what the reference consumer in
 `crates/tinymemory/examples/` and the repository's own root manifest use; a
-build missing any of the four fails at resolution, before compiling a line.
+build missing any of the five fails at resolution, before compiling a line.
 
 ```rust,ignore
 use std::sync::Arc;

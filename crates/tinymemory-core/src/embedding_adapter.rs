@@ -1,24 +1,24 @@
-//! [`TinyAgentsEmbeddingProvider`] — the adapter from tinyagents' own embedding
+//! [`TinyInferenceEmbeddingProvider`] — the adapter from TinyInference's embedding
 //! model trait onto the seam's [`EmbeddingProvider`].
 //!
 //! It lives in this crate rather than in `tinymemory-api` because the contract
-//! crate must stay dependency-light and cannot name `tinyagents`; and rather
+//! crate must stay dependency-light and cannot name `tinyinference`; and rather
 //! than in the host because the tree's embedder factory — which is core code —
 //! builds Ollama models directly and needs to wrap them. The host re-exports it
 //! from `inference::embeddings`, so every existing path there keeps resolving
 //! and keeps naming this one type.
 
 use async_trait::async_trait;
-use tinyagents::harness::embeddings::EmbeddingModel;
+use tinyinference::embeddings::EmbeddingModel;
 
 pub use tinymemory_api::host::{format_embedding_signature, EmbeddingProvider};
 
-/// Compatibility adapter from the canonical tinyagents embedding model.
-pub struct TinyAgentsEmbeddingProvider {
+/// Compatibility adapter from the canonical TinyInference embedding model.
+pub struct TinyInferenceEmbeddingProvider {
     model: Box<dyn EmbeddingModel>,
 }
 
-impl TinyAgentsEmbeddingProvider {
+impl TinyInferenceEmbeddingProvider {
     pub fn new(model: impl EmbeddingModel + 'static) -> Self {
         Self {
             model: Box::new(model),
@@ -31,7 +31,7 @@ impl TinyAgentsEmbeddingProvider {
 }
 
 #[async_trait]
-impl EmbeddingProvider for TinyAgentsEmbeddingProvider {
+impl EmbeddingProvider for TinyInferenceEmbeddingProvider {
     fn name(&self) -> &str {
         self.model.name()
     }

@@ -122,13 +122,13 @@ impl HostChat {
     async fn complete(
         &self,
         _role: String,
-        _request: tinyagents::harness::model::ModelRequest,
-    ) -> BusResult<tinyagents::harness::model::ModelResponse> {
-        use tinyagents::harness::message::{AssistantMessage, ContentBlock};
-        use tinyagents::harness::usage::Usage;
+        _request: tinyinference::model::ModelRequest,
+    ) -> BusResult<tinyinference::model::ModelResponse> {
+        use tinyinference::message::{AssistantMessage, ContentBlock};
+        use tinyinference::usage::Usage;
 
         std::future::ready(()).await;
-        Ok(tinyagents::harness::model::ModelResponse {
+        Ok(tinyinference::model::ModelResponse {
             message: AssistantMessage {
                 id: None,
                 content: vec![ContentBlock::Text("deterministic summary".into())],

@@ -39,7 +39,7 @@ use tinymemory_api::host::test_support::TestHostConfig;
 use super::{Embedder, InertEmbedder, ProviderEmbedder, EMBEDDING_DIM};
 use crate::embedding_host::require_embedding_host;
 use crate::Config;
-use tinyagents::harness::embeddings::{OllamaEmbeddingModel, RECOMMENDED_OLLAMA_CONTEXT_TOKENS};
+use tinyinference::embeddings::{OllamaEmbeddingModel, RECOMMENDED_OLLAMA_CONTEXT_TOKENS};
 
 /// Cheap heuristic for "is a backend session reachable?" — the cloud
 /// embedder needs one and bails on first embed call without it. We use
@@ -355,7 +355,7 @@ fn build_ollama_embedder(endpoint: &str, model: &str, timeout_ms: u64) -> Result
         )
         .with_client(client);
     Ok(ProviderEmbedder::new(
-        crate::embedding_adapter::TinyAgentsEmbeddingProvider::boxed(model),
+        crate::embedding_adapter::TinyInferenceEmbeddingProvider::boxed(model),
         "ollama",
     ))
 }

@@ -620,6 +620,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6dbf3de79e51f3d586ab4cb9d5c3e2c14aa28ed23d180cf89b4df0454a69cc87"
 
 [[package]]
+name = "httpdate"
+version = "1.0.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
+
+[[package]]
 name = "hybrid-array"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1742,24 +1748,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tinyagents"
-version = "2.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "chrono",
- "futures",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "thiserror 2.0.20",
- "tokio",
- "tracing",
-]
-
-[[package]]
 name = "tinybus"
 version = "0.1.1"
 dependencies = [
@@ -1825,8 +1813,8 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "thiserror 2.0.20",
- "tinyagents",
  "tinycortex-api",
+ "tinyinference",
  "tokio",
  "toml 1.1.4+spec-1.1.0",
  "tracing",
@@ -1839,6 +1827,22 @@ name = "tinycortex-api"
 version = "0.1.1"
 dependencies = [
  "tinymemory-api",
+]
+
+[[package]]
+name = "tinyinference"
+version = "0.2.1"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "futures",
+ "httpdate",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.20",
+ "tokio",
 ]
 
 [[package]]
@@ -1898,9 +1902,9 @@ dependencies = [
  "serde_json",
  "sha2 0.11.0",
  "thiserror 2.0.20",
- "tinyagents",
  "tinycortex",
  "tinycortex-api",
+ "tinyinference",
  "tinymemory-api",
  "tinymemory-sources",
  "tinymemory-sync",
@@ -1922,10 +1926,10 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
- "tinyagents",
  "tinybus",
  "tinybus-module",
  "tinycortex",
+ "tinyinference",
  "tinymemory",
  "tinymemory-api",
  "tinymemory-bus",

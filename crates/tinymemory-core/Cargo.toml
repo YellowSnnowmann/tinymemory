@@ -7,7 +7,7 @@ publish = false
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.96"
-license = "MIT"
+license = "GPL-3.0-only"
 description = "The engine-neutral memory subsystem: store, summary tree, sync pipelines, ingestion and recall"
 repository = "https://github.com/tinyhumansai/tinymemory"
 readme = "../../README.md"
@@ -37,9 +37,10 @@ regex = "1.10"
 tinycortex = { version = "0.1", features = ["obsidian", "persona", "people", "sync"] }
 tinycortex-api = { version = "0.1" }
 
-# Chat-model and embedding primitives used by the tree summarizer and the
-# embedding factory.
-tinyagents = { version = "2.1", features = ["sqlite"] }
+# Provider-neutral chat-model and embedding primitives used by the tree
+# summarizer and embedding factory. Agent runtime and session behavior do not
+# belong in the memory layer.
+tinyinference = "0.2"
 anyhow = "1.0"
 async-trait = "0.1"
 # NO `git2` HERE, DELIBERATELY — do not add it back. `diff/` holds the ops and
