@@ -128,6 +128,11 @@ pub struct RetrievalResponse {
 }
 
 /// Options for `MemoryRetrieval::fast_retrieve`.
+///
+/// [`Default`] carries the engine's own defaults — a limit of 10 and 2 graph
+/// hops, the values `tinycortex`'s `FastRetrieveOptions::default` has always
+/// used. It is here so a caller migrating off that type does not have to
+/// re-spell them, which is how the two would drift (OpenHuman#5560).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FastRetrieveQuery {
     /// Maximum hits to return.
@@ -137,6 +142,16 @@ pub struct FastRetrieveQuery {
     /// Restrict to the last N days of source time.
     #[serde(default)]
     pub time_window_days: Option<u32>,
+}
+
+impl Default for FastRetrieveQuery {
+    fn default() -> Self {
+        Self {
+            limit: 10,
+            max_hops: 2,
+            time_window_days: None,
+        }
+    }
 }
 
 /// A time window to cover.

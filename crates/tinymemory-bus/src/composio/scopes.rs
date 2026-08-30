@@ -7,7 +7,7 @@
 //! toolkit: reads and writes on by default, destructive and permission-changing
 //! actions off until explicitly opted into.
 //!
-//! # Why the classification is here and the catalogs are not
+//! # Why the classification (and now the catalogs) live here
 //!
 //! Two different consumers ask the same question from opposite sides of the
 //! module boundary. The host asks it when it renders the integrations panel and
@@ -18,9 +18,13 @@
 //! side's private policy.
 //!
 //! The catalogs themselves — thousands of `&'static str` action slugs across
-//! thirty toolkits — stay in the engine crate. They are provider data, they
-//! change whenever a provider does, and nothing about them has to cross a
-//! frame: what crosses is the verdict.
+//! thirty toolkits — live alongside this module, in [`super::catalogs`]
+//! (moved here from the engine crate by OpenHuman#5560, for the same reason
+//! the classification lives here: both sides of the module boundary need the
+//! same answer, and a contract-crate lookup is the only way to get it without
+//! either side linking the other). They are provider data, they change
+//! whenever a provider does, and nothing about them has to cross a frame: what
+//! crosses is the verdict.
 //!
 //! Reading and writing a preference is likewise the engine crate's; this module
 //! defines what a preference *is*, not where it is stored.

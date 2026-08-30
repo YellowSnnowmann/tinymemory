@@ -44,11 +44,14 @@
 //! - **`profile_md`** — rewrites managed blocks in the host's `PROFILE.md`.
 //!   Filesystem mutation against a host-owned file; it is host policy that
 //!   happens to be written in the memory stack, not a wire type.
-//! - **the curated catalogs and the provider registry** — several thousand
-//!   `&'static str` action slugs and a process-global `HashMap` of trait
-//!   objects. The [`scopes::CuratedTool`] *shape* is here so a catalog can be
-//!   typed; the catalogs are the engine's.
+//! - **the provider registry** — a process-global `HashMap` of trait objects
+//!   that reach `reqwest` and the chunk store.
+//!
+//! The curated catalogs were on that list and are **not** any more: they are
+//! several thousand `&'static str` action slugs with no dependency at all, and
+//! the host is their heaviest reader. See [`catalogs`] for why they moved.
 
+pub mod catalogs;
 pub mod profile;
 pub mod runs;
 pub mod scopes;
@@ -69,3 +72,9 @@ pub use state::{
     STATE_NAMESPACE,
 };
 pub use tasks::{GithubFetchMode, NormalizedTask, TaskContainer, TaskFetchFilter, TaskKind};
+
+pub use catalogs::{
+    catalog_for_toolkit, curated_scope_for, has_native_provider, is_action_visible_with_pref,
+    native_provider_sync_interval_secs, parse_sync_interval_override, sync_interval_env_var,
+    toolkit_description, toolkit_has_scope, CAPABILITY_TOOLKITS, NATIVE_PROVIDERS,
+};
