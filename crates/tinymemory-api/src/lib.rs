@@ -64,10 +64,6 @@
 //!   and how strongly, with the buffer that queues it left in the engine crate.
 //! - [`composio`]: the connector-sync vocabulary — [`composio::SyncOutcome`],
 //!   [`composio::NormalizedTask`], [`composio::SyncState`],
-//!   [`composio::ToolScope`] and friends. **Not** [`host::composio`], which is
-//!   the *client* seam: connections, execute responses and the capability
-//!   matrix a host serves to the memory layer. This one is what a provider run
-//!   produces and remembers; that one is how it reaches Composio at all.
 //! - [`recall`]: the borrowed [`recall::RecallOpts`] and owned, serde-derived
 //!   [`recall::OwnedRecallOpts`] recall filters (both re-exported from
 //!   [`types`]).
