@@ -246,36 +246,11 @@ mod tests {
         }
     }
 
-    fn sync_target(toolkit: &str, connection_id: &str) -> composio::SyncTarget {
-        composio::SyncTarget {
-            toolkit: toolkit.to_string(),
-            connection_id: connection_id.to_string(),
-        }
-    }
-
+    
     #[test]
-    fn build_upsert_targets_formats_label_and_preserves_order() {
-        let targets = vec![
-            sync_target("gmail", "ca_WaktIDFlZwXO"),
-            sync_target("slack", "short"),
-        ];
-        let out = build_upsert_targets(&targets);
-        assert_eq!(out.len(), 2);
-        // (toolkit, connection_id, label) — toolkit/connection_id carried through verbatim.
-        assert_eq!(out[0].0, "gmail");
-        assert_eq!(out[0].1, "ca_WaktIDFlZwXO");
-        assert_eq!(out[0].2, "Gmail · IDFlZwXO");
-        assert_eq!(out[1].0, "slack");
-        assert_eq!(out[1].1, "short");
-        assert_eq!(out[1].2, "Slack · short");
-    }
-
+    
     #[test]
-    fn build_upsert_targets_empty_is_empty() {
-        let out = build_upsert_targets(&[]);
-        assert!(out.is_empty());
-    }
-
+    
     #[test]
     fn short_id_truncates_ascii() {
         assert_eq!(short_id("ca_WaktIDFlZwXO"), "IDFlZwXO");

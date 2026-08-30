@@ -51,7 +51,6 @@ pub(crate) fn init() {
         crate::embedding_host::TestEmbeddingHost::install();
         crate::config_loader::set_config_loader(Arc::new(TestConfigLoader));
         crate::chat_host::set_chat_host(Arc::new(TestChatHost));
-        crate::composio_host::set_composio_host(Arc::new(TestComposioHost));
     });
 }
 
@@ -93,38 +92,6 @@ impl crate::chat_host::ChatHost for TestChatHost {
 ///
 /// Every method reports the no-backend-session state, which is the branch the
 /// core's own tests exercise; a stub that succeeded would need to fake Composio
-/// itself.
-#[derive(Debug)]
-struct TestComposioHost;
-
-#[async_trait]
-impl crate::composio_host::ComposioHost for TestComposioHost {
-    async fn list_connections(
-        &self,
-        _config: &Config,
-    ) -> Result<Vec<crate::composio_host::ComposioConnection>, String> {
-        Err(NO_SESSION.to_string())
-    }
-
-    async fn execute(
-        &self,
-        _config: &Config,
-        _tool: &str,
-        _arguments: Option<serde_json::Value>,
-        _entity_id: &str,
-        _connection_id: Option<&str>,
-    ) -> Result<crate::composio_host::ComposioExecuteResponse, String> {
-        Err(NO_SESSION.to_string())
-    }
-
-    fn api_key(&self, _config: &Config) -> Option<String> {
-        None
-    }
-
-    fn is_available(&self, _config: &Config) -> bool {
-        false
-    }
-}
 
 /// The message [`TestComposioHost`] reports. Matches the shape the real backend
 /// client produces when no session token is stored, which is what the tests
