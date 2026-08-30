@@ -3,8 +3,8 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tinyinference::model::{ChatModel, ModelRequest, ModelResponse};
 use tinybus::Connection;
+use tinyinference::model::{ChatModel, ModelRequest, ModelResponse};
 
 use crate::ModuleConfig;
 
