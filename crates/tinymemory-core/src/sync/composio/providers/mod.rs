@@ -41,6 +41,7 @@ mod types;
 pub mod user_scopes;
 
 pub mod catalogs;
+mod catalogs_compat;
 pub mod clickup;
 pub mod github;
 pub mod gmail;
