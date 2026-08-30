@@ -1,6 +1,5 @@
 //! Source reader trait and per-kind implementations.
 
-pub mod composio;
 pub mod conversation;
 pub mod folder;
 pub mod github;
@@ -30,15 +29,28 @@ pub trait SourceReader: Send + Sync {
     ) -> Result<SourceContent, String>;
 }
 
-/// Get the reader for a given source kind.
-pub fn reader_for(kind: &SourceKind) -> Box<dyn SourceReader> {
+/// Get the reader for a given source kind, if this crate has one.
+///
+/// `None` for [`SourceKind::Composio`]. The kind itself stays — records
+/// synced from a connected account are still stored, still queried, and still
+/// forgotten under it, and removing it would orphan every row already written.
+/// What left is the *reading*: an OAuth connector is reached with a credential
+/// this crate does not hold and must not, so the host fetches through
+/// `tinyconnectors` and hands the records here through
+/// [`crate::provider::MemorySourceSink`].
+///
+/// Returning `Option` rather than a stub reader that always errors is
+/// deliberate: a caller has to decide what to do about a kind it cannot read,
+/// and a stub would let it call and discover the same thing at runtime, once
+/// per item.
+pub fn reader_for(kind: &SourceKind) -> Option<Box<dyn SourceReader>> {
     match kind {
-        SourceKind::Composio => Box::new(composio::ComposioReader),
-        SourceKind::Conversation => Box::new(conversation::ConversationReader),
-        SourceKind::Folder => Box::new(folder::FolderReader),
-        SourceKind::GithubRepo => Box::new(github::GithubReader),
-        SourceKind::TwitterQuery => Box::new(twitter::TwitterReader),
-        SourceKind::RssFeed => Box::new(rss::RssReader::new()),
-        SourceKind::WebPage => Box::new(web_page::WebPageReader),
+        SourceKind::Composio => None,
+        SourceKind::Conversation => Some(Box::new(conversation::ConversationReader)),
+        SourceKind::Folder => Some(Box::new(folder::FolderReader)),
+        SourceKind::GithubRepo => Some(Box::new(github::GithubReader)),
+        SourceKind::TwitterQuery => Some(Box::new(twitter::TwitterReader)),
+        SourceKind::RssFeed => Some(Box::new(rss::RssReader::new())),
+        SourceKind::WebPage => Some(Box::new(web_page::WebPageReader)),
     }
 }
