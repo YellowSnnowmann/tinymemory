@@ -74,6 +74,12 @@ exclude = ["vendor", "crates/tinymemory-module", "worktrees"]
 [patch."https://github.com/tinyhumansai/tinymemory"]
 tinymemory-api = { path = "crates/tinymemory-api" }
 
+# TinyCortex pins TinyInference by git until it is published. Collapse that git
+# source onto the same checkout `tinymemory-core` resolves through crates.io so
+# both crates share one trait identity.
+[patch."https://github.com/tinyhumansai/tinyinference"]
+tinyinference = { path = "vendor/tinyinference/crates/tinyinference" }
+
 [patch.crates-io]
 tinycortex = { path = "vendor/tinycortex" }
 tinycortex-api = { path = "vendor/tinycortex/api" }
@@ -81,10 +87,6 @@ tinycortex-api = { path = "vendor/tinycortex/api" }
 # from TinyInference. It is not published, so standalone builds resolve the
 # version requirement to the pinned checkout here.
 tinyinference = { path = "vendor/tinyinference/crates/tinyinference" }
-# TinyCortex still names TinyAgents internally. That is an engine implementation
-# detail rather than a TinyMemory API dependency, so resolve it to TinyCortex's
-# own recursive pin instead of carrying a second top-level checkout.
-tinyagents = { path = "vendor/tinycortex/vendor/tinyagents" }
 
 [profile.release]
 # Cross-crate optimization and smaller, faster binaries for release builds.

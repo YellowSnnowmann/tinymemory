@@ -104,8 +104,7 @@ families answer — see the engine table under
 
 Run `git submodule update --init --recursive` after cloning. Nothing in the
 workspace builds without it — `tinymemory-core` names `tinyinference` and
-`tinycortex` by path through `vendor/`, while TinyCortex resolves its own
-recursive TinyAgents pin. An uninitialized checkout therefore fails at
+`tinycortex` by path through `vendor/`. An uninitialized checkout therefore fails at
 manifest resolution rather than at compile time, which reads as a confusing
 error.
 
@@ -135,8 +134,7 @@ without any `[patch]` entries.
 
 The remote recipe above works by git because the remote adapter reaches only
 published crates. The embedded engine does not: it pulls `tinycortex`,
-`tinycortex-api`, `tinyinference`, and TinyCortex's internal `tinyagents`, none
-of which are published, and
+`tinycortex-api` and `tinyinference`, none of which are published, and
 `tinycortex-api` takes `tinymemory-api` *by git*, which cargo will resolve as a
 second copy of a crate this workspace also provides by path. Patching that away
 needs the crates on disk, so the embedded path is a submodule dependency until
@@ -151,15 +149,16 @@ git -C vendor/tinymemory submodule update --init --recursive
 [dependencies]
 tinymemory = { path = "vendor/tinymemory", features = ["tinycortex"] }
 
-# All five are required. The first four resolve unpublished crates used by the
-# memory layer and embedded engine; the fifth collapses `tinycortex-api`'s git dependency on
+# All four are required. The first three resolve unpublished crates used by the
+# memory layer and embedded engine; the fourth collapses `tinycortex-api`'s git dependency on
 # `tinymemory-api` onto the copy in this tree — without it two distinct
 # `tinymemory_api::MemoryEntry` types exist and the seam stops type-checking.
 [patch.crates-io]
 tinycortex = { path = "vendor/tinymemory/vendor/tinycortex" }
 tinycortex-api = { path = "vendor/tinymemory/vendor/tinycortex/api" }
 tinyinference = { path = "vendor/tinymemory/vendor/tinyinference/crates/tinyinference" }
-tinyagents = { path = "vendor/tinymemory/vendor/tinycortex/vendor/tinyagents" }
+[patch."https://github.com/tinyhumansai/tinyinference"]
+tinyinference = { path = "vendor/tinymemory/vendor/tinyinference/crates/tinyinference" }
 [patch."https://github.com/tinyhumansai/tinymemory"]
 tinymemory-api = { path = "vendor/tinymemory/api" }
 ```

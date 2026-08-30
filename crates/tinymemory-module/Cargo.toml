@@ -92,9 +92,8 @@ tempfile = "3"
 
 # Its own table, because a patch table only applies from the workspace root being
 # built and this crate is now its own root — the parent workspace's identical
-# entries do not reach here. `tinycortex`, `tinyinference`, and TinyCortex's
-# internal `tinyagents` dependency are unpublished, so without these the
-# resolver goes to crates.io and fails.
+# entries do not reach here. `tinycortex` and `tinyinference` are unpublished,
+# so without these the resolver goes to crates.io and fails.
 #
 # The paths reach up out of this crate into the parent checkout's `vendor/`,
 # which is unusual but correct: these are the same submodules the parent builds
@@ -108,11 +107,13 @@ tempfile = "3"
 [patch."https://github.com/tinyhumansai/tinymemory"]
 tinymemory-api = { path = "../tinymemory-api" }
 
+[patch."https://github.com/tinyhumansai/tinyinference"]
+tinyinference = { path = "../../vendor/tinyinference/crates/tinyinference" }
+
 [patch.crates-io]
 tinycortex = { path = "../../vendor/tinycortex" }
 tinycortex-api = { path = "../../vendor/tinycortex/api" }
 tinyinference = { path = "../../vendor/tinyinference/crates/tinyinference" }
-tinyagents = { path = "../../vendor/tinycortex/vendor/tinyagents" }
 
 # Mirrors the root package's set. `unsafe_code = "forbid"` holds even though
 # `module_export!` emits `unsafe extern "C"` symbols: the macro's expansion
