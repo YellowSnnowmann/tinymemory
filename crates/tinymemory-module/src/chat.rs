@@ -89,10 +89,6 @@ struct BusChatModel {
 
 #[async_trait]
 impl ChatModel<()> for BusChatModel {
-    fn cache_identity(&self) -> Option<String> {
-        Some(format!("tinymemory-module-host:{}", self.role))
-    }
-
     async fn invoke(
         &self,
         _state: &(),
