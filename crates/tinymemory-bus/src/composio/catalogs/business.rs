@@ -1,7 +1,7 @@
 //! Curated catalogs — business toolkits: Shopify, Stripe, HubSpot,
 //! Salesforce, Airtable, Figma.
 
-use super::tool_scope::{CuratedTool, ToolScope};
+use crate::composio::scopes::{CuratedTool, ToolScope};
 
 // ── shopify ─────────────────────────────────────────────────────────
 pub const SHOPIFY_CURATED: &[CuratedTool] = &[

@@ -8,7 +8,7 @@
 //! through Composio's API, but their data is not pre-ingested into
 //! OpenHuman's memory tree.
 
-use super::tool_scope::{CuratedTool, ToolScope};
+use crate::composio::scopes::{CuratedTool, ToolScope};
 
 // ── outlook ─────────────────────────────────────────────────────────
 pub const OUTLOOK_CURATED: &[CuratedTool] = &[
@@ -576,5 +576,5 @@ pub const TODOIST_CURATED: &[CuratedTool] = &[
 ];
 
 #[cfg(test)]
-#[path = "catalogs_productivity_tests.rs"]
+#[path = "productivity_tests.rs"]
 mod tests;

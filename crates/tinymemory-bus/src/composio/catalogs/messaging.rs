@@ -1,7 +1,7 @@
 //! Curated catalogs — messaging toolkits: Slack, Discord, Telegram,
 //! WhatsApp, Microsoft Teams.
 
-use super::tool_scope::{CuratedTool, ToolScope};
+use crate::composio::scopes::{CuratedTool, ToolScope};
 
 // ── slack ───────────────────────────────────────────────────────────
 pub const SLACK_CURATED: &[CuratedTool] = &[

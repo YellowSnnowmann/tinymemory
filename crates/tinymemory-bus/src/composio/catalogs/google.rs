@@ -1,7 +1,7 @@
 //! Curated catalogs — Google toolkits: GoogleCalendar, GoogleDrive,
 //! GoogleDocs, GoogleSheets.
 
-use super::tool_scope::{CuratedTool, ToolScope};
+use crate::composio::scopes::{CuratedTool, ToolScope};
 
 // ── googlecalendar ──────────────────────────────────────────────────
 pub const GOOGLECALENDAR_CURATED: &[CuratedTool] = &[

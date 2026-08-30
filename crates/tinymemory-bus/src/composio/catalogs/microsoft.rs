@@ -13,7 +13,7 @@
 //! exist on the backend simply never appear in `composio_list_tools`,
 //! so over-shooting is harmless.
 
-use super::tool_scope::{CuratedTool, ToolScope};
+use crate::composio::scopes::{CuratedTool, ToolScope};
 
 // ── onedrive ────────────────────────────────────────────────────────
 pub const ONE_DRIVE_CURATED: &[CuratedTool] = &[
@@ -160,5 +160,5 @@ pub const EXCEL_CURATED: &[CuratedTool] = &[
 ];
 
 #[cfg(test)]
-#[path = "catalogs_microsoft_tests.rs"]
+#[path = "microsoft_tests.rs"]
 mod tests;

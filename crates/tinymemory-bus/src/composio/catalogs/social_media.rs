@@ -1,7 +1,7 @@
 //! Curated catalogs — social media / entertainment toolkits: Twitter,
 //! Spotify, YouTube.
 
-use super::tool_scope::{CuratedTool, ToolScope};
+use crate::composio::scopes::{CuratedTool, ToolScope};
 
 // ── twitter ─────────────────────────────────────────────────────────
 pub const TWITTER_CURATED: &[CuratedTool] = &[

@@ -1,6 +1,6 @@
 //! Curated catalog of Linear Composio actions.
 
-use crate::sync::composio::providers::tool_scope::{CuratedTool, ToolScope};
+use crate::composio::scopes::{CuratedTool, ToolScope};
 
 pub const LINEAR_CURATED: &[CuratedTool] = &[
     CuratedTool {
