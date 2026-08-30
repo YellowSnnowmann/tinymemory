@@ -1,4 +1,5 @@
 //! Tests for the surrounding module.
+#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 
 use super::*;
 
