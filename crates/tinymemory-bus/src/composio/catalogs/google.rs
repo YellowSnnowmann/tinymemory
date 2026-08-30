@@ -1,5 +1,5 @@
-//! Curated catalogs — Google toolkits: GoogleCalendar, GoogleDrive,
-//! GoogleDocs, GoogleSheets.
+//! Curated catalogs — Google toolkits: `GoogleCalendar`, `GoogleDrive`,
+//! `GoogleDocs`, `GoogleSheets`.
 
 use crate::composio::scopes::{CuratedTool, ToolScope};
 

@@ -1,5 +1,5 @@
 //! Curated catalogs — Microsoft personal-productivity toolkits:
-//! OneDrive (files) and Excel (spreadsheets).
+//! `OneDrive` (files) and Excel (spreadsheets).
 //!
 //! These toolkits are catalog-only: they don't ship a native
 //! `ComposioProvider` implementation (in `tinymemory-core`), so they have no

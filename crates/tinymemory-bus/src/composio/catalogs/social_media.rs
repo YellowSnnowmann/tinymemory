@@ -1,5 +1,5 @@
 //! Curated catalogs — social media / entertainment toolkits: Twitter,
-//! Spotify, YouTube.
+//! Spotify, `YouTube`.
 
 use crate::composio::scopes::{CuratedTool, ToolScope};
 
