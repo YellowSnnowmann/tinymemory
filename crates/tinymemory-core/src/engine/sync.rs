@@ -361,36 +361,6 @@ pub async fn run_source_pipeline(
 
 
 
-/// Delegates to the engine-free pipelines (#18 §B1); kept because OpenHuman's
-/// backfill binary reaches it through the engine shim path.
-pub async fn run_gmail_backfill(
-    connection_id: &str,
-    query: &str,
-    max_pages: usize,
-    page_size: usize,
-    config: &Config,
-) -> Result<SyncOutcome, SourcePipelineFailure> {
-    let outcome = crate::sync::pipelines::host::run_gmail_backfill(
-        connection_id,
-        query,
-        max_pages,
-        page_size,
-        config,
-    )
-    .await
-    .map_err(|failure| SourcePipelineFailure {
-        message: failure.message,
-        actions_called: failure.actions_called,
-        provider_cost_usd: failure.provider_cost_usd,
-    })?;
-    Ok(SyncOutcome {
-        records_ingested: outcome.records_ingested,
-        more_pending: outcome.more_pending,
-        actions_called: outcome.actions_called,
-        provider_cost_usd: outcome.provider_cost_usd,
-        note: outcome.note,
-    })
-}
 
 fn build_pipeline(
     source: &MemorySourceEntry,

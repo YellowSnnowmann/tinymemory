@@ -66,7 +66,7 @@ pub use seal::{
 pub use summariser::HostSummariser;
 pub use sync::{
     estimate_cost_usd, needs_rebuild, raw_coverage, read_audit_log,
-    rebuild_tree_from_raw, run_github_sync, run_gmail_backfill, run_source_pipeline,
+    rebuild_tree_from_raw, run_github_sync, run_source_pipeline,
     sync_context, HostSyncAdapter, RawCoverage, RawFileRef, RealCostAccumulator, RebuildOutcome,
     SourcePipelineFailure, HOST_SYNC_STATE_NAMESPACE,
 };
