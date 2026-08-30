@@ -2,7 +2,7 @@
 //! OneDrive (files) and Excel (spreadsheets).
 //!
 //! These toolkits are catalog-only: they don't ship a native
-//! [`super::ComposioProvider`] implementation, so they have no
+//! `ComposioProvider` implementation (in `tinymemory-core`), so they have no
 //! user-profile fetch, no initial/periodic sync, no trigger webhooks,
 //! and no memory ingestion. Connecting them via the UI lets the agent
 //! invoke the listed actions through Composio's API, but their data
