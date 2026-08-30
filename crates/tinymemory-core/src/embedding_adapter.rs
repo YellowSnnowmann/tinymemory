@@ -210,9 +210,7 @@ impl EmbeddingModel for LongContextOllamaEmbeddingModel {
             )));
         }
         let payload: OllamaResponse = response.json().await.map_err(|error| {
-            tinyinference::Error::Embedding(format!(
-                "ollama embed response parse failed: {error}"
-            ))
+            tinyinference::Error::Embedding(format!("ollama embed response parse failed: {error}"))
         })?;
         self.validate_vectors(texts.len(), &payload.embeddings)?;
         Ok(payload.embeddings)

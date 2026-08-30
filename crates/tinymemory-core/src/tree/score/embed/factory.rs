@@ -37,9 +37,9 @@ use std::time::Duration;
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use super::{Embedder, InertEmbedder, ProviderEmbedder, EMBEDDING_DIM};
+use crate::embedding_adapter::LongContextOllamaEmbeddingModel;
 use crate::embedding_host::require_embedding_host;
 use crate::Config;
-use crate::embedding_adapter::LongContextOllamaEmbeddingModel;
 
 /// Cheap heuristic for "is a backend session reachable?" — the cloud
 /// embedder needs one and bails on first embed call without it. We use
@@ -348,12 +348,7 @@ fn build_ollama_embedder(endpoint: &str, model: &str, timeout_ms: u64) -> Result
         .connect_timeout(timeout)
         .build()
         .context("build Ollama embeddings HTTP client")?;
-    let model = LongContextOllamaEmbeddingModel::try_new(
-        endpoint,
-        model,
-        EMBEDDING_DIM,
-        client,
-    )?;
+    let model = LongContextOllamaEmbeddingModel::try_new(endpoint, model, EMBEDDING_DIM, client)?;
     Ok(ProviderEmbedder::new(
         crate::embedding_adapter::TinyInferenceEmbeddingProvider::boxed(model),
         "ollama",

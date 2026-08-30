@@ -108,10 +108,7 @@ fn embedding_settings_local_with_empty_model_uses_default() {
         tinyinference::embeddings::DEFAULT_OLLAMA_MODEL,
         "empty model ID must fall back to default Ollama model"
     );
-    assert_eq!(
-        dims,
-        tinyinference::embeddings::DEFAULT_OLLAMA_DIMENSIONS
-    );
+    assert_eq!(dims, tinyinference::embeddings::DEFAULT_OLLAMA_DIMENSIONS);
 }
 
 #[test]
