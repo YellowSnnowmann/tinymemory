@@ -7,7 +7,7 @@
 //! toolkit: reads and writes on by default, destructive and permission-changing
 //! actions off until explicitly opted into.
 //!
-//! # Why the classification is here and the catalogs are not
+//! # Why the classification (and now the catalogs) live here
 //!
 //! Two different consumers ask the same question from opposite sides of the
 //! module boundary. The host asks it when it renders the integrations panel and
