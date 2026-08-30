@@ -65,7 +65,6 @@ pub const GITHUB_CURATED: &[CuratedTool] = &[
         slug: "GITHUB_GET_A_PULL_REQUEST",
         scope: ToolScope::Read,
     },
-    // CuratedTool { slug: "GITHUB_CHECK_IF_PULL_REQUEST_HAS_BEEN_MERGED", scope: ToolScope::Read },
     // ── Read: branches / commits ────────────────────────────────────
     CuratedTool {
         slug: "GITHUB_LIST_BRANCHES",
@@ -83,14 +82,6 @@ pub const GITHUB_CURATED: &[CuratedTool] = &[
         slug: "GITHUB_GET_A_COMMIT",
         scope: ToolScope::Read,
     },
-    // CuratedTool { slug: "GITHUB_COMPARE_TWO_COMMITS", scope: ToolScope::Read },
-    // // ── Read: contents / releases / gists ───────────────────────────
-    // CuratedTool { slug: "GITHUB_GET_REPOSITORY_CONTENTS", scope: ToolScope::Read },
-    // CuratedTool { slug: "GITHUB_LIST_RELEASES", scope: ToolScope::Read },
-    // CuratedTool { slug: "GITHUB_LIST_GISTS", scope: ToolScope::Read },
-    // // ── Read: workflows ─────────────────────────────────────────────
-    // CuratedTool { slug: "GITHUB_LIST_WORKFLOWS", scope: ToolScope::Read },
-    // CuratedTool { slug: "GITHUB_LIST_WORKFLOW_RUNS", scope: ToolScope::Read },
     // ── Write: repos / contents ─────────────────────────────────────
     CuratedTool {
         slug: "GITHUB_CREATE_A_REPOSITORY_FOR_THE_AUTHENTICATED_USER",
@@ -153,13 +144,10 @@ pub const GITHUB_CURATED: &[CuratedTool] = &[
         slug: "GITHUB_CREATE_A_REVIEW_COMMENT_FOR_A_PULL_REQUEST",
         scope: ToolScope::Write,
     },
-    // // ── Write: releases / gists / workflows ─────────────────────────
-    // CuratedTool { slug: "GITHUB_CREATE_A_RELEASE", scope: ToolScope::Write },
     CuratedTool {
         slug: "GITHUB_CREATE_A_GIST",
         scope: ToolScope::Write,
     },
-    // CuratedTool { slug: "GITHUB_CREATE_WORKFLOW_DISPATCH", scope: ToolScope::Write },
     // ── Admin: destructive / permission-changing ────────────────────
     CuratedTool {
         slug: "GITHUB_DELETE_A_REPOSITORY",
