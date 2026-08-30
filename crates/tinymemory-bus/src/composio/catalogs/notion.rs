@@ -2,6 +2,7 @@
 
 use crate::composio::scopes::{CuratedTool, ToolScope};
 
+/// The curated action catalog for the `notion` toolkit.
 pub const NOTION_CURATED: &[CuratedTool] = &[
     // ── Read: search & fetch ────────────────────────────────────────
     CuratedTool {

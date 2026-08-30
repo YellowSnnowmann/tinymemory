@@ -7,6 +7,7 @@
 
 use crate::composio::scopes::{CuratedTool, ToolScope};
 
+/// The curated action catalog for the `github` toolkit.
 pub const GITHUB_CURATED: &[CuratedTool] = &[
     // ── Read: user / repos ──────────────────────────────────────────
     CuratedTool {

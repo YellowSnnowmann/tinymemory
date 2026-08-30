@@ -6,6 +6,7 @@
 
 use crate::composio::scopes::{CuratedTool, ToolScope};
 
+/// The curated action catalog for the `gmail` toolkit.
 pub const GMAIL_CURATED: &[CuratedTool] = &[
     // ── Read: messages & threads ────────────────────────────────────
     CuratedTool {

@@ -11,6 +11,7 @@
 use crate::composio::scopes::{CuratedTool, ToolScope};
 
 // ── outlook ─────────────────────────────────────────────────────────
+/// The curated action catalog for the `outlook` toolkit.
 pub const OUTLOOK_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "OUTLOOK_GET_MESSAGE",
@@ -115,6 +116,7 @@ pub const OUTLOOK_CURATED: &[CuratedTool] = &[
 // matches how `gmail` / `notion` / `clickup` are wired.
 
 // ── jira ────────────────────────────────────────────────────────────
+/// The curated action catalog for the `jira` toolkit.
 pub const JIRA_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "JIRA_GET_ISSUE",
@@ -215,6 +217,7 @@ pub const JIRA_CURATED: &[CuratedTool] = &[
 ];
 
 // ── trello ──────────────────────────────────────────────────────────
+/// The curated action catalog for the `trello` toolkit.
 pub const TRELLO_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "TRELLO_GET_BOARDS_BY_ID_BOARD",
@@ -307,6 +310,7 @@ pub const TRELLO_CURATED: &[CuratedTool] = &[
 ];
 
 // ── asana ───────────────────────────────────────────────────────────
+/// The curated action catalog for the `asana` toolkit.
 pub const ASANA_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "ASANA_GET_A_TASK",
@@ -411,6 +415,7 @@ pub const ASANA_CURATED: &[CuratedTool] = &[
 ];
 
 // ── dropbox ─────────────────────────────────────────────────────────
+/// The curated action catalog for the `dropbox` toolkit.
 pub const DROPBOX_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "DROPBOX_GET_METADATA",
@@ -479,6 +484,7 @@ pub const DROPBOX_CURATED: &[CuratedTool] = &[
 ];
 
 // ── todoist ─────────────────────────────────────────────────────────
+/// The curated action catalog for the `todoist` toolkit.
 pub const TODOIST_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "TODOIST_GET_TASK",

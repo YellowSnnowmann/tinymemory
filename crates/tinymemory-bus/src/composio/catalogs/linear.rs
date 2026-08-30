@@ -2,6 +2,7 @@
 
 use crate::composio::scopes::{CuratedTool, ToolScope};
 
+/// The curated action catalog for the `linear` toolkit.
 pub const LINEAR_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "LINEAR_LIST_LINEAR_USERS",

@@ -4,6 +4,7 @@
 use crate::composio::scopes::{CuratedTool, ToolScope};
 
 // ── twitter ─────────────────────────────────────────────────────────
+/// The curated action catalog for the `twitter` toolkit.
 pub const TWITTER_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "TWITTER_RECENT_SEARCH",
@@ -92,6 +93,7 @@ pub const TWITTER_CURATED: &[CuratedTool] = &[
 ];
 
 // ── spotify ─────────────────────────────────────────────────────────
+/// The curated action catalog for the `spotify` toolkit.
 pub const SPOTIFY_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "SPOTIFY_GET_CURRENT_USER_S_PROFILE",
@@ -168,6 +170,7 @@ pub const SPOTIFY_CURATED: &[CuratedTool] = &[
 ];
 
 // ── youtube ─────────────────────────────────────────────────────────
+/// The curated action catalog for the `youtube` toolkit.
 pub const YOUTUBE_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "YOUTUBE_SEARCH_YOU_TUBE",

@@ -16,6 +16,7 @@
 use crate::composio::scopes::{CuratedTool, ToolScope};
 
 // ── onedrive ────────────────────────────────────────────────────────
+/// The curated action catalog for the `one_drive` toolkit.
 pub const ONE_DRIVE_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "ONE_DRIVE_GET_FILE",
@@ -84,6 +85,7 @@ pub const ONE_DRIVE_CURATED: &[CuratedTool] = &[
 ];
 
 // ── excel ───────────────────────────────────────────────────────────
+/// The curated action catalog for the `excel` toolkit.
 pub const EXCEL_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "EXCEL_GET_WORKBOOK",

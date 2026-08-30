@@ -8,6 +8,7 @@
 
 use crate::composio::scopes::{CuratedTool, ToolScope};
 
+/// The curated action catalog for the `clickup` toolkit.
 pub const CLICKUP_CURATED: &[CuratedTool] = &[
     // ── Read: identity ─────────────────────────────────────────────
     CuratedTool {
