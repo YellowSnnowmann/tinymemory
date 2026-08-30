@@ -370,11 +370,6 @@ pub async fn run_source_pipeline(
         })
 }
 
-
-
-
-
-
 fn build_pipeline(
     source: &MemorySourceEntry,
     _config: &Config,

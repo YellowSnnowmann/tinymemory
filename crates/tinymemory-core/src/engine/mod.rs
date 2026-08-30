@@ -65,10 +65,9 @@ pub use seal::{
 };
 pub use summariser::HostSummariser;
 pub use sync::{
-    estimate_cost_usd, needs_rebuild, raw_coverage, read_audit_log,
-    rebuild_tree_from_raw, run_github_sync, run_source_pipeline,
-    sync_context, HostSyncAdapter, RawCoverage, RawFileRef, RealCostAccumulator, RebuildOutcome,
-    SourcePipelineFailure, HOST_SYNC_STATE_NAMESPACE,
+    estimate_cost_usd, needs_rebuild, raw_coverage, read_audit_log, rebuild_tree_from_raw,
+    run_github_sync, run_source_pipeline, sync_context, HostSyncAdapter, RawCoverage, RawFileRef,
+    RealCostAccumulator, RebuildOutcome, SourcePipelineFailure, HOST_SYNC_STATE_NAMESPACE,
 };
 // The audit type, under the seam path OpenHuman already names
 // (`memory::tinycortex::SyncAuditEntry` embeds it in an RPC response type).

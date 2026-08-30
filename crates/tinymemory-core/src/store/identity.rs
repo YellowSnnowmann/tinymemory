@@ -102,7 +102,6 @@ pub fn canonicalize(kind: IdentityKind, raw: &str) -> Option<String> {
     })
 }
 
-
 /// Cross-toolkit variant — matches against every connected provider's
 /// rows of this kind. Used for marking memory-tree entity rows: an email
 /// in a Slack message that matches the user's Gmail address is still
