@@ -4,7 +4,7 @@ publish = false
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
-license = "MIT"
+license = "GPL-3.0-only"
 description = "Local HTTP + web UI harness for exercising TinyMemory engines by hand"
 
 [[bin]]

@@ -4,7 +4,7 @@ publish = false
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.96"
-license = "MIT"
+license = "GPL-3.0-only"
 description = "HTTP adapters for self-hosted Supermemory, Mem0, and Cognee"
 repository = "https://github.com/tinyhumansai/tinymemory"
 

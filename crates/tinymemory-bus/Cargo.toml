@@ -6,7 +6,7 @@ publish = false
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.96"
-license = "MIT"
+license = "GPL-3.0-only"
 repository = "https://github.com/tinyhumansai/tinymemory"
 description = "The TinyBus wire contract for the TinyMemory module: member names, payload types, and typed calls"
 
