@@ -1,12 +1,7 @@
 //! Tests for the surrounding module.
 
-use super::{
-    build_pipeline, run_composio_connection, run_composio_connection_with_budgets,
-    run_gmail_backfill, run_slack_search_backfill, run_source_pipeline,
-};
+use super::{build_pipeline, run_source_pipeline};
 use crate::sources::MemorySourceEntry;
-use crate::sync::composio::{get_composio_sync_provider, init_default_composio_sync_providers};
-use crate::sync::pipelines::host::{is_composio_toolkit_syncable, syncable_composio_toolkits};
 
 /// The context the production path used to build inline; kept here since
 /// `run_source_pipeline_core` took over that call site with a caller-held
@@ -90,25 +85,6 @@ async fn adapter_state_and_document_seams_round_trip_locally() {
             .expect("get engine state"),
         Some(value.clone())
     );
-    crate::sync::composio::providers::sync_state::SyncStateStore::set(
-        &adapter,
-        "host-state",
-        "slack",
-        &value,
-    )
-    .await
-    .expect("set host state");
-    assert_eq!(
-        crate::sync::composio::providers::sync_state::SyncStateStore::get(
-            &adapter,
-            "host-state",
-            "slack",
-        )
-        .await
-        .expect("get host state"),
-        Some(value)
-    );
-
     SkillDocSink::store(
         &adapter,
         SkillDocument {
@@ -305,25 +281,21 @@ fn pipeline_builder_covers_every_tree_coupled_source_kind() {
 }
 
 #[tokio::test]
-async fn composio_validation_reports_missing_fields_without_usage() {
+async fn composio_sources_are_refused_by_this_pipeline() {
+    // Composio sources are read by the connector module, not the engine: this
+    // seam must refuse rather than half-dispatch, regardless of which fields
+    // are present (openhuman#18 connector extraction).
     let config = tinymemory_api::host::test_support::TestHostConfig::default();
-    let missing_toolkit = source(
+    let source = source(
         "composio",
-        serde_json::json!({"connection_id": "connection-1"}),
+        serde_json::json!({"toolkit": "gmail", "connection_id": "connection-1"}),
     );
-    let failure = super::run_source_pipeline(&missing_toolkit, &config)
+    let failure = super::run_source_pipeline(&source, &config)
         .await
-        .expect_err("toolkit is required");
-    assert!(failure.message.contains("missing toolkit"));
+        .expect_err("composio sources are refused, not dispatched");
+    assert!(failure.message.contains("connector module"));
     assert_eq!(failure.actions_called, 0);
     assert_eq!(failure.provider_cost_usd, 0.0);
-
-    let missing_connection = source("composio", serde_json::json!({"toolkit": "gmail"}));
-    let failure = super::run_source_pipeline(&missing_connection, &config)
-        .await
-        .expect_err("connection is required");
-    assert!(failure.message.contains("missing connection_id"));
-    assert_eq!(failure.actions_called, 0);
 }
 
 #[tokio::test]
@@ -358,36 +330,6 @@ async fn raw_archive_and_stage_helpers_cover_empty_local_state() {
 }
 
 #[tokio::test]
-async fn public_composio_wrappers_fail_before_transport_and_preserve_zero_usage() {
-    let (_tmp, config, _memory) = memory_fixture();
-    for result in [
-        run_composio_connection("gmail", "connection-missing-auth", &config).await,
-        run_composio_connection_with_budgets(
-            "slack",
-            "connection-missing-auth",
-            &config,
-            Some(7),
-            Some(2),
-        )
-        .await,
-        run_slack_search_backfill("connection-missing-auth", 14, &config).await,
-        run_gmail_backfill(
-            "connection-missing-auth",
-            "after:2024/01/01",
-            2,
-            25,
-            &config,
-        )
-        .await,
-    ] {
-        let failure = result.unwrap_err();
-        assert_eq!(failure.actions_called, 0);
-        assert_eq!(failure.provider_cost_usd, 0.0);
-        assert!(!failure.message.is_empty());
-    }
-}
-
-#[tokio::test]
 async fn source_pipeline_invalid_local_input_fails_without_provider_usage() {
     let (_tmp, config, _memory) = memory_fixture();
     let invalid = source("web_page", serde_json::json!({}));
@@ -395,67 +337,6 @@ async fn source_pipeline_invalid_local_input_fails_without_provider_usage() {
     assert_eq!(failure.actions_called, 0);
     assert_eq!(failure.provider_cost_usd, 0.0);
     assert!(!failure.message.is_empty());
-}
-
-/// The advertised set (`memory_sources.supported_toolkits`, sourced from the
-/// provider registry) and the syncable set (`build_pipeline`) must not
-/// diverge: a toolkit that is advertised but has no pipeline reports ACTIVE
-/// and then silently never ingests — the exact defect of #4957.
-///
-/// Both directions are asserted against an explicit built-in slug set. The
-/// provider registry is process-global and sibling tests register throwaway
-/// providers into it without unregistering, so walking it directly would be
-/// order-flaky; pinning the built-in set keeps this deterministic.
-#[test]
-fn advertised_and_syncable_toolkit_sets_cannot_diverge() {
-    init_default_composio_sync_providers();
-
-    // Every syncable toolkit must have a registered provider — otherwise it
-    // could never be advertised or auto-registered in the first place.
-    for &slug in syncable_composio_toolkits() {
-        assert!(
-            get_composio_sync_provider(slug).is_some(),
-            "syncable toolkit `{slug}` has no registered memory-sync provider"
-        );
-    }
-
-    // Every built-in provider shipped by `init_default_composio_sync_providers`
-    // must be syncable. This is the #4957 direction: advertising a provider
-    // that `build_pipeline` rejects is the silent failure we guard against.
-    //
-    // We pin the built-in slug set explicitly rather than walking
-    // `all_composio_sync_providers()`: that registry is process-global and
-    // sibling tests register throwaway providers into it that they never
-    // unregister (e.g. `provideronly` in composio/tools_tests.rs, `stub-no-active`
-    // in composio/identity.rs), so a raw registry walk fails nondeterministically
-    // depending on test execution order. A new built-in toolkit must be added to
-    // this list, to `syncable_composio_toolkits`, and to `build_pipeline` together
-    // — the assert_eq below fails loudly if the first two ever drift apart.
-    const BUILTIN_SYNC_PROVIDERS: &[&str] =
-        &["clickup", "github", "gmail", "linear", "notion", "slack"];
-
-    let mut builtin = BUILTIN_SYNC_PROVIDERS.to_vec();
-    builtin.sort_unstable();
-    let mut syncable = syncable_composio_toolkits().to_vec();
-    syncable.sort_unstable();
-    assert_eq!(
-        builtin, syncable,
-        "the built-in provider set and syncable set diverged — a provider is \
-         advertised without a matching `build_pipeline` arm, or vice versa (#4957)"
-    );
-
-    for &slug in BUILTIN_SYNC_PROVIDERS {
-        assert!(
-            get_composio_sync_provider(slug).is_some(),
-            "built-in provider `{slug}` is not registered by \
-             init_default_composio_sync_providers"
-        );
-        assert!(
-            is_composio_toolkit_syncable(slug),
-            "built-in provider `{slug}` is advertised but has no build_pipeline arm — \
-             it would report ACTIVE and silently fail to sync (#4957)"
-        );
-    }
 }
 
 /// Behavioural regression for #4957: an unsupported Composio toolkit is
@@ -493,19 +374,6 @@ fn build_pipeline_refuses_composio_sources() {
         err.contains("does not build composio pipelines"),
         "expected the composio refusal, got: {err}"
     );
-}
-
-/// Locks the reported prod failures (googlecalendar / googlesheets) as
-/// non-syncable, and pins case-insensitive/trimming behaviour.
-#[test]
-fn is_composio_toolkit_syncable_classifies_known_slugs() {
-    assert!(!is_composio_toolkit_syncable("googlecalendar"));
-    assert!(!is_composio_toolkit_syncable("googlesheets"));
-    assert!(!is_composio_toolkit_syncable("discord"));
-    assert!(!is_composio_toolkit_syncable(""));
-    assert!(is_composio_toolkit_syncable("gmail"));
-    assert!(is_composio_toolkit_syncable("Gmail"));
-    assert!(is_composio_toolkit_syncable("  slack "));
 }
 
 /// Regression for #5473: a Composio connector sync must feed the memory tree,

@@ -18,7 +18,7 @@ use std::sync::Mutex;
 use tinymemory_api::host::test_support::TestHostConfig;
 
 use crate::sources::types::{MemorySourceEntry, SourceKind};
-use crate::sync::composio::ComposioUsage;
+use crate::sync::usage::ProviderUsage;
 use crate::sync_events::{emit_sync_stage, MemorySyncStage, MemorySyncTrigger};
 use crate::Config;
 
@@ -86,7 +86,7 @@ pub async fn sync_source(source: MemorySourceEntry, config: Arc<Config>) -> Resu
             let sync_start = std::time::Instant::now();
             // Composio billable-action usage for this run, populated by
             // `sync_composio` (#3111). Stays zero for non-Composio kinds.
-            let mut composio_usage = ComposioUsage::default();
+            let mut composio_usage = ProviderUsage::default();
             // Every kind runs through `run_source_pipeline_core`, whose
             // outcome carries `tree_ingest_failures` — the count of items that
             // were fetched-and-stored but never reached the memory tree. The

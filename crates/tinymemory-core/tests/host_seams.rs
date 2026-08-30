@@ -24,10 +24,6 @@ mod chat_host {
     pub use tinymemory_core::chat_host::*;
 }
 
-mod composio_host {
-    pub use tinymemory_core::composio_host::*;
-}
-
 type Config = tinymemory_core::Config;
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -265,24 +261,15 @@ async fn nlp_host_reports_unwired_then_returns_host_response() {
 async fn required_host_seams_fail_loudly_when_unwired() {
     let _guard = seam_guard().await;
     let chat = crate::chat_host::chat_host();
-    let composio = crate::composio_host::composio_host();
     let _chat_restore = Restore::new(move || match chat {
         Some(host) => crate::chat_host::set_chat_host(host),
         None => crate::chat_host::clear_chat_host(),
     });
-    let _composio_restore = Restore::new(move || match composio {
-        Some(host) => crate::composio_host::set_composio_host(host),
-        None => crate::composio_host::clear_composio_host(),
-    });
     crate::chat_host::clear_chat_host();
-    crate::composio_host::clear_composio_host();
 
     assert!(crate::chat_host::require_chat_host()
         .expect_err("chat host must be required")
         .contains("no ChatHost installed"));
-    assert!(crate::composio_host::require_composio_host()
-        .expect_err("Composio host must be required")
-        .contains("no ComposioHost installed"));
     let config = TestHostConfig::default();
     assert_eq!(
         crate::chat_host::provider_for_role("memory", &config),
@@ -292,6 +279,4 @@ async fn required_host_seams_fail_loudly_when_unwired() {
         crate::chat_host::summarizer_available(&config),
         (false, "no chat host installed — summarisation cannot run")
     );
-    assert!(!crate::composio_host::is_available(&config));
-    assert_eq!(crate::composio_host::api_key(&config), None);
 }

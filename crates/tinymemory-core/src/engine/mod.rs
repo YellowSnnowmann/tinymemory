@@ -65,11 +65,9 @@ pub use seal::{
 };
 pub use summariser::HostSummariser;
 pub use sync::{
-    estimate_cost_usd, load_composio_sync_state, needs_rebuild, raw_coverage, read_audit_log,
-    rebuild_tree_from_raw, run_composio_connection, run_composio_connection_with_budgets,
-    run_github_sync, run_gmail_backfill, run_slack_search_backfill, run_source_pipeline,
-    sync_context, HostSyncAdapter, RawCoverage, RawFileRef, RealCostAccumulator, RebuildOutcome,
-    SourcePipelineFailure, HOST_SYNC_STATE_NAMESPACE,
+    estimate_cost_usd, needs_rebuild, raw_coverage, read_audit_log, rebuild_tree_from_raw,
+    run_github_sync, run_source_pipeline, sync_context, HostSyncAdapter, RawCoverage, RawFileRef,
+    RealCostAccumulator, RebuildOutcome, SourcePipelineFailure, HOST_SYNC_STATE_NAMESPACE,
 };
 // Crate-private seam for `crate::sources::sync` (openhuman#5820); not host surface.
 pub(crate) use sync::run_source_pipeline_core;

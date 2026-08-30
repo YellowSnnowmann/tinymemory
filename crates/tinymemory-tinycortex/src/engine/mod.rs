@@ -2392,20 +2392,16 @@ impl MemoryProvider for TinycortexProvider {
 // agrees only while the field *names* agree on both sides, and it fails at
 // runtime rather than at compile time when they stop.
 
-/// Toolkits with no native pipeline are refused before anything is dispatched.
-///
-/// The pipeline builder refuses them too, but as a `PipelineFailure` carrying a
-/// message — and by the time it does, this adapter can no longer tell "you
-/// asked for a provider that does not exist" apart from "the provider failed".
-/// The contract promises [`MemoryError::Invalid`] for the first, and on a call
-/// that costs money the difference decides whether a caller retries.
-fn ensure_syncable_toolkit(toolkit: &str) -> Result<(), MemoryError> {
-    if tinymemory_core::sync::pipelines::host::is_composio_toolkit_syncable(toolkit) {
-        return Ok(());
-    }
-    Err(MemoryError::Invalid(format!(
-        "memory sync has no pipeline for toolkit '{toolkit}'"
-    )))
+/// Composio connections are no longer dispatched from an in-process
+/// pipeline: reaching a connected account needs a credential this crate does
+/// not hold and must not. The host fetches through the `tinyconnectors`
+/// module and hands the records back through
+/// `MemorySourceSink::accept_source_items`, so every toolkit-keyed entry
+/// point below refuses rather than dispatching.
+fn refuse_composio_dispatch(action: &str) -> MemoryError {
+    MemoryError::Invalid(format!(
+        "{action} is synced through the connector module, not this engine"
+    ))
 }
 
 /// Carry one audit row across as the contract's own shape.
@@ -2473,37 +2469,10 @@ impl MemorySourceSync for TinycortexProvider {
     async fn run_connection_sync(
         &self,
         toolkit: &str,
-        connection_id: &str,
+        _connection_id: &str,
     ) -> Result<SyncRunOutcome, MemoryError> {
-        ensure_syncable_toolkit(toolkit)?;
-        // The registry lookup, the per-source budgets and the pipeline dispatch
-        // all happen inside this call — which is why the contract carries no
-        // budget arguments: they are already recorded against the source.
-        let outcome = tinymemory_core::tinycortex::run_composio_connection(
-            toolkit,
-            connection_id,
-            &self.config,
-        )
-        .await
-        .map_err(|failure| {
-            // The usage travels in the message rather than being dropped: a run
-            // that failed after calling four provider actions and spending real
-            // money has to say so somewhere, and `IngestOutcome`-style partial
-            // success is not available on an error path.
-            MemoryError::Other(anyhow::anyhow!(
-                "sync {toolkit} connection: {} (actions_called={}, provider_cost_usd={})",
-                failure.message,
-                failure.actions_called,
-                failure.provider_cost_usd
-            ))
-        })?;
-        Ok(SyncRunOutcome {
-            records_ingested: outcome.records_ingested,
-            more_pending: outcome.more_pending,
-            actions_called: outcome.actions_called,
-            provider_cost_usd: outcome.provider_cost_usd,
-            note: outcome.note,
-        })
+        let _ = toolkit;
+        Err(refuse_composio_dispatch("a composio connection"))
     }
 
     async fn run_source_sync(&self, source_id: &str) -> Result<SyncRunOutcome, MemoryError> {
@@ -2544,99 +2513,30 @@ impl MemorySourceSync for TinycortexProvider {
     async fn bootstrap_connection(
         &self,
         toolkit: &str,
-        connection_id: &str,
+        _connection_id: &str,
     ) -> Result<(), MemoryError> {
-        use tinymemory_core::sync::composio::providers::{get_provider, ProviderContext};
-
-        // Same gate as `run_connection_sync`, and deliberately before the
-        // provider lookup: a toolkit with no pipeline cannot bootstrap into
-        // anything a later sync would read, so reporting it here names the
-        // real problem rather than "no provider".
-        ensure_syncable_toolkit(toolkit)?;
-
-        let provider = get_provider(toolkit).ok_or_else(|| {
-            MemoryError::Invalid(format!("no composio provider registered for '{toolkit}'"))
-        })?;
-
-        // `from_config` answers `None` when no Composio client resolves in
-        // either mode — the not-signed-in case. That is `Invalid` rather than a
-        // silent `Ok`: a caller that just authorised a connection and gets a
-        // success back would believe the profile was fetched.
-        let ctx = ProviderContext::from_config(
-            self.config.to_arc(),
-            toolkit,
-            Some(connection_id.to_string()),
-        )
-        .ok_or_else(|| {
-            MemoryError::Invalid(format!(
-                "no viable composio client for '{toolkit}'; connection {connection_id} \
-                 cannot bootstrap"
-            ))
-        })?;
-
-        // `max_items` / `sync_depth_days` are left at their defaults on
-        // purpose. They cap how much a *sync* walks; a bootstrap fetches one
-        // profile and registers what the provider needs, and giving it a walk
-        // budget would imply it walks.
-        provider.on_connection_created(&ctx).await.map_err(|error| {
-            MemoryError::Other(anyhow::anyhow!(
-                "bootstrap {toolkit} connection {connection_id}: {error}"
-            ))
-        })
+        let _ = toolkit;
+        Err(refuse_composio_dispatch(
+            "bootstrapping a composio connection",
+        ))
     }
 
-    async fn is_toolkit_syncable(&self, toolkit: &str) -> Result<bool, MemoryError> {
-        // The same predicate `ensure_syncable_toolkit` gates on, exposed rather
-        // than inferred: a caller that learned this from a failed sync would
-        // already have registered the source it should not have.
-        Ok(tinymemory_core::sync::pipelines::host::is_composio_toolkit_syncable(toolkit))
+    async fn is_toolkit_syncable(&self, _toolkit: &str) -> Result<bool, MemoryError> {
+        // No toolkit has an in-process pipeline any more: every composio
+        // toolkit is now synced through the connector module, which this
+        // contract entry point does not reach into.
+        Ok(false)
     }
 
     async fn source_sync_state(
         &self,
         toolkit: &str,
-        connection_id: &str,
+        _connection_id: &str,
     ) -> Result<Option<SourceSyncState>, MemoryError> {
-        use tinymemory_core::sync::composio::providers::sync_state::{SyncState, STATE_NAMESPACE};
-
-        // Read the row rather than calling `SyncState::load`, which materialises
-        // a fresh default when nothing is persisted. That default is right for a
-        // *run* — it is the state a first sync starts from — and wrong here: the
-        // contract distinguishes "never synced" from "synced and holding no
-        // cursor", and `load` cannot.
-        //
-        // The namespace and the key come from the engine's own constant and its
-        // own `key`, so this read cannot address a different row than the writes
-        // do; a literal here would be a second spelling of a durable key.
-        let key = SyncState::key(toolkit, connection_id);
-        let stored = self
-            .client
-            .kv_get(Some(STATE_NAMESPACE), &key)
-            .await
-            .map_err(|error| Self::other("read composio sync state", error))?;
-        let Some(stored) = stored else {
-            return Ok(None);
-        };
-        let state: SyncState = serde_json::from_value(stored)
-            .map_err(|error| Self::other("decode composio sync state", error))?;
-
-        // `remaining()` applies the engine's own day-rollover rule, so a budget
-        // last written yesterday reads as fully available today. Deriving the
-        // used count from it rather than from `requests_used` keeps that rule in
-        // one place — a second date comparison here would show yesterday's spend
-        // as today's the moment the two disagreed about what a day is.
-        let limit = state.daily_budget.limit;
-        let used = limit.saturating_sub(state.daily_budget.remaining());
-        Ok(Some(SourceSyncState {
-            toolkit: state.toolkit,
-            connection_id: state.connection_id,
-            cursor: state.cursor,
-            synced_item_count: u64::try_from(state.synced_ids.len()).unwrap_or(u64::MAX),
-            last_seen_id: state.last_seen_id,
-            last_sync_at_ms: state.last_sync_at_ms,
-            daily_requests_used: used,
-            daily_request_limit: limit,
-        }))
+        let _ = toolkit;
+        Err(refuse_composio_dispatch(
+            "reading a composio connection's sync state",
+        ))
     }
 
     async fn sync_audit_log(

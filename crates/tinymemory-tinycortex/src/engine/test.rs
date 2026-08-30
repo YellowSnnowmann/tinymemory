@@ -23,9 +23,9 @@ use tinymemory_api::provider::types::IngestItem;
 use tinymemory_api::types::MemoryTaint;
 
 use super::{
-    advertised_capabilities, audit_entry, diagnosis_failure, ensure_syncable_toolkit,
-    facet_type_to_engine, handle_to_contract, handle_to_engine, parse_person_id, scope_to_engine,
-    validate_ingest_item, EngineRuntimeConfig,
+    advertised_capabilities, audit_entry, diagnosis_failure, facet_type_to_engine,
+    handle_to_contract, handle_to_engine, parse_person_id, refuse_composio_dispatch,
+    scope_to_engine, validate_ingest_item, EngineRuntimeConfig,
 };
 
 fn ingest_item(content: &str, mime: Option<&str>, taint: MemoryTaint) -> IngestItem {
@@ -338,27 +338,18 @@ fn people_profile_and_scope_boundary_conversions_are_total_and_fail_closed() {
 }
 
 #[test]
-fn an_unsyncable_toolkit_is_refused_before_anything_is_dispatched() {
-    // The pipeline builder refuses these too, but as a message inside a
-    // `PipelineFailure` — by which point this adapter can no longer tell
-    // "there is no such provider" from "the provider failed". On a call that
-    // spends money, the caller acts differently on each.
-    let error = ensure_syncable_toolkit("definitely-not-a-provider")
-        .expect_err("a toolkit with no pipeline must be refused");
+fn composio_dispatch_is_refused_regardless_of_toolkit() {
+    // Composio connections are read by the connector module, not this
+    // engine: reaching a connected account needs a credential this crate
+    // does not hold and must not. Every toolkit-keyed dispatch entry point
+    // refuses unconditionally now, rather than gating on which toolkit used
+    // to have a native pipeline.
+    let error = refuse_composio_dispatch("a composio connection");
     assert!(
         matches!(error, MemoryError::Invalid(_)),
         "expected Invalid, got {error:?}"
     );
-
-    // Every toolkit the engine-free pipelines actually build, and the
-    // case/whitespace forms a caller may send: the gate normalises, so a
-    // padded slug must not be refused here and then accepted downstream.
-    for toolkit in ["gmail", "Slack", " github ", "notion", "linear", "clickup"] {
-        assert!(
-            ensure_syncable_toolkit(toolkit).is_ok(),
-            "`{toolkit}` has a native pipeline and must not be refused"
-        );
-    }
+    assert!(error.to_string().contains("connector module"));
 }
 
 #[test]

@@ -37,7 +37,7 @@ use crate::scheduler_gate::resume_notify;
 use crate::sources::sync::sync_source;
 use crate::sources::types::{MemorySourceEntry, SourceKind};
 use crate::sync::audit::{read_audit_log, SyncAuditEntry};
-use crate::sync::composio::periodic::{
+use crate::sync::workspace::cadence::{
     connection_is_due, effective_interval_secs, periodic_pause_reason,
 };
 use tinymemory_api::host::DEFAULT_MEMORY_SYNC_INTERVAL_SECS;

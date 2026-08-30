@@ -8,7 +8,7 @@ use crate::engine::backend::store::entity_index::{
 use anyhow::Result;
 
 use crate::engine::memory_config_from;
-use crate::sync::composio::providers::profile::{is_self_identity_any_toolkit, IdentityKind};
+use crate::store::identity::{is_self_identity_any_toolkit, IdentityKind};
 use crate::Config;
 
 /// Aggregate entity-index row for capability providers.
