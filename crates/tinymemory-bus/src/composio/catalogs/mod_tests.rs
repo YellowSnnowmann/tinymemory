@@ -30,9 +30,15 @@ fn catalog_for_toolkit_honours_slug_aliases() {
         catalog_for_toolkit("microsoft_teams").map(<[CuratedTool]>::len)
     );
     for alias in ["google_calendar", "googlecalendar", "GOOGLECALENDAR"] {
-        assert!(catalog_for_toolkit(alias).is_some(), "{alias} did not resolve");
+        assert!(
+            catalog_for_toolkit(alias).is_some(),
+            "{alias} did not resolve"
+        );
     }
-    assert!(catalog_for_toolkit("  gmail  ").is_some(), "slug is not trimmed");
+    assert!(
+        catalog_for_toolkit("  gmail  ").is_some(),
+        "slug is not trimmed"
+    );
     assert!(catalog_for_toolkit("nonexistent-toolkit").is_none());
 }
 
@@ -44,7 +50,10 @@ fn every_native_provider_has_a_catalog_and_a_positive_default_interval() {
             "native provider {slug} has no curated catalog"
         );
         assert!(has_native_provider(slug));
-        assert!(*default_secs >= 1, "{slug} default interval must be positive");
+        assert!(
+            *default_secs >= 1,
+            "{slug} default interval must be positive"
+        );
         assert!(
             CAPABILITY_TOOLKITS.contains(slug),
             "native provider {slug} is missing from the capability surface"
@@ -81,7 +90,10 @@ fn parse_sync_interval_override_rejects_zero_and_junk() {
 fn native_provider_sync_interval_is_none_for_catalog_only_toolkits() {
     // Reads no env var, so it is safe beside the process-global env tests.
     assert_eq!(native_provider_sync_interval_secs("jira"), None);
-    assert_eq!(native_provider_sync_interval_secs("nonexistent-toolkit"), None);
+    assert_eq!(
+        native_provider_sync_interval_secs("nonexistent-toolkit"),
+        None
+    );
     assert!(native_provider_sync_interval_secs("gmail").is_some());
 }
 

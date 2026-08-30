@@ -525,7 +525,8 @@ pub fn capability_matrix() -> Vec<ComposioCapability> {
                 description: catalogs::toolkit_description(toolkit).to_string(),
                 native_provider,
                 curated_tools: catalog.is_some(),
-                curated_tool_count: catalog.map_or(0, <[crate::composio::scopes::CuratedTool]>::len),
+                curated_tool_count: catalog
+                    .map_or(0, <[crate::composio::scopes::CuratedTool]>::len),
                 tool_execution: catalog.is_some(),
                 user_profile: native_provider,
                 initial_sync: native_provider,

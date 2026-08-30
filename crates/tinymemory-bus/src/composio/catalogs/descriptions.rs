@@ -17,8 +17,12 @@ pub fn toolkit_description(slug: &str) -> &'static str {
         }
         "slack" => "Send messages, read channels, manage threads, and post updates in Slack",
         "discord" => "Send messages, manage channels, and interact with Discord servers",
-        "google_calendar" | "googlecalendar" => "Create, update, and query calendar events; check availability",
-        "google_drive" | "googledrive" => "Upload, download, search, and share files in Google Drive",
+        "google_calendar" | "googlecalendar" => {
+            "Create, update, and query calendar events; check availability"
+        }
+        "google_drive" | "googledrive" => {
+            "Upload, download, search, and share files in Google Drive"
+        }
         "google_docs" | "googledocs" => "Create, read, and edit Google Docs documents",
         "google_sheets" | "googlesheets" => "Read, write, and manage Google Sheets spreadsheets",
         "outlook" => "Send, read, and manage emails in Microsoft Outlook",

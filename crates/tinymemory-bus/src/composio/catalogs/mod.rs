@@ -48,7 +48,9 @@ pub mod notion;
 pub mod productivity;
 pub mod social_media;
 
-use super::scopes::{classify_unknown, find_curated, toolkit_from_slug, CuratedTool, ToolScope, UserScopePref};
+use super::scopes::{
+    classify_unknown, find_curated, toolkit_from_slug, CuratedTool, ToolScope, UserScopePref,
+};
 
 pub use descriptions::toolkit_description;
 

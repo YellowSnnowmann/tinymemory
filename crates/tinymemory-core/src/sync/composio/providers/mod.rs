@@ -71,11 +71,9 @@ pub mod sync_state;
 pub use tinymemory_api::composio::scopes::agent_ready_toolkits;
 
 pub use descriptions::toolkit_description;
-pub use tinymemory_api::composio::catalogs::{
-    catalog_for_toolkit, is_action_visible_with_pref,
-};
-pub use tinymemory_api::host::composio::capability_matrix;
 pub(crate) use helpers::{first_array_str, merge_extra};
+pub use tinymemory_api::composio::catalogs::{catalog_for_toolkit, is_action_visible_with_pref};
+pub use tinymemory_api::host::composio::capability_matrix;
 // `pick_str` is a provider payload normaliser and lives in tinycortex; it is
 // re-exported here so the ~40 in-tree call sites keep resolving unchanged.
 // Note this is deliberately NOT `providers::common::pick_str`, which coerces

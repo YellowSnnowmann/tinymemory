@@ -63,7 +63,10 @@ fn the_contract_default_matches_the_engine_default() {
     let engine = FastRetrieveOptions::default();
     let contract = tinymemory_api::provider::retrieval::FastRetrieveQuery::default();
     assert_eq!(engine.limit, contract.limit, "default limit drifted");
-    assert_eq!(engine.max_hops, contract.max_hops, "default max_hops drifted");
+    assert_eq!(
+        engine.max_hops, contract.max_hops,
+        "default max_hops drifted"
+    );
     assert_eq!(
         engine.time_window_days, contract.time_window_days,
         "default time_window_days drifted"
