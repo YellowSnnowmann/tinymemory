@@ -27,6 +27,7 @@
 pub mod chunks;
 pub mod content;
 pub mod entities;
+pub mod identity;
 pub mod kinds;
 pub mod kv;
 pub mod namespace_store;
