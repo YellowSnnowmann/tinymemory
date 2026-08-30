@@ -87,14 +87,3 @@ impl crate::chat_host::ChatHost for TestChatHost {
         (true, "test chat host reports a summariser")
     }
 }
-
-/// A [`ComposioHost`] that behaves like a signed-out user.
-///
-/// Every method reports the no-backend-session state, which is the branch the
-/// core's own tests exercise; a stub that succeeded would need to fake Composio
-
-/// The message [`TestComposioHost`] reports. Matches the shape the real backend
-/// client produces when no session token is stored, which is what the tests
-/// assert on.
-const NO_SESSION: &str = "composio backend mode unavailable: no backend session token. \
-                          Sign in first (auth_store_session).";
