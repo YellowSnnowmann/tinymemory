@@ -1,38 +1,29 @@
-//! Curated catalogs for Composio toolkits that don't (yet) have a
-//! native [`super::ComposioProvider`] implementation.
+//! The curated catalogs, re-exported at their historical path.
 //!
-//! These slices are consulted by [`super::catalog_for_toolkit`] alongside
-//! provider-supplied catalogs (gmail, notion, github), so the meta-tool
-//! layer applies the same whitelist + scope filtering.
+//! The tables themselves moved to [`tinymemory_api::composio::catalogs`]
+//! (OpenHuman#5560): they are `&'static str` slugs with no dependency, and the
+//! *host* is their heaviest reader — it filters the agent's visible tool list
+//! and renders the unlock hints. While they lived here, every one of those
+//! reads was a compile-time link to this crate.
 //!
-//! Slugs sourced from `https://docs.composio.dev/toolkits/<id>.md` —
-//! best-effort. Slugs that don't exist on the backend simply never
-//! appear in `composio_list_tools`, so extras are harmless.
-//!
-//! Data is split into category submodules:
-//! - `catalogs_messaging` — Slack, Discord, Telegram, WhatsApp, MS Teams
-//! - `catalogs_google`    — GoogleCalendar, GoogleDrive, GoogleDocs, GoogleSheets
-//! - `catalogs_microsoft` — OneDrive, Excel
-//! - `catalogs_productivity` — Outlook, Linear, Jira, Trello, Asana, Dropbox, Todoist
-//! - `catalogs_social_media` — Twitter, Spotify, YouTube
-//! - `catalogs_business`  — Shopify, Stripe, HubSpot, Salesforce, Airtable, Figma
+//! Nothing about the data changed. This module keeps
+//! `providers::catalogs::SLACK_CURATED` and its siblings resolving for the
+//! provider impls beside it.
 
-pub use super::catalogs_business::{
+pub use tinymemory_api::composio::catalogs::business::{
     AIRTABLE_CURATED, FIGMA_CURATED, HUBSPOT_CURATED, SALESFORCE_CURATED, SHOPIFY_CURATED,
     STRIPE_CURATED,
 };
-pub use super::catalogs_google::{
+pub use tinymemory_api::composio::catalogs::google::{
     GOOGLECALENDAR_CURATED, GOOGLEDOCS_CURATED, GOOGLEDRIVE_CURATED, GOOGLESHEETS_CURATED,
 };
-pub use super::catalogs_messaging::{
+pub use tinymemory_api::composio::catalogs::messaging::{
     DISCORD_CURATED, MICROSOFT_TEAMS_CURATED, SLACK_CURATED, TELEGRAM_CURATED, WHATSAPP_CURATED,
 };
-pub use super::catalogs_microsoft::{EXCEL_CURATED, ONE_DRIVE_CURATED};
-pub use super::catalogs_productivity::{
+pub use tinymemory_api::composio::catalogs::microsoft::{EXCEL_CURATED, ONE_DRIVE_CURATED};
+pub use tinymemory_api::composio::catalogs::productivity::{
     ASANA_CURATED, DROPBOX_CURATED, JIRA_CURATED, OUTLOOK_CURATED, TODOIST_CURATED, TRELLO_CURATED,
 };
-// `LINEAR_CURATED` moved into `super::linear::LINEAR_CURATED` alongside
-// the native LinearProvider impl. `catalog_for_toolkit("linear")` now
-// routes there directly. Removing the re-export keeps a single source
-// of truth and matches how `gmail` / `notion` / `clickup` are wired.
-pub use super::catalogs_social_media::{SPOTIFY_CURATED, TWITTER_CURATED, YOUTUBE_CURATED};
+pub use tinymemory_api::composio::catalogs::social_media::{
+    SPOTIFY_CURATED, TWITTER_CURATED, YOUTUBE_CURATED,
+};

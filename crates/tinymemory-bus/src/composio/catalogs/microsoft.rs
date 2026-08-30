@@ -1,8 +1,8 @@
 //! Curated catalogs — Microsoft personal-productivity toolkits:
-//! OneDrive (files) and Excel (spreadsheets).
+//! `OneDrive` (files) and Excel (spreadsheets).
 //!
 //! These toolkits are catalog-only: they don't ship a native
-//! [`super::ComposioProvider`] implementation, so they have no
+//! `ComposioProvider` implementation (in `tinymemory-core`), so they have no
 //! user-profile fetch, no initial/periodic sync, no trigger webhooks,
 //! and no memory ingestion. Connecting them via the UI lets the agent
 //! invoke the listed actions through Composio's API, but their data
@@ -13,9 +13,10 @@
 //! exist on the backend simply never appear in `composio_list_tools`,
 //! so over-shooting is harmless.
 
-use super::tool_scope::{CuratedTool, ToolScope};
+use crate::composio::scopes::{CuratedTool, ToolScope};
 
 // ── onedrive ────────────────────────────────────────────────────────
+/// The curated action catalog for the `one_drive` toolkit.
 pub const ONE_DRIVE_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "ONE_DRIVE_GET_FILE",
@@ -84,6 +85,7 @@ pub const ONE_DRIVE_CURATED: &[CuratedTool] = &[
 ];
 
 // ── excel ───────────────────────────────────────────────────────────
+/// The curated action catalog for the `excel` toolkit.
 pub const EXCEL_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "EXCEL_GET_WORKBOOK",
@@ -160,5 +162,5 @@ pub const EXCEL_CURATED: &[CuratedTool] = &[
 ];
 
 #[cfg(test)]
-#[path = "catalogs_microsoft_tests.rs"]
+#[path = "microsoft_tests.rs"]
 mod tests;

@@ -1,9 +1,10 @@
-//! Curated catalogs — Google toolkits: GoogleCalendar, GoogleDrive,
-//! GoogleDocs, GoogleSheets.
+//! Curated catalogs — Google toolkits: `GoogleCalendar`, `GoogleDrive`,
+//! `GoogleDocs`, `GoogleSheets`.
 
-use super::tool_scope::{CuratedTool, ToolScope};
+use crate::composio::scopes::{CuratedTool, ToolScope};
 
 // ── googlecalendar ──────────────────────────────────────────────────
+/// The curated action catalog for the `googlecalendar` toolkit.
 pub const GOOGLECALENDAR_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "GOOGLECALENDAR_EVENTS_LIST",
@@ -92,6 +93,7 @@ pub const GOOGLECALENDAR_CURATED: &[CuratedTool] = &[
 ];
 
 // ── googledrive ─────────────────────────────────────────────────────
+/// The curated action catalog for the `googledrive` toolkit.
 pub const GOOGLEDRIVE_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "GOOGLEDRIVE_FIND_FILE",
@@ -180,6 +182,7 @@ pub const GOOGLEDRIVE_CURATED: &[CuratedTool] = &[
 ];
 
 // ── googledocs ──────────────────────────────────────────────────────
+/// The curated action catalog for the `googledocs` toolkit.
 pub const GOOGLEDOCS_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "GOOGLEDOCS_GET_DOCUMENT_BY_ID",
@@ -268,6 +271,7 @@ pub const GOOGLEDOCS_CURATED: &[CuratedTool] = &[
 ];
 
 // ── googlesheets ────────────────────────────────────────────────────
+/// The curated action catalog for the `googlesheets` toolkit.
 pub const GOOGLESHEETS_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "GOOGLESHEETS_BATCH_GET",

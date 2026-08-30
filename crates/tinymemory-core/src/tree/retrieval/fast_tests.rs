@@ -49,3 +49,26 @@ async fn ambient_empty_source_scope_remains_fail_closed() {
     .unwrap();
     assert!(response.hits.is_empty());
 }
+
+/// The contract's `FastRetrieveQuery::default()` must stay the engine's
+/// `FastRetrieveOptions::default()`.
+///
+/// The contract grew a `Default` so a host migrating off the engine type does
+/// not have to re-spell `limit: 10, max_hops: 2` at every call site
+/// (OpenHuman#5560) — which is exactly how two defaults drift apart. Neither
+/// crate can see the other's constant, so this is the only place the two can
+/// be compared. A change to either side without the other lands here.
+#[test]
+fn the_contract_default_matches_the_engine_default() {
+    let engine = FastRetrieveOptions::default();
+    let contract = tinymemory_api::provider::retrieval::FastRetrieveQuery::default();
+    assert_eq!(engine.limit, contract.limit, "default limit drifted");
+    assert_eq!(
+        engine.max_hops, contract.max_hops,
+        "default max_hops drifted"
+    );
+    assert_eq!(
+        engine.time_window_days, contract.time_window_days,
+        "default time_window_days drifted"
+    );
+}

@@ -1,9 +1,10 @@
 //! Curated catalogs — messaging toolkits: Slack, Discord, Telegram,
 //! WhatsApp, Microsoft Teams.
 
-use super::tool_scope::{CuratedTool, ToolScope};
+use crate::composio::scopes::{CuratedTool, ToolScope};
 
 // ── slack ───────────────────────────────────────────────────────────
+/// The curated action catalog for the `slack` toolkit.
 pub const SLACK_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "SLACK_FIND_CHANNELS",
@@ -116,6 +117,7 @@ pub const SLACK_CURATED: &[CuratedTool] = &[
 ];
 
 // ── discord ─────────────────────────────────────────────────────────
+/// The curated action catalog for the `discord` toolkit.
 pub const DISCORD_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "DISCORD_GET_MY_USER",
@@ -162,6 +164,7 @@ pub const DISCORD_CURATED: &[CuratedTool] = &[
 ];
 
 // ── telegram ────────────────────────────────────────────────────────
+/// The curated action catalog for the `telegram` toolkit.
 pub const TELEGRAM_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "TELEGRAM_GET_UPDATES",
@@ -238,6 +241,7 @@ pub const TELEGRAM_CURATED: &[CuratedTool] = &[
 ];
 
 // ── whatsapp ────────────────────────────────────────────────────────
+/// The curated action catalog for the `whatsapp` toolkit.
 pub const WHATSAPP_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "WHATSAPP_GET_PHONE_NUMBERS",
@@ -302,6 +306,7 @@ pub const WHATSAPP_CURATED: &[CuratedTool] = &[
 ];
 
 // ── microsoft_teams ─────────────────────────────────────────────────
+/// The curated action catalog for the `microsoft_teams` toolkit.
 pub const MICROSOFT_TEAMS_CURATED: &[CuratedTool] = &[
     CuratedTool {
         slug: "MICROSOFT_TEAMS_GET_CHAT",

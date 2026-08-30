@@ -488,6 +488,53 @@ pub struct ComposioTriggerHistoryResult {
     pub entries: Vec<ComposioTriggerHistoryEntry>,
 }
 
+/// Static overview of the Composio integrations this build supports.
+///
+/// Deliberately does not consult the live Composio backend or a direct tenant:
+/// it is an observability surface over what the code knows how to do, not over
+/// what the signed-in user has authorized. Callers wanting the latter want
+/// `composio.list_toolkits` / `composio.list_connections`.
+///
+/// # Why this lives here and not in the engine crate
+///
+/// It reads only [`ComposioCapability`] and the contract's curated catalogs
+/// (OpenHuman#5560). The version it replaces sat in
+/// `tinymemory_core::sync::composio::providers`, so a host rendering its own
+/// capability matrix had to link the engine to spell a table of `&'static str`.
+///
+/// The two provider-shaped facts it needs — which toolkits have a native
+/// provider, and how often each syncs — are
+/// [`catalogs::NATIVE_PROVIDERS`][crate::composio::catalogs::NATIVE_PROVIDERS],
+/// a const table that carries the same defaults the provider impls pass to
+/// their own interval resolver.
+#[must_use]
+pub fn capability_matrix() -> Vec<ComposioCapability> {
+    use crate::composio::catalogs;
+    catalogs::CAPABILITY_TOOLKITS
+        .iter()
+        .map(|toolkit| {
+            let native_provider = catalogs::has_native_provider(toolkit);
+            let catalog = catalogs::catalog_for_toolkit(toolkit);
+            let sync_interval_secs = catalogs::native_provider_sync_interval_secs(toolkit);
+            ComposioCapability {
+                toolkit: (*toolkit).to_string(),
+                description: catalogs::toolkit_description(toolkit).to_string(),
+                native_provider,
+                curated_tools: catalog.is_some(),
+                curated_tool_count: catalog
+                    .map_or(0, <[crate::composio::scopes::CuratedTool]>::len),
+                tool_execution: catalog.is_some(),
+                user_profile: native_provider,
+                initial_sync: native_provider,
+                periodic_sync: sync_interval_secs.is_some(),
+                sync_interval_secs,
+                trigger_webhooks: native_provider,
+                memory_ingest: native_provider,
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 #[path = "composio_tests.rs"]
 mod tests;
