@@ -20,6 +20,7 @@
 //! workspace-kind memory sources (GitHub repos, folders, RSS, web pages)
 //! syncing without manual "Sync now" clicks.
 
+pub mod cadence;
 pub mod periodic;
 
 pub use periodic::start_workspace_periodic_sync;
