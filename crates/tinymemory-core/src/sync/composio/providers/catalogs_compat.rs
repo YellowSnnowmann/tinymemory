@@ -15,32 +15,32 @@
 //! new dependency.
 
 pub mod catalogs_business {
-    //! See [`super`].
+    //! Historical compat shim — see the module docs above.
     pub use tinymemory_api::composio::catalogs::business::*;
 }
 
 pub mod catalogs_google {
-    //! See [`super`].
+    //! Historical compat shim — see the module docs above.
     pub use tinymemory_api::composio::catalogs::google::*;
 }
 
 pub mod catalogs_messaging {
-    //! See [`super`].
+    //! Historical compat shim — see the module docs above.
     pub use tinymemory_api::composio::catalogs::messaging::*;
 }
 
 pub mod catalogs_microsoft {
-    //! See [`super`].
+    //! Historical compat shim — see the module docs above.
     pub use tinymemory_api::composio::catalogs::microsoft::*;
 }
 
 pub mod catalogs_productivity {
-    //! See [`super`].
+    //! Historical compat shim — see the module docs above.
     pub use tinymemory_api::composio::catalogs::productivity::*;
 }
 
 pub mod catalogs_social_media {
-    //! See [`super`].
+    //! Historical compat shim — see the module docs above.
     pub use tinymemory_api::composio::catalogs::social_media::*;
 }
 
