@@ -13,15 +13,17 @@
 //! wrong. This module sheds **no third-party dependencies** from a host. Every
 //! crate the engine uses (`rusqlite`, `reqwest`, `chrono`, `regex`, `uuid`,
 //! `walkdir`, `sha2`, `tokio`) is shared with surface a host keeps, and
-//! `libsqlite3-sys` in particular has several other parents — `tinyagents`'
-//! session store among them — so the native `SQLite` build does not leave. That
+//! `libsqlite3-sys` in particular has several other parents — TinyCortex's
+//! internal TinyAgents session store among them — so the native `SQLite` build
+//! does not leave. That
 //! was measured on `OpenHuman`, on both its kernel and its shipping feature
 //! profiles: four crate names leave, and all four are ours.
 //!
 //! What it does buy is **compile time on the critical path**, and that was
 //! measured too. `tinycortex` and `tinymemory-core` compile strictly serially
-//! ahead of the host crate — `tinyagents` → `tinycortex` → `tinymemory-core` →
-//! host, each starting as the previous one ends — putting 14.7s directly in
+//! ahead of the host crate — TinyCortex's internal TinyAgents dependency →
+//! `tinycortex` → `tinymemory-core` → host, each starting as the previous one
+//! ends — putting 14.7s directly in
 //! front of the host's own compilation. Removing them from the host's graph
 //! moved a full build from 176s to about 161s.
 //!

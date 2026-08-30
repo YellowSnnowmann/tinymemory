@@ -682,8 +682,8 @@ async fn subconscious_recall_surfaces_external_sync_taint_for_origin_upgrade() {
 // ── Same-session self-echo exclusion, via the ambient thread scope ────
 //
 // `Memory::recall` (backing the agent's `memory_recall` tool) reads the
-// ambient chat-thread id set by `tinyagents::thread_context`
-// around a live turn, and excludes documents tagged with that same id —
+// ambient chat-thread id set by the host around a live turn, and excludes
+// documents tagged with that same id —
 // guarding against the harness's own `user_msg:<uuid>` autosave being
 // recalled as the top "relevant" result for the very request that
 // triggered the search. See `agent::harness::session::turn::core`
