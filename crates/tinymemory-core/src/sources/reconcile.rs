@@ -11,13 +11,10 @@
 use crate::config_loader as config_rpc;
 use crate::sources::registry;
 use crate::sources::types::{MemorySourceEntry, SourceKind};
-use std::collections::HashSet;
 
 /// Current version of the caps migration. Bump when the migration logic changes
 /// so installs that ran an earlier revision re-run it exactly once.
 const CURRENT_CAPS_MIGRATION_VERSION: u32 = 1;
-
-
 
 /// Apply conservative default caps in-place to every cap-less source.
 ///
