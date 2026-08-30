@@ -149,9 +149,11 @@ git -C vendor/tinymemory submodule update --init --recursive
 [dependencies]
 tinymemory = { path = "vendor/tinymemory", features = ["tinycortex"] }
 
-# All four are required. The first three resolve unpublished crates used by the
-# memory layer and embedded engine; the fourth collapses `tinycortex-api`'s git dependency on
-# `tinymemory-api` onto the copy in this tree — without it two distinct
+# All five entries are required. The three crates.io patches resolve unpublished
+# crates used by the memory layer and embedded engine. The TinyInference source
+# patch collapses TinyCortex's git dependency onto that same crate identity. The
+# fifth entry collapses `tinycortex-api`'s git dependency on `tinymemory-api`
+# onto the copy in this tree — without it two distinct
 # `tinymemory_api::MemoryEntry` types exist and the seam stops type-checking.
 [patch.crates-io]
 tinycortex = { path = "vendor/tinymemory/vendor/tinycortex" }
@@ -165,7 +167,7 @@ tinymemory-api = { path = "vendor/tinymemory/api" }
 
 This exact patch set is what the reference consumer in
 `crates/tinymemory/examples/` and the repository's own root manifest use; a
-build missing any of the four fails at resolution, before compiling a line.
+build missing any of the five fails at resolution, before compiling a line.
 
 ```rust,ignore
 use std::sync::Arc;

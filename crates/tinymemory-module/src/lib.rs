@@ -14,8 +14,8 @@
 //! crate the engine uses (`rusqlite`, `reqwest`, `chrono`, `regex`, `uuid`,
 //! `walkdir`, `sha2`, `tokio`) is shared with surface a host keeps, and
 //! `libsqlite3-sys` in particular has several other parents, so the native
-//! `SQLite` build does not leave. That
-//! was measured on `OpenHuman`, on both its kernel and its shipping feature
+//! `SQLite` build remains in the host dependency graph. This was measured on
+//! `OpenHuman`, on both its kernel and its shipping feature
 //! profiles: four crate names leave, and all four are ours.
 //!
 //! What it does buy is **compile time on the critical path**, and that was
