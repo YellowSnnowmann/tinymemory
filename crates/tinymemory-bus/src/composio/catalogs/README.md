@@ -45,9 +45,10 @@ read them by depending on `tinymemory-bus` (or `tinymemory-api`) alone.
 ## Public surface
 
 Re-exported from `mod.rs` (and re-exported again from `tinymemory-api::composio::catalogs`,
-and from `tinymemory-core::sync::composio::providers::catalogs` for the historical path —
-see [`catalogs_compat`](../../../../../tinymemory-core/src/sync/composio/providers/catalogs_compat.rs)
-for the six category module names that predate this move):
+and from `tinymemory-core::sync::composio::providers::catalogs` for the historical flat
+path — plus `tinymemory-core`'s `providers::catalogs_compat` module, which restores the
+six per-category module names — `catalogs_business`, `catalogs_google`, … — that predate
+this move):
 
 - `catalog_for_toolkit`, `is_action_visible_with_pref`, `curated_scope_for`, `toolkit_has_scope`, `has_native_provider`
 - `CAPABILITY_TOOLKITS`, `NATIVE_PROVIDERS`
