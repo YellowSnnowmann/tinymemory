@@ -237,3 +237,7 @@ struct OllamaResponse {
     #[serde(default)]
     embeddings: Vec<Vec<f32>>,
 }
+
+#[cfg(test)]
+#[path = "embedding_adapter_test.rs"]
+mod test;
