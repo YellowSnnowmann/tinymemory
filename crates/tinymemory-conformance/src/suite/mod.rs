@@ -25,6 +25,7 @@ use std::sync::Arc;
 
 use tinymemory_api::capabilities::Capability;
 use tinymemory_api::error::MemoryError;
+use tinymemory_api::namespace::Namespace;
 use tinymemory_api::provider::{audit_provider, ExportRecord, MemoryProvider, SourceScope};
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::types::{MemoryCategory, MemoryTaint};
@@ -61,6 +62,7 @@ pub async fn assert_provider(provider: Arc<dyn MemoryProvider>) {
     assert_list_filters_narrow(p).await;
     assert_taint_is_preserved(p).await;
     assert_recall_respects_limit_and_namespace(p).await;
+    assert_namespaces_preserve_their_section(p).await;
     assert_recall_respects_source_scope(p).await;
     assert_export_import_round_trip(p).await;
     assert_awkward_content_round_trips(p).await;
@@ -487,6 +489,70 @@ pub async fn assert_recall_respects_limit_and_namespace(provider: &dyn MemoryPro
 
     cleanup(provider, &mine, &keys).await;
     cleanup(provider, &theirs, &["other"]).await;
+}
+
+/// `namespaces()` reports a sectioned namespace back under the same
+/// [`tinymemory_api::namespace::MemorySection`] the caller wrote it in.
+///
+/// This is the regression the unified SQLite store's own storage-address
+/// sanitiser taught us to check for: a driver whose on-disk address collapses
+/// `:` to `_` (a real filesystem constraint) must still report the *logical*
+/// namespace back through `namespaces()`, or `conversation:thread-8f21`
+/// silently re-addresses out of the `conversation` section and every caller
+/// enumerating a section's scopes sees nothing, even though the write itself
+/// succeeded.
+///
+/// # Panics
+///
+/// Panics when no reported namespace parses to the same section as the one
+/// that was written.
+pub async fn assert_namespaces_preserve_their_section(provider: &dyn MemoryProvider) {
+    let who = provider.driver_id();
+    let namespace = format!("conversation:{}", ns(provider, "section-thread"));
+    let written = Namespace::parse(&namespace)
+        .unwrap_or_else(|e| panic!("{who}: test fixture `{namespace}` failed to parse: {e}"));
+
+    provider
+        .store(
+            &namespace,
+            "k",
+            "content",
+            MemoryCategory::Core,
+            None,
+            MemoryTaint::Internal,
+        )
+        .await
+        .unwrap_or_else(|e| panic!("{who}: store failed: {e}"));
+
+    let summaries = provider
+        .namespaces()
+        .await
+        .unwrap_or_else(|e| panic!("{who}: namespaces() failed: {e}"));
+
+    let matching_scope = summaries.iter().find_map(|summary| {
+        Namespace::parse(&summary.namespace)
+            .ok()
+            .filter(|parsed| parsed.scope() == written.scope())
+    });
+
+    match matching_scope {
+        Some(parsed) => assert_eq!(
+            parsed.section(),
+            written.section(),
+            "{who}: wrote `{namespace}` under section {:?}, but namespaces() reported \
+             its scope back under section {:?} instead — a driver must not silently \
+             re-address a sectioned namespace out of its section",
+            written.section(),
+            parsed.section(),
+        ),
+        None => panic!(
+            "{who}: namespaces() did not report any namespace with scope `{}` after \
+             storing `{namespace}`; got {summaries:?}",
+            written.scope()
+        ),
+    }
+
+    cleanup(provider, &namespace, &["k"]).await;
 }
 
 /// A present, empty source scope fails closed.

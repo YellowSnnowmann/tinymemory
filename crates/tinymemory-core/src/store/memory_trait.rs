@@ -300,8 +300,18 @@ impl UnifiedMemory {
 // be `'static` and cannot borrow the store.
 
 /// One `memory_docs` row as `get` selects it:
-/// `(document_id, key, content, updated_at, category, taint, session_id)`.
-type MemoryDocRow = (String, String, String, f64, String, String, Option<String>);
+/// `(document_id, key, content, updated_at, category, taint, session_id,
+/// logical_namespace)`.
+type MemoryDocRow = (
+    String,
+    String,
+    String,
+    f64,
+    String,
+    String,
+    Option<String>,
+    Option<String>,
+);
 
 impl UnifiedMemory {
     fn get_blocking(
@@ -315,9 +325,18 @@ impl UnifiedMemory {
         // readers disagree about one record. The contract's round-trip
         // assertion catches exactly that (`tinymemory_conformance`), and it was
         // invisible until #18 §A3 let this store be bound as a driver at all.
+        //
+        // `logical_namespace` is selected too so the returned `MemoryEntry`
+        // reports the row's own logical name rather than the physical address
+        // this method happens to have been called with — see `list_blocking`'s
+        // doc comment for why that distinction matters. This is purely a
+        // labelling improvement: the row is still addressed by the physical
+        // `namespace` column alone (`WHERE namespace = ?1`), so two logical
+        // namespaces that sanitize to the same physical address are still
+        // one namespace here, same as before `logical_namespace` existed.
         let row: Option<MemoryDocRow> = conn
             .query_row(
-                "SELECT document_id, key, content, updated_at, category, taint, session_id
+                "SELECT document_id, key, content, updated_at, category, taint, session_id, logical_namespace
                  FROM memory_docs WHERE namespace = ?1 AND key = ?2 LIMIT 1",
                 params![ns, key],
                 |row| {
@@ -329,25 +348,41 @@ impl UnifiedMemory {
                         row.get(4)?,
                         row.get(5)?,
                         row.get(6)?,
+                        row.get(7)?,
                     ))
                 },
             )
             .optional()?;
         Ok(row.map(
-            |(id, key, content, updated_at, category, taint_str, session_id)| MemoryEntry {
-                id,
-                key,
-                content,
-                namespace: Some(ns.to_string()),
-                category: memory_category_from_stored(&category),
-                timestamp: timestamp_to_rfc3339(updated_at),
-                session_id,
-                score: None,
-                taint: crate::MemoryTaint::from_db_str(&taint_str),
+            |(id, key, content, updated_at, category, taint_str, session_id, row_logical)| {
+                MemoryEntry {
+                    id,
+                    key,
+                    content,
+                    namespace: Some(row_logical.unwrap_or_else(|| ns.to_string())),
+                    category: memory_category_from_stored(&category),
+                    timestamp: timestamp_to_rfc3339(updated_at),
+                    session_id,
+                    score: None,
+                    taint: crate::MemoryTaint::from_db_str(&taint_str),
+                }
             },
         ))
     }
 
+    /// List every row addressed to one physical namespace.
+    ///
+    /// Addressed by the physical `namespace` column only (`WHERE namespace =
+    /// ?1`) — exactly as before `logical_namespace` existed. Two logical
+    /// namespaces that sanitize to the same physical address (`a:b_c` and
+    /// `a_b:c` both sanitize to `a_b_c`) are still one namespace for this
+    /// call, and `sanitize_namespace` has always collapsed them that way; this
+    /// is pre-existing behaviour, not something this column changes. What
+    /// `logical_namespace` adds is purely the label: each returned entry's
+    /// `namespace` is the row's *own* logical name (falling back to the
+    /// physical address for pre-migration NULL rows) instead of the raw
+    /// sanitized address, so a sectioned namespace still reports its `:`
+    /// spelling back to a caller enumerating it.
     fn list_blocking(
         conn: &Arc<Mutex<Connection>>,
         ns: &str,
@@ -356,16 +391,17 @@ impl UnifiedMemory {
     ) -> anyhow::Result<Vec<MemoryEntry>> {
         let conn = conn.lock();
         let mut stmt = conn.prepare(
-            "SELECT document_id, key, content, category, session_id, updated_at, taint
+            "SELECT document_id, key, content, category, session_id, updated_at, taint, logical_namespace
              FROM memory_docs WHERE namespace = ?1 ORDER BY updated_at DESC",
         )?;
         let rows = stmt.query_map(params![ns], |row| {
             let stored_category: String = row.get(3)?;
+            let row_logical: Option<String> = row.get(7)?;
             Ok(MemoryEntry {
                 id: row.get(0)?,
                 key: row.get(1)?,
                 content: row.get(2)?,
-                namespace: Some(ns.to_string()),
+                namespace: Some(row_logical.unwrap_or_else(|| ns.to_string())),
                 category: memory_category_from_stored(&stored_category),
                 session_id: row.get(4)?,
                 timestamp: timestamp_to_rfc3339(row.get(5)?),
@@ -402,11 +438,35 @@ impl UnifiedMemory {
         conn: &Arc<Mutex<Connection>>,
     ) -> anyhow::Result<Vec<NamespaceSummary>> {
         let conn = conn.lock();
+        // `COALESCE(logical_namespace, namespace)` is the entire backfill
+        // story, deliberately: rows written before the `logical_namespace`
+        // column existed have it NULL and fall back to exactly today's
+        // sanitized value. A sanitized `_` cannot be reconstructed into
+        // whatever delimiter it replaced (a scope may legitimately contain
+        // `_`), so guessing would silently mislabel unrelated namespaces —
+        // NULL rows simply keep reporting their sanitized address.
+        //
+        // `GROUP BY namespace` (the storage address), not the logical name:
+        // every OTHER operation on this store — `get`, `list`, `forget`,
+        // `recall`, `clear_namespace` — addresses a row by its physical
+        // `namespace` column alone, so two logical names that sanitize to the
+        // same address (`conversation:x` and `conversation_x` both sanitize
+        // to `conversation_x`) are already treated as one namespace
+        // everywhere else. Grouping summaries by the logical name instead
+        // would report two summaries with two partial counts for what every
+        // other call still treats, and returns, as a single merged
+        // namespace — `list` on either reported name would return BOTH
+        // aliases' rows, double the count either summary claims. Grouping by
+        // the address keeps one summary per physical namespace with an
+        // accurate count; `MIN(logical_namespace)` (aggregate `MIN` ignores
+        // `NULL`) just picks a single, deterministic logical representative
+        // to report it under, so a sectioned namespace still enumerates
+        // under its `:` spelling instead of the sanitized `_` form.
         let mut stmt = conn.prepare(
-            "SELECT namespace, COUNT(*) AS n, MAX(updated_at) AS last
+            "SELECT COALESCE(MIN(logical_namespace), namespace) AS ns, COUNT(*) AS n, MAX(updated_at) AS last
              FROM memory_docs
              GROUP BY namespace
-             ORDER BY namespace",
+             ORDER BY ns",
         )?;
         let rows = stmt.query_map([], |row| {
             let ns: String = row.get(0)?;

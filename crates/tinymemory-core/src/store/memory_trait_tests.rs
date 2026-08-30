@@ -106,6 +106,249 @@ async fn namespace_summaries_counts_per_namespace() {
     assert!(alpha.last_updated.is_some());
 }
 
+/// A `<section>:<scope>` namespace (`tinymemory_bus::namespace`'s
+/// convention) must survive `namespace_summaries()` byte-for-byte, even
+/// though the on-disk address stays sanitized. Before the
+/// `logical_namespace` column, `sanitize_namespace` collapsed `:` to `_`
+/// and `namespace_summaries` read that sanitized value straight back out,
+/// so every sectioned namespace looked unsectioned to a caller enumerating
+/// namespaces.
+#[tokio::test]
+async fn namespace_summaries_reports_sectioned_namespace_verbatim() {
+    let (_tmp, mem) = fresh_mem();
+    let namespace = "conversation:thread-8f21";
+    mem.store(namespace, "k1", "hello there", MemoryCategory::Core, None)
+        .await
+        .unwrap();
+
+    let summaries = mem.namespace_summaries().await.unwrap();
+    let found = summaries
+        .iter()
+        .find(|s| s.namespace == namespace)
+        .unwrap_or_else(|| panic!("expected `{namespace}` in {summaries:?}"));
+    assert_eq!(found.count, 1);
+
+    // The storage address stays sanitized: the sectioned `:` is not a
+    // valid filesystem character, so the column and the on-disk directory
+    // must both still use the collapsed form.
+    let sanitized: String = {
+        let conn = mem.conn.lock();
+        conn.query_row(
+            "SELECT namespace FROM memory_docs WHERE key = 'k1'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap()
+    };
+    assert_eq!(sanitized, "conversation_thread-8f21");
+    assert!(
+        !sanitized.contains(':'),
+        "the memory_docs.namespace column must stay path-safe, got {sanitized}"
+    );
+
+    let dir = mem.namespace_dir(namespace);
+    assert!(
+        !dir.to_string_lossy().contains(':'),
+        "namespace_dir must never contain ':', got {}",
+        dir.display()
+    );
+}
+
+/// `get`/`forget`/`list`/`recall` must still address a sectioned
+/// namespace by its original, unsanitized string — the `logical_namespace`
+/// column is purely additive and must not disturb the sanitized lookup
+/// path those methods already use.
+#[tokio::test]
+async fn sectioned_namespace_stays_addressable_by_its_original_string() {
+    let (_tmp, mem) = fresh_mem();
+    let namespace = "conversation:thread-8f21";
+    mem.store(
+        namespace,
+        "k1",
+        "we should ship on friday",
+        MemoryCategory::Core,
+        None,
+    )
+    .await
+    .unwrap();
+
+    let got = mem.get(namespace, "k1").await.unwrap().unwrap();
+    assert_eq!(got.content, "we should ship on friday");
+    // The returned entry must report the row's own sectioned (logical) name,
+    // not the sanitized physical address (`conversation_thread-8f21`) it is
+    // actually stored under — a caller that fed this back into `get`/`list`
+    // must land on the same row, not a different, unsectioned one.
+    assert_eq!(got.namespace.as_deref(), Some(namespace));
+
+    let listed = mem.list(Some(namespace), None, None).await.unwrap();
+    assert_eq!(listed.len(), 1);
+    assert_eq!(listed[0].key, "k1");
+    assert_eq!(listed[0].namespace.as_deref(), Some(namespace));
+
+    let recalled = mem
+        .recall(
+            "ship on friday",
+            5,
+            RecallOpts {
+                namespace: Some(namespace),
+                min_score: Some(0.0),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+    assert!(
+        recalled.iter().any(|e| e.key == "k1"),
+        "recall must still find the row via the original sectioned namespace, got {recalled:#?}"
+    );
+
+    assert!(mem.forget(namespace, "k1").await.unwrap());
+    assert!(mem.get(namespace, "k1").await.unwrap().is_none());
+}
+
+/// A row written before this migration has `logical_namespace = NULL`.
+/// `namespace_summaries` must fall back to the sanitized `namespace`
+/// column for those rows rather than erroring or hiding them — the
+/// `COALESCE` is the entire backfill story, deliberately, because a
+/// sanitized `_` cannot be un-collapsed back into the original delimiter.
+#[tokio::test]
+async fn namespace_summaries_falls_back_to_sanitized_namespace_when_logical_is_null() {
+    let (_tmp, mem) = fresh_mem();
+    {
+        let conn = mem.conn.lock();
+        conn.execute(
+            "INSERT INTO memory_docs (
+                document_id, namespace, key, title, content, source_type,
+                priority, tags_json, metadata_json, category, session_id,
+                created_at, updated_at, markdown_rel_path
+             ) VALUES (?1, ?2, ?3, ?4, ?5, 'chat', 'medium', '[]', '{}', 'core', NULL, 0.0, 0.0, '')",
+            rusqlite::params![
+                "pre-migration-doc",
+                "premigration_ns",
+                "k1",
+                "title",
+                "content"
+            ],
+        )
+        .unwrap();
+    }
+
+    let summaries = mem.namespace_summaries().await.unwrap();
+    let found = summaries
+        .iter()
+        .find(|s| s.namespace == "premigration_ns")
+        .unwrap_or_else(|| panic!("expected `premigration_ns` in {summaries:?}"));
+    assert_eq!(found.count, 1);
+}
+
+/// A blank/whitespace namespace sanitizes to `GLOBAL_NAMESPACE` on the
+/// storage address (`sanitize_namespace`); the logical column must land on
+/// the same fallback rather than an empty string, or `COALESCE(logical_namespace,
+/// namespace)` would report an empty-string namespace instead of `global`.
+#[tokio::test]
+async fn namespace_summaries_normalizes_blank_namespace_to_global() {
+    let (_tmp, mem) = fresh_mem();
+    mem.store("   ", "k1", "content", MemoryCategory::Core, None)
+        .await
+        .unwrap();
+
+    let summaries = mem.namespace_summaries().await.unwrap();
+    assert!(
+        summaries.iter().all(|s| !s.namespace.is_empty()),
+        "no summary should report an empty namespace, got {summaries:?}"
+    );
+    let found = summaries
+        .iter()
+        .find(|s| s.namespace == GLOBAL_NAMESPACE)
+        .unwrap_or_else(|| panic!("expected `{GLOBAL_NAMESPACE}` in {summaries:?}"));
+    assert_eq!(found.count, 1);
+}
+
+/// Two logical names that sanitize to the same physical namespace
+/// (`conversation:x` and `conversation_x` both collapse to
+/// `conversation_x`) must not split into two summaries with two partial
+/// counts: every addressed call (`list`, `export`, ...) already merges
+/// their rows into one physical namespace, so `namespace_summaries` must
+/// report exactly one entry with the true, combined count.
+///
+/// `sanitize_namespace` has always collapsed these two names onto one
+/// physical address, and every operation on this store has always treated
+/// them as one namespace — that is pre-existing behaviour, not something
+/// `logical_namespace` changes. What `logical_namespace` adds is purely a
+/// more informative label on the merged summary (a sectioned spelling
+/// instead of the sanitized one), not isolation between the two names.
+#[tokio::test]
+async fn namespace_summaries_deduplicates_when_two_logical_names_alias_one_address() {
+    let (_tmp, mem) = fresh_mem();
+    mem.store("conversation:x", "k1", "a", MemoryCategory::Core, None)
+        .await
+        .unwrap();
+    mem.store("conversation_x", "k2", "b", MemoryCategory::Core, None)
+        .await
+        .unwrap();
+
+    let summaries = mem.namespace_summaries().await.unwrap();
+    let matching: Vec<_> = summaries
+        .iter()
+        .filter(|s| s.namespace == "conversation:x" || s.namespace == "conversation_x")
+        .collect();
+    assert_eq!(
+        matching.len(),
+        1,
+        "expected exactly one summary for the aliased address, got {summaries:?}"
+    );
+    assert_eq!(matching[0].count, 2);
+
+    // Both aliases still address the same merged physical namespace.
+    let listed = mem.list(Some("conversation:x"), None, None).await.unwrap();
+    assert_eq!(listed.len(), 2);
+}
+
+/// `canonical_identifier`'s `[REDACTED_PII_*]` placeholder is valid storage
+/// content but not a valid `Namespace` scope (`[`/`]` are rejected). A
+/// sectioned namespace whose scope trips the strict PII gate must still
+/// come back `Namespace::parse`-able and under its original section, or the
+/// exact enumeration bug this column exists to fix reappears for precisely
+/// PII-shaped scopes.
+#[tokio::test]
+async fn namespace_summaries_substitutes_brackets_in_pii_redacted_sectioned_namespace() {
+    use tinymemory_api::namespace::{MemorySection, Namespace};
+
+    let (_tmp, mem) = fresh_mem();
+    let namespace = "conversation:ssn-123-45-6789";
+    mem.store(namespace, "k1", "content", MemoryCategory::Core, None)
+        .await
+        .unwrap();
+
+    let summaries = mem.namespace_summaries().await.unwrap();
+    let found = summaries
+        .iter()
+        .find(|s| s.namespace.starts_with("conversation:"))
+        .unwrap_or_else(|| panic!("expected a `conversation:` namespace in {summaries:?}"));
+    assert!(
+        !found.namespace.contains('[') && !found.namespace.contains(']'),
+        "logical namespace must stay Namespace-valid (no brackets), got {}",
+        found.namespace
+    );
+    let parsed = Namespace::parse(&found.namespace)
+        .unwrap_or_else(|e| panic!("reported namespace `{}` must parse: {e}", found.namespace));
+    assert_eq!(parsed.section(), Some(&MemorySection::Conversation));
+
+    // Address-equivalence: feeding the reported logical name straight back
+    // into an addressed call must find the row it names. Stripping the
+    // brackets instead of substituting `_` for them (matching
+    // `sanitize_namespace`'s own character mapping) would re-sanitize this
+    // name to a *different* physical namespace than the one actually
+    // written, so this call would silently return nothing.
+    let listed = mem.list(Some(&found.namespace), None, None).await.unwrap();
+    assert_eq!(
+        listed.len(),
+        1,
+        "listing the reported namespace `{}` must find the row stored under `{namespace}`",
+        found.namespace
+    );
+}
+
 #[tokio::test]
 async fn legacy_namespace_migration_splits_and_is_idempotent() {
     use rusqlite::params;

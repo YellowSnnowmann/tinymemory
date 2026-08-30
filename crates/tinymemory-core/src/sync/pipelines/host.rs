@@ -283,6 +283,7 @@ pub fn composio_config(config: &Config) -> Result<ComposioSyncConfig, String> {
             api_key: Some(SecretString::new(api_key)),
             bearer_token: None,
             entity_id: Some(config.composio().entity_id.clone()),
+            gmail_query: config.composio().gmail_sync_query.clone(),
         })
     } else {
         // The seam first, the config second — the mirror of the direct branch
@@ -300,6 +301,7 @@ pub fn composio_config(config: &Config) -> Result<ComposioSyncConfig, String> {
             api_key: None,
             bearer_token: Some(SecretString::new(bearer)),
             entity_id: Some(config.composio().entity_id.clone()),
+            gmail_query: config.composio().gmail_sync_query.clone(),
         })
     }
 }
@@ -331,9 +333,22 @@ fn build_composio_pipeline(
     if !syncable_composio_toolkits().contains(&slug.as_str()) {
         return Err(format!("memory sync does not support toolkit '{toolkit}'"));
     }
+    // Pull the Gmail scope filter out before the client consumes the config.
+    let gmail_filter = composio
+        .gmail_query
+        .as_deref()
+        .map(str::trim)
+        .filter(|q| !q.is_empty())
+        .map(str::to_string);
     let client = ComposioClient::new(composio);
     Ok(match slug.as_str() {
-        "gmail" => Arc::new(GmailSyncPipeline::new(client, connection_id)),
+        "gmail" => {
+            let mut pipeline = GmailSyncPipeline::new(client, connection_id);
+            if let Some(filter) = gmail_filter {
+                pipeline = pipeline.with_filter(filter);
+            }
+            Arc::new(pipeline)
+        }
         "github" => Arc::new(GitHubSyncPipeline::new(client, connection_id)),
         "notion" => Arc::new(NotionSyncPipeline::new(client, connection_id)),
         "linear" => Arc::new(LinearSyncPipeline::new(client, connection_id)),

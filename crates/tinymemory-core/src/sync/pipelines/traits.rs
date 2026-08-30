@@ -102,6 +102,10 @@ pub struct ComposioSyncConfig {
     pub api_key: Option<SecretString>,
     pub bearer_token: Option<SecretString>,
     pub entity_id: Option<String>,
+    /// Optional Gmail search query the Gmail pipeline ANDs onto every page
+    /// fetch (e.g. `label:brain`) so background sync only ingests matching
+    /// messages. `None` = whole inbox window.
+    pub gmail_query: Option<String>,
 }
 
 /// A string whose `Debug` never prints the value.

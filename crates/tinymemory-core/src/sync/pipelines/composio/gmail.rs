@@ -26,6 +26,11 @@ pub struct GmailSyncPipeline {
     max_pages: usize,
     page_size: usize,
     query_override: Option<String>,
+    /// Standing Gmail search filter (e.g. `label:brain`) ANDed onto every
+    /// fetch, *including* the incremental `after:<cursor>` clause — unlike
+    /// [`Self::with_query`], which replaces the incremental clause outright
+    /// (backfill semantics).
+    filter: Option<String>,
 }
 
 impl GmailSyncPipeline {
@@ -55,6 +60,7 @@ impl GmailSyncPipeline {
             // needing more throughput can raise it via `with_limits`.
             page_size: 25,
             query_override: None,
+            filter: None,
         }
     }
 
@@ -66,6 +72,16 @@ impl GmailSyncPipeline {
 
     pub fn with_query(mut self, query: impl Into<String>) -> Self {
         self.query_override = Some(query.into());
+        self
+    }
+
+    /// Set a standing Gmail search filter (e.g. `label:brain`). Every page
+    /// fetch ANDs it with the incremental clause (`after:<cursor>` /
+    /// `sync_depth_days`), so background sync stays incremental while only
+    /// matching messages are ingested. Contrast [`Self::with_query`], which
+    /// *replaces* the incremental clause (backfill semantics).
+    pub fn with_filter(mut self, filter: impl Into<String>) -> Self {
+        self.filter = Some(filter.into());
         self
     }
 }
@@ -144,18 +160,30 @@ impl IncrementalSource for GmailSyncPipeline {
         if let Some(token) = page {
             arguments["page_token"] = serde_json::json!(token);
         }
+        // Gmail search ANDs space-separated clauses, so the standing filter
+        // (`label:brain`) composes with whichever incremental clause applies.
+        let mut clauses: Vec<String> = Vec::new();
+        if let Some(filter) = self.filter.as_deref() {
+            let filter = filter.trim();
+            if !filter.is_empty() {
+                clauses.push(filter.to_string());
+            }
+        }
         if let Some(query) = self.query_override.as_deref() {
-            arguments["query"] = Value::String(query.into());
+            clauses.push(query.to_string());
         } else if let Some(cursor) = state.cursor.as_deref() {
-            arguments["query"] = serde_json::json!(format!(
+            clauses.push(format!(
                 "after:{}",
                 cursor_to_seconds(cursor).unwrap_or_default()
             ));
         } else if let Some(days) = config.sync_depth_days {
-            arguments["query"] = serde_json::json!(format!(
+            clauses.push(format!(
                 "after:{}",
                 (chrono::Utc::now() - chrono::Duration::days(days as i64)).timestamp()
             ));
+        }
+        if !clauses.is_empty() {
+            arguments["query"] = Value::String(clauses.join(" "));
         }
         arguments
     }
