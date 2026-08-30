@@ -26,7 +26,9 @@ pub fn toolkit_description(slug: &str) -> &'static str {
         "google_docs" | "googledocs" => "Create, read, and edit Google Docs documents",
         "google_sheets" | "googlesheets" => "Read, write, and manage Google Sheets spreadsheets",
         "outlook" => "Send, read, and manage emails in Microsoft Outlook",
-        "microsoft_teams" => "Send messages and manage channels in Microsoft Teams",
+        "microsoft" | "microsoft_teams" => {
+            "Send messages and manage channels in Microsoft Teams"
+        }
         "larksuite" => {
             "Connect Lark / Feishu workspace chat, docs, wiki, and meetings via Composio"
         }
