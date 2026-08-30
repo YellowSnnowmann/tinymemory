@@ -33,7 +33,6 @@ pub type Config = dyn tinymemory_api::host::MemoryHostConfig;
 
 pub mod chat;
 pub mod chat_host;
-pub mod composio_host;
 pub mod config_loader;
 pub mod conversations;
 pub mod diff;

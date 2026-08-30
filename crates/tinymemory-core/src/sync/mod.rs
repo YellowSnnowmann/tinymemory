@@ -27,7 +27,6 @@
 //!   single shape to call; everything else stays local.
 
 pub mod audit;
-pub mod composio;
 pub mod mcp;
 pub mod pipelines;
 pub mod sync_status;

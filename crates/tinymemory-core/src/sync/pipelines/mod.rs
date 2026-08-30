@@ -11,7 +11,6 @@
 //! design). Sources of kind `Composio` route here; tree-coupled source kinds
 //! still route through the engine seam.
 
-pub mod composio;
 pub mod dispatcher;
 pub mod host;
 pub mod traits;
