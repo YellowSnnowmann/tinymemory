@@ -2536,6 +2536,21 @@ impl MemoryProvider for TinycortexProvider {
     fn as_scoring(&self) -> Option<&dyn MemoryScoring> {
         Some(self)
     }
+    fn as_document_ingest(&self) -> Option<&dyn MemoryDocumentIngest> {
+        Some(self)
+    }
+    fn as_conversation_ingest(&self) -> Option<&dyn MemoryConversationIngest> {
+        Some(self)
+    }
+    fn as_learning_ingest(&self) -> Option<&dyn MemoryLearningIngest> {
+        Some(self)
+    }
+    fn as_event_ingest(&self) -> Option<&dyn MemoryEventIngest> {
+        Some(self)
+    }
+    fn as_answer(&self) -> Option<&dyn MemoryAnswer> {
+        Some(self)
+    }
 }
 
 // ── Source sync ──────────────────────────────────────────────────────────────
