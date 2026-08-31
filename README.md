@@ -176,7 +176,8 @@ use tinymemory::tinycortex::{provider, InMemoryMemoryStore};
 let provider = Arc::new(provider(Arc::new(InMemoryMemoryStore::new())));
 ```
 
-That is a complete embedded setup for the mandatory three families. The full
+That is a complete embedded setup for the mandatory families plus document
+ingestion. The full
 full engine (`TinycortexProvider`) additionally needs the host
 seams (`EmbeddingHost` et al.) installed — see
 `crates/tinymemory-tinycortex/tests/full_provider_conformance.rs` for the
@@ -204,7 +205,7 @@ for assistant-memory workloads; wrong for high-volume keyed storage.
 ## The contract
 
 `MemoryProvider` is an object-safe trait with **three mandatory** capability
-families and **seventeen optional** ones. The mandatory three are supertraits, so
+families and independently negotiated optional ones. The mandatory three are supertraits, so
 a driver missing any of them cannot be constructed; the optional seventeen are
 reached through `as_ingest()` / `as_tree()` / … accessors that default to `None`,
 so a minimal driver implements what it supports and inherits correct absence for

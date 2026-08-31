@@ -18,9 +18,7 @@
 //!   backend as a TinyMemory
 //!   [`Memory`](tinymemory_api::traits::Memory).
 //! - [`provider`] — the one call that turns a TinyCortex backend into a
-//!   mandatory-only driver, by pairing [`TinycortexMemory`] with
-//!   [`MemoryTraitProvider`]. Enough when a host wants store, recall and
-//!   export and nothing else.
+//!   lightweight driver serving the mandatory families and document ingest.
 //! - [`engine`] — [`TinycortexProvider`](engine::TinycortexProvider), the whole
 //!   engine behind the contract: trees, chunks, entities, the graph, goals,
 //!   tool-memory, ingestion, sources, maintenance, people, retrieval, profile,
@@ -28,7 +26,8 @@
 //!
 //! ## Two drivers, and why both
 //!
-//! [`provider`] advertises Core, Recall and Portability. That used to be the
+//! [`provider`] advertises Core, Recall, Portability and DocumentIngest. The
+//! mandatory-only composition used to be the
 //! only thing here, and it was the reason anything wanting a summary tree or a
 //! diff ledger reached past the contract to the engine directly: the families
 //! existed, but not through `MemoryProvider`. Issue #18 §C3 lifted those

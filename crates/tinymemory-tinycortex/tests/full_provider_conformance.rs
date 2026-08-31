@@ -1,7 +1,7 @@
-//! The conformance suite over the FULL twenty-family driver (#18 §E1/§E3).
+//! The conformance suite over the full driver (#18 §E1/§E3).
 //!
-//! `conformance_test.rs` (in-lib) covers `crate::provider` — the mandatory
-//! three families over any engine backend. This target covers
+//! `conformance_test.rs` (in-lib) covers `crate::provider` — the lightweight
+//! provider over any engine backend. This target covers
 //! [`tinymemory_tinycortex::engine::TinycortexProvider`], which the in-lib
 //! test cannot: the provider needs a `MemoryClient`, and a `MemoryClient`
 //! needs the host's process-global embedding seam installed. A process global
