@@ -26,7 +26,7 @@ use tinymemory_api::provider::{
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::types::{MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary};
 
-/// A [`MemoryTraitProvider`] augmented with a native [`MemoryGraph`].
+/// A [`MemoryProvider`] augmented with a native [`MemoryGraph`].
 pub struct GraphMemoryProvider {
     base: Arc<dyn MemoryProvider>,
     graph: Arc<dyn MemoryGraph>,
