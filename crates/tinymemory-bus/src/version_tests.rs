@@ -7,8 +7,9 @@
 use super::*;
 
 #[test]
-fn contract_version_is_three_zero() {
-    // (3, 0): `count_chunks`, the three entity-occurrence members and the two
+fn contract_version_is_three_one() {
+    // (3, 1): the five granular operation capabilities are a minor-safe
+    // addition. (3, 0) introduced `count_chunks`, the three entity-occurrence members and the two
     // tree-forest members were added to families a driver may ALREADY
     // advertise. The rule makes that a major bump and not a minor one, and the
     // reason is the whole point of the rule: negotiation is family-granular,
@@ -20,7 +21,7 @@ fn contract_version_is_three_zero() {
     // to advertised families and stayed on the minor half. That was wrong by
     // this rule; those releases and their hosts moved in lockstep so nothing
     // was bound across the gap, but it is drift, not precedent.
-    assert_eq!(CONTRACT_VERSION, (3, 0));
+    assert_eq!(CONTRACT_VERSION, (3, 1));
 }
 
 #[test]
