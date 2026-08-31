@@ -77,13 +77,13 @@ pub use tinycortex;
 
 /// The engine's simplest backend, re-exported for first-run and test wiring:
 /// `provider(Arc::new(InMemoryMemoryStore::new()))` is a complete embedded
-/// setup for the mandatory three families.
+/// setup for the mandatory families and document ingestion.
 pub use tinycortex::memory::store::InMemoryMemoryStore;
 
 /// Wrap a TinyCortex backend as a bound memory driver.
 ///
-/// The returned provider advertises the mandatory three families and nothing
-/// else; see the crate docs.
+/// The returned provider advertises the mandatory families plus document
+/// ingestion; see the crate docs.
 #[must_use]
 pub fn provider(memory: Arc<dyn tinycortex::memory::Memory>) -> TinycortexDocumentProvider {
     TinycortexDocumentProvider::new(MemoryTraitProvider::new(
