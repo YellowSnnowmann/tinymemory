@@ -35,6 +35,31 @@ async fn a_lightweight_driver_advertises_document_ingestion() {
 }
 
 #[tokio::test]
+async fn lightweight_document_ingestion_routes_into_the_embedded_store() {
+    let driver = crate::provider(engine());
+    let document = serde_json::from_value(serde_json::json!({
+        "source": "upload",
+        "source_id": "handbook",
+        "content": "The release train leaves on Friday."
+    }))
+    .expect("document item");
+    let outcome = driver
+        .as_document_ingest()
+        .expect("document route")
+        .ingest_document(document)
+        .await
+        .expect("ingest document");
+
+    assert_eq!(outcome.written, 1);
+    let stored = driver
+        .get("document:handbook", "handbook")
+        .await
+        .expect("get document")
+        .expect("stored document");
+    assert_eq!(stored.content, "The release train leaves on Friday.");
+}
+
+#[tokio::test]
 async fn store_and_get_round_trip_through_the_contract() {
     let driver = crate::provider(engine());
     driver
