@@ -63,4 +63,3 @@ other ingestion capability.
   credentials, or hidden model reasoning.
 - Unsupported operations are absent from capability negotiation and provider
   accessors; callers do not discover them by invoking a failing method.
-
