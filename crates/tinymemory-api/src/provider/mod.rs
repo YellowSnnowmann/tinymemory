@@ -1,4 +1,4 @@
-//! The memory driver contract: [`MemoryProvider`] plus the twenty capability
+//! The memory driver contract: [`MemoryProvider`] plus its capability
 //! family traits a driver may implement.
 //!
 //! ## Shape
@@ -58,7 +58,8 @@
 //!
 //! ## Reference implementation
 //!
-//! [`crate::null::NullMemoryProvider`] implements all twenty families:
+//! [`crate::null::NullMemoryProvider`] implements every family directly for
+//! conformance testing:
 //! `/dev/null` semantics for the mandatory three, and
 //! [`crate::error::MemoryError::Unsupported`] for the other seventeen, which it
 //! does not advertise. It is what a compiled-out or unconfigured memory subsystem

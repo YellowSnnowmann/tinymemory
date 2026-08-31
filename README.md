@@ -97,7 +97,7 @@ is deliberately outside `full`: "give me the whole workspace" is not the same
 request as "give me the test doubles".
 
 This table says which crate each feature brings in. For what each *engine*
-feature actually serves — driver class, and how many of the twenty capability
+feature actually serves — driver class, and which capability
 families answer — see the engine table under
 [Using from your project](#using-from-your-project).
 
@@ -177,16 +177,16 @@ let provider = Arc::new(provider(Arc::new(InMemoryMemoryStore::new())));
 ```
 
 That is a complete embedded setup for the mandatory three families. The full
-twenty-family engine (`TinycortexProvider`) additionally needs the host
+full engine (`TinycortexProvider`) additionally needs the host
 seams (`EmbeddingHost` et al.) installed — see
 `crates/tinymemory-tinycortex/tests/full_provider_conformance.rs` for the
 minimal working wiring.
 
 | Feature | Engine | Class | Families served |
 | --- | --- | --- | --- |
-| `tinycortex` | TinyCortex, in-process | embedded | 3 (mandatory) via `provider`; all 18 via `TinycortexProvider` |
+| `tinycortex` | TinyCortex, in-process | embedded | mandatory + document ingest via `provider`; every compiled family via `TinycortexProvider` |
 | `supermemory` | Supermemory, hosted | external | 3 (mandatory) |
-| `mem0` | Mem0, hosted (`cloud`) or self-hosted | external | 3 (mandatory) |
+| `mem0` | Mem0, hosted (`cloud`) or self-hosted | external | mandatory + conversation ingest |
 | `cognee` | Cognee, hosted or self-hosted | external | 3 (mandatory) |
 | `agentmemory` | AgentMemory, self-hosted | external | 3 (mandatory) |
 | `memory-git` | add-on: git-backed diff snapshots | — | requires `tinycortex` |
