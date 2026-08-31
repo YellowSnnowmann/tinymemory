@@ -742,6 +742,162 @@ impl MemoryIngest for TinycortexProvider {
 }
 
 #[async_trait]
+impl MemoryDocumentIngest for TinycortexProvider {
+    async fn ingest_document(&self, document: IngestItem) -> Result<IngestOutcome, MemoryError> {
+        MemoryIngest::ingest_document(self, document).await
+    }
+}
+
+#[async_trait]
+impl MemoryConversationIngest for TinycortexProvider {
+    async fn ingest_conversation(
+        &self,
+        messages: Vec<IngestItem>,
+    ) -> Result<IngestOutcome, MemoryError> {
+        MemoryIngest::ingest_chat(self, messages).await
+    }
+}
+
+#[async_trait]
+impl MemoryLearningIngest for TinycortexProvider {
+    async fn ingest_learning(
+        &self,
+        learning: tinymemory_api::learning::LearningCandidate,
+    ) -> Result<IngestOutcome, MemoryError> {
+        if learning.key.trim().is_empty() || learning.value.trim().is_empty() {
+            return Err(MemoryError::Invalid(
+                "learning key and value must not be empty".to_string(),
+            ));
+        }
+        if !learning.initial_confidence.is_finite()
+            || !(0.0..=1.0).contains(&learning.initial_confidence)
+        {
+            return Err(MemoryError::Invalid(
+                "learning confidence must be between 0 and 1".to_string(),
+            ));
+        }
+
+        let class = serde_json::to_value(learning.class)
+            .ok()
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .ok_or_else(|| MemoryError::Invalid("learning class is invalid".to_string()))?;
+        let namespace = format!("learning:{class}");
+        let key = learning.key.clone();
+        let content = serde_json::to_string(&learning)
+            .map_err(|error| Self::other("encode learning", error))?;
+        self.store(
+            &namespace,
+            &key,
+            &content,
+            MemoryCategory::Core,
+            None,
+            MemoryTaint::Internal,
+        )
+        .await?;
+        tinymemory_core::learning_candidate::global().push(learning);
+        Ok(IngestOutcome {
+            written: 1,
+            ids: vec![format!("{namespace}/{key}")],
+            ..IngestOutcome::default()
+        })
+    }
+}
+
+#[async_trait]
+impl MemoryEventIngest for TinycortexProvider {
+    async fn ingest_event(&self, event: EpisodicEvent) -> Result<IngestOutcome, MemoryError> {
+        if event.event_id.trim().is_empty() || event.content.trim().is_empty() {
+            return Err(MemoryError::Invalid(
+                "event id and content must not be empty".to_string(),
+            ));
+        }
+        let event_id = event.event_id.clone();
+        MemoryEpisodic::insert_event(self, &event).await?;
+        Ok(IngestOutcome {
+            written: 1,
+            ids: vec![event_id],
+            ..IngestOutcome::default()
+        })
+    }
+}
+
+#[async_trait]
+impl MemoryAnswer for TinycortexProvider {
+    async fn answer(&self, request: AnswerRequest) -> Result<AnswerResponse, MemoryError> {
+        if request.query.trim().is_empty() {
+            return Err(MemoryError::Invalid(
+                "answer query must not be empty".to_string(),
+            ));
+        }
+        if request.limit == 0 {
+            return Err(MemoryError::Invalid(
+                "answer retrieval limit must be greater than zero".to_string(),
+            ));
+        }
+
+        let memories = self
+            .recall(
+                &request.query,
+                request.limit,
+                &request.recall,
+                request.scope.as_ref(),
+            )
+            .await?;
+        let citations: Vec<AnswerCitation> = memories
+            .iter()
+            .map(|memory| AnswerCitation {
+                id: memory.id.clone(),
+                namespace: memory.namespace.clone(),
+                key: memory.key.clone(),
+                content: memory.content.clone(),
+                score: memory.score,
+            })
+            .collect();
+        let context = citations
+            .iter()
+            .enumerate()
+            .map(|(index, citation)| format!("[{}] {}", index + 1, citation.content))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let instructions = request.instructions.as_deref().unwrap_or(
+            "Answer only from the retrieved memories. Cite supporting memories as [n]. \
+             Say when the memories do not contain enough information.",
+        );
+        let (chat, model) = tinymemory_core::chat::build_chat_runtime(&self.config)
+            .map_err(|error| Self::other("build answer agent", error))?;
+        let prompt = tinymemory_core::chat::ChatPrompt {
+            system: format!(
+                "You are a grounded memory-answering agent. {instructions}\n\nRetrieved memories:\n{context}"
+            ),
+            user: request.query,
+            temperature: 0.1,
+            kind: "memory_answer",
+            max_tokens: None,
+        };
+        let answer = chat
+            .chat_for_text(&prompt)
+            .await
+            .map_err(|error| Self::other("answer synthesis", error))?;
+
+        Ok(AnswerResponse {
+            answer,
+            citations,
+            steps: vec![
+                AnswerStep {
+                    operation: "recall".to_string(),
+                    detail: format!("retrieved {} memories", memories.len()),
+                },
+                AnswerStep {
+                    operation: "synthesise".to_string(),
+                    detail: "generated a grounded answer".to_string(),
+                },
+            ],
+            model: Some(model),
+        })
+    }
+}
+
+#[async_trait]
 impl MemoryGraph for TinycortexProvider {
     async fn kv_get(
         &self,
