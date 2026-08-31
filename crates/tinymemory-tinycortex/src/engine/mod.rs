@@ -859,15 +859,15 @@ impl MemoryAnswer for TinycortexProvider {
             .map(|(index, citation)| format!("[{}] {}", index + 1, citation.content))
             .collect::<Vec<_>>()
             .join("\n\n");
-        let instructions = request.instructions.as_deref().unwrap_or(
-            "Answer only from the retrieved memories. Cite supporting memories as [n]. \
-             Say when the memories do not contain enough information.",
-        );
+        let instructions = request.instructions.as_deref().unwrap_or("");
         let (chat, model) = tinymemory_core::chat::build_chat_runtime(&self.config)
             .map_err(|error| Self::other("build answer agent", error))?;
         let prompt = tinymemory_core::chat::ChatPrompt {
             system: format!(
-                "You are a grounded memory-answering agent. {instructions}\n\nRetrieved memories:\n{context}"
+                "You are a grounded memory-answering agent. Answer only from the retrieved \
+                 memories. Cite supporting memories as [n]. Say when the memories do not contain \
+                 enough information. Additional caller instructions: {instructions}\n\nRetrieved \
+                 memories:\n{context}"
             ),
             user: request.query,
             temperature: 0.1,
