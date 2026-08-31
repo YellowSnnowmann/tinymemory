@@ -143,10 +143,10 @@ mod tests {
     async fn absent_optional_routes_return_the_named_capability() {
         let provider = NullMemoryProvider::new();
         let api = MemoryApi::new(&provider);
-        let error = api
-            .answer(AnswerRequest::new("question"))
-            .await
-            .expect_err("answer is absent");
+        let error = match api.answer(AnswerRequest::new("question")).await {
+            Ok(_) => panic!("answer route should be absent"),
+            Err(error) => error,
+        };
         assert!(matches!(
             error,
             MemoryError::Unsupported {
