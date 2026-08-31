@@ -4,9 +4,10 @@ Every type that crosses the TinyMemory `TinyBus` boundary, and the names of the
 members that carry them.
 
 TinyMemory ships as a loadable module so a host does not compile the engine:
-`crates/tinymemory-module` exports one object with 120 members on it, built as a
-`cdylib`. A host can load that binary but cannot `use` anything out of it, so
-the payload vocabulary has to be published as an ordinary library. This is it.
+`crates/tinymemory-module` exports one object with `METHODS.len()` members on
+it, built as a `cdylib`. A host can load that binary but cannot `use` anything
+out of it, so the payload vocabulary has to be published as an ordinary
+library. This is it.
 
 | module                                                           | what it holds                                  |
 | ---------------------------------------------------------------- | ---------------------------------------------- |

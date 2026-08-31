@@ -214,3 +214,77 @@ fn a_root_summary_travels_by_name_so_its_two_strings_cannot_be_swapped() {
     let decoded: RootSummary = serde_json::from_value(payload).unwrap();
     assert_eq!(decoded, summary);
 }
+
+#[test]
+fn a_tree_node_round_trips_with_its_level_spelled_as_the_files_spell_it() {
+    // `TreeNode` predates the runtime-tree members but never crossed a frame
+    // as a *response* until `RuntimeReadNode`/`RuntimeReadChildren`/
+    // `RuntimeSummarize` — this pins the shape those members now serve. The
+    // level's wire string matters doubly: it is also the spelling the engine's
+    // markdown frontmatter uses, so a rename here would not just break decode,
+    // it would disagree with every node already on disk.
+    let node = TreeNode {
+        node_id: "2024/03/15/09".to_string(),
+        namespace: "team".to_string(),
+        level: NodeLevel::Hour,
+        parent_id: Some("2024/03/15".to_string()),
+        summary: "the morning standup, folded".to_string(),
+        token_count: 7,
+        child_count: 0,
+        created_at: Utc.with_ymd_and_hms(2024, 3, 15, 9, 0, 0).unwrap(),
+        updated_at: Utc.with_ymd_and_hms(2024, 3, 15, 9, 30, 0).unwrap(),
+        metadata: None,
+    };
+    let payload = serde_json::to_value(&node).unwrap();
+    assert_eq!(payload["level"], "hour");
+    assert_eq!(payload["node_id"], "2024/03/15/09");
+    assert!(
+        payload.get("metadata").is_none(),
+        "absent metadata is omitted, not serialized as null"
+    );
+    let decoded: TreeNode = serde_json::from_value(payload).unwrap();
+    assert_eq!(decoded.node_id, node.node_id);
+    assert_eq!(decoded.level, node.level);
+    assert_eq!(decoded.parent_id, node.parent_id);
+    assert_eq!(decoded.summary, node.summary);
+    assert_eq!(decoded.updated_at, node.updated_at);
+    assert_eq!(decoded.metadata, None);
+}
+
+#[test]
+fn a_tree_status_keeps_its_absent_timestamps_absent() {
+    // The status of a namespace that has never been sealed is all-`None`, and
+    // `RuntimeTreeStatus` serves exactly that on a fresh workspace. The three
+    // options must decode back to `None` rather than to an epoch, because a
+    // dashboard renders `oldest_entry` as coverage and an epoch reads as
+    // "since 1970".
+    let empty = TreeStatus {
+        namespace: "team".to_string(),
+        total_nodes: 0,
+        depth: 0,
+        oldest_entry: None,
+        newest_entry: None,
+        last_run_at: None,
+    };
+    let decoded: TreeStatus =
+        serde_json::from_str(&serde_json::to_string(&empty).unwrap()).unwrap();
+    assert_eq!(decoded.namespace, "team");
+    assert_eq!(decoded.total_nodes, 0);
+    assert_eq!(decoded.oldest_entry, None);
+    assert_eq!(decoded.last_run_at, None);
+
+    let run_at = Utc.with_ymd_and_hms(2024, 3, 15, 10, 0, 0).unwrap();
+    let populated = TreeStatus {
+        namespace: "team".to_string(),
+        total_nodes: 12,
+        depth: 5,
+        oldest_entry: Some(Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap()),
+        newest_entry: Some(run_at),
+        last_run_at: Some(run_at),
+    };
+    let decoded: TreeStatus =
+        serde_json::from_str(&serde_json::to_string(&populated).unwrap()).unwrap();
+    assert_eq!(decoded.total_nodes, 12);
+    assert_eq!(decoded.depth, 5);
+    assert_eq!(decoded.newest_entry, Some(run_at));
+}

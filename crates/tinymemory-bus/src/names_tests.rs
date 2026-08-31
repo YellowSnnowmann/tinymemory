@@ -87,16 +87,18 @@ fn the_newest_members_are_appended_rather_than_filed_with_their_family() {
     // against this table as a *sequence*, so a new member filed beside its
     // family renumbers every member after it. That is invisible here and shows
     // up as the wrong method being invoked on a host built against a different
-    // release, which is why the tail order is asserted and not just membership.
-    let tail = &METHODS[METHODS.len() - 3..];
-    assert_eq!(
-        tail,
-        [
-            methods::DEGRADED_STATE,
-            methods::CHUNK_SCORE,
-            methods::SOURCE_INGEST_STATUS,
-        ]
-    );
+    // release, which is why the positions are asserted and not just
+    // membership.
+    //
+    // By absolute index since the runtime-tree round: this began as a
+    // tail-of-table assertion, which fires on every append and is then
+    // re-pointed at the new tail — doing the drift-witness job once, at the
+    // cost of re-stating it each round. The absolute slots are the released
+    // wire positions themselves, which is the stronger pin and the one the
+    // summariser-door test below already argues for.
+    assert_eq!(METHODS[128], methods::DEGRADED_STATE);
+    assert_eq!(METHODS[129], methods::CHUNK_SCORE);
+    assert_eq!(METHODS[130], methods::SOURCE_INGEST_STATUS);
 }
 
 #[test]
@@ -115,4 +117,34 @@ fn the_summariser_door_holds_the_wire_slots_it_was_released_in() {
     // here to catch.
     assert_eq!(METHODS[126], methods::SUMMARISE);
     assert_eq!(METHODS[127], methods::ROOT_SUMMARIES);
+}
+
+#[test]
+fn the_runtime_tree_doors_hold_the_wire_slots_they_were_released_in() {
+    // The final seven doors of the engine shed: the members the host's
+    // tree-summarizer RPC surface and the flavour tool stand on once nothing
+    // in the host links the engine. Their spellings are pinned here as well as
+    // read off the table for the reason every earlier round gives — a typo is
+    // an `UnknownMethod` the first time a released module is asked, never a
+    // compile error on either side.
+    assert_eq!(methods::RUNTIME_BUFFER_WRITE, "RuntimeBufferWrite");
+    assert_eq!(methods::RUNTIME_READ_NODE, "RuntimeReadNode");
+    assert_eq!(methods::RUNTIME_READ_CHILDREN, "RuntimeReadChildren");
+    assert_eq!(methods::RUNTIME_TREE_STATUS, "RuntimeTreeStatus");
+    assert_eq!(methods::RUNTIME_SUMMARIZE, "RuntimeSummarize");
+    assert_eq!(methods::RUNTIME_REBUILD, "RuntimeRebuild");
+    assert_eq!(methods::FLAVOUR_PROFILE, "FlavourProfile");
+
+    // Their positions are pinned by absolute index, not from the tail, for the
+    // reason the summariser-door test above gives: member order is wire order,
+    // and an assertion measured from the end moves silently under the next
+    // append — which is exactly the edit this exists to catch.
+    assert_eq!(METHODS.len(), 138);
+    assert_eq!(METHODS[131], methods::RUNTIME_BUFFER_WRITE);
+    assert_eq!(METHODS[132], methods::RUNTIME_READ_NODE);
+    assert_eq!(METHODS[133], methods::RUNTIME_READ_CHILDREN);
+    assert_eq!(METHODS[134], methods::RUNTIME_TREE_STATUS);
+    assert_eq!(METHODS[135], methods::RUNTIME_SUMMARIZE);
+    assert_eq!(METHODS[136], methods::RUNTIME_REBUILD);
+    assert_eq!(METHODS[137], methods::FLAVOUR_PROFILE);
 }

@@ -7,20 +7,28 @@
 use super::*;
 
 #[test]
-fn contract_version_is_three_zero() {
-    // (3, 0): `count_chunks`, the three entity-occurrence members and the two
-    // tree-forest members were added to families a driver may ALREADY
-    // advertise. The rule makes that a major bump and not a minor one, and the
-    // reason is the whole point of the rule: negotiation is family-granular,
-    // so a driver advertising `Chunks` at (2, 2) would be bound and then asked
-    // for a method it has never heard of. The major half is what refuses that
-    // bind instead of discovering it at the call.
+fn contract_version_is_four_zero() {
+    // (4, 0): the six runtime-tree members and `flavour_profile` were added to
+    // `Tree` — a family a driver may ALREADY advertise. The rule makes that a
+    // major bump and not a minor one, and the reason is the whole point of the
+    // rule: negotiation is family-granular, so a driver advertising `Tree` at
+    // (3, 0) would be bound and then asked for a method it has never heard of.
+    // The major half is what refuses that bind instead of discovering it at
+    // the call.
+    //
+    // (3, 0) was the same shape one round earlier: `count_chunks`, the three
+    // entity-occurrence members and the two tree-forest members, all onto
+    // already-advertised families.
     //
     // Note for anyone reading the history: #85/#86/#89/#90 also added methods
-    // to advertised families and stayed on the minor half. That was wrong by
-    // this rule; those releases and their hosts moved in lockstep so nothing
-    // was bound across the gap, but it is drift, not precedent.
-    assert_eq!(CONTRACT_VERSION, (3, 0));
+    // to advertised families and stayed on the minor half, and so did #122 —
+    // the first round of the openhuman engine shed, which put `Summarise`,
+    // `RootSummaries`, `ChunkScore`, `DegradedState` and `SourceIngestStatus`
+    // onto existing families and shipped as v1.13.5 without touching this
+    // constant. All of that was wrong by this rule; those releases and their
+    // hosts moved in lockstep so nothing was bound across the gap, but it is
+    // drift, not precedent. This round declines to extend it.
+    assert_eq!(CONTRACT_VERSION, (4, 0));
 }
 
 #[test]

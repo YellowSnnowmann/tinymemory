@@ -20,7 +20,7 @@ use std::sync::Arc;
 
 use crate::TinycortexMemory;
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use tinymemory_api::capabilities::Capabilities;
 use tinymemory_api::chunks::Chunk;
 use tinymemory_api::error::MemoryError;
@@ -60,7 +60,7 @@ use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
 use tinymemory_api::tree::{
     IngestRequest, QueryResult, RootSummary, SummaryContext, SummaryForest, SummaryInput,
-    SummaryOutput, TreeLeaf, TreeStatus, TreeSummary,
+    SummaryOutput, TreeLeaf, TreeNode, TreeStatus, TreeSummary,
 };
 use tinymemory_api::types::{
     GraphRelationRecord, MemoryCategory, MemoryEntry, MemoryKvRecord, MemoryTaint,
@@ -1424,6 +1424,221 @@ impl MemoryTree for TinycortexProvider {
                 updated_at,
             })
             .collect())
+    }
+
+    async fn runtime_buffer_write(
+        &self,
+        namespace: &str,
+        content: &str,
+        timestamp: DateTime<Utc>,
+        metadata: Option<serde_json::Value>,
+    ) -> Result<String, MemoryError> {
+        // The same two refusals `append` makes, in the same order, so the two
+        // writes cannot disagree about what a writable request is. The
+        // timestamp is not defaulted: the contract makes it required so the
+        // caller's reply and the buffer file agree on the instant — see the
+        // trait.
+        tinycortex::memory::tree::runtime::store::validate_namespace(namespace)
+            .map_err(MemoryError::Invalid)?;
+        if content.trim().is_empty() {
+            return Err(MemoryError::Invalid(
+                "content must not be empty".to_string(),
+            ));
+        }
+        let namespace = namespace.trim().to_string();
+        let content = content.to_string();
+        let path = blocking(self.config.clone(), "buffer tree content", move |config| {
+            tinymemory_core::tree::tree_runtime::store::buffer_write(
+                config,
+                &namespace,
+                &content,
+                &timestamp,
+                metadata.as_ref(),
+            )
+        })
+        .await?;
+        // `display()` is exactly what the host printed when it held the
+        // `PathBuf` itself, so the string a caller reports does not change
+        // with the seam. The components are engine-generated ASCII under the
+        // module's own workspace root; nothing here invites non-UTF-8.
+        Ok(path.display().to_string())
+    }
+
+    async fn runtime_read_node(
+        &self,
+        namespace: &str,
+        node_id: &str,
+    ) -> Result<Option<TreeNode>, MemoryError> {
+        tinycortex::memory::tree::runtime::store::validate_namespace(namespace)
+            .map_err(MemoryError::Invalid)?;
+        tinycortex::memory::tree::runtime::store::validate_node_id(node_id)
+            .map_err(MemoryError::Invalid)?;
+        let namespace = namespace.trim().to_string();
+        let node_id = node_id.to_string();
+        // Returned as the store hands it back: the engine's `TreeNode` *is*
+        // the contract's — `tinycortex-api` re-exports `tinymemory-api`'s
+        // tree module, unified by the workspace patch table — so unlike
+        // `drill_down`'s historical `cross`, there is nothing to convert and
+        // the compiler proves it.
+        blocking(self.config.clone(), "read tree node", move |config| {
+            tinymemory_core::tree::tree_runtime::store::read_node(config, &namespace, &node_id)
+        })
+        .await
+    }
+
+    async fn runtime_read_children(
+        &self,
+        namespace: &str,
+        parent_id: &str,
+    ) -> Result<Vec<TreeNode>, MemoryError> {
+        tinycortex::memory::tree::runtime::store::validate_namespace(namespace)
+            .map_err(MemoryError::Invalid)?;
+        tinycortex::memory::tree::runtime::store::validate_node_id(parent_id)
+            .map_err(MemoryError::Invalid)?;
+        let namespace = namespace.trim().to_string();
+        let parent_id = parent_id.to_string();
+        blocking(self.config.clone(), "read tree children", move |config| {
+            tinymemory_core::tree::tree_runtime::store::read_children(
+                config, &namespace, &parent_id,
+            )
+        })
+        .await
+    }
+
+    async fn runtime_tree_status(&self, namespace: &str) -> Result<TreeStatus, MemoryError> {
+        tinycortex::memory::tree::runtime::store::validate_namespace(namespace)
+            .map_err(MemoryError::Invalid)?;
+        let namespace = namespace.trim().to_string();
+        blocking(self.config.clone(), "read tree status", move |config| {
+            tinymemory_core::tree::tree_runtime::store::get_tree_status(config, &namespace)
+        })
+        .await
+    }
+
+    async fn runtime_summarize(
+        &self,
+        namespace: &str,
+        timestamp: DateTime<Utc>,
+    ) -> Result<Option<TreeNode>, MemoryError> {
+        tinycortex::memory::tree::runtime::store::validate_namespace(namespace)
+            .map_err(MemoryError::Invalid)?;
+        // The provider is resolved before the engine is asked anything —
+        // ahead of even the "is there work" check the engine makes — because
+        // this is a caller's explicit run: a setup that cannot summarise must
+        // say so rather than answer `None` as if it had looked. Built through
+        // the same seam `seal` uses, so the module's chat host carries the
+        // call back to the host and the routing policy stays where it always
+        // was.
+        let (model, _) = tinymemory_core::chat_host::create_chat_model_with_model_id(
+            "summarization",
+            &self.config,
+            self.config.default_temperature,
+        )
+        .map_err(|error| Self::other("create summarizer", error))?;
+        tinymemory_core::tree::tree_runtime::engine::run_summarization(
+            &self.config,
+            model.as_ref(),
+            namespace.trim(),
+            timestamp,
+        )
+        .await
+        // `{:#}` keeps the cause chain the way the host's own RPC reported
+        // it: the top context alone says "summarization failed" and drops the
+        // provider's actual complaint, which is the actionable half.
+        .map_err(|error| Self::other("run tree summarization", format!("{error:#}")))
+    }
+
+    async fn runtime_rebuild(&self, namespace: &str) -> Result<TreeStatus, MemoryError> {
+        tinycortex::memory::tree::runtime::store::validate_namespace(namespace)
+            .map_err(MemoryError::Invalid)?;
+        // No empty-tree short-circuit, unlike `cascade`: the provider
+        // resolves first, on the terms `runtime_summarize` gives.
+        let (model, _) = tinymemory_core::chat_host::create_chat_model_with_model_id(
+            "summarization",
+            &self.config,
+            self.config.default_temperature,
+        )
+        .map_err(|error| Self::other("create summarizer", error))?;
+        tinymemory_core::tree::tree_runtime::engine::rebuild_tree(
+            &self.config,
+            model.as_ref(),
+            namespace.trim(),
+        )
+        .await
+        .map_err(|error| Self::other("rebuild tree", format!("{error:#}")))
+    }
+
+    async fn flavour_profile(&self, scope: &str) -> Result<Option<String>, MemoryError> {
+        if scope.trim().is_empty() {
+            return Err(MemoryError::Invalid("scope must not be empty".to_string()));
+        }
+        // Matched literally from here on — the scope is the caller's naming
+        // scheme (`persona/<facet>` today) and the tree row's key, and the
+        // driver has no vocabulary of its own to normalise it against.
+        let scope = scope.to_string();
+        blocking(self.config.clone(), "read flavour profile", move |config| {
+            let mc = tinymemory_core::engine::engine_config(config);
+
+            // Fast path: the compiled artifact already on disk with a
+            // non-empty body — read it without touching the tree store. An
+            // unreadable or body-less file falls through to the recompile
+            // rather than failing, exactly as the host's lookup did: the
+            // artifact is a staged projection, and the tree is the truth.
+            let compiled = tinycortex::memory::tree::flavoured_root_abs_path(&mc, &scope);
+            if compiled.is_file() {
+                if let Ok(markdown) = std::fs::read_to_string(&compiled) {
+                    if !body_after_front_matter(&markdown).trim().is_empty() {
+                        return Ok(Some(markdown));
+                    }
+                }
+            }
+
+            // Slow path: look the flavoured tree up and (re)compile its root.
+            // No tree is `None` — not built is an answer, not a fault — while
+            // a lookup or compile *failure* propagates: reporting a broken
+            // store as "not built yet" tells the user to re-run an ingestion
+            // that already worked.
+            let Some(tree) = tinycortex::memory::tree::store::get_tree_by_scope(
+                &mc,
+                TreeKind::Flavoured,
+                &scope,
+            )?
+            else {
+                return Ok(None);
+            };
+            let markdown = tinycortex::memory::tree::compile_flavoured_root(&mc, &tree.id)?;
+            // A tree that exists but has never sealed compiles to front-matter
+            // over an empty body; the contract says that is still "not built".
+            if body_after_front_matter(&markdown).trim().is_empty() {
+                return Ok(None);
+            }
+            Ok(Some(markdown))
+        })
+        .await
+    }
+}
+
+/// Strip the YAML front matter `compile_flavoured_root` writes
+/// (`---\n…\n---\n<body>`) and return just the body.
+///
+/// The driver strips only to *decide*, never to serve: the full artifact,
+/// front-matter included, is what `MemoryTree::flavour_profile` returns, and
+/// presentation stays the caller's. What is settled here is built-versus-not —
+/// an artifact whose body is blank after this strip is a tree that has never
+/// sealed, and the door answers `None` for it.
+///
+/// Front-matter field values are single-line (the engine's `yaml_quote`
+/// collapses interior newlines), so the first `\n---\n` after the opening
+/// delimiter is always the closing one. An opener with no closer falls back to
+/// everything after the opener, so the delimiter itself is never mistaken for
+/// prose.
+fn body_after_front_matter(content: &str) -> &str {
+    match content.strip_prefix("---\n") {
+        Some(rest) => match rest.find("\n---\n") {
+            Some(pos) => &rest[pos + "\n---\n".len()..],
+            None => rest,
+        },
+        None => content,
     }
 }
 
