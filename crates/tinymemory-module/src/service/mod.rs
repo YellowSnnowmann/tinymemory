@@ -153,6 +153,8 @@ use tinymemory_api::chunks::Chunk;
 use tinymemory_api::error::MemoryError;
 use tinymemory_api::goals::GoalsDoc;
 use tinymemory_api::health::MemoryHealth;
+use tinymemory_api::learning::LearningCandidate;
+use tinymemory_api::operations::{AnswerRequest, AnswerResponse};
 use tinymemory_api::provider::types::{
     ChunkEntityOccurrence, DiffReport, EntityHit, EntityOccurrence, ExportPage, ExportRecord,
     FlushOutcome, ForgetOutcome, ForgetSelector, ImportOutcome, IngestItem, IngestOutcome,
@@ -606,15 +608,15 @@ impl MemoryService {
     }
 
     async fn ingest_document(&self, item: IngestItem) -> BusResult<IngestOutcome> {
-        require_family!(self, as_ingest, Capability::Ingest)
+        require_family!(self, as_document_ingest, Capability::DocumentIngest)
             .ingest_document(item)
             .await
             .map_err(|error| into_bus_error(&error))
     }
 
     async fn ingest_chat(&self, messages: Vec<IngestItem>) -> BusResult<IngestOutcome> {
-        require_family!(self, as_ingest, Capability::Ingest)
-            .ingest_chat(messages)
+        require_family!(self, as_conversation_ingest, Capability::ConversationIngest)
+            .ingest_conversation(messages)
             .await
             .map_err(|error| into_bus_error(&error))
     }
@@ -628,6 +630,27 @@ impl MemoryService {
     async fn ingest_email(&self, messages: Vec<IngestItem>) -> BusResult<IngestOutcome> {
         require_family!(self, as_ingest, Capability::Ingest)
             .ingest_email(messages)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn ingest_learning(&self, learning: LearningCandidate) -> BusResult<IngestOutcome> {
+        require_family!(self, as_learning_ingest, Capability::LearningIngest)
+            .ingest_learning(learning)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn ingest_event(&self, event: EpisodicEvent) -> BusResult<IngestOutcome> {
+        require_family!(self, as_event_ingest, Capability::EventIngest)
+            .ingest_event(event)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    async fn answer(&self, request: AnswerRequest) -> BusResult<AnswerResponse> {
+        require_family!(self, as_answer, Capability::Answer)
+            .answer(request)
             .await
             .map_err(|error| into_bus_error(&error))
     }
