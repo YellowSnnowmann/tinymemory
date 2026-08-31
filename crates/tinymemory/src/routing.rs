@@ -93,10 +93,7 @@ impl<'a> MemoryApi<'a> {
     ///
     /// Returns `Unsupported(event_ingest)` when absent, otherwise the
     /// provider's error.
-    pub async fn ingest_event(
-        &self,
-        event: EpisodicEvent,
-    ) -> Result<IngestOutcome, MemoryError> {
+    pub async fn ingest_event(&self, event: EpisodicEvent) -> Result<IngestOutcome, MemoryError> {
         self.provider
             .as_event_ingest()
             .ok_or_else(|| MemoryError::unsupported(Capability::EventIngest))?
