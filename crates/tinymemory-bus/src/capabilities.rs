@@ -116,6 +116,16 @@ pub enum Capability {
     /// Scoring and NLP operations: entity extraction, text embedding, and
     /// embedder identification.
     Scoring,
+    /// Raw document ingestion with driver-owned chunking and indexing.
+    DocumentIngest,
+    /// Ordered conversation ingestion.
+    ConversationIngest,
+    /// Durable learning-candidate ingestion.
+    LearningIngest,
+    /// Raw event ingestion.
+    EventIngest,
+    /// Agentic, grounded answer synthesis.
+    Answer,
 }
 
 impl Capability {
@@ -124,7 +134,7 @@ impl Capability {
     /// Declaration order is also bit order in [`Capabilities`] and iteration
     /// order in its serialized form, so this slice is the single ordering
     /// authority for the whole module.
-    pub const ALL: [Capability; 21] = [
+    pub const ALL: [Capability; 26] = [
         Capability::Core,
         Capability::Recall,
         Capability::Ingest,
@@ -149,6 +159,11 @@ impl Capability {
         Capability::SourceSync,
         Capability::CodingSessions,
         Capability::Scoring,
+        Capability::DocumentIngest,
+        Capability::ConversationIngest,
+        Capability::LearningIngest,
+        Capability::EventIngest,
+        Capability::Answer,
     ];
 
     /// The families a driver must advertise to be bindable at all.
@@ -195,6 +210,11 @@ impl Capability {
             Self::SourceSync => "source_sync",
             Self::CodingSessions => "coding_sessions",
             Self::Scoring => "scoring",
+            Self::DocumentIngest => "document_ingest",
+            Self::ConversationIngest => "conversation_ingest",
+            Self::LearningIngest => "learning_ingest",
+            Self::EventIngest => "event_ingest",
+            Self::Answer => "answer",
         }
     }
 
@@ -245,6 +265,11 @@ impl Capability {
             Self::SourceSync => 18,
             Self::CodingSessions => 19,
             Self::Scoring => 20,
+            Self::DocumentIngest => 21,
+            Self::ConversationIngest => 22,
+            Self::LearningIngest => 23,
+            Self::EventIngest => 24,
+            Self::Answer => 25,
         }
     }
 

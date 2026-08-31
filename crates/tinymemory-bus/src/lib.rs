@@ -89,6 +89,7 @@ pub mod health;
 pub mod learning;
 pub mod names;
 pub mod namespace;
+pub mod operations;
 pub mod provider;
 pub mod recall;
 pub mod tool_memory;
