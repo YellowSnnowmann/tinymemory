@@ -17,8 +17,8 @@ use tinymemory_api::provider::{
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::types::{MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary};
 
-use crate::mem0::Mem0Memory;
 use crate::common::encode;
+use crate::mem0::Mem0Memory;
 use crate::MEM0_DRIVER_ID;
 
 /// Mem0 exposed as mandatory storage/recall plus conversation ingestion.
@@ -28,7 +28,9 @@ pub struct Mem0Provider {
 
 impl std::fmt::Debug for Mem0Provider {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter.debug_struct("Mem0Provider").finish_non_exhaustive()
+        formatter
+            .debug_struct("Mem0Provider")
+            .finish_non_exhaustive()
     }
 }
 
@@ -72,9 +74,7 @@ impl MemoryCore for Mem0Provider {
         category: Option<&MemoryCategory>,
         session_id: Option<&str>,
     ) -> Result<Vec<MemoryEntry>, MemoryError> {
-        self.mandatory
-            .list(namespace, category, session_id)
-            .await
+        self.mandatory.list(namespace, category, session_id).await
     }
 
     async fn namespaces(&self) -> Result<Vec<NamespaceSummary>, MemoryError> {
@@ -128,9 +128,10 @@ impl MemoryConversationIngest for Mem0Provider {
                 "conversation id must not be empty".to_string(),
             ));
         }
-        if messages.iter().any(|item| {
-            item.source_id != conversation_id || item.content.trim().is_empty()
-        }) {
+        if messages
+            .iter()
+            .any(|item| item.source_id != conversation_id || item.content.trim().is_empty())
+        {
             return Err(MemoryError::Invalid(
                 "conversation batches must contain one conversation and non-empty messages"
                     .to_string(),

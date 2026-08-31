@@ -12,9 +12,7 @@ use crate::learning::LearningCandidate;
 use crate::provider::episodic::EpisodicEvent;
 use crate::provider::types::{IngestItem, IngestOutcome};
 
-pub use crate::operations::{
-    AnswerCitation, AnswerRequest, AnswerResponse, AnswerStep,
-};
+pub use crate::operations::{AnswerCitation, AnswerRequest, AnswerResponse, AnswerStep};
 
 /// Document ingestion with driver-owned chunking and indexing.
 #[async_trait]

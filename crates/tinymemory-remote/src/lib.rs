@@ -13,8 +13,8 @@ mod cognee_graph;
 mod common;
 mod graph_provider;
 pub mod mem0;
-mod mem0_provider;
 mod mem0_graph;
+mod mem0_provider;
 pub mod supermemory;
 
 pub use agentmemory::{AgentMemoryMemory, AGENTMEMORY_API_ENDPOINT, AGENTMEMORY_DRIVER_ID};
@@ -22,8 +22,8 @@ pub use cognee::{CogneeMemory, COGNEE_DRIVER_ID};
 pub use cognee_graph::CogneeGraph;
 pub use graph_provider::GraphMemoryProvider;
 pub use mem0::{Mem0Memory, MEM0_API_ENDPOINT, MEM0_DRIVER_ID};
-pub use mem0_provider::Mem0Provider;
 pub use mem0_graph::Mem0Graph;
+pub use mem0_provider::Mem0Provider;
 pub use supermemory::{SupermemoryMemory, SUPERMEMORY_API_ENDPOINT, SUPERMEMORY_DRIVER_ID};
 
 use std::sync::Arc;

@@ -192,9 +192,7 @@ async fn mem0_routes_conversation_ingestion_without_claiming_other_ingest_kinds(
     assert!(provider
         .capabilities()
         .contains(Capability::ConversationIngest));
-    assert!(!provider
-        .capabilities()
-        .contains(Capability::DocumentIngest));
+    assert!(!provider.capabilities().contains(Capability::DocumentIngest));
 
     let messages = vec![serde_json::from_value(json!({
         "source": "conversation",

@@ -31,7 +31,9 @@ async fn a_lightweight_driver_advertises_document_ingestion() {
     assert_eq!(driver.driver_id(), TINYCORTEX_DRIVER_ID);
     assert!(driver.capabilities().contains(Capability::DocumentIngest));
     assert!(driver.as_document_ingest().is_some());
-    assert!(!driver.capabilities().contains(Capability::ConversationIngest));
+    assert!(!driver
+        .capabilities()
+        .contains(Capability::ConversationIngest));
 }
 
 #[tokio::test]

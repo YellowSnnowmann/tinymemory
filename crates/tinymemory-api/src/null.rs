@@ -65,15 +65,14 @@ use crate::provider::{
     AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, CodingSessionIngestReport,
     CodingSessionIngestRequest, CodingSessionSource, CoverWindowQuery, EntityMatch, EpisodicEvent,
     FacetType, FastRetrieveQuery, MemoryAnswer, MemoryChunks, MemoryCodingSessions,
-    MemoryConversationIngest,
-    MemoryCore, MemoryDiff, MemoryDocumentIngest, MemoryDocuments, MemoryEntities,
-    MemoryEventIngest, MemoryGoals, MemoryGraph, MemoryIngest, MemoryLearningIngest,
-    MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProfile, MemoryProvider,
-    MemoryRecall, MemoryRetrieval, MemoryScoring, MemorySourceSink, MemorySourceSync,
-    MemoryToolMemory, MemoryTree, PersonHandle,
-    PersonInteraction, PersonRecord, PersonScore, ProfileFacet, RankedPerson, RawArchiveCoverage,
-    RawRebuildOutcome, ResolvedPerson, RetrievalHit, RetrievalResponse, SourceRetrievalQuery,
-    SourceSyncState, SourceSyncStatus, SyncAuditEntry, SyncRunOutcome, UserState,
+    MemoryConversationIngest, MemoryCore, MemoryDiff, MemoryDocumentIngest, MemoryDocuments,
+    MemoryEntities, MemoryEventIngest, MemoryGoals, MemoryGraph, MemoryIngest,
+    MemoryLearningIngest, MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProfile,
+    MemoryProvider, MemoryRecall, MemoryRetrieval, MemoryScoring, MemorySourceSink,
+    MemorySourceSync, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction, PersonRecord,
+    PersonScore, ProfileFacet, RankedPerson, RawArchiveCoverage, RawRebuildOutcome, ResolvedPerson,
+    RetrievalHit, RetrievalResponse, SourceRetrievalQuery, SourceSyncState, SourceSyncStatus,
+    SyncAuditEntry, SyncRunOutcome, UserState,
 };
 use crate::recall::OwnedRecallOpts;
 use crate::tool_memory::ToolMemoryRule;

@@ -39,6 +39,7 @@ use tinymemory_api::provider::types::{
 };
 // Diff-family value types, used only by the `MemoryDiff` impl below — which is
 // compiled out without the git-backed snapshot store.
+use tinymemory_api::operations::{AnswerCitation, AnswerRequest, AnswerResponse, AnswerStep};
 #[cfg(feature = "memory-git")]
 use tinymemory_api::provider::types::{ChangeKind, DiffReport, SnapshotRef, SourceChange};
 use tinymemory_api::provider::{
@@ -46,17 +47,16 @@ use tinymemory_api::provider::{
     CodingSessionIngestReport, CodingSessionIngestRequest, CodingSessionSource,
     ConversationSegment, CoverWindowQuery, DegradedCapabilities, Diagnosis, DiagnosisCounters,
     DiagnosisFailure, DiagnosisStage, EntityMatch, EpisodicEvent, EpisodicTurn, EventKind,
-    FacetType, FastRetrieveQuery, MemoryChunks, MemoryCodingSessions, MemoryCore, MemoryDiff,
-    MemoryAnswer, MemoryConversationIngest, MemoryDocumentIngest, MemoryDocuments, MemoryEntities,
-    MemoryEpisodic, MemoryEventIngest, MemoryGoals, MemoryGraph, MemoryIngest,
+    FacetType, FastRetrieveQuery, MemoryAnswer, MemoryChunks, MemoryCodingSessions,
+    MemoryConversationIngest, MemoryCore, MemoryDiff, MemoryDocumentIngest, MemoryDocuments,
+    MemoryEntities, MemoryEpisodic, MemoryEventIngest, MemoryGoals, MemoryGraph, MemoryIngest,
     MemoryLearningIngest, MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProfile,
-    MemoryProvider, MemoryRecall, MemoryRetrieval, MemoryScoring, MemorySourceSink, MemorySourceSync,
-    MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
-    ProfileFacet, RankedPerson, RawArchiveCoverage, RawRebuildOutcome, ResolvedPerson,
+    MemoryProvider, MemoryRecall, MemoryRetrieval, MemoryScoring, MemorySourceSink,
+    MemorySourceSync, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction, PersonRecord,
+    PersonScore, ProfileFacet, RankedPerson, RawArchiveCoverage, RawRebuildOutcome, ResolvedPerson,
     RetrievalHit, RetrievalResponse, SourceRetrievalQuery, SourceSyncState, SourceSyncStatus,
     SourceTotal, SyncAuditEntry, SyncFreshness, SyncRunOutcome, UserState,
 };
-use tinymemory_api::operations::{AnswerCitation, AnswerRequest, AnswerResponse, AnswerStep};
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
 use tinymemory_api::tree::{

@@ -49,8 +49,8 @@
 //! [`engine::advertised_capabilities`] and not just the accessor — a build
 //! without the git-backed snapshot store must not claim a diff ledger.
 
-pub mod engine;
 mod document_provider;
+pub mod engine;
 mod memory;
 
 pub use document_provider::TinycortexDocumentProvider;

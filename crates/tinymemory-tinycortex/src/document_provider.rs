@@ -63,9 +63,7 @@ impl MemoryCore for TinycortexDocumentProvider {
         category: Option<&MemoryCategory>,
         session_id: Option<&str>,
     ) -> Result<Vec<MemoryEntry>, MemoryError> {
-        self.mandatory
-            .list(namespace, category, session_id)
-            .await
+        self.mandatory.list(namespace, category, session_id).await
     }
 
     async fn namespaces(&self) -> Result<Vec<NamespaceSummary>, MemoryError> {
