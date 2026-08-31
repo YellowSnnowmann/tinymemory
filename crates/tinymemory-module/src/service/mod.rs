@@ -154,7 +154,7 @@ use tinymemory_api::error::MemoryError;
 use tinymemory_api::goals::GoalsDoc;
 use tinymemory_api::health::MemoryHealth;
 use tinymemory_api::learning::LearningCandidate;
-use tinymemory_api::operations::{AnswerRequest, AnswerResponse};
+use tinymemory_api::operations::{AnswerRequest, AnswerResponse, RawMemoryEvent};
 use tinymemory_api::provider::types::{
     ChunkEntityOccurrence, DiffReport, EntityHit, EntityOccurrence, ExportPage, ExportRecord,
     FlushOutcome, ForgetOutcome, ForgetSelector, ImportOutcome, IngestItem, IngestOutcome,
@@ -641,7 +641,7 @@ impl MemoryService {
             .map_err(|error| into_bus_error(&error))
     }
 
-    async fn ingest_event(&self, event: EpisodicEvent) -> BusResult<IngestOutcome> {
+    async fn ingest_event(&self, event: RawMemoryEvent) -> BusResult<IngestOutcome> {
         require_family!(self, as_event_ingest, Capability::EventIngest)
             .ingest_event(event)
             .await

@@ -56,7 +56,7 @@ use crate::error::MemoryError;
 use crate::goals::GoalsDoc;
 use crate::health::MemoryHealth;
 use crate::learning::LearningCandidate;
-use crate::operations::{AnswerRequest, AnswerResponse};
+use crate::operations::{AnswerRequest, AnswerResponse, RawMemoryEvent};
 use crate::provider::types::{
     DiffReport, EntityHit, ExportPage, ExportRecord, FlushOutcome, ImportOutcome, IngestItem,
     IngestOutcome, MaintenanceReport, ResetOutcome, SnapshotRef, SourceItem, SourceScope,
@@ -269,7 +269,7 @@ impl MemoryLearningIngest for NullMemoryProvider {
 
 #[async_trait]
 impl MemoryEventIngest for NullMemoryProvider {
-    async fn ingest_event(&self, _event: EpisodicEvent) -> Result<IngestOutcome, MemoryError> {
+    async fn ingest_event(&self, _event: RawMemoryEvent) -> Result<IngestOutcome, MemoryError> {
         unsupported(Capability::EventIngest)
     }
 }

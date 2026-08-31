@@ -105,6 +105,7 @@ pub use mandatory::{MemoryCore, MemoryPortability, MemoryRecall};
 pub use operations::{
     AnswerCitation, AnswerRequest, AnswerResponse, AnswerStep, MemoryAnswer,
     MemoryConversationIngest, MemoryDocumentIngest, MemoryEventIngest, MemoryLearningIngest,
+    RawMemoryEvent,
 };
 pub use people::{
     AddressBookSeedOutcome, MemoryPeople, PersonHandle, PersonInteraction, PersonRecord, PersonRef,
