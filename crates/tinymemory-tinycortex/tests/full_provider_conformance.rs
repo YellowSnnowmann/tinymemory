@@ -3388,3 +3388,171 @@ async fn occurrences_read_in_a_batch_stay_attached_to_their_own_chunk() {
         Err(MemoryError::Invalid(_))
     ));
 }
+
+/// The summariser door, on the two paths that need no provider.
+///
+/// The fold itself cannot be asserted here — it is an outbound model call, and
+/// this suite configures none — but the two decisions the driver makes *before*
+/// it reaches one can be, and both are the ones a caller trips over: an empty
+/// fold must be a successful no-op rather than an error a cascade has to
+/// special-case, and a tree kind the engine does not have must be refused
+/// rather than folded under a guessed one.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_summariser_refuses_an_unknown_tree_kind_and_folds_nothing_without_a_provider() {
+    use tinymemory_api::error::MemoryError;
+    use tinymemory_api::provider::{MemoryProvider, SummaryContext, SummaryInput};
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let tree = provider.as_tree().expect("Tree");
+
+    let context = |kind: &str| SummaryContext {
+        tree_id: "tree-1".into(),
+        tree_kind: kind.into(),
+        target_level: 1,
+        token_budget: 400,
+        input_token_budget: 4_000,
+        overhead_reserve_tokens: 200,
+        ask: None,
+    };
+
+    // An unrecognised kind is refused, and refused *first* — before any
+    // provider is built, which is why this assertion holds with none
+    // configured. A default to `source` would fold a flavoured tree under the
+    // wrong labelling policy and leave nothing behind that says so.
+    assert!(
+        matches!(
+            tree.summarise(&[], &context("a-kind-this-engine-never-had"))
+                .await,
+            Err(MemoryError::Invalid(_))
+        ),
+        "an unknown tree kind is a caller mistake, not a silent substitution"
+    );
+
+    // Nothing to fold is a successful no-op: the prompt builder finds no
+    // content, so no provider is reached and the default output comes back.
+    // This is the idempotence a cascade relies on to call the door at every
+    // level unconditionally.
+    let empty = tree
+        .summarise(&[], &context("source"))
+        .await
+        .expect("an empty fold is not an error");
+    assert!(empty.content.is_empty());
+    assert_eq!(empty.token_count, 0);
+    assert_eq!(empty.input_tokens, 0);
+    assert_eq!(empty.output_tokens, 0);
+    assert_eq!(
+        empty.charged_amount_usd, None,
+        "a fold that reached no provider was not billed"
+    );
+
+    // Inputs that are all blank are the same case, and it is worth pinning
+    // separately: the emptiness is decided after trimming, inside the engine,
+    // not by the slice being empty here.
+    let at = chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("timestamp");
+    let blank = SummaryInput {
+        id: "chunk-1".into(),
+        content: "   \n\t ".into(),
+        token_count: 0,
+        entities: Vec::new(),
+        topics: Vec::new(),
+        time_range_start: at,
+        time_range_end: at,
+        score: 1.0,
+    };
+    let blank_fold = tree
+        .summarise(std::slice::from_ref(&blank), &context("source"))
+        .await
+        .expect("a fold over blank inputs is not an error");
+    assert!(blank_fold.content.is_empty());
+
+    // Every kind the engine actually has is accepted, including the fourth one
+    // it grew after this contract was written — the reason the field crosses as
+    // a string rather than as a closed enum.
+    for kind in ["source", "topic", "global", "flavoured"] {
+        tree.summarise(&[], &context(kind))
+            .await
+            .expect("a kind the engine has parses");
+    }
+}
+
+/// The root-summary read: stable order, both caps, and an empty workspace.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_root_summary_read_caps_each_namespace_and_then_the_whole_block() {
+    use tinymemory_api::provider::MemoryProvider;
+    use tinymemory_core::tree::tree_runtime::{
+        derive_parent_id, estimate_tokens, level_from_node_id, TreeNode,
+    };
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+    let tree = provider.as_tree().expect("Tree");
+
+    // A workspace with no tree at all is an empty block rather than an error:
+    // the caller is building a prompt, and "nothing to add" is an answer.
+    assert!(tree
+        .root_summaries_with_caps(1_000, 10_000)
+        .await
+        .expect("an empty workspace is not an error")
+        .is_empty());
+
+    const ALPHA: &str = "alpha root summary";
+    const BETA: &str = "beta root summary";
+    let at = chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("timestamp");
+    // Seeded through the engine's own writer rather than by hand, so the test
+    // cannot pass against a file layout the reader does not actually use.
+    for (namespace, summary) in [("alpha", ALPHA), ("beta", BETA)] {
+        tinymemory_core::tree::tree_runtime::store::write_node(
+            &config,
+            &TreeNode {
+                node_id: "root".into(),
+                namespace: namespace.into(),
+                level: level_from_node_id("root"),
+                parent_id: derive_parent_id("root"),
+                summary: summary.into(),
+                token_count: estimate_tokens(summary),
+                child_count: 0,
+                created_at: at,
+                updated_at: at,
+                metadata: None,
+            },
+        )
+        .expect("write a root node");
+    }
+
+    let all = tree
+        .root_summaries_with_caps(1_000, 10_000)
+        .await
+        .expect("root summaries");
+    assert_eq!(all.len(), 2);
+    assert_eq!(
+        all[0].namespace, "alpha",
+        "namespaces come back in stable sorted order, which is what makes a \
+         binding total cap predictable"
+    );
+    assert_eq!(all[0].body, ALPHA);
+    assert_eq!(all[0].updated_at, at);
+    assert_eq!(all[1].namespace, "beta");
+    assert_eq!(all[1].body, BETA);
+
+    // The per-namespace cap clips a body and marks it, so a caller can tell a
+    // clipped summary from a short one without re-deriving the cap.
+    let clipped = tree
+        .root_summaries_with_caps(5, 10_000)
+        .await
+        .expect("clipped root summaries");
+    assert_eq!(clipped.len(), 2);
+    assert!(clipped[0].body.starts_with("alpha"));
+    assert!(clipped[0].body.ends_with("[... truncated]"));
+
+    // The total cap stops the walk. It drops the *tail* of the namespace list
+    // rather than sampling across it, which is exactly what a caller must not
+    // read as "these are all the namespaces".
+    let bounded = tree
+        .root_summaries_with_caps(1_000, ALPHA.chars().count())
+        .await
+        .expect("bounded root summaries");
+    assert_eq!(bounded.len(), 1);
+    assert_eq!(bounded[0].namespace, "alpha");
+}

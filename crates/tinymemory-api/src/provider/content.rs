@@ -25,6 +25,15 @@ use crate::provider::types::{IngestItem, IngestOutcome, SourceScope};
 use crate::tree::{IngestRequest, QueryResult, SummaryForest, TreeLeaf, TreeStatus};
 use crate::types::{NamespaceDocumentInput, NamespaceRetrievalContext, StoredMemoryDocument};
 
+// The value types the summariser door exchanges. They are defined in
+// `tinymemory-bus` — they cross the module boundary, and a host that only makes
+// calls must be able to name them without compiling this trait — and
+// re-exported here so the family's vocabulary is reachable from the family, the
+// same arrangement `provider::chunks` uses. They are re-exported at
+// `crate::tree` too, alongside the rest of the tree vocabulary; both paths name
+// the same items, not twins of them.
+pub use tinymemory_bus::tree::{RootSummary, SummaryContext, SummaryInput, SummaryOutput};
+
 /// Bulk content ingestion — the driver owns chunking and embedding.
 ///
 /// The distinction from [`crate::provider::MemoryCore::store`] is ownership of
@@ -408,6 +417,124 @@ pub trait MemoryTree: Send + Sync {
     /// creates the tree if it has to, so there is no scope it can refuse, and
     /// a caller cannot use this to probe which scopes exist.
     async fn flush_source_tree(&self, _source_scope: &str) -> Result<u64, MemoryError> {
+        Err(MemoryError::unsupported(Capability::Tree))
+    }
+
+    /// Fold `inputs` into one parent summary, using the driver's own chat
+    /// provider, and report what that call cost.
+    ///
+    /// This is the LLM step of a seal, exposed on its own. Everything else in
+    /// this family either writes content ([`Self::append`]), navigates what is
+    /// already sealed, or asks the driver to run a whole seal/cascade pass
+    /// ([`Self::seal`], [`Self::cascade`], [`Self::flush_source_tree`]). This
+    /// one does a single fold and hands the text back, which is what a caller
+    /// driving its own cascade needs and what none of the others can be made to
+    /// answer: they return tree *state*, and the summary they produced is never
+    /// in it.
+    ///
+    /// # Why the provider is the driver's and not the caller's
+    ///
+    /// The summariser is configured where the engine is — model, temperature,
+    /// output language, rate card. A caller reaching memory over a module has
+    /// none of those, so a fold it performed itself would use a different model
+    /// than every fold the scheduler performs, and the two would disagree about
+    /// the shape of a summary in the same tree. Passing the configuration
+    /// across instead is not an option: no signature in this contract names a
+    /// config type, for the reasons in [`crate::provider`].
+    ///
+    /// The consequence is that the usage numbers on [`SummaryOutput`] are the
+    /// only record of the spend. Nothing on the caller's side saw the request.
+    ///
+    /// # The budgets and the ask are inputs, not hints
+    ///
+    /// A driver applies [`SummaryContext`]'s three token budgets exactly as
+    /// given and selects its prompt from [`SummaryContext::ask`]. It does not
+    /// substitute its own defaults for a budget it finds implausible: the
+    /// caller owns the level it is sealing and therefore owns the budget for
+    /// it, and a driver that quietly widened one would produce a node that
+    /// overruns the level above. See that type for what each budget bounds and
+    /// what a zero does.
+    ///
+    /// # Errors
+    ///
+    /// [`MemoryError::Unsupported`] from a driver with a tree family but no
+    /// provider-backed summariser — deliberately not an empty summary, which a
+    /// caller would seal as a real, blank node.
+    ///
+    /// [`MemoryError::Invalid`] for a [`SummaryContext::tree_kind`] the driver
+    /// does not recognise. Refusing beats folding under a guessed kind: the
+    /// summary is written either way and nothing afterwards records which
+    /// prompt produced it.
+    ///
+    /// Otherwise a backend failure, which here includes the provider call — a
+    /// model that errors, times out, or refuses. That is a real and recurring
+    /// outcome rather than an exceptional one, and the caller is expected to
+    /// have a deterministic fallback for it; the driver does not silently
+    /// substitute one, because a caller cannot tell a fallback summary from a
+    /// model's own work once it is in the tree.
+    ///
+    /// Nothing to fold is **not** an error: an empty slice, or one whose inputs
+    /// are all blank, returns a default [`SummaryOutput`] with empty content and
+    /// no usage. That is the same idempotence [`Self::seal`] has, and it is what
+    /// lets a cascade call this unconditionally at every level.
+    async fn summarise(
+        &self,
+        _inputs: &[SummaryInput],
+        _context: &SummaryContext,
+    ) -> Result<SummaryOutput, MemoryError> {
+        Err(MemoryError::unsupported(Capability::Tree))
+    }
+
+    /// Every namespace's root summary, truncated to a per-namespace cap and a
+    /// total cap.
+    ///
+    /// The top of the markdown time tree, read across all namespaces at once.
+    /// Its caller is a prompt builder: this is the block of standing context a
+    /// host puts in front of a model, which is why the bounds are in
+    /// **characters** rather than in rows, and why the truncation happens
+    /// driver-side rather than after the read. A caller that fetched whole
+    /// roots and clipped them itself would pay for text it then threw away, and
+    /// would clip at a boundary the driver did not choose.
+    ///
+    /// # Why not [`Self::summary_forest`]
+    ///
+    /// Different tier and different shape. The forest walks the *sealed summary
+    /// forest* — one tree per ingest source, levelled by seal generation — and
+    /// returns structure: ids, parents, children, no bodies. This returns the
+    /// **markdown time tree**'s root body, one per namespace, and bodies are
+    /// the entire point. [`crate::tree`] describes why the two live side by
+    /// side.
+    ///
+    /// # Bounds
+    ///
+    /// `per_namespace_cap` clips each namespace's body; `total_cap` stops the
+    /// walk once the accumulated bodies reach it, so the last body included may
+    /// itself be clipped short of its own cap. Both are applied in namespace
+    /// order, which is stable and alphabetical — so a total cap that binds
+    /// drops the *tail* of the namespace list rather than sampling across it,
+    /// exactly the reading [`SummaryForest::truncated`] warns about. A caller
+    /// that needs a particular namespace represented cannot rely on a small
+    /// total cap to include it.
+    ///
+    /// A clipped body ends in a `[... truncated]` marker; see
+    /// [`RootSummary::body`].
+    ///
+    /// # Errors
+    ///
+    /// [`MemoryError::Unsupported`] from a driver with a tree family but no
+    /// markdown time tree.
+    ///
+    /// Otherwise this is deliberately hard to fail. The read is a best-effort
+    /// filesystem scan: a namespace whose root cannot be read is skipped and
+    /// the rest are returned, and a workspace with no tree at all is an empty
+    /// vector. That is the engine's own behaviour and the door does not
+    /// manufacture an error it never produced — the result is a prompt block,
+    /// and one unreadable namespace is worth less than failing the turn.
+    async fn root_summaries_with_caps(
+        &self,
+        _per_namespace_cap: usize,
+        _total_cap: usize,
+    ) -> Result<Vec<RootSummary>, MemoryError> {
         Err(MemoryError::unsupported(Capability::Tree))
     }
 }

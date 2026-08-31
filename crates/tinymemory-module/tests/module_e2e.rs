@@ -717,6 +717,14 @@ const EXPECTED_METHODS: &[&str] = &[
     "ExtractEntities",
     "EmbedText",
     "EmbedderSlug",
+    // The tree family's summariser door and its root read.
+    "Summarise",
+    "RootSummaries",
+    // The maintenance hot-path read and the two chunk-family doors that
+    // landed beside it.
+    "DegradedState",
+    "ChunkScore",
+    "SourceIngestStatus",
 ];
 
 #[tokio::test]
