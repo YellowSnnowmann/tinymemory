@@ -23,7 +23,8 @@ ordered batches and every item must share one `source_id`.
 
 Learning ingestion accepts `LearningCandidate`, including its cue family,
 confidence, and typed evidence pointer. Event ingestion accepts
-`EpisodicEvent`, the durable event shape already used by the episodic store.
+`RawMemoryEvent`: an open event type, idempotency key, searchable content,
+timestamp, metadata, session, and provenance taint.
 
 Recall remains the mandatory deterministic ranked-retrieval mechanism. Answer
 is optional: it retrieves evidence, asks a configured inference route to
@@ -46,7 +47,8 @@ order as `document_ingest`, `conversation_ingest`, `learning_ingest`,
 
 The full embedded provider uses the native document and chat canonicalisation
 pipelines. Learnings are stored durably under `learning:<facet-class>` and also
-enter the candidate buffer. Events use the episodic event store. Answer uses
+enter the candidate buffer. Raw events are stored under `event:<namespace>` for
+ordinary recall while retaining their structured envelope. Answer uses
 the host-provided chat route and never owns credentials.
 
 Mem0 stores each ordered message through its native memory endpoint with a
