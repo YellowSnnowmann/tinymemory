@@ -50,8 +50,10 @@
 //! without the git-backed snapshot store must not claim a diff ledger.
 
 pub mod engine;
+mod document_provider;
 mod memory;
 
+pub use document_provider::TinycortexDocumentProvider;
 pub use memory::TinycortexMemory;
 
 use std::sync::Arc;
@@ -83,11 +85,11 @@ pub use tinycortex::memory::store::InMemoryMemoryStore;
 /// The returned provider advertises the mandatory three families and nothing
 /// else; see the crate docs.
 #[must_use]
-pub fn provider(memory: Arc<dyn tinycortex::memory::Memory>) -> MemoryTraitProvider {
-    MemoryTraitProvider::new(
+pub fn provider(memory: Arc<dyn tinycortex::memory::Memory>) -> TinycortexDocumentProvider {
+    TinycortexDocumentProvider::new(MemoryTraitProvider::new(
         Arc::new(TinycortexMemory::new(memory)),
         TINYCORTEX_DRIVER_ID,
-    )
+    ))
 }
 
 #[cfg(test)]
