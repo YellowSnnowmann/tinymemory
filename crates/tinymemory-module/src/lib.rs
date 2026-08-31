@@ -683,6 +683,16 @@ mod exports {
             "DegradedState",
             "ChunkScore",
             "SourceIngestStatus",
+            // The final round of the shed: the markdown time tree node by
+            // node — the shapes the host's tree-summarizer RPCs report — and
+            // the compiled flavoured-root profile read.
+            "RuntimeBufferWrite",
+            "RuntimeReadNode",
+            "RuntimeReadChildren",
+            "RuntimeTreeStatus",
+            "RuntimeSummarize",
+            "RuntimeRebuild",
+            "FlavourProfile",
         ],
         signals = [],
         // The host's embedder is deliberately NOT declared as `requires`. That

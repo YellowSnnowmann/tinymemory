@@ -103,6 +103,29 @@ pub mod methods {
     /// `RootSummaries` — every namespace's root summary, capped.
     pub const ROOT_SUMMARIES: &str = "RootSummaries";
 
+    // The runtime (markdown time) tree, node by node. `Seal` and `Cascade`
+    // above run whole passes and answer with tree state; these are the doors
+    // under the host's tree-summarizer RPC surface — the buffered write that
+    // reports where it landed, the two structural reads and the status read
+    // unbundled from `DrillDown`, and the two provider-backed passes with the
+    // shapes the RPC replies actually carry.
+    /// `RuntimeBufferWrite` — buffer raw content for the time tree, answering
+    /// with the path it landed at.
+    pub const RUNTIME_BUFFER_WRITE: &str = "RuntimeBufferWrite";
+    /// `RuntimeReadNode` — one time-tree node, or none.
+    pub const RUNTIME_READ_NODE: &str = "RuntimeReadNode";
+    /// `RuntimeReadChildren` — a time-tree node's direct children.
+    pub const RUNTIME_READ_CHILDREN: &str = "RuntimeReadChildren";
+    /// `RuntimeTreeStatus` — one namespace's time-tree shape and coverage.
+    pub const RUNTIME_TREE_STATUS: &str = "RuntimeTreeStatus";
+    /// `RuntimeSummarize` — drain the buffer into the tree on the driver's
+    /// provider, answering with the last hour node it wrote.
+    pub const RUNTIME_SUMMARIZE: &str = "RuntimeSummarize";
+    /// `RuntimeRebuild` — rebuild the whole time tree from its hour leaves.
+    pub const RUNTIME_REBUILD: &str = "RuntimeRebuild";
+    /// `FlavourProfile` — the compiled flavoured-root profile for one scope.
+    pub const FLAVOUR_PROFILE: &str = "FlavourProfile";
+
     // Entities, relations and the namespaced key/value store.
     /// `Entities` — entities.
     pub const ENTITIES: &str = "Entities";
@@ -341,7 +364,7 @@ pub mod methods {
 /// The order matters: `tinybus`'s `Interface::members()` returns declaration
 /// order, and the module compares the two sequences directly rather than as
 /// sets, so a reordering is caught alongside an addition or a removal.
-pub const METHODS: [&str; 131] = [
+pub const METHODS: [&str; 138] = [
     methods::DRIVER_ID,
     methods::CAPABILITIES,
     methods::HEALTH,
@@ -473,6 +496,13 @@ pub const METHODS: [&str; 131] = [
     methods::DEGRADED_STATE,
     methods::CHUNK_SCORE,
     methods::SOURCE_INGEST_STATUS,
+    methods::RUNTIME_BUFFER_WRITE,
+    methods::RUNTIME_READ_NODE,
+    methods::RUNTIME_READ_CHILDREN,
+    methods::RUNTIME_TREE_STATUS,
+    methods::RUNTIME_SUMMARIZE,
+    methods::RUNTIME_REBUILD,
+    methods::FLAVOUR_PROFILE,
 ];
 
 #[cfg(test)]

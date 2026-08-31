@@ -14,6 +14,7 @@
 
 use tinybus::Error as BusError;
 use tinymemory_api::error::MemoryError;
+use tinymemory_api::tree::{NodeLevel, TreeNode};
 use tinymemory_api::wire;
 
 use super::into_bus_error;
@@ -718,4 +719,278 @@ async fn the_two_new_families_are_gated_on_their_own_capability() {
         .await
         .expect_err("a driver without the maintenance family must refuse");
     assert_eq!(refusal(error), wire::UNSUPPORTED);
+}
+
+#[tokio::test]
+async fn the_runtime_tree_doors_refuse_through_the_tree_gate() {
+    // The seven members of the shed's second round, reached on a driver that
+    // does not serve their family: `test_provider` advertises Core/Recall/
+    // Portability and nothing else, so every one of them must refuse.
+    //
+    // What this pins is narrower than the family wiring, and worth stating so
+    // the next reader does not credit it with more: a door gated on the *wrong*
+    // family cannot be caught here, because `require_family!` names the
+    // accessor, and an accessor whose trait lacks the method is a compile
+    // error rather than a test failure. What it does catch is the shape of the
+    // refusal — a member that answers `Ok` with a default instead of refusing,
+    // one that panics or hangs on a family it cannot serve, and one whose error
+    // leaves under a wire name other than the contract's `UNSUPPORTED`. Each of
+    // those is a live-at-runtime bug with no compile error anywhere, which is
+    // the same reason the round before this one asserted it.
+    let service = super::MemoryService::new(test_provider());
+
+    let refusal = |error: BusError| match error {
+        BusError::MethodFailed { name, .. } => name,
+        other => panic!("expected a named MethodFailed, got {other:?}"),
+    };
+
+    let at = chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("timestamp");
+
+    let error = service
+        .runtime_buffer_write("team".to_string(), "standup".to_string(), at, None)
+        .await
+        .expect_err("a driver without the tree family must refuse");
+    assert_eq!(refusal(error), wire::UNSUPPORTED);
+
+    let error = service
+        .runtime_read_node("team".to_string(), "root".to_string())
+        .await
+        .expect_err("a driver without the tree family must refuse");
+    assert_eq!(refusal(error), wire::UNSUPPORTED);
+
+    let error = service
+        .runtime_read_children("team".to_string(), "root".to_string())
+        .await
+        .expect_err("a driver without the tree family must refuse");
+    assert_eq!(refusal(error), wire::UNSUPPORTED);
+
+    let error = service
+        .runtime_tree_status("team".to_string())
+        .await
+        .expect_err("a driver without the tree family must refuse");
+    assert_eq!(refusal(error), wire::UNSUPPORTED);
+
+    let error = service
+        .runtime_summarize("team".to_string(), at)
+        .await
+        .expect_err("a driver without the tree family must refuse");
+    assert_eq!(refusal(error), wire::UNSUPPORTED);
+
+    let error = service
+        .runtime_rebuild("team".to_string())
+        .await
+        .expect_err("a driver without the tree family must refuse");
+    assert_eq!(refusal(error), wire::UNSUPPORTED);
+
+    let error = service
+        .flavour_profile("persona/communication".to_string())
+        .await
+        .expect_err("a driver without the tree family must refuse");
+    assert_eq!(refusal(error), wire::UNSUPPORTED);
+}
+
+#[tokio::test]
+async fn the_runtime_tree_doors_carry_the_engine_answers_back_through_the_port() {
+    // The other half of the pair above: the same seven members on a driver that
+    // *does* serve Tree, so the delegation past the gate is what runs. The
+    // conformance suite pins these shapes at the engine; what is pinned here is
+    // that this port carries them out unchanged — an absent node still arrives
+    // as `None` and not as a refusal, a fresh namespace still has a status, and
+    // a buffered write still answers the path it landed at.
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let connection = test_connection().await;
+    let config = test_config(workspace.path());
+    // Opening the store requires the process-global host to be installed, even
+    // though nothing below embeds anything: the guard is what makes that safe
+    // to do from a test, and it restores the previous host on the way out.
+    let _embedding_host = EmbeddingHostRestore::install(connection, &config);
+    let client = std::sync::Arc::new(
+        tinymemory_core::store::MemoryClient::from_workspace_dir(workspace.path().to_path_buf())
+            .expect("open the workspace store"),
+    );
+    let service = super::MemoryService::new(std::sync::Arc::new(crate::provider::provider(
+        &config, client,
+    )));
+
+    let at = chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("timestamp");
+
+    // Absence is data, not a refusal — the distinction the host's RPC surface
+    // depends on, and the one a gate-only test cannot see.
+    assert!(service
+        .runtime_read_node("team".to_string(), "root".to_string())
+        .await
+        .expect("an absent node is not an error")
+        .is_none());
+    assert!(service
+        .runtime_read_children("team".to_string(), "root".to_string())
+        .await
+        .expect("an absent parent has no children")
+        .is_empty());
+
+    let status = service
+        .runtime_tree_status("team".to_string())
+        .await
+        .expect("a namespace with no tree still has a status");
+    assert_eq!(status.namespace, "team");
+    assert_eq!(status.total_nodes, 0);
+    assert_eq!(status.last_run_at, None);
+
+    // Nothing has been distilled, so the profile is not built — `None` rather
+    // than an empty string, which is what stops a caller handing a model a
+    // blank persona.
+    assert_eq!(
+        service
+            .flavour_profile("persona/communication".to_string())
+            .await
+            .expect("an unbuilt profile is not an error"),
+        None
+    );
+
+    // The write answers a path that names a real file inside the workspace the
+    // module was given, which is the reply the host reports verbatim.
+    let path = service
+        .runtime_buffer_write("team".to_string(), "standup".to_string(), at, None)
+        .await
+        .expect("a buffered write answers its landing path");
+    let landed = std::path::Path::new(&path);
+    assert!(landed.is_file(), "the reported path names a real file");
+    assert!(
+        landed.starts_with(workspace.path()),
+        "the buffer file lands inside the module's own workspace"
+    );
+
+    // A bad namespace is refused by the engine and leaves under the contract's
+    // name for it, not the family gate's.
+    let error = service
+        .runtime_buffer_write("../escape".to_string(), "x".to_string(), at, None)
+        .await
+        .expect_err("a traversal namespace is refused");
+    assert_eq!(
+        match error {
+            BusError::MethodFailed { name, .. } => name,
+            other => panic!("expected a named MethodFailed, got {other:?}"),
+        },
+        wire::INVALID
+    );
+
+    // No summariser is configured here, so both provider-backed passes must
+    // fail rather than report a run that never happened.
+    service
+        .runtime_summarize("team".to_string(), at)
+        .await
+        .expect_err("an unresolvable summariser is a failure, not an empty pass");
+    service
+        .runtime_rebuild("team".to_string())
+        .await
+        .expect_err("an unresolvable summariser fails a rebuild");
+
+    // The budget check is actually wired, not merely present as a helper.
+    // Seeded through the engine's own writer so the node comes back out of a
+    // real read: a summary well inside the hour budget, and a metadata blob
+    // over the response ceiling — the shape a drained hour with a large
+    // pending-fold receipt produces. Deleting the `ensure_response_fits` call
+    // from `runtime_read_node` makes this fail, which is the point of asserting
+    // it here rather than only against the helper.
+    let engine_config =
+        tinymemory_tinycortex::engine::EngineRuntimeConfig::from(&test_config(workspace.path()));
+    tinymemory_core::tree::tree_runtime::store::write_node(
+        &engine_config,
+        &tinymemory_api::tree::TreeNode {
+            node_id: "2024/03/15/09".to_string(),
+            namespace: "team".to_string(),
+            level: NodeLevel::Hour,
+            parent_id: Some("2024/03/15".to_string()),
+            summary: "a summary comfortably inside the hour budget".to_string(),
+            token_count: 9,
+            child_count: 0,
+            created_at: at,
+            updated_at: at,
+            metadata: Some("m".repeat(super::MAX_RESPONSE_BYTES)),
+        },
+    )
+    .expect("seed an oversized node");
+
+    let error = service
+        .runtime_read_node("team".to_string(), "2024/03/15/09".to_string())
+        .await
+        .expect_err("a node over the response ceiling must be refused, not encoded");
+    assert_eq!(
+        match error {
+            BusError::MethodFailed { name, .. } => name,
+            other => panic!("expected a named MethodFailed, got {other:?}"),
+        },
+        wire::BUDGET_EXCEEDED
+    );
+}
+
+#[test]
+fn a_tree_node_within_its_level_budget_can_still_overrun_the_response_ceiling() {
+    // The reason `RuntimeReadNode`/`RuntimeReadChildren`/`RuntimeSummarize`
+    // are size-checked at all, pinned as a fact rather than left to prose.
+    //
+    // A level's `max_tokens` bounds the node's *summary* — `token_count` is
+    // documented as the count of `summary`, and the fold passes
+    // `NodeLevel::max_tokens` to the summariser for the body alone. It says
+    // nothing about `metadata`, which the engine fills with a serialized
+    // pending-fold receipt naming every buffer file the pass drained. That
+    // list grows with how much was buffered into the hour, not with any
+    // level's budget.
+    //
+    // So a node can sit comfortably inside the hour budget and still be too
+    // large to cross a frame. Constructed here rather than driven through the
+    // engine because the point is the *shape* being possible: reaching it via
+    // a real fold would mean buffering megabytes of entries, which is slow and
+    // would pass for the wrong reason if the receipt format ever changed.
+    let summary = "x".repeat(NodeLevel::Hour.max_tokens() as usize);
+    assert!(
+        summary.len() < super::MAX_RESPONSE_BYTES,
+        "the summary alone must be nowhere near the ceiling, or this proves nothing"
+    );
+
+    let node = TreeNode {
+        node_id: "2024/03/15/09".to_string(),
+        namespace: "team".to_string(),
+        level: NodeLevel::Hour,
+        parent_id: Some("2024/03/15".to_string()),
+        summary,
+        token_count: NodeLevel::Hour.max_tokens(),
+        child_count: 0,
+        created_at: chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("timestamp"),
+        updated_at: chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("timestamp"),
+        metadata: Some("m".repeat(super::MAX_RESPONSE_BYTES)),
+    };
+
+    let error = super::ensure_response_fits(&Some(node), "RuntimeReadNode")
+        .expect_err("a node whose metadata overruns the ceiling must be refused");
+    match error {
+        BusError::MethodFailed { name, message } => {
+            assert_eq!(name, wire::BUDGET_EXCEEDED);
+            assert!(message.contains("RuntimeReadNode"), "{message}");
+        }
+        other => panic!("expected MethodFailed, got {other:?}"),
+    }
+}
+
+#[test]
+fn an_ordinary_tree_node_read_is_not_refused() {
+    // The other side of the ceiling: the check must not fire on the shape the
+    // host actually reads back, or every tree read becomes a budget error.
+    let node = TreeNode {
+        node_id: "2024/03/15/09".to_string(),
+        namespace: "team".to_string(),
+        level: NodeLevel::Hour,
+        parent_id: Some("2024/03/15".to_string()),
+        summary: "the morning standup, folded".to_string(),
+        token_count: 7,
+        child_count: 0,
+        created_at: chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("timestamp"),
+        updated_at: chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("timestamp"),
+        metadata: Some(r#"{"buffer_filenames":["1700000000000_a.md"]}"#.to_string()),
+    };
+
+    assert!(super::ensure_response_fits(&Some(node.clone()), "RuntimeReadNode").is_ok());
+    // A full calendar month of children is the realistic worst case for the
+    // child read, and it must pass.
+    let children: Vec<TreeNode> = (0..31).map(|_| node.clone()).collect();
+    assert!(super::ensure_response_fits(&children, "RuntimeReadChildren").is_ok());
 }

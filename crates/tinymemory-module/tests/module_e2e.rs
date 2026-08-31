@@ -725,6 +725,15 @@ const EXPECTED_METHODS: &[&str] = &[
     "DegradedState",
     "ChunkScore",
     "SourceIngestStatus",
+    // The runtime-tree doors and the flavoured-root profile read — the final
+    // round of the engine shed.
+    "RuntimeBufferWrite",
+    "RuntimeReadNode",
+    "RuntimeReadChildren",
+    "RuntimeTreeStatus",
+    "RuntimeSummarize",
+    "RuntimeRebuild",
+    "FlavourProfile",
 ];
 
 #[tokio::test]

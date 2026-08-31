@@ -57,6 +57,13 @@
 //! RecentLeaves(limit, scope)                        -> [TreeLeaf]
 //! Summarise(inputs, context)                        -> SummaryOutput
 //! RootSummaries(per_namespace_cap, total_cap)       -> [RootSummary]
+//! RuntimeBufferWrite(ns, content, ts, metadata)     -> String
+//! RuntimeReadNode(ns, node_id)                      -> Option<TreeNode>
+//! RuntimeReadChildren(ns, parent_id)                -> [TreeNode]
+//! RuntimeTreeStatus(ns)                             -> TreeStatus
+//! RuntimeSummarize(ns, ts)                          -> Option<TreeNode>
+//! RuntimeRebuild(ns)                                -> TreeStatus
+//! FlavourProfile(scope)                             -> Option<String>
 //!
 //! TopEntities(kind, limit)                          -> [EntityOccurrence]
 //! ChunkEntities(chunk_ids, kinds)                   -> [ChunkEntityOccurrence]
@@ -152,6 +159,7 @@ use std::sync::Arc;
 // be held across.
 use tokio::sync::Mutex;
 
+use chrono::{DateTime, Utc};
 use tinybus::{Connection, Error as BusError, Result as BusResult};
 use tinymemory_api::capabilities::{Capabilities, Capability};
 use tinymemory_api::chunks::Chunk;
@@ -194,7 +202,7 @@ use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
 use tinymemory_api::tree::{
     IngestRequest, QueryResult, RootSummary, SummaryContext, SummaryForest, SummaryInput,
-    SummaryOutput, TreeLeaf, TreeStatus,
+    SummaryOutput, TreeLeaf, TreeNode, TreeStatus,
 };
 use tinymemory_api::types::{
     GraphRelationRecord, MemoryCategory, MemoryEntry, MemoryKvRecord, MemoryTaint,
@@ -2053,6 +2061,131 @@ impl MemoryService {
             .map_err(|error| into_bus_error(&error))?;
         ensure_response_fits(&rows, "SourceIngestStatus")?;
         Ok(rows)
+    }
+
+    /// Buffer raw content for the markdown time tree, answering with where it
+    /// landed.
+    ///
+    /// Appended here rather than filed beside `Append` for the reason
+    /// `count_chunks` gives above: member order is wire order.
+    ///
+    /// Not size-checked. The response is one path string; the *request*
+    /// carries the content, and that bound is the caller's, exactly as it is
+    /// for `Summarise`.
+    async fn runtime_buffer_write(
+        &self,
+        namespace: String,
+        content: String,
+        timestamp: DateTime<Utc>,
+        metadata: Option<serde_json::Value>,
+    ) -> BusResult<String> {
+        require_family!(self, as_tree, Capability::Tree)
+            .runtime_buffer_write(&namespace, &content, timestamp, metadata)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// One time-tree node, or none — appended here for the reason above.
+    ///
+    /// Size-checked, unlike `DrillDown`. The level budget bounds a node's
+    /// *summary* and nothing else: `token_count` is documented as the count of
+    /// `summary`, and the fold applies `NodeLevel::max_tokens` when it
+    /// summarises the body. `TreeNode::metadata` is outside it — an
+    /// `Option<String>` the engine fills with a serialized pending-fold
+    /// receipt whose `buffer_filenames` holds one name per buffered entry in
+    /// the hour, so it grows with how much was buffered rather than with any
+    /// level's budget. Without the check an oversized node fails during frame
+    /// encoding; with it the caller gets `BUDGET_EXCEEDED` and a reason.
+    async fn runtime_read_node(
+        &self,
+        namespace: String,
+        node_id: String,
+    ) -> BusResult<Option<TreeNode>> {
+        let node = require_family!(self, as_tree, Capability::Tree)
+            .runtime_read_node(&namespace, &node_id)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&node, "RuntimeReadNode")?;
+        Ok(node)
+    }
+
+    /// A time-tree node's direct children — appended here for the reason
+    /// above.
+    ///
+    /// Size-checked on `RuntimeReadNode`'s reasoning, which applies harder
+    /// here: the calendar bounds the fanout to at most 31 children, but 31
+    /// unbounded metadata blobs is still unbounded.
+    async fn runtime_read_children(
+        &self,
+        namespace: String,
+        parent_id: String,
+    ) -> BusResult<Vec<TreeNode>> {
+        let children = require_family!(self, as_tree, Capability::Tree)
+            .runtime_read_children(&namespace, &parent_id)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&children, "RuntimeReadChildren")?;
+        Ok(children)
+    }
+
+    /// One namespace's time-tree shape and coverage — appended here for the
+    /// reason above. Not size-checked: counts and timestamps.
+    async fn runtime_tree_status(&self, namespace: String) -> BusResult<TreeStatus> {
+        require_family!(self, as_tree, Capability::Tree)
+            .runtime_tree_status(&namespace)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Drain the buffer into the tree on the driver's provider — appended here
+    /// for the reason above.
+    ///
+    /// Long-running on `Summarise`'s terms: provider calls, over the network,
+    /// priced at the driver's rate — one per hour group drained plus the
+    /// propagation above them.
+    ///
+    /// Size-checked on `RuntimeReadNode`'s reasoning. The node this answers
+    /// with is the one the pass just wrote, so its receipt names every buffer
+    /// file the pass drained — the largest metadata blob in the tree is the
+    /// one returned here.
+    async fn runtime_summarize(
+        &self,
+        namespace: String,
+        timestamp: DateTime<Utc>,
+    ) -> BusResult<Option<TreeNode>> {
+        let node = require_family!(self, as_tree, Capability::Tree)
+            .runtime_summarize(&namespace, timestamp)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&node, "RuntimeSummarize")?;
+        Ok(node)
+    }
+
+    /// Rebuild the whole time tree from its hour leaves — appended here for
+    /// the reason above. Long-running on `RuntimeSummarize`'s terms; the
+    /// answer is one status row.
+    async fn runtime_rebuild(&self, namespace: String) -> BusResult<TreeStatus> {
+        require_family!(self, as_tree, Capability::Tree)
+            .runtime_rebuild(&namespace)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// The compiled flavoured-root profile for one scope — appended here for
+    /// the reason above.
+    ///
+    /// Not size-checked: the body is clamped driver-side to the flavoured
+    /// root's own token budget at compile time, so no scope can make the
+    /// artifact outgrow a frame.
+    ///
+    /// The scope is not logged — today's scopes are facet names, but the
+    /// vocabulary is the caller's and nothing here may assume it stays free of
+    /// user data.
+    async fn flavour_profile(&self, scope: String) -> BusResult<Option<String>> {
+        require_family!(self, as_tree, Capability::Tree)
+            .flavour_profile(&scope)
+            .await
+            .map_err(|error| into_bus_error(&error))
     }
 }
 

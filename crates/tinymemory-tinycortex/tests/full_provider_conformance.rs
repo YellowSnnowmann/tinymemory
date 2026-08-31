@@ -3556,3 +3556,296 @@ async fn the_root_summary_read_caps_each_namespace_and_then_the_whole_block() {
     assert_eq!(bounded.len(), 1);
     assert_eq!(bounded[0].namespace, "alpha");
 }
+
+/// The four runtime-tree store doors, over a real workspace.
+///
+/// These are the reads and the write under the host's `tree_summarizer_*` RPC
+/// surface, and what is pinned is the shape that surface reports verbatim: the
+/// landing path of a buffered write, `None` for an absent node rather than an
+/// error, an empty child list for an absent parent, and the all-empty status of
+/// a namespace that has never sealed.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_runtime_tree_store_doors_answer_the_shapes_the_rpc_surface_reports() {
+    use tinymemory_api::error::MemoryError;
+    use tinymemory_api::provider::MemoryProvider;
+    use tinymemory_api::tree::NodeLevel;
+    use tinymemory_core::tree::tree_runtime::{
+        derive_parent_id, estimate_tokens, level_from_node_id, TreeNode,
+    };
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+    let tree = provider.as_tree().expect("Tree");
+    let at = chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("timestamp");
+
+    // A rejected namespace is `Invalid` on every door, and a rejected node id
+    // on both node-addressed reads — the same refusals the host's RPC layer
+    // made, now made where the store is.
+    for error in [
+        tree.runtime_buffer_write("../escape", "content", at, None)
+            .await
+            .expect_err("a traversal namespace is refused"),
+        tree.runtime_read_node("../escape", "root")
+            .await
+            .expect_err("a traversal namespace is refused"),
+        tree.runtime_read_children("../escape", "root")
+            .await
+            .expect_err("a traversal namespace is refused"),
+        tree.runtime_tree_status("../escape")
+            .await
+            .expect_err("a traversal namespace is refused"),
+        tree.runtime_read_node("team", "2024/../2025")
+            .await
+            .expect_err("a traversal node id is refused"),
+        tree.runtime_read_children("team", "not-a-node")
+            .await
+            .expect_err("a malformed parent id is refused"),
+        tree.runtime_buffer_write("team", "   \n\t ", at, None)
+            .await
+            .expect_err("blank content is refused"),
+    ] {
+        assert!(
+            matches!(error, MemoryError::Invalid(_)),
+            "expected Invalid, got {error:?}"
+        );
+    }
+
+    // Absence is data on a fresh workspace: no root yet, no children, and the
+    // all-`None` status — not one of them an error.
+    assert!(tree
+        .runtime_read_node("team", "root")
+        .await
+        .expect("an absent node is not an error")
+        .is_none());
+    assert!(tree
+        .runtime_read_children("team", "root")
+        .await
+        .expect("an absent parent has no children")
+        .is_empty());
+    let empty = tree
+        .runtime_tree_status("team")
+        .await
+        .expect("a namespace with no tree still has a status");
+    assert_eq!(empty.namespace, "team");
+    assert_eq!(empty.total_nodes, 0);
+    assert_eq!(empty.oldest_entry, None);
+    assert_eq!(empty.last_run_at, None);
+
+    // The buffered write answers with the engine's own path, exactly the
+    // string the host printed when it held the `PathBuf` itself: a real file,
+    // filed by the caller's timestamp, with the metadata staged in
+    // front-matter for the seal to carry onward.
+    let path = tree
+        .runtime_buffer_write(
+            "  team  ",
+            "standup notes",
+            at,
+            Some(serde_json::json!({"origin": "conformance"})),
+        )
+        .await
+        .expect("a buffered write answers its landing path");
+    let on_disk = std::path::Path::new(&path);
+    assert!(on_disk.is_file(), "the reported path names a real file");
+    assert!(
+        on_disk.starts_with(workspace.path()),
+        "the buffer file lands inside the driver's workspace"
+    );
+    let staged = std::fs::read_to_string(on_disk).expect("read the buffer entry");
+    assert!(staged.contains("standup notes"));
+    assert!(
+        staged.contains("\"origin\":\"conformance\""),
+        "metadata rides in the entry's front-matter"
+    );
+    assert!(
+        on_disk
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(&at.timestamp_millis().to_string())),
+        "the entry is filed under the caller's timestamp, not the driver's now"
+    );
+
+    // Seeded through the engine's own writer, as every tree test here is, so
+    // the reads cannot pass against a layout the store does not use.
+    for node_id in ["root", "2024"] {
+        let summary = format!("summary of {node_id}");
+        tinymemory_core::tree::tree_runtime::store::write_node(
+            &config,
+            &TreeNode {
+                node_id: node_id.into(),
+                namespace: "team".into(),
+                level: level_from_node_id(node_id),
+                parent_id: derive_parent_id(node_id),
+                summary: summary.clone(),
+                token_count: estimate_tokens(&summary),
+                child_count: 0,
+                created_at: at,
+                updated_at: at,
+                metadata: None,
+            },
+        )
+        .expect("write a node");
+    }
+
+    let year = tree
+        .runtime_read_node("team", "2024")
+        .await
+        .expect("read the year node")
+        .expect("the year node exists");
+    assert_eq!(year.node_id, "2024");
+    assert_eq!(year.level, NodeLevel::Year);
+    assert_eq!(year.parent_id.as_deref(), Some("root"));
+    assert_eq!(year.summary, "summary of 2024");
+
+    let children = tree
+        .runtime_read_children("team", "root")
+        .await
+        .expect("read the root's children");
+    assert_eq!(children.len(), 1);
+    assert_eq!(children[0].node_id, "2024");
+
+    // An hour leaf has nothing under it by construction: empty, not an error.
+    assert!(tree
+        .runtime_read_children("team", "2024/03/15/09")
+        .await
+        .expect("a leaf's children")
+        .is_empty());
+
+    let status = tree
+        .runtime_tree_status("team")
+        .await
+        .expect("status over a seeded tree");
+    assert_eq!(status.namespace, "team");
+    assert_eq!(status.total_nodes, 2);
+}
+
+/// The two provider-backed runtime doors: validation first, then the provider,
+/// and only then the engine.
+///
+/// This suite configures no chat host, which is what makes both halves
+/// assertable: a bad namespace answers `Invalid` — proof the check runs before
+/// any provider is reached for — and a good one answers a backend failure even
+/// though the buffer and the tree are empty, because these are a person's
+/// explicit "run now" and a runner that could not have run must say so rather
+/// than report a pass that ran nothing. (`seal`/`cascade` keep their empty
+/// short-circuits; they are the scheduler's, called unconditionally.)
+#[tokio::test(flavor = "multi_thread")]
+async fn the_provider_backed_runtime_doors_refuse_before_they_reach_the_engine() {
+    use tinymemory_api::error::MemoryError;
+    use tinymemory_api::provider::MemoryProvider;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let tree = provider.as_tree().expect("Tree");
+    let at = chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("timestamp");
+
+    assert!(matches!(
+        tree.runtime_summarize("../escape", at).await,
+        Err(MemoryError::Invalid(_))
+    ));
+    assert!(matches!(
+        tree.runtime_rebuild("../escape").await,
+        Err(MemoryError::Invalid(_))
+    ));
+
+    assert!(
+        matches!(
+            tree.runtime_summarize("team", at).await,
+            Err(MemoryError::Other(_))
+        ),
+        "an unresolvable summariser is a failure, not an empty pass"
+    );
+    assert!(
+        matches!(
+            tree.runtime_rebuild("team").await,
+            Err(MemoryError::Other(_))
+        ),
+        "an unresolvable summariser fails a rebuild before any status is read"
+    );
+}
+
+/// The flavour door: `None` until a body exists, then the whole artifact.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_flavour_door_answers_none_until_a_body_exists_then_serves_the_whole_artifact() {
+    use tinymemory_api::error::MemoryError;
+    use tinymemory_api::provider::MemoryProvider;
+    use tinymemory_core::store::trees::{
+        store::insert_tree, Tree, TreeKind, TreeStatus as StoreTreeStatus,
+    };
+
+    const SCOPE: &str = "persona/communication";
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+    let tree_door = provider.as_tree().expect("Tree");
+    let at = chrono::DateTime::from_timestamp(1_700_000_000, 0).expect("timestamp");
+
+    assert!(matches!(
+        tree_door.flavour_profile("   ").await,
+        Err(MemoryError::Invalid(_))
+    ));
+
+    // A scope no tree was ever written under is not built. It is also
+    // indistinguishable from a scope the caller misspelled — deliberately, per
+    // the contract: the vocabulary is the caller's.
+    assert_eq!(
+        tree_door
+            .flavour_profile(SCOPE)
+            .await
+            .expect("an unknown scope is not an error"),
+        None
+    );
+
+    // A flavoured tree that exists but has never sealed compiles to
+    // front-matter over an empty body: still `None` — and the compile really
+    // ran, which the freshly staged artifact proves.
+    insert_tree(
+        &config,
+        &Tree {
+            id: "tree-flavour-1".to_string(),
+            kind: TreeKind::Flavoured,
+            scope: SCOPE.to_string(),
+            root_id: None,
+            max_level: 0,
+            status: StoreTreeStatus::Active,
+            created_at: at,
+            last_sealed_at: None,
+            ask: Some("distil how this person communicates".to_string()),
+        },
+    )
+    .expect("insert the flavoured tree row");
+    assert_eq!(
+        tree_door
+            .flavour_profile(SCOPE)
+            .await
+            .expect("an unsealed tree is not an error"),
+        None,
+        "front-matter over an empty body is not a profile"
+    );
+    let artifact = tinycortex::memory::tree::flavoured_root_abs_path(
+        &tinymemory_core::engine::engine_config(&config),
+        SCOPE,
+    );
+    assert!(
+        artifact.is_file(),
+        "the unsealed lookup still staged the fixed-path artifact"
+    );
+
+    // Once a body exists at the fixed path, the door serves the artifact
+    // whole — front-matter included, stripping left to the caller. Written at
+    // the path the engine itself derives, so the fast path is read exactly
+    // where the compiler stages.
+    let compiled = format!("---\nscope: {SCOPE}\n---\nTalks in short declaratives.\n");
+    std::fs::write(&artifact, &compiled).expect("stage a compiled artifact");
+    let served = tree_door
+        .flavour_profile(SCOPE)
+        .await
+        .expect("a built profile is served")
+        .expect("a body-bearing artifact is Some");
+    assert_eq!(
+        served, compiled,
+        "the artifact crosses whole: front-matter intact, byte for byte"
+    );
+    assert!(served.starts_with("---\n"));
+}
