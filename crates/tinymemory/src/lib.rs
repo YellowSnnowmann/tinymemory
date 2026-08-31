@@ -146,6 +146,8 @@ pub use tinymemory_documents as documents;
 pub use tinymemory_conformance as conformance;
 
 pub mod registry;
+pub mod routing;
+pub use routing::MemoryApi;
 
 // Typed surfaces for the sections the namespace convention names —
 // conversations, learnings, documents — plus a section-aware recall. Documented
@@ -157,8 +159,8 @@ pub mod sections;
 // glob so the crate's own surface is visible in one place and rustdoc links
 // resolve — and so adding a module to the contract is a deliberate act here too.
 pub use tinymemory_api::{
-    capabilities, chunks, error, goals, health, namespace, null, provider, recall, tool_memory,
-    traits, tree, types,
+    capabilities, chunks, error, goals, health, namespace, null, operations, provider, recall,
+    tool_memory, traits, tree, types,
 };
 pub use tinymemory_api::{is_compatible, CONTRACT_VERSION};
 
