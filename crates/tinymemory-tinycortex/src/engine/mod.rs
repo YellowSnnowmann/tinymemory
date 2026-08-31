@@ -3554,21 +3554,12 @@ impl MemoryChunks for TinycortexProvider {
 /// id contains one. The count would be wrong in the direction that looks
 /// healthy: too many chunks, attributed to the wrong source.
 ///
-/// `\` is escaped along with `%` and `_`, and pairs with the `ESCAPE '\'`
-/// clause the engine's counting query declares. This is the same construction —
-/// and the same argument — as the engine's own `like_contains_pattern`, which
-/// exists because a source id containing `_` had already been observed to match
-/// more than it should.
+/// The engine's counting query declares `ESCAPE '\'`; the sanctioned escape
+/// lives beside that contract in core (`sources::status::like_prefix_pattern`)
+/// so the helper and the clause it pairs with cannot drift apart. This is a
+/// name, not a copy.
 fn like_prefix_pattern(prefix: &str) -> String {
-    let mut pattern = String::with_capacity(prefix.len() + 1);
-    for character in prefix.chars() {
-        if matches!(character, '\\' | '%' | '_') {
-            pattern.push('\\');
-        }
-        pattern.push(character);
-    }
-    pattern.push('%');
-    pattern
+    tinymemory_core::sources::status::like_prefix_pattern(prefix)
 }
 
 #[async_trait]

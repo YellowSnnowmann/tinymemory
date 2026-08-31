@@ -125,6 +125,26 @@ fn ingest_counts_on_connection(conn: &Connection, pattern: &str) -> Result<Inges
 
 /// Counts for several `source_id LIKE` patterns, in the order asked.
 ///
+/// Escape `prefix` for the `LIKE … ESCAPE '\'` queries in this module and
+/// append the trailing `%`, so the result matches exactly the ids that start
+/// with `prefix` and nothing else.
+///
+/// `\` is escaped along with `%` and `_`. A prefix containing `_` — common in
+/// source ids — otherwise matches any single character there; that over-match
+/// was observed in the field, which is why the engine's own
+/// `like_contains_pattern` exists and why this helper mirrors it.
+pub fn like_prefix_pattern(prefix: &str) -> String {
+    let mut pattern = String::with_capacity(prefix.len() + 1);
+    for character in prefix.chars() {
+        if matches!(character, '\\' | '%' | '_') {
+            pattern.push('\\');
+        }
+        pattern.push(character);
+    }
+    pattern.push('%');
+    pattern
+}
+
 /// One connection for the batch and one statement per pattern. Synchronous
 /// SQLite work: an async caller runs it on a blocking thread, as
 /// [`source_status`] does.
@@ -136,6 +156,15 @@ fn ingest_counts_on_connection(conn: &Connection, pattern: &str) -> Result<Inges
 /// # Errors
 ///
 /// Any failure opening the chunk store or running the count.
+///
+/// # Pattern contract
+///
+/// Each entry is a SQL `LIKE` pattern for the query's `ESCAPE '\'` clause,
+/// bound as a parameter — it can never terminate or extend the SQL itself.
+/// What it CAN do is over-match: `%` and `_` are wildcards, so a pattern
+/// derived from an id that was not escaped first matches more source ids
+/// than intended. Derive patterns with [`like_prefix_pattern`], which sits
+/// beside this contract precisely so no caller has to hand-roll the escape.
 pub fn ingest_counts_for_patterns(
     config: &Config,
     patterns: &[String],
