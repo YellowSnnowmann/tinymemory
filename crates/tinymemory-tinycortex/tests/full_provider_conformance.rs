@@ -165,13 +165,11 @@ async fn learning_and_raw_event_routes_persist_recallable_records() {
         .ingest_learning(learning)
         .await
         .expect("ingest learning");
-    assert!(
-        provider
-            .get("learning:tooling", "package_manager")
-            .await
-            .expect("get learning")
-            .is_some()
-    );
+    assert!(provider
+        .get("learning:tooling", "package_manager")
+        .await
+        .expect("get learning")
+        .is_some());
 
     let event = RawMemoryEvent {
         id: "evt-1".into(),

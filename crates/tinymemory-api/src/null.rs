@@ -63,8 +63,8 @@ use crate::provider::types::{
 };
 use crate::provider::{
     AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, CodingSessionIngestReport,
-    CodingSessionIngestRequest, CodingSessionSource, CoverWindowQuery, EntityMatch, EpisodicEvent,
-    FacetType, FastRetrieveQuery, MemoryAnswer, MemoryChunks, MemoryCodingSessions,
+    CodingSessionIngestRequest, CodingSessionSource, CoverWindowQuery, EntityMatch, FacetType,
+    FastRetrieveQuery, MemoryAnswer, MemoryChunks, MemoryCodingSessions,
     MemoryConversationIngest, MemoryCore, MemoryDiff, MemoryDocumentIngest, MemoryDocuments,
     MemoryEntities, MemoryEventIngest, MemoryGoals, MemoryGraph, MemoryIngest,
     MemoryLearningIngest, MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProfile,
