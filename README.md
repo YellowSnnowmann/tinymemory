@@ -216,6 +216,25 @@ A driver's advertised set and its reachable accessors must agree.
 implemented" into a detectable, testable mistake rather than a runtime surprise
 on the first call.
 
+The product-facing routes are available through one router:
+
+```rust,ignore
+use tinymemory::{MemoryApi, operations::AnswerRequest};
+
+let memory = MemoryApi::new(provider.as_ref());
+let hits = memory.recall("release date", 10, &Default::default(), None).await?;
+
+if provider.as_answer().is_some() {
+    let response = memory.answer(AnswerRequest::new("When do we release?")).await?;
+    println!("{}", response.answer);
+}
+```
+
+Document, conversation, learning, event, and answer support are independent
+capabilities. Recall remains mandatory. See the
+[operation specification](docs/specs/ingestion-retrieval-api.md) for the adapter
+matrix and payload rules.
+
 Capabilities are asked **once, at bind time, and cached**: a host filters its RPC
 surface and its agent-tool list from the answer, so a set that changed
 afterwards would not be noticed.
