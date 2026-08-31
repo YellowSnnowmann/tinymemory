@@ -47,14 +47,16 @@ use tinymemory_api::provider::{
     ConversationSegment, CoverWindowQuery, DegradedCapabilities, Diagnosis, DiagnosisCounters,
     DiagnosisFailure, DiagnosisStage, EntityMatch, EpisodicEvent, EpisodicTurn, EventKind,
     FacetType, FastRetrieveQuery, MemoryChunks, MemoryCodingSessions, MemoryCore, MemoryDiff,
-    MemoryDocuments, MemoryEntities, MemoryEpisodic, MemoryGoals, MemoryGraph, MemoryIngest,
-    MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProfile, MemoryProvider,
-    MemoryRecall, MemoryRetrieval, MemoryScoring, MemorySourceSink, MemorySourceSync,
+    MemoryAnswer, MemoryConversationIngest, MemoryDocumentIngest, MemoryDocuments, MemoryEntities,
+    MemoryEpisodic, MemoryEventIngest, MemoryGoals, MemoryGraph, MemoryIngest,
+    MemoryLearningIngest, MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProfile,
+    MemoryProvider, MemoryRecall, MemoryRetrieval, MemoryScoring, MemorySourceSink, MemorySourceSync,
     MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
     ProfileFacet, RankedPerson, RawArchiveCoverage, RawRebuildOutcome, ResolvedPerson,
     RetrievalHit, RetrievalResponse, SourceRetrievalQuery, SourceSyncState, SourceSyncStatus,
     SourceTotal, SyncAuditEntry, SyncFreshness, SyncRunOutcome, UserState,
 };
+use tinymemory_api::operations::{AnswerCitation, AnswerRequest, AnswerResponse, AnswerStep};
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
 use tinymemory_api::tree::{
