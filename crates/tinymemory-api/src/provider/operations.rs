@@ -9,10 +9,11 @@ use async_trait::async_trait;
 
 use crate::error::MemoryError;
 use crate::learning::LearningCandidate;
-use crate::provider::episodic::EpisodicEvent;
 use crate::provider::types::{IngestItem, IngestOutcome};
 
-pub use crate::operations::{AnswerCitation, AnswerRequest, AnswerResponse, AnswerStep};
+pub use crate::operations::{
+    AnswerCitation, AnswerRequest, AnswerResponse, AnswerStep, RawMemoryEvent,
+};
 
 /// Document ingestion with driver-owned chunking and indexing.
 #[async_trait]
@@ -65,7 +66,7 @@ pub trait MemoryEventIngest: Send + Sync {
     ///
     /// Returns [`MemoryError::Invalid`] for malformed event data, otherwise
     /// backend failures.
-    async fn ingest_event(&self, event: EpisodicEvent) -> Result<IngestOutcome, MemoryError>;
+    async fn ingest_event(&self, event: RawMemoryEvent) -> Result<IngestOutcome, MemoryError>;
 }
 
 /// Agentic retrieval that synthesises a grounded answer.

@@ -5,10 +5,37 @@
 //! document, conversation, learning, and event ingestion, plus grounded answer
 //! synthesis. Recall keeps using [`crate::recall`] and [`crate::types::MemoryEntry`].
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::provider::types::SourceScope;
 use crate::recall::OwnedRecallOpts;
+use crate::types::MemoryTaint;
+
+/// One raw event supplied by an application or connector.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct RawMemoryEvent {
+    /// Stable idempotency key.
+    pub id: String,
+    /// Logical event namespace.
+    pub namespace: String,
+    /// Open event-type vocabulary, such as `calendar_changed` or `tool_call`.
+    pub event_type: String,
+    /// Human-readable event content indexed for recall.
+    pub content: String,
+    /// When the event occurred, when known.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub occurred_at: Option<DateTime<Utc>>,
+    /// Session associated with the event, when any.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    /// Connector-defined structured data retained with the event.
+    #[serde(default)]
+    pub metadata: serde_json::Value,
+    /// Provenance assigned by the host.
+    #[serde(default)]
+    pub taint: MemoryTaint,
+}
 
 /// A grounded, agentic answer request.
 #[derive(Clone, Debug, Serialize, Deserialize)]
