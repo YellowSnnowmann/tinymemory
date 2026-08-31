@@ -42,8 +42,8 @@ use tinymemory_api::provider::types::{
 #[cfg(feature = "memory-git")]
 use tinymemory_api::provider::types::{ChangeKind, DiffReport, SnapshotRef, SourceChange};
 use tinymemory_api::provider::{
-    AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkListRow, ChunkQuery,
-    CodingSessionIngestReport, CodingSessionIngestRequest, CodingSessionSource,
+    AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkListRow, ChunkQuery, ChunkScore,
+    ChunkScoreSignals, CodingSessionIngestReport, CodingSessionIngestRequest, CodingSessionSource,
     ConversationSegment, CoverWindowQuery, DegradedCapabilities, Diagnosis, DiagnosisCounters,
     DiagnosisFailure, DiagnosisStage, EntityMatch, EpisodicEvent, EpisodicTurn, EventKind,
     FacetType, FastRetrieveQuery, MemoryChunks, MemoryCodingSessions, MemoryCore, MemoryDiff,
@@ -52,13 +52,15 @@ use tinymemory_api::provider::{
     MemoryRecall, MemoryRetrieval, MemoryScoring, MemorySourceSink, MemorySourceSync,
     MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
     ProfileFacet, RankedPerson, RawArchiveCoverage, RawRebuildOutcome, ResolvedPerson,
-    RetrievalHit, RetrievalResponse, SourceRetrievalQuery, SourceSyncState, SourceSyncStatus,
-    SourceTotal, SyncAuditEntry, SyncFreshness, SyncRunOutcome, UserState,
+    RetrievalHit, RetrievalResponse, SourceIngestQuery, SourceIngestStatus, SourceRetrievalQuery,
+    SourceSyncState, SourceSyncStatus, SourceTotal, SyncAuditEntry, SyncFreshness, SyncRunOutcome,
+    UserState,
 };
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
 use tinymemory_api::tree::{
-    IngestRequest, QueryResult, SummaryForest, TreeLeaf, TreeStatus, TreeSummary,
+    IngestRequest, QueryResult, RootSummary, SummaryContext, SummaryForest, SummaryInput,
+    SummaryOutput, TreeLeaf, TreeStatus, TreeSummary,
 };
 use tinymemory_api::types::{
     GraphRelationRecord, MemoryCategory, MemoryEntry, MemoryKvRecord, MemoryTaint,
@@ -68,7 +70,14 @@ use tinymemory_api::types::{
 // The KV read paths must address rows by the same canonical form the
 // write-path shim stores them under — see `MemoryGraph::kv_get` below.
 use tinymemory_core::store::safety::canonical_identifier;
+use tinymemory_core::store::trees::TreeKind;
 use tinymemory_core::store::{MemoryClient, MemoryClientRef};
+// The engine's own summariser twins, aliased because the contract's owned wire
+// types share their names. Same shape either side of the seam; the difference
+// is that these borrow and those do not.
+use tinymemory_core::tree::summarise::{
+    SummaryContext as EngineSummaryContext, SummaryInput as EngineSummaryInput,
+};
 
 /// The concrete, credential-free host configuration available inside a module.
 #[derive(Debug, Clone)]
@@ -1299,6 +1308,123 @@ impl MemoryTree for TinycortexProvider {
         .map_err(|error| Self::other("flush the source tree", error))?;
         Ok(u64::try_from(sealed.len()).unwrap_or(u64::MAX))
     }
+
+    async fn summarise(
+        &self,
+        inputs: &[SummaryInput],
+        context: &SummaryContext,
+    ) -> Result<SummaryOutput, MemoryError> {
+        // The kind arrives as an open string and is mapped back here, at the
+        // edge, because the engine's own signature takes the enum. An
+        // unrecognised value is a caller mistake and is refused rather than
+        // defaulted: `TreeKind` chooses the labelling policy a seal writes
+        // under, so folding a `flavoured` tree as a `source` one produces a
+        // well-formed summary filed against the wrong policy, and nothing in
+        // the tree afterwards records that the substitution happened.
+        let tree_kind = TreeKind::parse(&context.tree_kind).map_err(MemoryError::Invalid)?;
+
+        // Field-by-field rather than a serde round-trip: the engine's twins
+        // derive neither `Serialize` nor `Deserialize`, and writing the mapping
+        // out means a field added to either side is a compile error here rather
+        // than a value that silently stops crossing.
+        let engine_inputs: Vec<EngineSummaryInput> = inputs
+            .iter()
+            .map(|input| EngineSummaryInput {
+                id: input.id.clone(),
+                content: input.content.clone(),
+                token_count: input.token_count,
+                entities: input.entities.clone(),
+                topics: input.topics.clone(),
+                time_range_start: input.time_range_start,
+                time_range_end: input.time_range_end,
+                score: input.score,
+            })
+            .collect();
+
+        // Every budget and the ask are carried through exactly as the caller
+        // stated them. Nothing is clamped, defaulted or second-guessed on the
+        // way in: the caller owns the level being sealed, so it owns the budget
+        // for it, and the engine already treats these three numbers as one
+        // arithmetic (see `prepare_summary_prompt`) that a partial substitution
+        // would silently unbalance.
+        let engine_context = EngineSummaryContext {
+            tree_id: context.tree_id.as_str(),
+            tree_kind,
+            target_level: context.target_level,
+            token_budget: context.token_budget,
+            input_token_budget: context.input_token_budget,
+            overhead_reserve_tokens: context.overhead_reserve_tokens,
+            ask: context.ask.as_deref(),
+        };
+
+        // Not on a blocking thread, unlike almost everything else in this file:
+        // this is an outbound provider call that awaits the network, so it
+        // yields its worker between steps. `spawn_blocking` would hold a
+        // blocking-pool thread idle for the whole round trip.
+        let output = tinymemory_core::tree::summarise::summarise(
+            &self.config,
+            &engine_inputs,
+            &engine_context,
+        )
+        .await
+        .map_err(|error| Self::other("summarise tree inputs", error))?;
+
+        // The error above is propagated rather than turned into the engine's
+        // deterministic `fallback_summary`. The fallback belongs to the caller
+        // that owns the cascade — it is what the engine's own seal path
+        // substitutes when a summariser errors — and a driver that applied it
+        // here would hand back a concatenation the caller could not tell apart
+        // from a model's work.
+        Ok(SummaryOutput {
+            content: output.content,
+            token_count: output.token_count,
+            entities: output.entities,
+            topics: output.topics,
+            input_tokens: output.input_tokens,
+            output_tokens: output.output_tokens,
+            charged_amount_usd: output.charged_amount_usd,
+        })
+    }
+
+    async fn root_summaries_with_caps(
+        &self,
+        per_namespace_cap: usize,
+        total_cap: usize,
+    ) -> Result<Vec<RootSummary>, MemoryError> {
+        // The workspace root comes from this driver's own configuration, never
+        // from the caller: a path argument here would be both a configuration
+        // crossing the contract and an unbounded filesystem read addressed by
+        // whoever placed the call.
+        let rows = blocking(
+            self.config.clone(),
+            "collect root summaries",
+            move |config| {
+                // Infallible by construction — the engine swallows a failed
+                // scan into an empty vector — so the `anyhow` wrapper here is
+                // the `blocking` helper's shape, not a hidden error path.
+                Ok(
+                    tinymemory_core::tree::tree_runtime::store::collect_root_summaries_with_caps(
+                        &config.workspace_dir,
+                        per_namespace_cap,
+                        total_cap,
+                    ),
+                )
+            },
+        )
+        .await?;
+
+        // The tuple is named on the way out and nowhere else: positional
+        // `(namespace, body, updated_at)` is exactly the shape that survives a
+        // swap of its two `String`s without complaint.
+        Ok(rows
+            .into_iter()
+            .map(|(namespace, body, updated_at)| RootSummary {
+                namespace,
+                body,
+                updated_at,
+            })
+            .collect())
+    }
 }
 
 /// Validate entity-kind wire strings and re-emit them in the index's spelling.
@@ -2265,12 +2391,7 @@ impl MemoryMaintenance for TinycortexProvider {
                 })
                 .collect(),
             first_blocking_cause: report.first_blocking_cause.as_ref().map(diagnosis_failure),
-            degraded: DegradedCapabilities {
-                semantic_recall: report.degraded.semantic_recall,
-                structure: report.degraded.structure,
-                storage: report.degraded.storage,
-                cause: report.degraded.cause.as_ref().map(diagnosis_failure),
-            },
+            degraded: degraded_capabilities(&report.degraded),
             counters: DiagnosisCounters {
                 total_chunks: report.counters.total_chunks,
                 jobs_ready: report.counters.jobs_ready,
@@ -2279,6 +2400,56 @@ impl MemoryMaintenance for TinycortexProvider {
                 extraction_coverage: report.counters.extraction_coverage,
             },
         })
+    }
+
+    /// The degradation flags on their own, without the diagnosis around them.
+    ///
+    /// The same three booleans and the same cause
+    /// [`MemoryMaintenance::diagnose`] reports, read from the same place — the
+    /// process-global atomics the embed, extract and storage stages set as they
+    /// fail — and crossed by the same function, so the two members cannot
+    /// disagree about what is degraded.
+    ///
+    /// # Why it does not delegate to `diagnose`
+    ///
+    /// Because that would defeat the point of the member. `async_run_doctor`
+    /// counts every chunk in the store, counts jobs in three states, measures
+    /// extraction coverage across the whole chunk table, and walks the routing
+    /// and scheduler configuration — all on a blocking thread, because it is
+    /// enough SQLite work to hold one. This reads three atomics and three more
+    /// for their causes: no query, no thread hop, nothing that can fail. A
+    /// status light polling the diagnosis would put an aggregate scan of the
+    /// chunk table on a repeating timer.
+    ///
+    /// It is not `async` work at all, and is deliberately not wrapped in
+    /// `spawn_blocking` the way this file's storage reads are: dispatching a
+    /// blocking task to load six atomics costs more than the load does.
+    ///
+    /// It cannot fail, for the same reason [`MemoryMaintenance::diagnose`]
+    /// cannot: there is no fallible step to map. `Ok` here is the honest
+    /// answer, not a swallowed error.
+    async fn degraded_state(&self) -> Result<DegradedCapabilities, MemoryError> {
+        Ok(degraded_capabilities(
+            &tinymemory_core::tree::health::current_degraded_state(),
+        ))
+    }
+}
+
+/// Carry the engine's degradation snapshot across as the contract's shape.
+///
+/// Shared by [`MemoryMaintenance::diagnose`] and
+/// [`MemoryMaintenance::degraded_state`] rather than written out twice. The two
+/// members answer the same question at different prices, so a caller can
+/// reasonably compare their answers — and two copies of a four-field mapping
+/// are two copies that can disagree about which flag is which.
+fn degraded_capabilities(
+    degraded: &tinymemory_core::tree::health::DegradedState,
+) -> DegradedCapabilities {
+    DegradedCapabilities {
+        semantic_recall: degraded.semantic_recall,
+        structure: degraded.structure,
+        storage: degraded.storage,
+        cause: degraded.cause.as_ref().map(diagnosis_failure),
     }
 }
 
@@ -3278,6 +3449,126 @@ impl MemoryChunks for TinycortexProvider {
         embeddings.sort_by(|a, b| a.chunk_id.cmp(&b.chunk_id));
         Ok(embeddings)
     }
+
+    async fn chunk_score(&self, chunk_id: &str) -> Result<Option<ChunkScore>, MemoryError> {
+        let id = chunk_id.to_string();
+        let row = blocking(self.config.clone(), "read chunk score", move |config| {
+            tinymemory_core::tree::score::store::get_score(config, &id)
+        })
+        .await?;
+
+        // Absence stays absence. The engine answers `None` both for a chunk it
+        // has never heard of and for one it holds but never scored, and neither
+        // is a zero score — see the contract's own note on why collapsing them
+        // reports a verdict that was never reached.
+        Ok(row.map(|row| ChunkScore {
+            chunk_id: row.chunk_id,
+            total: row.total,
+            signals: ChunkScoreSignals {
+                token_count: row.signals.token_count,
+                unique_words: row.signals.unique_words,
+                metadata_weight: row.signals.metadata_weight,
+                source_weight: row.signals.source_weight,
+                interaction: row.signals.interaction,
+                entity_density: row.signals.entity_density,
+                // Carried rather than dropped, and always `0.0` from this
+                // engine: `mem_tree_score` has no column for it, so the row it
+                // reads back cannot hold what the extractor rated the chunk.
+                // The `total` it contributed to is what survived.
+                llm_importance: row.signals.llm_importance,
+            },
+            dropped: row.dropped,
+            reason: row.reason,
+            computed_at_ms: row.computed_at_ms,
+            // Same story as `llm_importance`: diagnostic only, no column,
+            // always `None` from a stored row.
+            llm_importance_reason: row.llm_importance_reason,
+        }))
+    }
+
+    async fn source_ingest_status(
+        &self,
+        source_prefixes: &[SourceIngestQuery],
+    ) -> Result<Vec<SourceIngestStatus>, MemoryError> {
+        // Answered without opening the store, which is not merely an
+        // optimisation: the contract says an empty ask yields an empty answer,
+        // and a driver that opened a database to discover that would fail a
+        // caller with nothing configured on a store that has never been built.
+        if source_prefixes.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let patterns: Vec<String> = source_prefixes
+            .iter()
+            .map(|query| like_prefix_pattern(&query.chunk_id_prefix))
+            .collect();
+        let asked = patterns.len();
+        let counts = blocking(
+            self.config.clone(),
+            "read source ingest status",
+            move |config| {
+                tinymemory_core::sources::status::ingest_counts_for_patterns(config, &patterns)
+            },
+        )
+        .await?;
+
+        // The engine promises a row per pattern — the query is a bare aggregate
+        // with no `GROUP BY`, so a pattern matching nothing still returns one.
+        // Checked rather than trusted because the failure mode of zipping two
+        // lists of different lengths is a silent truncation, and the rows it
+        // would drop are exactly the never-synced sources this member exists to
+        // report.
+        if counts.len() != asked {
+            return Err(Self::other(
+                "read source ingest status",
+                format!(
+                    "asked for {asked} sources and the engine answered {}",
+                    counts.len()
+                ),
+            ));
+        }
+
+        Ok(source_prefixes
+            .iter()
+            .zip(counts)
+            .map(|(query, counts)| SourceIngestStatus {
+                // Echoed from the query, not derived from the chunk rows: the
+                // registry id and the ingest key are different identifiers, and
+                // for a connector source they share no substring.
+                source_id: query.source_id.clone(),
+                chunks_synced: counts.chunks_synced,
+                chunks_pending: counts.chunks_pending,
+                last_chunk_at_ms: counts.last_chunk_at_ms,
+            })
+            .collect())
+    }
+}
+
+/// Turn a literal chunk-id prefix into the `LIKE` pattern that selects it.
+///
+/// The contract calls [`SourceIngestQuery::chunk_id_prefix`] a *literal*
+/// prefix, so honouring it means escaping the pattern metacharacters before
+/// appending the wildcard. Without that a source keyed `mem_src:src_a:` also
+/// counts the chunks of any source whose id differs only where the underscore
+/// is — `_` is `LIKE`'s single-character wildcard, and every generated source
+/// id contains one. The count would be wrong in the direction that looks
+/// healthy: too many chunks, attributed to the wrong source.
+///
+/// `\` is escaped along with `%` and `_`, and pairs with the `ESCAPE '\'`
+/// clause the engine's counting query declares. This is the same construction —
+/// and the same argument — as the engine's own `like_contains_pattern`, which
+/// exists because a source id containing `_` had already been observed to match
+/// more than it should.
+fn like_prefix_pattern(prefix: &str) -> String {
+    let mut pattern = String::with_capacity(prefix.len() + 1);
+    for character in prefix.chars() {
+        if matches!(character, '\\' | '%' | '_') {
+            pattern.push('\\');
+        }
+        pattern.push(character);
+    }
+    pattern.push('%');
+    pattern
 }
 
 #[async_trait]

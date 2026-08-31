@@ -372,6 +372,232 @@ pub fn leaf_preview(content: &str) -> String {
         .collect()
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// The summariser door, and the roots it eventually produces.
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Everything above describes a tree that has already been sealed. The three
+// shapes below describe the *act* of sealing one level of it — N contributions
+// from level `n` folded into the single node that lands at level `n + 1` — and
+// the fourth describes the top of what that folding leaves behind.
+//
+// # Why the fold has to be a contract member
+//
+// It is the one step in the tree pipeline that is neither deterministic nor
+// local. It costs an inference call, that call is billed, and the provider
+// making it is configured on the *driver's* side of the boundary. A host that
+// reaches memory only over the module has no chat provider of its own to fold
+// with and no rate card to charge against, so the fold has to happen where the
+// provider is — and the usage has to come back attached to the text, because
+// nothing downstream can recompute it from the words.
+//
+// That is why [`SummaryOutput`] here carries seven fields rather than the four
+// the engine's own deterministic summarisers return: `input_tokens`,
+// `output_tokens` and `charged_amount_usd` exist only because a provider was
+// paid, and a caller doing cost accounting cannot derive them.
+//
+// # Every budget crosses, and none of them is defaulted
+//
+// [`SummaryContext`] carries three separate token numbers and they are not
+// interchangeable. `token_budget` clamps the *output*; `input_token_budget` is
+// the whole context the fold may occupy; `overhead_reserve_tokens` is the
+// prompt and formatting headroom withheld from the sources. The driver divides
+// what is left after the other two among the inputs, so a caller that omits
+// one and lets it default to zero does not get a slightly different summary —
+// it gets every source clamped to nothing and a fold with no evidence in it.
+// They are required fields for that reason, not optional ones with a sensible
+// fallback: there is no sensible fallback.
+//
+// [`SummaryContext::ask`] is load-bearing in the same way and in the opposite
+// direction: its presence selects an entirely different system prompt. A
+// flavoured tree folded without its ask produces a generic digest where the
+// caller expected a profile, and nothing in the output says which prompt ran.
+//
+// # `tree_kind` crosses as a string, not as an enum
+//
+// The engine's `TreeKind` is `#[non_exhaustive]` and has already grown a fourth
+// variant (`flavoured`). A closed enum on the wire would mean the first payload
+// naming a kind this build predates fails to *deserialize*, taking the whole
+// frame with it — an unfamiliar label degrading into a hard decode failure.
+// [`crate::provider::retrieval`] documents that argument at length for
+// `RetrievalHit::tree_kind` and `EntityMatch::kind`; this is the same rule
+// applied to the same enum, and the hazard is symmetric here because this field
+// travels in a *request*: a newer caller naming a newer kind must not make an
+// older driver fail to parse the call.
+//
+// Known values today are `source`, `topic`, `global` and `flavoured`. Unlike
+// the response-side fields, though, this one is validated on arrival — a driver
+// that cannot map the string onto a kind it understands answers
+// [`MemoryError::Invalid`](crate::error::MemoryError::Invalid) naming it,
+// because folding under the wrong kind silently mislabels a summary and nothing
+// afterwards can tell that it happened.
+
+/// One contribution being folded — a raw leaf at level 0 on its way to level 1,
+/// or a lower-level summary on its way to the level above it.
+///
+/// Owned throughout, where the engine's own twin borrows: this shape is
+/// serialized into a frame, and a borrow cannot outlive the call that decoded
+/// it.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SummaryInput {
+    /// Machine-readable id of the contributing leaf or lower-level summary.
+    ///
+    /// It is written into the prompt as the provenance marker for its block, so
+    /// it is not decorative: two inputs sharing an id produce a fold whose
+    /// sources cannot be told apart afterwards.
+    pub id: String,
+    /// Raw text being folded into the parent summary.
+    ///
+    /// Clamped driver-side to this input's share of the context budget; an
+    /// input whose content is blank after trimming is dropped from the prompt
+    /// entirely rather than contributing an empty block.
+    pub content: String,
+    /// Approximate token count of [`content`](Self::content).
+    pub token_count: u32,
+    /// Canonical entity ids attached to this input.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entities: Vec<String>,
+    /// Topic labels attached to this input.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub topics: Vec<String>,
+    /// Start of the time window this input covers (inclusive).
+    pub time_range_start: DateTime<Utc>,
+    /// End of the time window this input covers (inclusive).
+    pub time_range_end: DateTime<Utc>,
+    /// Importance weight; higher-scoring inputs are folded first and are least
+    /// likely to be dropped under budget pressure.
+    ///
+    /// The ordering is the driver's, and it is applied to the whole slice
+    /// before any clamping, so the order the caller sends inputs in does not
+    /// change the result — the scores do.
+    pub score: f32,
+}
+
+/// Per-seal context: which tree and level is being sealed, and under what
+/// budgets.
+///
+/// The engine's twin borrows its strings from the tree it was built over; this
+/// one owns them, for the reason [`SummaryInput`] gives.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SummaryContext {
+    /// Machine-readable id of the tree being sealed.
+    pub tree_id: String,
+    /// Wire kind of the tree: `source`, `topic`, `global`, `flavoured`, ….
+    ///
+    /// A string rather than an enum, and validated by the driver rather than by
+    /// serde — see the section note above this type for both halves of that
+    /// decision.
+    pub tree_kind: String,
+    /// Level the produced summary lands at; inputs come from `target_level - 1`.
+    pub target_level: u32,
+    /// Maximum approximate tokens the produced summary may occupy.
+    ///
+    /// Both an instruction and a clamp: it is stated in the prompt *and*
+    /// enforced on the returned text, so a provider that overruns it is
+    /// truncated rather than trusted.
+    pub token_budget: u32,
+    /// Total input/context budget available to this fold.
+    ///
+    /// What is left of it after [`token_budget`](Self::token_budget) and
+    /// [`overhead_reserve_tokens`](Self::overhead_reserve_tokens) are withheld
+    /// is divided evenly among the inputs. A value smaller than those two
+    /// leaves every input a share of zero, which is a fold over nothing.
+    pub input_token_budget: u32,
+    /// Prompt and formatting headroom withheld from source inputs.
+    pub overhead_reserve_tokens: u32,
+    /// Natural-language ask that steers the fold, for flavoured trees.
+    ///
+    /// `Some` selects a flavour-directed system prompt that distils the inputs
+    /// into a running profile answering the ask; `None` selects the generic
+    /// folding prompt every other tree kind uses. An ask that is present but
+    /// blank reads as `None`.
+    ///
+    /// This is not a hint the driver may drop. Sending `None` for a tree that
+    /// has an ask produces a well-formed summary of the wrong kind, and the
+    /// response carries no field that says which prompt ran.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ask: Option<String>,
+}
+
+/// The folded summary, with what the provider charged to produce it.
+///
+/// # Why this shape and not the engine's four-field one
+///
+/// The engine has two summary outputs. The deterministic in-crate summarisers
+/// return content, tokens, entities and topics; the provider-backed fold
+/// returns those plus the usage the call incurred. This is the second one,
+/// deliberately: a fold that crosses the module boundary is always the billed
+/// one — the deterministic path never leaves the driver — so dropping the usage
+/// fields here would lose the only copy of a number the host meters spend
+/// against.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SummaryOutput {
+    /// Folded summary text, clamped to the seal's token budget.
+    ///
+    /// Empty when there was nothing to fold — every input blank, or the slice
+    /// itself empty. That is a successful no-op rather than an error: a seal
+    /// over an empty buffer is idempotent for the same reason
+    /// `MemoryTree::seal` is.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub content: String,
+    /// Approximate token count of [`content`](Self::content).
+    #[serde(default)]
+    pub token_count: u32,
+    /// Canonical entity ids for the summary.
+    ///
+    /// Emitted empty by the provider fold: entity labelling happens separately,
+    /// at seal time, under the tree's own label strategy. Carried anyway so a
+    /// driver whose summariser does extract them has somewhere to put them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub entities: Vec<String>,
+    /// Topic labels for the summary; empty on the same terms as
+    /// [`entities`](Self::entities).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub topics: Vec<String>,
+    /// Prompt tokens the provider reported for this fold, or `0` when it
+    /// reported no usage at all.
+    ///
+    /// Zero is "not reported", not "free". Providers differ in whether they
+    /// return usage, and a caller that treats zero as a measured floor
+    /// under-counts spend rather than over-counting it.
+    #[serde(default)]
+    pub input_tokens: u64,
+    /// Completion tokens the provider reported, on the same terms as
+    /// [`input_tokens`](Self::input_tokens).
+    #[serde(default)]
+    pub output_tokens: u64,
+    /// What the provider said the call cost, in USD.
+    ///
+    /// `None` when the provider quoted nothing, and also when it quoted zero —
+    /// a zero charge is indistinguishable from an unpriced one, so it is
+    /// reported as absent rather than as a free call the caller would then add
+    /// to a running total.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub charged_amount_usd: Option<f64>,
+}
+
+/// One namespace's root summary, as a bounded read returns it.
+///
+/// A named shape rather than the engine's `(String, String, DateTime)` tuple.
+/// The tuple is unambiguous at the one call site that builds it and is nothing
+/// but positional on the wire, where the two `String`s are the same type and
+/// swapping them produces a payload that decodes cleanly and means the
+/// opposite. Naming the fields is what makes that a compile error instead of a
+/// mislabelled memory tab.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RootSummary {
+    /// The namespace the summary is the root of.
+    pub namespace: String,
+    /// The root summary text, already truncated to the caller's caps.
+    ///
+    /// A body that was cut carries a trailing `[... truncated]` marker, so a
+    /// caller can tell a clipped summary from a short one without comparing
+    /// lengths against the caps it asked for.
+    pub body: String,
+    /// When the root node was last written.
+    pub updated_at: DateTime<Utc>,
+}
+
 #[cfg(test)]
 #[path = "tree_tests.rs"]
 mod tests;

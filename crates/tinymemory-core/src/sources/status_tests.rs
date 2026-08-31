@@ -158,3 +158,111 @@ async fn a_source_with_no_chunks_reports_zeroes() {
     assert_eq!(status.last_chunk_at_ms, None);
     assert_eq!(status.freshness, FreshnessLabel::Idle);
 }
+
+/// A pattern that matches nothing still gets a row.
+///
+/// This is the difference between the counting surface and a `GROUP BY` over
+/// the chunk table: a group with no rows is *absent*, so a caller building a
+/// dashboard from groups loses a never-synced source instead of showing it
+/// idle. The batch answers per pattern, in order, so the caller can pair rows
+/// with the sources it asked about.
+#[tokio::test]
+async fn the_batch_answers_one_row_per_pattern_including_the_empty_ones() {
+    use tinymemory_api::host::test_support::TestHostConfig;
+    use tinymemory_api::host::MemoryHostConfig;
+
+    crate::test_seams::init();
+    let workspace = tempfile::tempdir().expect("workspace");
+    let mut host = TestHostConfig::default();
+    host.workspace_dir = workspace.path().join("workspace");
+    let config = host.to_arc();
+
+    crate::store::chunks::store::upsert_chunks(
+        &*config,
+        &[chunk("chunk-batch-1", "mem_src:src_batch:item-1")],
+    )
+    .expect("upsert chunks");
+
+    let patterns = vec![
+        "mem_src:src_batch:%".to_string(),
+        "mem_src:src_never_synced:%".to_string(),
+        "mem_src:src_batch:%".to_string(),
+    ];
+    let counts = ingest_counts_for_patterns(&*config, &patterns).expect("counts");
+
+    assert_eq!(
+        counts.len(),
+        patterns.len(),
+        "one row per pattern, in order"
+    );
+    assert_eq!(counts[0].chunks_synced, 1);
+    assert_eq!(
+        counts[1],
+        IngestCounts::default(),
+        "a source that has never synced reports zeroes, not an absent row"
+    );
+    assert_eq!(counts[1].last_chunk_at_ms, None);
+    assert_eq!(
+        counts[2].chunks_synced, 1,
+        "the batch does not consume rows"
+    );
+}
+
+/// An empty ask is answered without opening the store.
+#[test]
+fn an_empty_batch_touches_nothing() {
+    use tinymemory_api::host::test_support::TestHostConfig;
+    use tinymemory_api::host::MemoryHostConfig;
+
+    // Deliberately a workspace that was never created: if the empty case
+    // reached the store this would fail rather than return an empty vector.
+    let mut host = TestHostConfig::default();
+    host.workspace_dir = std::path::PathBuf::from("/nonexistent/tinymemory/status/batch");
+    let config = host.to_arc();
+
+    let counts = ingest_counts_for_patterns(&*config, &[]).expect("empty batch");
+    assert!(counts.is_empty());
+}
+
+/// `_` and `%` in a pattern are the caller's to escape.
+///
+/// The `ESCAPE` clause is what lets the memory contract's
+/// `source_ingest_status` honour its own promise that a chunk-id prefix is
+/// matched literally — without it, a source keyed `src_a` also counts the
+/// chunks of any source whose id differs only where the underscore is.
+/// [`source_id_prefix`] deliberately does not escape, so this pins the clause
+/// rather than the existing caller's use of it.
+#[tokio::test]
+async fn an_escaped_wildcard_matches_itself() {
+    use tinymemory_api::host::test_support::TestHostConfig;
+    use tinymemory_api::host::MemoryHostConfig;
+
+    crate::test_seams::init();
+    let workspace = tempfile::tempdir().expect("workspace");
+    let mut host = TestHostConfig::default();
+    host.workspace_dir = workspace.path().join("workspace");
+    let config = host.to_arc();
+
+    crate::store::chunks::store::upsert_chunks(
+        &*config,
+        &[
+            chunk("chunk-underscore", "mem_src:src_a:item-1"),
+            chunk("chunk-collider", "mem_src:srcXa:item-1"),
+        ],
+    )
+    .expect("upsert chunks");
+
+    let unescaped = ingest_counts_for_patterns(&*config, &["mem_src:src_a:%".to_string()])
+        .expect("unescaped counts");
+    assert_eq!(
+        unescaped[0].chunks_synced, 2,
+        "an unescaped `_` is a single-character wildcard, which is why the contract escapes"
+    );
+
+    let escaped = ingest_counts_for_patterns(&*config, &[r"mem_src:src\_a:%".to_string()])
+        .expect("escaped counts");
+    assert_eq!(
+        escaped[0].chunks_synced, 1,
+        "an escaped `_` matches only itself"
+    );
+}

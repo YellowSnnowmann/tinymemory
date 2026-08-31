@@ -35,6 +35,8 @@
 //! StorageKinds()                                    -> [String]
 //! ListChunkDetails(query, scope)                    -> [ChunkListRow]
 //! SourceTotals(limit, scope)                        -> [SourceTotal]
+//! ChunkScore(chunk_id)                              -> Option<ChunkScore>
+//! SourceIngestStatus(source_prefixes)               -> [SourceIngestStatus]
 //!
 //! ListActiveFacets() / ListAllFacets()               -> [ProfileFacet]
 //! GetFacet(key) / FacetsByType(type)                 -> facet(s)
@@ -53,6 +55,8 @@
 //!
 //! SummaryForest(limit, scope)                       -> SummaryForest
 //! RecentLeaves(limit, scope)                        -> [TreeLeaf]
+//! Summarise(inputs, context)                        -> SummaryOutput
+//! RootSummaries(per_namespace_cap, total_cap)       -> [RootSummary]
 //!
 //! TopEntities(kind, limit)                          -> [EntityOccurrence]
 //! ChunkEntities(chunk_ids, kinds)                   -> [ChunkEntityOccurrence]
@@ -63,6 +67,7 @@
 //!
 //! FlushSourceTree(source_scope)                     -> u64
 //! Diagnose()                                        -> Diagnosis
+//! DegradedState()                                   -> DegradedCapabilities
 //!
 //! RunConnectionSync(toolkit, connection_id)         -> SyncRunOutcome
 //! BootstrapConnection(toolkit, connection_id)       -> ()
@@ -163,9 +168,10 @@ use tinymemory_api::provider::types::{
 // imported: they are supertraits of `MemoryProvider`, so their methods are
 // already callable on the trait object.
 use tinymemory_api::provider::chunks::{
-    ChunkDetail, ChunkEmbedding, ChunkListRow, ChunkQuery, SourceTotal,
+    ChunkDetail, ChunkEmbedding, ChunkListRow, ChunkQuery, ChunkScore, SourceIngestQuery,
+    SourceIngestStatus, SourceTotal,
 };
-use tinymemory_api::provider::diagnosis::Diagnosis;
+use tinymemory_api::provider::diagnosis::{DegradedCapabilities, Diagnosis};
 use tinymemory_api::provider::episodic::{ConversationSegment, EpisodicEvent, EpisodicTurn};
 use tinymemory_api::provider::people::{
     AddressBookSeedOutcome, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
@@ -186,7 +192,10 @@ use tinymemory_api::provider::sync::{
 use tinymemory_api::provider::MemoryProvider;
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::tool_memory::ToolMemoryRule;
-use tinymemory_api::tree::{IngestRequest, QueryResult, SummaryForest, TreeLeaf, TreeStatus};
+use tinymemory_api::tree::{
+    IngestRequest, QueryResult, RootSummary, SummaryContext, SummaryForest, SummaryInput,
+    SummaryOutput, TreeLeaf, TreeStatus,
+};
 use tinymemory_api::types::{
     GraphRelationRecord, MemoryCategory, MemoryEntry, MemoryKvRecord, MemoryTaint,
     NamespaceDocumentInput, NamespaceMemoryHit, NamespaceRetrievalContext, NamespaceSummary,
@@ -1920,6 +1929,130 @@ impl MemoryService {
             .embedder_slug()
             .await
             .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Fold summary inputs into one parent summary, through the driver's chat
+    /// provider.
+    ///
+    /// Appended here rather than filed beside `Seal` for the reason
+    /// `count_chunks` gives above: member order is wire order.
+    ///
+    /// The longest-running member of the tree family: one provider call, over
+    /// the network, priced at the driver's rate. It is a call rather than a job
+    /// for the same reason `RebuildFromRawArchive` is — the module holds no
+    /// notion of a caller's request, so a fire-and-forget fold would have
+    /// nowhere to report the summary it produced.
+    ///
+    /// Not size-checked. The response is one summary, clamped driver-side to
+    /// the `token_budget` the caller itself supplied, so no input can make it
+    /// exceed a frame. The *request* can be large — it carries every input's
+    /// body — and that bound is the caller's: it chose how many inputs to fold.
+    async fn summarise(
+        &self,
+        inputs: Vec<SummaryInput>,
+        context: SummaryContext,
+    ) -> BusResult<SummaryOutput> {
+        require_family!(self, as_tree, Capability::Tree)
+            .summarise(&inputs, &context)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// Every namespace's root summary, capped per namespace and in total.
+    ///
+    /// Appended here for the reason above. The member name is deliberately
+    /// shorter than the trait method it forwards to
+    /// (`MemoryTree::root_summaries_with_caps`): the caps are visible in the
+    /// signature on both sides, and a wire name is a string a host spells by
+    /// hand, so it carries only what distinguishes the call.
+    ///
+    /// Size-checked even though `total_cap` already bounds the payload in
+    /// characters, because that bound is the *caller's* number and nothing
+    /// stops it being larger than a frame. A named refusal telling the caller
+    /// to lower it beats a response the host cannot decode.
+    async fn root_summaries(
+        &self,
+        per_namespace_cap: usize,
+        total_cap: usize,
+    ) -> BusResult<Vec<RootSummary>> {
+        let summaries = require_family!(self, as_tree, Capability::Tree)
+            .root_summaries_with_caps(per_namespace_cap, total_cap)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&summaries, "RootSummaries")?;
+        Ok(summaries)
+    }
+
+    /// Which capabilities are currently running in a reduced mode.
+    ///
+    /// Appended here for the reason `count_chunks` gives above: member order is
+    /// wire order.
+    ///
+    /// Beside `Diagnose` rather than inside it, and the difference is the price.
+    /// `Diagnose` runs the driver's whole diagnostic pass — an aggregate scan of
+    /// the chunk table, three job counts, an extraction-coverage measurement and
+    /// a walk of the pipeline configuration. This reads the flags the pipeline
+    /// set as it ran. A status indicator polls the second; only a human asks for
+    /// the first.
+    ///
+    /// Not size-checked: three booleans and at most one classified cause.
+    async fn degraded_state(&self) -> BusResult<DegradedCapabilities> {
+        require_family!(self, as_maintenance, Capability::Maintenance)
+            .degraded_state()
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// One chunk's admission decision and the signals behind it.
+    ///
+    /// Appended here for the reason above.
+    ///
+    /// A diagnostic read — "why is this in memory, and why is that not" — and
+    /// not an input to ranking, which the retrieval family owns. `None` is a
+    /// chunk that was never scored, which is a different fact from one that
+    /// scored zero; the driver must not collapse them and neither may a caller.
+    ///
+    /// Not size-checked. The response is one row of numbers plus, at most, the
+    /// driver's own short rationale for the verdict.
+    async fn chunk_score(&self, chunk_id: String) -> BusResult<Option<ChunkScore>> {
+        require_family!(self, as_chunks, Capability::Chunks)
+            .chunk_score(&chunk_id)
+            .await
+            .map_err(|error| into_bus_error(&error))
+    }
+
+    /// How far ingest has got for each configured source the caller names.
+    ///
+    /// Appended here for the reason above.
+    ///
+    /// The caller supplies the chunk-id prefix per source because deriving it
+    /// needs the host's source registry — the source's kind, its toolkit, its
+    /// connection id — which is state the driver does not have and this contract
+    /// exists to stop it reaching for. The driver answers only what it can read
+    /// from its own tables: how many rows sit under that key, and how many of
+    /// them are still in flight.
+    ///
+    /// A row comes back for every query, zero-filled when the prefix matches
+    /// nothing. That is the whole reason this is not `SourceTotals`, which
+    /// returns the groups that exist and therefore drops a source that has never
+    /// synced — off a dashboard, where an absent row reads as a source that was
+    /// never configured.
+    ///
+    /// Neither the prefixes nor the ids are logged: a connector prefix carries a
+    /// connection id, which is user data.
+    ///
+    /// Size-checked, because the caller chooses how many sources to ask about
+    /// and the rows are small but unbounded in number.
+    async fn source_ingest_status(
+        &self,
+        source_prefixes: Vec<SourceIngestQuery>,
+    ) -> BusResult<Vec<SourceIngestStatus>> {
+        let rows = require_family!(self, as_chunks, Capability::Chunks)
+            .source_ingest_status(&source_prefixes)
+            .await
+            .map_err(|error| into_bus_error(&error))?;
+        ensure_response_fits(&rows, "SourceIngestStatus")?;
+        Ok(rows)
     }
 }
 

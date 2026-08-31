@@ -98,6 +98,10 @@ pub mod methods {
     pub const SUMMARY_FOREST: &str = "SummaryForest";
     /// `RecentLeaves` — the newest leaves and the summaries that sealed them.
     pub const RECENT_LEAVES: &str = "RecentLeaves";
+    /// `Summarise` — fold summary inputs into one parent summary.
+    pub const SUMMARISE: &str = "Summarise";
+    /// `RootSummaries` — every namespace's root summary, capped.
+    pub const ROOT_SUMMARIES: &str = "RootSummaries";
 
     // Entities, relations and the namespaced key/value store.
     /// `Entities` — entities.
@@ -219,6 +223,10 @@ pub mod methods {
     pub const LIST_CHUNK_DETAILS: &str = "ListChunkDetails";
     /// `SourceTotals` — one row per source, with what it contributed.
     pub const SOURCE_TOTALS: &str = "SourceTotals";
+    /// `ChunkScore` — one chunk's admission decision and the signals behind it.
+    pub const CHUNK_SCORE: &str = "ChunkScore";
+    /// `SourceIngestStatus` — per configured source, how far ingest has got.
+    pub const SOURCE_INGEST_STATUS: &str = "SourceIngestStatus";
 
     // The scored retrieval surface.
     /// `FastRetrieve` — fast retrieve.
@@ -285,6 +293,8 @@ pub mod methods {
     // report.
     /// `Diagnose` — the typed, per-stage pipeline diagnosis.
     pub const DIAGNOSE: &str = "Diagnose";
+    /// `DegradedState` — the degradation flags alone, without a diagnosis.
+    pub const DEGRADED_STATE: &str = "DegradedState";
 
     // Syncs the driver runs itself: the manual trigger, the persisted state,
     // and what past runs cost.
@@ -331,7 +341,7 @@ pub mod methods {
 /// The order matters: `tinybus`'s `Interface::members()` returns declaration
 /// order, and the module compares the two sequences directly rather than as
 /// sets, so a reordering is caught alongside an addition or a removal.
-pub const METHODS: [&str; 126] = [
+pub const METHODS: [&str; 131] = [
     methods::DRIVER_ID,
     methods::CAPABILITIES,
     methods::HEALTH,
@@ -458,6 +468,11 @@ pub const METHODS: [&str; 126] = [
     methods::EXTRACT_ENTITIES,
     methods::EMBED_TEXT,
     methods::EMBEDDER_SLUG,
+    methods::SUMMARISE,
+    methods::ROOT_SUMMARIES,
+    methods::DEGRADED_STATE,
+    methods::CHUNK_SCORE,
+    methods::SOURCE_INGEST_STATUS,
 ];
 
 #[cfg(test)]

@@ -19,7 +19,7 @@ use async_trait::async_trait;
 use crate::capabilities::Capability;
 use crate::error::MemoryError;
 use crate::goals::GoalsDoc;
-use crate::provider::diagnosis::Diagnosis;
+use crate::provider::diagnosis::{DegradedCapabilities, Diagnosis};
 use crate::provider::types::{
     FlushOutcome, ForgetOutcome, ForgetSelector, IngestOutcome, MaintenanceReport, PurgeOutcome,
     QueueFailure, QueueStats, ResetOutcome, SourceItem, StoreStats,
@@ -468,6 +468,56 @@ pub trait MemoryMaintenance: Send + Sync {
     /// [`Self::doctor`] gives: a pipeline with problems still returns `Ok`
     /// with the problems in it.
     async fn diagnose(&self) -> Result<Diagnosis, MemoryError> {
+        Err(MemoryError::unsupported(Capability::Maintenance))
+    }
+
+    /// Which capabilities are currently running in a reduced mode.
+    ///
+    /// The degradation flags on their own: semantic recall fallen back to
+    /// recency, extraction producing no structure, the storage path unusable —
+    /// and the cause of the most severe of those, when the driver knows it.
+    ///
+    /// # Why this is not [`Self::diagnose`] with the rest thrown away
+    ///
+    /// Cost, and the difference is not marginal. A [`Diagnosis`] is a full
+    /// pass: it counts chunks, counts jobs in three states, measures extraction
+    /// coverage over the whole store, and inspects the configuration of every
+    /// pipeline stage. This is a read of flags the pipeline sets as it runs —
+    /// no query, no configuration walk, nothing that touches storage.
+    ///
+    /// That matters because of who calls it. A diagnosis is asked for once,
+    /// deliberately, by someone looking at a problem. Degradation is polled: it
+    /// is what a status indicator shows continuously, and driving that from a
+    /// full pass would put an aggregate query over the chunk table on a
+    /// repeating timer. The two members exist so a caller can ask the cheap
+    /// question without paying for the expensive one — and, just as important,
+    /// so it is not tempted to poll the expensive one and cache the answer,
+    /// which is how a status light ends up reporting a degradation that cleared
+    /// minutes ago.
+    ///
+    /// [`Diagnosis::degraded`] carries the same shape, from the same source, so
+    /// a caller that has just run a diagnosis has no reason to call this too.
+    ///
+    /// # Why a caller cannot compute it
+    ///
+    /// The flags are set inside the driver, by the embed and extract stages, as
+    /// they fail. Nothing observable from outside distinguishes a recall that
+    /// ranked semantically from one that fell back to recency — both return
+    /// rows, in an order, with no marker on them. A caller with no engine would
+    /// report an all-clear, which is not a stale answer but a confidently wrong
+    /// one.
+    ///
+    /// # Errors
+    ///
+    /// [`MemoryError::Unsupported`] from a driver that tracks no degradation
+    /// state. Deliberately not defaulted to
+    /// [`DegradedCapabilities::default()`], which is all-clear: a driver that
+    /// has never looked would report that everything is fine, and the whole
+    /// purpose of this member is to be believed when it says that.
+    ///
+    /// Otherwise backend failures — though a driver reading in-process flags
+    /// has no failure path and should not invent one.
+    async fn degraded_state(&self) -> Result<DegradedCapabilities, MemoryError> {
         Err(MemoryError::unsupported(Capability::Maintenance))
     }
 }

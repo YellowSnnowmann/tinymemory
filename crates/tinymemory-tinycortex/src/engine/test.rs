@@ -23,9 +23,10 @@ use tinymemory_api::provider::types::IngestItem;
 use tinymemory_api::types::MemoryTaint;
 
 use super::{
-    advertised_capabilities, audit_entry, diagnosis_failure, facet_type_to_engine,
-    handle_to_contract, handle_to_engine, parse_person_id, refuse_composio_dispatch,
-    scope_to_engine, validate_ingest_item, EngineRuntimeConfig,
+    advertised_capabilities, audit_entry, degraded_capabilities, diagnosis_failure,
+    facet_type_to_engine, handle_to_contract, handle_to_engine, like_prefix_pattern,
+    parse_person_id, refuse_composio_dispatch, scope_to_engine, validate_ingest_item,
+    EngineRuntimeConfig,
 };
 
 fn ingest_item(content: &str, mime: Option<&str>, taint: MemoryTaint) -> IngestItem {
@@ -510,5 +511,68 @@ fn set_memory_sources_json_writes_through_to_the_registry_file() {
     assert_eq!(
         snapshot_only.memory_sources_json().expect("snapshot"),
         entries
+    );
+}
+
+#[test]
+fn a_degradation_snapshot_crosses_every_flag_and_its_cause() {
+    // `Diagnose` and `DegradedState` answer the same question at different
+    // prices, so a caller can reasonably compare them. One mapping, asserted
+    // field by field, is what makes that comparison safe — a transposed pair
+    // here would have the two members disagree about which capability is
+    // reduced, and both would still look like plausible answers.
+    use tinymemory_core::tree::health::{DegradedState, FailureCode, PipelineFailure};
+
+    let degraded = DegradedState {
+        semantic_recall: true,
+        structure: false,
+        storage: true,
+        cause: Some(PipelineFailure::new(FailureCode::StorageUnavailable)),
+    };
+    let crossed = degraded_capabilities(&degraded);
+    assert!(crossed.semantic_recall);
+    assert!(!crossed.structure);
+    assert!(crossed.storage);
+    assert_eq!(
+        crossed.cause.as_ref().map(|failure| failure.code.as_str()),
+        Some(FailureCode::StorageUnavailable.as_str())
+    );
+
+    // Nothing degraded is nothing to explain: a cause carried over a cleared
+    // set of flags would put a remediation on a panel with no fault on it.
+    let clear = degraded_capabilities(&DegradedState::default());
+    assert_eq!(
+        clear,
+        tinymemory_api::provider::DegradedCapabilities::default()
+    );
+    assert_eq!(clear.cause, None);
+}
+
+#[test]
+fn a_chunk_id_prefix_is_matched_literally() {
+    // The contract calls the prefix literal, so the driver has to make `LIKE`
+    // agree. Every generated source id contains an underscore, which is `LIKE`'s
+    // single-character wildcard — left unescaped, `mem_src:src_a:` would also
+    // count another source's chunks, and the count would be wrong in the
+    // direction that looks healthy.
+    assert_eq!(
+        like_prefix_pattern("mem_src:src_a:"),
+        r"mem\_src:src\_a:%",
+        "every underscore is escaped, not left as a wildcard"
+    );
+    assert_eq!(
+        like_prefix_pattern("gmail:conn-1:"),
+        "gmail:conn-1:%",
+        "a prefix with no metacharacter gains only the trailing wildcard"
+    );
+    assert_eq!(
+        like_prefix_pattern("100%_of\\it"),
+        r"100\%\_of\\it%",
+        "the escape character itself is escaped, as the ESCAPE clause requires"
+    );
+    assert_eq!(
+        like_prefix_pattern(""),
+        "%",
+        "an empty prefix matches everything, which is what an empty prefix means"
     );
 }

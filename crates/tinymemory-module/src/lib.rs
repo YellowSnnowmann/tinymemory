@@ -673,6 +673,16 @@ mod exports {
             "ExtractEntities",
             "EmbedText",
             "EmbedderSlug",
+            // The summariser door, and the roots folding leaves behind.
+            "Summarise",
+            "RootSummaries",
+            // The three doors a host opens once it stops linking the engine
+            // itself: the cheap degradation poll beside the full diagnosis, the
+            // scorer's verdict on one chunk, and per-configured-source ingest
+            // progress — none of which any earlier member can answer.
+            "DegradedState",
+            "ChunkScore",
+            "SourceIngestStatus",
         ],
         signals = [],
         // The host's embedder is deliberately NOT declared as `requires`. That
