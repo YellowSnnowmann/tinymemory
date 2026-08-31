@@ -99,8 +99,8 @@ pub fn cognee_api_graph_provider(
 #[must_use]
 pub fn mem0_graph_provider(memory: Mem0Memory) -> GraphMemoryProvider {
     let memory: Arc<dyn tinymemory_api::traits::Memory> = Arc::new(memory);
-    let mandatory = MemoryTraitProvider::new(Arc::clone(&memory), MEM0_DRIVER_ID);
-    GraphMemoryProvider::new(mandatory, Arc::new(Mem0Graph::new(memory)))
+    let provider = Mem0Provider::from_memory(Arc::clone(&memory));
+    GraphMemoryProvider::new(provider, Arc::new(Mem0Graph::new(memory)))
 }
 
 #[cfg(test)]

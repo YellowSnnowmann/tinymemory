@@ -18,17 +18,17 @@ use async_trait::async_trait;
 use tinymemory_api::capabilities::{Capabilities, Capability};
 use tinymemory_api::error::MemoryError;
 use tinymemory_api::health::MemoryHealth;
-use tinymemory_api::mandatory::MemoryTraitProvider;
 use tinymemory_api::provider::types::{ExportPage, ExportRecord, ImportOutcome, SourceScope};
 use tinymemory_api::provider::{
-    MemoryCore, MemoryGraph, MemoryPortability, MemoryProvider, MemoryRecall,
+    MemoryAnswer, MemoryConversationIngest, MemoryCore, MemoryDocumentIngest, MemoryEventIngest,
+    MemoryGraph, MemoryLearningIngest, MemoryPortability, MemoryProvider, MemoryRecall,
 };
 use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::types::{MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary};
 
 /// A [`MemoryTraitProvider`] augmented with a native [`MemoryGraph`].
 pub struct GraphMemoryProvider {
-    mandatory: MemoryTraitProvider,
+    base: Arc<dyn MemoryProvider>,
     graph: Arc<dyn MemoryGraph>,
 }
 
@@ -37,7 +37,7 @@ impl std::fmt::Debug for GraphMemoryProvider {
         // `dyn MemoryGraph` is not `Debug`; the mandatory half already renders
         // safely (see `MemoryTraitProvider`'s own impl).
         f.debug_struct("GraphMemoryProvider")
-            .field("mandatory", &self.mandatory)
+            .field("driver_id", &self.base.driver_id())
             .finish_non_exhaustive()
     }
 }
@@ -45,8 +45,11 @@ impl std::fmt::Debug for GraphMemoryProvider {
 impl GraphMemoryProvider {
     /// Compose `mandatory` with a native `graph` implementation.
     #[must_use]
-    pub fn new(mandatory: MemoryTraitProvider, graph: Arc<dyn MemoryGraph>) -> Self {
-        Self { mandatory, graph }
+    pub fn new(base: impl MemoryProvider, graph: Arc<dyn MemoryGraph>) -> Self {
+        Self {
+            base: Arc::new(base),
+            graph,
+        }
     }
 }
 
@@ -61,17 +64,17 @@ impl MemoryCore for GraphMemoryProvider {
         session_id: Option<&str>,
         taint: MemoryTaint,
     ) -> Result<(), MemoryError> {
-        self.mandatory
+        self.base
             .store(namespace, key, content, category, session_id, taint)
             .await
     }
 
     async fn get(&self, namespace: &str, key: &str) -> Result<Option<MemoryEntry>, MemoryError> {
-        self.mandatory.get(namespace, key).await
+        self.base.get(namespace, key).await
     }
 
     async fn forget(&self, namespace: &str, key: &str) -> Result<bool, MemoryError> {
-        self.mandatory.forget(namespace, key).await
+        self.base.forget(namespace, key).await
     }
 
     async fn list(
@@ -80,11 +83,11 @@ impl MemoryCore for GraphMemoryProvider {
         category: Option<&MemoryCategory>,
         session_id: Option<&str>,
     ) -> Result<Vec<MemoryEntry>, MemoryError> {
-        self.mandatory.list(namespace, category, session_id).await
+        self.base.list(namespace, category, session_id).await
     }
 
     async fn namespaces(&self) -> Result<Vec<NamespaceSummary>, MemoryError> {
-        self.mandatory.namespaces().await
+        self.base.namespaces().await
     }
 }
 
@@ -97,7 +100,7 @@ impl MemoryRecall for GraphMemoryProvider {
         opts: &OwnedRecallOpts,
         scope: Option<&SourceScope>,
     ) -> Result<Vec<MemoryEntry>, MemoryError> {
-        self.mandatory.recall(query, limit, opts, scope).await
+        self.base.recall(query, limit, opts, scope).await
     }
 }
 
@@ -108,37 +111,52 @@ impl MemoryPortability for GraphMemoryProvider {
         cursor: Option<&str>,
         limit: usize,
     ) -> Result<ExportPage, MemoryError> {
-        self.mandatory.export_page(cursor, limit).await
+        self.base.export_page(cursor, limit).await
     }
 
     async fn import_records(
         &self,
         records: Vec<ExportRecord>,
     ) -> Result<ImportOutcome, MemoryError> {
-        self.mandatory.import_records(records).await
+        self.base.import_records(records).await
     }
 }
 
 #[async_trait]
 impl MemoryProvider for GraphMemoryProvider {
     fn driver_id(&self) -> &str {
-        self.mandatory.driver_id()
+        self.base.driver_id()
     }
 
     fn capabilities(&self) -> Capabilities {
-        Capabilities::from_iter([
-            Capability::Core,
-            Capability::Recall,
-            Capability::Portability,
-            Capability::Graph,
-        ])
+        self.base.capabilities().with(Capability::Graph)
     }
 
     async fn health(&self) -> MemoryHealth {
-        self.mandatory.health().await
+        self.base.health().await
     }
 
     fn as_graph(&self) -> Option<&dyn MemoryGraph> {
         Some(self.graph.as_ref())
+    }
+
+    fn as_document_ingest(&self) -> Option<&dyn MemoryDocumentIngest> {
+        self.base.as_document_ingest()
+    }
+
+    fn as_conversation_ingest(&self) -> Option<&dyn MemoryConversationIngest> {
+        self.base.as_conversation_ingest()
+    }
+
+    fn as_learning_ingest(&self) -> Option<&dyn MemoryLearningIngest> {
+        self.base.as_learning_ingest()
+    }
+
+    fn as_event_ingest(&self) -> Option<&dyn MemoryEventIngest> {
+        self.base.as_event_ingest()
+    }
+
+    fn as_answer(&self) -> Option<&dyn MemoryAnswer> {
+        self.base.as_answer()
     }
 }

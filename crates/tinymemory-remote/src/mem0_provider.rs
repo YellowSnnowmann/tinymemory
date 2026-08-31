@@ -15,6 +15,7 @@ use tinymemory_api::provider::{
     MemoryConversationIngest, MemoryCore, MemoryPortability, MemoryProvider, MemoryRecall,
 };
 use tinymemory_api::recall::OwnedRecallOpts;
+use tinymemory_api::traits::Memory;
 use tinymemory_api::types::{MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary};
 
 use crate::common::encode;
@@ -38,8 +39,12 @@ impl Mem0Provider {
     /// Wrap a native Mem0 client.
     #[must_use]
     pub fn new(memory: Mem0Memory) -> Self {
+        Self::from_memory(Arc::new(memory))
+    }
+
+    pub(crate) fn from_memory(memory: Arc<dyn Memory>) -> Self {
         Self {
-            mandatory: MemoryTraitProvider::new(Arc::new(memory), MEM0_DRIVER_ID),
+            mandatory: MemoryTraitProvider::new(memory, MEM0_DRIVER_ID),
         }
     }
 }
