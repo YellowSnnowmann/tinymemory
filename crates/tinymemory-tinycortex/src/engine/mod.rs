@@ -39,7 +39,9 @@ use tinymemory_api::provider::types::{
 };
 // Diff-family value types, used only by the `MemoryDiff` impl below — which is
 // compiled out without the git-backed snapshot store.
-use tinymemory_api::operations::{AnswerCitation, AnswerRequest, AnswerResponse, AnswerStep};
+use tinymemory_api::operations::{
+    AnswerCitation, AnswerRequest, AnswerResponse, AnswerStep, RawMemoryEvent,
+};
 #[cfg(feature = "memory-git")]
 use tinymemory_api::provider::types::{ChangeKind, DiffReport, SnapshotRef, SourceChange};
 use tinymemory_api::provider::{
@@ -805,14 +807,29 @@ impl MemoryLearningIngest for TinycortexProvider {
 
 #[async_trait]
 impl MemoryEventIngest for TinycortexProvider {
-    async fn ingest_event(&self, event: EpisodicEvent) -> Result<IngestOutcome, MemoryError> {
-        if event.event_id.trim().is_empty() || event.content.trim().is_empty() {
+    async fn ingest_event(&self, event: RawMemoryEvent) -> Result<IngestOutcome, MemoryError> {
+        if event.id.trim().is_empty()
+            || event.namespace.trim().is_empty()
+            || event.event_type.trim().is_empty()
+            || event.content.trim().is_empty()
+        {
             return Err(MemoryError::Invalid(
-                "event id and content must not be empty".to_string(),
+                "event id, namespace, type, and content must not be empty".to_string(),
             ));
         }
-        let event_id = event.event_id.clone();
-        MemoryEpisodic::insert_event(self, &event).await?;
+        let event_id = event.id.clone();
+        let namespace = format!("event:{}", event.namespace);
+        let content = serde_json::to_string(&event)
+            .map_err(|error| Self::other("encode raw event", error))?;
+        self.store(
+            &namespace,
+            &event_id,
+            &content,
+            MemoryCategory::Daily,
+            event.session_id.as_deref(),
+            event.taint,
+        )
+        .await?;
         Ok(IngestOutcome {
             written: 1,
             ids: vec![event_id],
