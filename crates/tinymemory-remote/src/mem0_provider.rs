@@ -18,6 +18,7 @@ use tinymemory_api::recall::OwnedRecallOpts;
 use tinymemory_api::types::{MemoryCategory, MemoryEntry, MemoryTaint, NamespaceSummary};
 
 use crate::mem0::Mem0Memory;
+use crate::common::encode;
 use crate::MEM0_DRIVER_ID;
 
 /// Mem0 exposed as mandatory storage/recall plus conversation ingestion.
@@ -148,7 +149,7 @@ impl MemoryConversationIngest for Mem0Provider {
             if let Some(timestamp) = message.timestamp {
                 digest.update(timestamp.to_rfc3339().as_bytes());
             }
-            let key = format!("message-{:x}", digest.finalize());
+            let key = format!("message-{}", encode(digest.finalize()));
             self.store(
                 &namespace,
                 &key,
