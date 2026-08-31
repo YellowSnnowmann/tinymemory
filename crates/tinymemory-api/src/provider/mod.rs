@@ -72,6 +72,7 @@ pub mod driver;
 pub mod episodic;
 pub mod knowledge;
 pub mod mandatory;
+pub mod operations;
 pub mod people;
 pub mod profile;
 pub mod records;
@@ -100,6 +101,10 @@ pub use driver::MemoryProvider;
 pub use episodic::{ConversationSegment, EpisodicEvent, EpisodicTurn, EventKind, MemoryEpisodic};
 pub use knowledge::{MemoryDiff, MemoryEntities, MemoryGraph, INBOUND_SCAN_LIMIT};
 pub use mandatory::{MemoryCore, MemoryPortability, MemoryRecall};
+pub use operations::{
+    AnswerCitation, AnswerRequest, AnswerResponse, AnswerStep, MemoryAnswer,
+    MemoryConversationIngest, MemoryDocumentIngest, MemoryEventIngest, MemoryLearningIngest,
+};
 pub use people::{
     AddressBookSeedOutcome, MemoryPeople, PersonHandle, PersonInteraction, PersonRecord, PersonRef,
     PersonScore, RankedPerson, ResolvedPerson,

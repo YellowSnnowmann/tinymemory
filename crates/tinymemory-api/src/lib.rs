@@ -118,7 +118,7 @@ pub mod sync_events;
 // nothing type-checks.
 pub use tinymemory_bus::{
     capabilities, chunks, composio, error, evidence, goals, graph, health, learning, namespace,
-    recall, tool_memory, tree, types, version, wire,
+    operations, recall, tool_memory, tree, types, version, wire,
 };
 /// The mandatory-family composition: wrap any [`traits::Memory`] backend as a
 /// complete [`provider::MemoryProvider`].
