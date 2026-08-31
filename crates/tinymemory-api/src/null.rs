@@ -55,6 +55,8 @@ use crate::capabilities::{Capabilities, Capability};
 use crate::error::MemoryError;
 use crate::goals::GoalsDoc;
 use crate::health::MemoryHealth;
+use crate::learning::LearningCandidate;
+use crate::operations::{AnswerRequest, AnswerResponse};
 use crate::provider::types::{
     DiffReport, EntityHit, ExportPage, ExportRecord, FlushOutcome, ImportOutcome, IngestItem,
     IngestOutcome, MaintenanceReport, ResetOutcome, SnapshotRef, SourceItem, SourceScope,
@@ -62,10 +64,12 @@ use crate::provider::types::{
 use crate::provider::{
     AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, CodingSessionIngestReport,
     CodingSessionIngestRequest, CodingSessionSource, CoverWindowQuery, EntityMatch, FacetType,
-    FastRetrieveQuery, MemoryChunks, MemoryCodingSessions, MemoryCore, MemoryDiff, MemoryDocuments,
-    MemoryEntities, MemoryGoals, MemoryGraph, MemoryIngest, MemoryMaintenance, MemoryPeople,
-    MemoryPortability, MemoryProfile, MemoryProvider, MemoryRecall, MemoryRetrieval, MemoryScoring,
-    MemorySourceSink, MemorySourceSync, MemoryToolMemory, MemoryTree, PersonHandle,
+    FastRetrieveQuery, MemoryAnswer, MemoryChunks, MemoryCodingSessions, MemoryConversationIngest,
+    MemoryCore, MemoryDiff, MemoryDocumentIngest, MemoryDocuments, MemoryEntities,
+    MemoryEventIngest, MemoryGoals, MemoryGraph, MemoryIngest, MemoryLearningIngest,
+    MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProfile, MemoryProvider,
+    MemoryRecall, MemoryRetrieval, MemoryScoring, MemorySourceSink, MemorySourceSync,
+    MemoryToolMemory, MemoryTree, PersonHandle,
     PersonInteraction, PersonRecord, PersonScore, ProfileFacet, RankedPerson, RawArchiveCoverage,
     RawRebuildOutcome, ResolvedPerson, RetrievalHit, RetrievalResponse, SourceRetrievalQuery,
     SourceSyncState, SourceSyncStatus, SyncAuditEntry, SyncRunOutcome, UserState,
@@ -233,6 +237,47 @@ impl MemoryIngest for NullMemoryProvider {
     // refusing the day the default changes.
     async fn ingest_email(&self, _messages: Vec<IngestItem>) -> Result<IngestOutcome, MemoryError> {
         unsupported(Capability::Ingest)
+    }
+}
+
+#[async_trait]
+impl MemoryDocumentIngest for NullMemoryProvider {
+    async fn ingest_document(&self, _document: IngestItem) -> Result<IngestOutcome, MemoryError> {
+        unsupported(Capability::DocumentIngest)
+    }
+}
+
+#[async_trait]
+impl MemoryConversationIngest for NullMemoryProvider {
+    async fn ingest_conversation(
+        &self,
+        _messages: Vec<IngestItem>,
+    ) -> Result<IngestOutcome, MemoryError> {
+        unsupported(Capability::ConversationIngest)
+    }
+}
+
+#[async_trait]
+impl MemoryLearningIngest for NullMemoryProvider {
+    async fn ingest_learning(
+        &self,
+        _learning: LearningCandidate,
+    ) -> Result<IngestOutcome, MemoryError> {
+        unsupported(Capability::LearningIngest)
+    }
+}
+
+#[async_trait]
+impl MemoryEventIngest for NullMemoryProvider {
+    async fn ingest_event(&self, _event: EpisodicEvent) -> Result<IngestOutcome, MemoryError> {
+        unsupported(Capability::EventIngest)
+    }
+}
+
+#[async_trait]
+impl MemoryAnswer for NullMemoryProvider {
+    async fn answer(&self, _request: AnswerRequest) -> Result<AnswerResponse, MemoryError> {
+        unsupported(Capability::Answer)
     }
 }
 
