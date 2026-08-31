@@ -150,8 +150,8 @@ mod tests {
         assert!(matches!(
             error,
             MemoryError::Unsupported {
-                capability: Capability::Answer
-            }
+                capability
+            } if capability == Capability::Answer.as_str()
         ));
     }
 }
