@@ -152,6 +152,13 @@ pub fn ingest_counts_for_patterns(
 }
 
 /// Compute status for one source.
+///
+/// # Errors
+///
+/// Fails when the chunk store cannot be opened or the count query fails
+/// (storage unavailable, corrupt store), or when the blocking task is
+/// cancelled at shutdown. A source whose prefix matches nothing is NOT an
+/// error — it answers with zeroed counts.
 pub async fn source_status(
     config: &Config,
     source: &MemorySourceEntry,
@@ -180,6 +187,12 @@ pub async fn source_status(
 }
 
 /// Compute status for all configured sources (one SQL roundtrip per source).
+///
+/// # Errors
+///
+/// Fails only when the source registry itself cannot be read. A per-source
+/// store failure does not fail the batch — that row degrades to zeroed
+/// counts, so one bad source cannot blank the whole dashboard.
 pub async fn status_list(config: &Config) -> Result<Vec<SourceStatus>, String> {
     let sources = crate::sources::registry::list_sources().await?;
     let mut out = Vec::with_capacity(sources.len());

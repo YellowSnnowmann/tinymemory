@@ -7,9 +7,9 @@
 //! nothing in it. Both failures render as a plausible screen rather than as an
 //! error.
 
-// A failed assertion in a test is a panic either way; `unwrap`/`expect` here say
-// what the invariant was. Same allowance the crate's other test modules take.
-#![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+// A failed assertion in a test is a panic either way; `expect` here says what
+// the invariant was. Only the lint this file actually trips is allowed.
+#![allow(clippy::expect_used)]
 
 use super::*;
 
