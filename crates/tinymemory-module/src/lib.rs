@@ -655,7 +655,6 @@ mod exports {
             // Maintenance, typed: the diagnosis an operator or an agent reads,
             // beside the uniform report a scheduler reads.
             "Diagnose",
-            "OverrideSchedulerGate",
             // Source sync this process runs itself. The periodic loops already
             // live here; these are the on-demand half plus what past runs cost.
             "RunConnectionSync",
@@ -700,6 +699,9 @@ mod exports {
             "IngestLearning",
             "IngestEvent",
             "Answer",
+            // Appended at the wire tail (slot 141) to match the bus table's
+            // append-only order — member order is wire order.
+            "OverrideSchedulerGate",
         ],
         signals = [],
         // The host's embedder is deliberately NOT declared as `requires`. That

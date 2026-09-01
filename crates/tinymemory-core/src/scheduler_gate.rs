@@ -101,6 +101,12 @@ fn manual_override_active() -> bool {
 /// "process now" still runs. The window is bounded — there is no "override
 /// forever", because that would just be the gate turned off with extra steps.
 pub fn set_manual_override(seconds: u64) {
+    // The clamp is this function's contract, not its callers': the window is
+    // bounded to an hour (an unbounded override is the gate turned off with
+    // extra steps), and the bound also makes the expiry arithmetic
+    // infallible — `Instant + 1h` cannot overflow, where an unclamped u64
+    // could panic inside library code.
+    let seconds = seconds.min(3600);
     let until = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
     *MANUAL_OVERRIDE_UNTIL.write() = Some(until);
     resume_notify().notify_waiters();
