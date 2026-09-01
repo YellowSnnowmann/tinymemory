@@ -283,6 +283,45 @@ pub(crate) struct BusSchedulerGate {
 }
 
 impl BusSchedulerGate {
+    /// Store a freshly polled policy: log on change, and wake paused sleepers
+    /// on a pause → not-paused transition so a resume is immediate rather than
+    /// one tick late. Factored off the bus call so the transition rules are
+    /// testable without a broker.
+    fn store_policy(&self, next: tinymemory_core::scheduler_gate::Policy) {
+        let (was_paused, changed) = {
+            let mut slot = self
+                .policy
+                .write()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            let was = matches!(
+                *slot,
+                tinymemory_core::scheduler_gate::Policy::Paused { .. }
+            );
+            let changed = *slot != next;
+            *slot = next;
+            (was, changed)
+        };
+        if changed {
+            log::info!(
+                "[tinymemory:module] scheduler policy from host: {next:?} — background claims \
+                 honour it from the next tick"
+            );
+        }
+        let now_paused = matches!(next, tinymemory_core::scheduler_gate::Policy::Paused { .. });
+        if was_paused && !now_paused {
+            self.notify.notify_waiters();
+        }
+    }
+
+    /// A gate with no poller, for tests: `store_policy` is driven by hand.
+    #[cfg(test)]
+    pub(crate) fn new_for_test() -> Arc<Self> {
+        Arc::new(Self {
+            policy: std::sync::RwLock::new(tinymemory_core::scheduler_gate::Policy::Normal),
+            notify: Arc::new(tokio::sync::Notify::new()),
+        })
+    }
+
     /// Poll cadence while the host answers. Claims read the cache, so this
     /// bounds how stale a pause can be, not how often anything blocks.
     const POLL_SECS: u64 = 15;
@@ -329,31 +368,7 @@ impl BusSchedulerGate {
         };
         match reply {
             Ok((tier, reason)) => {
-                let next = wire_to_policy(&tier, reason.as_deref());
-                let (was_paused, changed) = {
-                    let mut slot = self
-                        .policy
-                        .write()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    let was = matches!(
-                        *slot,
-                        tinymemory_core::scheduler_gate::Policy::Paused { .. }
-                    );
-                    let changed = *slot != next;
-                    *slot = next;
-                    (was, changed)
-                };
-                if changed {
-                    log::info!(
-                        "[tinymemory:module] scheduler policy from host: {next:?} — background \
-                         claims honour it from the next tick"
-                    );
-                }
-                let now_paused =
-                    matches!(next, tinymemory_core::scheduler_gate::Policy::Paused { .. });
-                if was_paused && !now_paused {
-                    self.notify.notify_waiters();
-                }
+                self.store_policy(wire_to_policy(&tier, reason.as_deref()));
                 true
             }
             Err(error) => {

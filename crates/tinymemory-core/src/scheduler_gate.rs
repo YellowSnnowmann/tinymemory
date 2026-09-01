@@ -92,6 +92,12 @@ fn manual_override_active() -> bool {
         .is_some_and(|until| std::time::Instant::now() < until)
 }
 
+/// Clear any live manual override. For tests: the window is a process
+/// global, and a test that opens one must not leak it into its neighbours.
+pub fn clear_manual_override() {
+    *MANUAL_OVERRIDE_UNTIL.write() = None;
+}
+
 /// Open a manual-override window: for `seconds`, [`current_policy`] answers
 /// [`Policy::Normal`] regardless of the installed gate, and paused sleepers
 /// are woken so the window is not spent waiting out a tick.
