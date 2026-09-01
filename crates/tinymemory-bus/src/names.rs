@@ -64,6 +64,12 @@ pub mod methods {
     pub const INGEST_CHAT: &str = "IngestChat";
     /// `IngestEmail` — ingest email.
     pub const INGEST_EMAIL: &str = "IngestEmail";
+    /// `IngestLearning` — ingest one learning candidate.
+    pub const INGEST_LEARNING: &str = "IngestLearning";
+    /// `IngestEvent` — ingest one raw event.
+    pub const INGEST_EVENT: &str = "IngestEvent";
+    /// `Answer` — synthesize a grounded answer.
+    pub const ANSWER: &str = "Answer";
 
     // Namespace-scoped document storage and retrieval.
     /// `PutDocument` — put document.
@@ -364,7 +370,7 @@ pub mod methods {
 /// The order matters: `tinybus`'s `Interface::members()` returns declaration
 /// order, and the module compares the two sequences directly rather than as
 /// sets, so a reordering is caught alongside an addition or a removal.
-pub const METHODS: [&str; 138] = [
+pub const METHODS: [&str; 141] = [
     methods::DRIVER_ID,
     methods::CAPABILITIES,
     methods::HEALTH,
@@ -503,6 +509,9 @@ pub const METHODS: [&str; 138] = [
     methods::RUNTIME_SUMMARIZE,
     methods::RUNTIME_REBUILD,
     methods::FLAVOUR_PROFILE,
+    methods::INGEST_LEARNING,
+    methods::INGEST_EVENT,
+    methods::ANSWER,
 ];
 
 #[cfg(test)]

@@ -1,7 +1,7 @@
-//! The conformance suite over the FULL twenty-family driver (#18 §E1/§E3).
+//! The conformance suite over the full driver (#18 §E1/§E3).
 //!
-//! `conformance_test.rs` (in-lib) covers `crate::provider` — the mandatory
-//! three families over any engine backend. This target covers
+//! `conformance_test.rs` (in-lib) covers `crate::provider` — the lightweight
+//! provider over any engine backend. This target covers
 //! [`tinymemory_tinycortex::engine::TinycortexProvider`], which the in-lib
 //! test cannot: the provider needs a `MemoryClient`, and a `MemoryClient`
 //! needs the host's process-global embedding seam installed. A process global
@@ -139,6 +139,61 @@ async fn the_full_provider_actually_retains() {
         "the workspace store must retain writes, or the suite above asserts \
          almost nothing"
     );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn learning_and_raw_event_routes_persist_recallable_records() {
+    use tinymemory_api::operations::RawMemoryEvent;
+    use tinymemory_api::provider::{MemoryCore, MemoryProvider};
+    use tinymemory_api::types::MemoryTaint;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let learning = serde_json::from_value(serde_json::json!({
+        "class": "tooling",
+        "key": "package_manager",
+        "value": "pnpm",
+        "cue_family": "explicit",
+        "evidence": {"type": "episodic", "episodic_id": 7},
+        "initial_confidence": 0.95,
+        "observed_at": 1_700_000_000.0
+    }))
+    .expect("learning candidate");
+    provider
+        .as_learning_ingest()
+        .expect("learning route")
+        .ingest_learning(learning)
+        .await
+        .expect("ingest learning");
+    assert!(provider
+        .get("learning:tooling", "package_manager")
+        .await
+        .expect("get learning")
+        .is_some());
+
+    let event = RawMemoryEvent {
+        id: "evt-1".into(),
+        namespace: "calendar".into(),
+        event_type: "meeting_rescheduled".into(),
+        content: "The architecture review moved to Friday".into(),
+        occurred_at: None,
+        session_id: Some("session-1".into()),
+        metadata: serde_json::json!({"calendar_id": "work"}),
+        taint: MemoryTaint::ExternalSync,
+    };
+    provider
+        .as_event_ingest()
+        .expect("event route")
+        .ingest_event(event)
+        .await
+        .expect("ingest event");
+    let stored = provider
+        .get("event:calendar", "evt-1")
+        .await
+        .expect("get event")
+        .expect("stored event");
+    assert_eq!(stored.taint, MemoryTaint::ExternalSync);
+    assert!(stored.content.contains("meeting_rescheduled"));
 }
 
 /// The maintenance diagnostics answer from the store, not from their defaults.

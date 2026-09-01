@@ -261,7 +261,10 @@ fn every_optional_method_fails_with_its_advertised_family_name() {
         subject: None,
         list_unsubscribe: None,
     };
-    assert_unsupported(block_on(driver.ingest_document(ingest)), Capability::Ingest);
+    assert_unsupported(
+        block_on(MemoryIngest::ingest_document(&driver, ingest)),
+        Capability::Ingest,
+    );
 
     let document = NamespaceDocumentInput {
         namespace: "ns".into(),

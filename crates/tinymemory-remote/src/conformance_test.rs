@@ -28,6 +28,8 @@ use axum::extract::{Path, Query, State};
 use axum::routing::{delete, get, post, put};
 use axum::{Json, Router};
 use serde_json::{json, Value};
+use tinymemory_api::capabilities::Capability;
+use tinymemory_api::provider::{MemoryCore, MemoryProvider};
 
 use crate::{mem0_provider, Mem0Memory};
 
@@ -181,6 +183,39 @@ async fn mem0_upholds_the_contract() {
     let endpoint = mem0_backend().await;
     let provider = mem0_provider(Mem0Memory::new(&endpoint, None).expect("client"));
     tinymemory_conformance::assert_provider(Arc::new(provider)).await;
+}
+
+#[tokio::test]
+async fn mem0_routes_conversation_ingestion_without_claiming_other_ingest_kinds() {
+    let endpoint = mem0_backend().await;
+    let provider = mem0_provider(Mem0Memory::new(&endpoint, None).expect("client"));
+    assert!(provider
+        .capabilities()
+        .contains(Capability::ConversationIngest));
+    assert!(!provider.capabilities().contains(Capability::DocumentIngest));
+
+    let messages = vec![serde_json::from_value(json!({
+        "source": "conversation",
+        "source_id": "thread-1",
+        "author": "user",
+        "content": "I prefer terse answers"
+    }))
+    .expect("conversation item")];
+    let outcome = provider
+        .as_conversation_ingest()
+        .expect("conversation route")
+        .ingest_conversation(messages)
+        .await
+        .expect("ingest conversation");
+    assert_eq!(outcome.written, 1);
+    assert_eq!(
+        provider
+            .list(Some("conversation:thread-1"), None, None)
+            .await
+            .expect("list")
+            .len(),
+        1
+    );
 }
 
 /// The suite's write-path assertions only run when the driver retains, so a

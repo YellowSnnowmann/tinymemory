@@ -14,6 +14,7 @@ mod common;
 mod graph_provider;
 pub mod mem0;
 mod mem0_graph;
+mod mem0_provider;
 pub mod supermemory;
 
 pub use agentmemory::{AgentMemoryMemory, AGENTMEMORY_API_ENDPOINT, AGENTMEMORY_DRIVER_ID};
@@ -22,6 +23,7 @@ pub use cognee_graph::CogneeGraph;
 pub use graph_provider::GraphMemoryProvider;
 pub use mem0::{Mem0Memory, MEM0_API_ENDPOINT, MEM0_DRIVER_ID};
 pub use mem0_graph::Mem0Graph;
+pub use mem0_provider::Mem0Provider;
 pub use supermemory::{SupermemoryMemory, SUPERMEMORY_API_ENDPOINT, SUPERMEMORY_DRIVER_ID};
 
 use std::sync::Arc;
@@ -36,8 +38,8 @@ pub fn supermemory_provider(memory: SupermemoryMemory) -> MemoryTraitProvider {
 
 /// Wrap a Mem0 HTTP backend as a bound TinyMemory provider.
 #[must_use]
-pub fn mem0_provider(memory: Mem0Memory) -> MemoryTraitProvider {
-    MemoryTraitProvider::new(Arc::new(memory), MEM0_DRIVER_ID)
+pub fn mem0_provider(memory: Mem0Memory) -> Mem0Provider {
+    Mem0Provider::new(memory)
 }
 
 /// Wrap a Cognee HTTP backend as a bound TinyMemory provider.
@@ -97,8 +99,8 @@ pub fn cognee_api_graph_provider(
 #[must_use]
 pub fn mem0_graph_provider(memory: Mem0Memory) -> GraphMemoryProvider {
     let memory: Arc<dyn tinymemory_api::traits::Memory> = Arc::new(memory);
-    let mandatory = MemoryTraitProvider::new(Arc::clone(&memory), MEM0_DRIVER_ID);
-    GraphMemoryProvider::new(mandatory, Arc::new(Mem0Graph::new(memory)))
+    let provider = Mem0Provider::from_memory(Arc::clone(&memory));
+    GraphMemoryProvider::new(provider, Arc::new(Mem0Graph::new(memory)))
 }
 
 #[cfg(test)]

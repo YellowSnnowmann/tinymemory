@@ -39,6 +39,9 @@ use tinymemory_api::provider::types::{
 };
 // Diff-family value types, used only by the `MemoryDiff` impl below — which is
 // compiled out without the git-backed snapshot store.
+use tinymemory_api::operations::{
+    AnswerCitation, AnswerRequest, AnswerResponse, AnswerStep, RawMemoryEvent,
+};
 #[cfg(feature = "memory-git")]
 use tinymemory_api::provider::types::{ChangeKind, DiffReport, SnapshotRef, SourceChange};
 use tinymemory_api::provider::{
@@ -46,12 +49,13 @@ use tinymemory_api::provider::{
     ChunkScoreSignals, CodingSessionIngestReport, CodingSessionIngestRequest, CodingSessionSource,
     ConversationSegment, CoverWindowQuery, DegradedCapabilities, Diagnosis, DiagnosisCounters,
     DiagnosisFailure, DiagnosisStage, EntityMatch, EpisodicEvent, EpisodicTurn, EventKind,
-    FacetType, FastRetrieveQuery, MemoryChunks, MemoryCodingSessions, MemoryCore, MemoryDiff,
-    MemoryDocuments, MemoryEntities, MemoryEpisodic, MemoryGoals, MemoryGraph, MemoryIngest,
-    MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProfile, MemoryProvider,
-    MemoryRecall, MemoryRetrieval, MemoryScoring, MemorySourceSink, MemorySourceSync,
-    MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction, PersonRecord, PersonScore,
-    ProfileFacet, RankedPerson, RawArchiveCoverage, RawRebuildOutcome, ResolvedPerson,
+    FacetType, FastRetrieveQuery, MemoryAnswer, MemoryChunks, MemoryCodingSessions,
+    MemoryConversationIngest, MemoryCore, MemoryDiff, MemoryDocumentIngest, MemoryDocuments,
+    MemoryEntities, MemoryEpisodic, MemoryEventIngest, MemoryGoals, MemoryGraph, MemoryIngest,
+    MemoryLearningIngest, MemoryMaintenance, MemoryPeople, MemoryPortability, MemoryProfile,
+    MemoryProvider, MemoryRecall, MemoryRetrieval, MemoryScoring, MemorySourceSink,
+    MemorySourceSync, MemoryToolMemory, MemoryTree, PersonHandle, PersonInteraction, PersonRecord,
+    PersonScore, ProfileFacet, RankedPerson, RawArchiveCoverage, RawRebuildOutcome, ResolvedPerson,
     RetrievalHit, RetrievalResponse, SourceIngestQuery, SourceIngestStatus, SourceRetrievalQuery,
     SourceSyncState, SourceSyncStatus, SourceTotal, SyncAuditEntry, SyncFreshness, SyncRunOutcome,
     UserState,
@@ -745,6 +749,177 @@ impl MemoryIngest for TinycortexProvider {
         .await
         .map_err(|error| Self::other("ingest email", error))?;
         Ok(ingest_outcome(result))
+    }
+}
+
+#[async_trait]
+impl MemoryDocumentIngest for TinycortexProvider {
+    async fn ingest_document(&self, document: IngestItem) -> Result<IngestOutcome, MemoryError> {
+        MemoryIngest::ingest_document(self, document).await
+    }
+}
+
+#[async_trait]
+impl MemoryConversationIngest for TinycortexProvider {
+    async fn ingest_conversation(
+        &self,
+        messages: Vec<IngestItem>,
+    ) -> Result<IngestOutcome, MemoryError> {
+        MemoryIngest::ingest_chat(self, messages).await
+    }
+}
+
+#[async_trait]
+impl MemoryLearningIngest for TinycortexProvider {
+    async fn ingest_learning(
+        &self,
+        learning: tinymemory_api::learning::LearningCandidate,
+    ) -> Result<IngestOutcome, MemoryError> {
+        if learning.key.trim().is_empty() || learning.value.trim().is_empty() {
+            return Err(MemoryError::Invalid(
+                "learning key and value must not be empty".to_string(),
+            ));
+        }
+        if !learning.initial_confidence.is_finite()
+            || !(0.0..=1.0).contains(&learning.initial_confidence)
+        {
+            return Err(MemoryError::Invalid(
+                "learning confidence must be between 0 and 1".to_string(),
+            ));
+        }
+
+        let class = serde_json::to_value(learning.class)
+            .ok()
+            .and_then(|value| value.as_str().map(str::to_owned))
+            .ok_or_else(|| MemoryError::Invalid("learning class is invalid".to_string()))?;
+        let namespace = format!("learning:{class}");
+        let key = learning.key.clone();
+        let content = serde_json::to_string(&learning)
+            .map_err(|error| Self::other("encode learning", error))?;
+        self.store(
+            &namespace,
+            &key,
+            &content,
+            MemoryCategory::Core,
+            None,
+            MemoryTaint::Internal,
+        )
+        .await?;
+        tinymemory_core::learning_candidate::global().push(learning);
+        Ok(IngestOutcome {
+            written: 1,
+            ids: vec![format!("{namespace}/{key}")],
+            ..IngestOutcome::default()
+        })
+    }
+}
+
+#[async_trait]
+impl MemoryEventIngest for TinycortexProvider {
+    async fn ingest_event(&self, event: RawMemoryEvent) -> Result<IngestOutcome, MemoryError> {
+        if event.id.trim().is_empty()
+            || event.namespace.trim().is_empty()
+            || event.event_type.trim().is_empty()
+            || event.content.trim().is_empty()
+        {
+            return Err(MemoryError::Invalid(
+                "event id, namespace, type, and content must not be empty".to_string(),
+            ));
+        }
+        let event_id = event.id.clone();
+        let namespace = format!("event:{}", event.namespace);
+        let content = serde_json::to_string(&event)
+            .map_err(|error| Self::other("encode raw event", error))?;
+        self.store(
+            &namespace,
+            &event_id,
+            &content,
+            MemoryCategory::Daily,
+            event.session_id.as_deref(),
+            event.taint,
+        )
+        .await?;
+        Ok(IngestOutcome {
+            written: 1,
+            ids: vec![event_id],
+            ..IngestOutcome::default()
+        })
+    }
+}
+
+#[async_trait]
+impl MemoryAnswer for TinycortexProvider {
+    async fn answer(&self, request: AnswerRequest) -> Result<AnswerResponse, MemoryError> {
+        if request.query.trim().is_empty() {
+            return Err(MemoryError::Invalid(
+                "answer query must not be empty".to_string(),
+            ));
+        }
+        if request.limit == 0 {
+            return Err(MemoryError::Invalid(
+                "answer retrieval limit must be greater than zero".to_string(),
+            ));
+        }
+
+        let memories = self
+            .recall(
+                &request.query,
+                request.limit,
+                &request.recall,
+                request.scope.as_ref(),
+            )
+            .await?;
+        let citations: Vec<AnswerCitation> = memories
+            .iter()
+            .map(|memory| AnswerCitation {
+                id: memory.id.clone(),
+                namespace: memory.namespace.clone(),
+                key: memory.key.clone(),
+                content: memory.content.clone(),
+                score: memory.score,
+            })
+            .collect();
+        let context = citations
+            .iter()
+            .enumerate()
+            .map(|(index, citation)| format!("[{}] {}", index + 1, citation.content))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+        let instructions = request.instructions.as_deref().unwrap_or("");
+        let (chat, model) = tinymemory_core::chat::build_chat_runtime(&self.config)
+            .map_err(|error| Self::other("build answer agent", error))?;
+        let prompt = tinymemory_core::chat::ChatPrompt {
+            system: format!(
+                "You are a grounded memory-answering agent. Answer only from the retrieved \
+                 memories. Cite supporting memories as [n]. Say when the memories do not contain \
+                 enough information. Additional caller instructions: {instructions}\n\nRetrieved \
+                 memories:\n{context}"
+            ),
+            user: request.query,
+            temperature: 0.1,
+            kind: "memory_answer",
+            max_tokens: None,
+        };
+        let answer = chat
+            .chat_for_text(&prompt)
+            .await
+            .map_err(|error| Self::other("answer synthesis", error))?;
+
+        Ok(AnswerResponse {
+            answer,
+            citations,
+            steps: vec![
+                AnswerStep {
+                    operation: "recall".to_string(),
+                    detail: format!("retrieved {} memories", memories.len()),
+                },
+                AnswerStep {
+                    operation: "synthesise".to_string(),
+                    detail: "generated a grounded answer".to_string(),
+                },
+            ],
+            model: Some(model),
+        })
     }
 }
 
@@ -2762,6 +2937,21 @@ impl MemoryProvider for TinycortexProvider {
         Some(self)
     }
     fn as_scoring(&self) -> Option<&dyn MemoryScoring> {
+        Some(self)
+    }
+    fn as_document_ingest(&self) -> Option<&dyn MemoryDocumentIngest> {
+        Some(self)
+    }
+    fn as_conversation_ingest(&self) -> Option<&dyn MemoryConversationIngest> {
+        Some(self)
+    }
+    fn as_learning_ingest(&self) -> Option<&dyn MemoryLearningIngest> {
+        Some(self)
+    }
+    fn as_event_ingest(&self) -> Option<&dyn MemoryEventIngest> {
+        Some(self)
+    }
+    fn as_answer(&self) -> Option<&dyn MemoryAnswer> {
         Some(self)
     }
 }

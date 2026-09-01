@@ -60,6 +60,10 @@ use crate::provider::content::{MemoryDocuments, MemoryIngest, MemoryTree};
 use crate::provider::episodic::MemoryEpisodic;
 use crate::provider::knowledge::{MemoryDiff, MemoryEntities, MemoryGraph};
 use crate::provider::mandatory::{MemoryCore, MemoryPortability, MemoryRecall};
+use crate::provider::operations::{
+    MemoryAnswer, MemoryConversationIngest, MemoryDocumentIngest, MemoryEventIngest,
+    MemoryLearningIngest,
+};
 use crate::provider::people::MemoryPeople;
 use crate::provider::profile::MemoryProfile;
 use crate::provider::records::{
@@ -220,6 +224,31 @@ pub trait MemoryProvider: MemoryCore + MemoryRecall + MemoryPortability + 'stati
         None
     }
 
+    /// Product-facing document ingestion, when advertised.
+    fn as_document_ingest(&self) -> Option<&dyn MemoryDocumentIngest> {
+        None
+    }
+
+    /// Product-facing conversation ingestion, when advertised.
+    fn as_conversation_ingest(&self) -> Option<&dyn MemoryConversationIngest> {
+        None
+    }
+
+    /// Product-facing learning ingestion, when advertised.
+    fn as_learning_ingest(&self) -> Option<&dyn MemoryLearningIngest> {
+        None
+    }
+
+    /// Product-facing event ingestion, when advertised.
+    fn as_event_ingest(&self) -> Option<&dyn MemoryEventIngest> {
+        None
+    }
+
+    /// Agentic grounded answers, when advertised.
+    fn as_answer(&self) -> Option<&dyn MemoryAnswer> {
+        None
+    }
+
     /// Whether `capability` is actually **reachable** on this driver.
     ///
     /// This is the implementation-side truth, as opposed to
@@ -253,6 +282,11 @@ pub trait MemoryProvider: MemoryCore + MemoryRecall + MemoryPortability + 'stati
             Capability::SourceSync => self.as_source_sync().is_some(),
             Capability::CodingSessions => self.as_coding_sessions().is_some(),
             Capability::Scoring => self.as_scoring().is_some(),
+            Capability::DocumentIngest => self.as_document_ingest().is_some(),
+            Capability::ConversationIngest => self.as_conversation_ingest().is_some(),
+            Capability::LearningIngest => self.as_learning_ingest().is_some(),
+            Capability::EventIngest => self.as_event_ingest().is_some(),
+            Capability::Answer => self.as_answer().is_some(),
         }
     }
 }

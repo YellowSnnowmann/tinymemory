@@ -11,7 +11,7 @@
 //! `tinycortex::memory::Memory` backend. It needs nothing but the backend, so
 //! the suite runs against it here with the engine's own `InMemoryMemoryStore`.
 //!
-//! [`crate::engine::TinycortexProvider`] serves all twenty families, and
+//! [`crate::engine::TinycortexProvider`] serves every compiled family, and
 //! needs a `MemoryClient` — which needs the host's process-global seams
 //! (`set_embedding_host` and friends) installed before it will open. A test
 //! that installs a process global is order-dependent, which `AGENTS.md` rules

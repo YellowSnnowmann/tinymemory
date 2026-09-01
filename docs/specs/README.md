@@ -1,5 +1,7 @@
 # Specifications
 
+- [Granular ingestion and retrieval API](ingestion-retrieval-api.md)
+
 Specifications define what the system must do before implementation details
 take over. Create one for behavior that changes a public API, crosses module
 boundaries, introduces a durable data format, or has meaningful operational

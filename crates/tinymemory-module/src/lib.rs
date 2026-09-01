@@ -693,6 +693,11 @@ mod exports {
             "RuntimeSummarize",
             "RuntimeRebuild",
             "FlavourProfile",
+            // Granular ingestion and agentic retrieval, appended so all
+            // previously released TinyBus member slots stay stable.
+            "IngestLearning",
+            "IngestEvent",
+            "Answer",
         ],
         signals = [],
         // The host's embedder is deliberately NOT declared as `requires`. That

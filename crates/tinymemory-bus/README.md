@@ -50,7 +50,7 @@ A host depends on `tinymemory-bus` and gets vocabulary alone.
 
 ## What is deliberately absent
 
-**No traits.** `MemoryProvider` and the twenty capability-family traits
+**No traits.** `MemoryProvider` and its capability-family traits
 describe what an engine must implement, not what a frame carries. They stay in
 `tinymemory-api`. The split is readable off the path: a name here is data, a
 name there is an obligation.

@@ -31,7 +31,7 @@
 //!
 //! ## What is deliberately not here
 //!
-//! **No traits.** `MemoryProvider` and the twenty capability-family traits
+//! **No traits.** `MemoryProvider` and its capability-family traits
 //! are driver obligations: they describe what an engine must implement, not
 //! what a frame carries. They stay in `tinymemory-api`, which depends on this
 //! crate.
@@ -89,6 +89,7 @@ pub mod health;
 pub mod learning;
 pub mod names;
 pub mod namespace;
+pub mod operations;
 pub mod provider;
 pub mod recall;
 pub mod tool_memory;

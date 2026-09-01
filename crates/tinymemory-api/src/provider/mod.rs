@@ -1,4 +1,4 @@
-//! The memory driver contract: [`MemoryProvider`] plus the twenty capability
+//! The memory driver contract: [`MemoryProvider`] plus its capability
 //! family traits a driver may implement.
 //!
 //! ## Shape
@@ -58,7 +58,8 @@
 //!
 //! ## Reference implementation
 //!
-//! [`crate::null::NullMemoryProvider`] implements all twenty families:
+//! [`crate::null::NullMemoryProvider`] implements every family directly for
+//! conformance testing:
 //! `/dev/null` semantics for the mandatory three, and
 //! [`crate::error::MemoryError::Unsupported`] for the other seventeen, which it
 //! does not advertise. It is what a compiled-out or unconfigured memory subsystem
@@ -72,6 +73,7 @@ pub mod driver;
 pub mod episodic;
 pub mod knowledge;
 pub mod mandatory;
+pub mod operations;
 pub mod people;
 pub mod profile;
 pub mod records;
@@ -104,6 +106,11 @@ pub use driver::MemoryProvider;
 pub use episodic::{ConversationSegment, EpisodicEvent, EpisodicTurn, EventKind, MemoryEpisodic};
 pub use knowledge::{MemoryDiff, MemoryEntities, MemoryGraph, INBOUND_SCAN_LIMIT};
 pub use mandatory::{MemoryCore, MemoryPortability, MemoryRecall};
+pub use operations::{
+    AnswerCitation, AnswerRequest, AnswerResponse, AnswerStep, MemoryAnswer,
+    MemoryConversationIngest, MemoryDocumentIngest, MemoryEventIngest, MemoryLearningIngest,
+    RawMemoryEvent,
+};
 pub use people::{
     AddressBookSeedOutcome, MemoryPeople, PersonHandle, PersonInteraction, PersonRecord, PersonRef,
     PersonScore, RankedPerson, ResolvedPerson,

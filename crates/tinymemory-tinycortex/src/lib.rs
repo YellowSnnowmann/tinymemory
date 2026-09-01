@@ -18,9 +18,7 @@
 //!   backend as a TinyMemory
 //!   [`Memory`](tinymemory_api::traits::Memory).
 //! - [`provider`] — the one call that turns a TinyCortex backend into a
-//!   mandatory-only driver, by pairing [`TinycortexMemory`] with
-//!   [`MemoryTraitProvider`]. Enough when a host wants store, recall and
-//!   export and nothing else.
+//!   lightweight driver serving the mandatory families and document ingest.
 //! - [`engine`] — [`TinycortexProvider`](engine::TinycortexProvider), the whole
 //!   engine behind the contract: trees, chunks, entities, the graph, goals,
 //!   tool-memory, ingestion, sources, maintenance, people, retrieval, profile,
@@ -28,7 +26,8 @@
 //!
 //! ## Two drivers, and why both
 //!
-//! [`provider`] advertises Core, Recall and Portability. That used to be the
+//! [`provider`] advertises Core, Recall, Portability and DocumentIngest. The
+//! mandatory-only composition used to be the
 //! only thing here, and it was the reason anything wanting a summary tree or a
 //! diff ledger reached past the contract to the engine directly: the families
 //! existed, but not through `MemoryProvider`. Issue #18 §C3 lifted those
@@ -49,9 +48,11 @@
 //! [`engine::advertised_capabilities`] and not just the accessor — a build
 //! without the git-backed snapshot store must not claim a diff ledger.
 
+mod document_provider;
 pub mod engine;
 mod memory;
 
+pub use document_provider::TinycortexDocumentProvider;
 pub use memory::TinycortexMemory;
 
 use std::sync::Arc;
@@ -75,19 +76,19 @@ pub use tinycortex;
 
 /// The engine's simplest backend, re-exported for first-run and test wiring:
 /// `provider(Arc::new(InMemoryMemoryStore::new()))` is a complete embedded
-/// setup for the mandatory three families.
+/// setup for the mandatory families and document ingestion.
 pub use tinycortex::memory::store::InMemoryMemoryStore;
 
 /// Wrap a TinyCortex backend as a bound memory driver.
 ///
-/// The returned provider advertises the mandatory three families and nothing
-/// else; see the crate docs.
+/// The returned provider advertises the mandatory families plus document
+/// ingestion; see the crate docs.
 #[must_use]
-pub fn provider(memory: Arc<dyn tinycortex::memory::Memory>) -> MemoryTraitProvider {
-    MemoryTraitProvider::new(
+pub fn provider(memory: Arc<dyn tinycortex::memory::Memory>) -> TinycortexDocumentProvider {
+    TinycortexDocumentProvider::new(MemoryTraitProvider::new(
         Arc::new(TinycortexMemory::new(memory)),
         TINYCORTEX_DRIVER_ID,
-    )
+    ))
 }
 
 #[cfg(test)]

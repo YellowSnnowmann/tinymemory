@@ -97,7 +97,7 @@ is deliberately outside `full`: "give me the whole workspace" is not the same
 request as "give me the test doubles".
 
 This table says which crate each feature brings in. For what each *engine*
-feature actually serves — driver class, and how many of the twenty capability
+feature actually serves — driver class, and which capability
 families answer — see the engine table under
 [Using from your project](#using-from-your-project).
 
@@ -176,17 +176,18 @@ use tinymemory::tinycortex::{provider, InMemoryMemoryStore};
 let provider = Arc::new(provider(Arc::new(InMemoryMemoryStore::new())));
 ```
 
-That is a complete embedded setup for the mandatory three families. The full
-twenty-family engine (`TinycortexProvider`) additionally needs the host
+That is a complete embedded setup for the mandatory families plus document
+ingestion. The full
+full engine (`TinycortexProvider`) additionally needs the host
 seams (`EmbeddingHost` et al.) installed — see
 `crates/tinymemory-tinycortex/tests/full_provider_conformance.rs` for the
 minimal working wiring.
 
 | Feature | Engine | Class | Families served |
 | --- | --- | --- | --- |
-| `tinycortex` | TinyCortex, in-process | embedded | 3 (mandatory) via `provider`; all 18 via `TinycortexProvider` |
+| `tinycortex` | TinyCortex, in-process | embedded | mandatory + document ingest via `provider`; every compiled family via `TinycortexProvider` |
 | `supermemory` | Supermemory, hosted | external | 3 (mandatory) |
-| `mem0` | Mem0, hosted (`cloud`) or self-hosted | external | 3 (mandatory) |
+| `mem0` | Mem0, hosted (`cloud`) or self-hosted | external | mandatory + conversation ingest |
 | `cognee` | Cognee, hosted or self-hosted | external | 3 (mandatory) |
 | `agentmemory` | AgentMemory, self-hosted | external | 3 (mandatory) |
 | `memory-git` | add-on: git-backed diff snapshots | — | requires `tinycortex` |
@@ -204,7 +205,7 @@ for assistant-memory workloads; wrong for high-volume keyed storage.
 ## The contract
 
 `MemoryProvider` is an object-safe trait with **three mandatory** capability
-families and **seventeen optional** ones. The mandatory three are supertraits, so
+families and independently negotiated optional ones. The mandatory three are supertraits, so
 a driver missing any of them cannot be constructed; the optional seventeen are
 reached through `as_ingest()` / `as_tree()` / … accessors that default to `None`,
 so a minimal driver implements what it supports and inherits correct absence for
@@ -214,6 +215,25 @@ A driver's advertised set and its reachable accessors must agree.
 `audit_provider` checks exactly that, which turns "advertised but not
 implemented" into a detectable, testable mistake rather than a runtime surprise
 on the first call.
+
+The product-facing routes are available through one router:
+
+```rust,ignore
+use tinymemory::{MemoryApi, operations::AnswerRequest};
+
+let memory = MemoryApi::new(provider.as_ref());
+let hits = memory.recall("release date", 10, &Default::default(), None).await?;
+
+if provider.as_answer().is_some() {
+    let response = memory.answer(AnswerRequest::new("When do we release?")).await?;
+    println!("{}", response.answer);
+}
+```
+
+Document, conversation, learning, event, and answer support are independent
+capabilities. Recall remains mandatory. See the
+[operation specification](docs/specs/ingestion-retrieval-api.md) for the adapter
+matrix and payload rules.
 
 Capabilities are asked **once, at bind time, and cached**: a host filters its RPC
 surface and its agent-tool list from the answer, so a set that changed

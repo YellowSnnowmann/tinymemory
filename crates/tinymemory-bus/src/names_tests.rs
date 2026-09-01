@@ -139,7 +139,7 @@ fn the_runtime_tree_doors_hold_the_wire_slots_they_were_released_in() {
     // reason the summariser-door test above gives: member order is wire order,
     // and an assertion measured from the end moves silently under the next
     // append — which is exactly the edit this exists to catch.
-    assert_eq!(METHODS.len(), 138);
+    assert_eq!(METHODS.len(), 141);
     assert_eq!(METHODS[131], methods::RUNTIME_BUFFER_WRITE);
     assert_eq!(METHODS[132], methods::RUNTIME_READ_NODE);
     assert_eq!(METHODS[133], methods::RUNTIME_READ_CHILDREN);
@@ -147,4 +147,10 @@ fn the_runtime_tree_doors_hold_the_wire_slots_they_were_released_in() {
     assert_eq!(METHODS[135], methods::RUNTIME_SUMMARIZE);
     assert_eq!(METHODS[136], methods::RUNTIME_REBUILD);
     assert_eq!(METHODS[137], methods::FLAVOUR_PROFILE);
+
+    // The granular ingestion and answer doors landed after the runtime-tree
+    // round and must not renumber any of its released slots.
+    assert_eq!(METHODS[138], methods::INGEST_LEARNING);
+    assert_eq!(METHODS[139], methods::INGEST_EVENT);
+    assert_eq!(METHODS[140], methods::ANSWER);
 }

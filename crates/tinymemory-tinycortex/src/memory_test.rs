@@ -7,6 +7,7 @@
 #![allow(clippy::expect_used, clippy::panic)]
 
 use tinycortex::memory::store::InMemoryMemoryStore;
+use tinymemory_api::capabilities::Capability;
 use tinymemory_api::provider::{audit_provider, MemoryCore, MemoryPortability, MemoryProvider};
 use tinymemory_api::types::{MemoryCategory, MemoryTaint, GLOBAL_NAMESPACE};
 
@@ -24,10 +25,40 @@ async fn the_adapter_reports_the_engine_backend_name() {
 }
 
 #[tokio::test]
-async fn a_driver_over_the_engine_advertises_exactly_the_mandatory_three() {
+async fn a_lightweight_driver_advertises_document_ingestion() {
     let driver = crate::provider(engine());
     audit_provider(&driver).expect("advertised capabilities match the accessors");
     assert_eq!(driver.driver_id(), TINYCORTEX_DRIVER_ID);
+    assert!(driver.capabilities().contains(Capability::DocumentIngest));
+    assert!(driver.as_document_ingest().is_some());
+    assert!(!driver
+        .capabilities()
+        .contains(Capability::ConversationIngest));
+}
+
+#[tokio::test]
+async fn lightweight_document_ingestion_routes_into_the_embedded_store() {
+    let driver = crate::provider(engine());
+    let document = serde_json::from_value(serde_json::json!({
+        "source": "upload",
+        "source_id": "handbook",
+        "content": "The release train leaves on Friday."
+    }))
+    .expect("document item");
+    let outcome = driver
+        .as_document_ingest()
+        .expect("document route")
+        .ingest_document(document)
+        .await
+        .expect("ingest document");
+
+    assert_eq!(outcome.written, 1);
+    let stored = driver
+        .get("document:handbook", "handbook")
+        .await
+        .expect("get document")
+        .expect("stored document");
+    assert_eq!(stored.content, "The release train leaves on Friday.");
 }
 
 #[tokio::test]

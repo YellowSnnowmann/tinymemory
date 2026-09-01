@@ -734,6 +734,11 @@ const EXPECTED_METHODS: &[&str] = &[
     "RuntimeSummarize",
     "RuntimeRebuild",
     "FlavourProfile",
+    // Granular ingestion and agentic retrieval, appended after all previously
+    // released wire slots.
+    "IngestLearning",
+    "IngestEvent",
+    "Answer",
 ];
 
 #[tokio::test]
