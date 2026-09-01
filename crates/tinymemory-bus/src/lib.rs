@@ -2,7 +2,7 @@
 //! the members that carry them.
 //!
 //! TinyMemory ships as a loadable `TinyBus` module: `crates/tinymemory-module`
-//! exports one object with 129 members on it, built as a `cdylib`. A host that
+//! exports one object (`tinymemory_bus::METHODS.len()` members) built as a `cdylib`. A host that
 //! loads it — OpenHuman — can call into it but cannot `use` anything out of it,
 //! so the payload vocabulary has to be published as an ordinary library. This
 //! is that library.
@@ -100,3 +100,15 @@ pub mod wire;
 
 pub use names::{BUS_NAME, METHODS, OBJECT_PATH};
 pub use version::{is_compatible, CONTRACT_VERSION};
+
+/// The one foreign crate in the wire vocabulary, re-exported by name.
+///
+/// Timestamps cross this boundary as `chrono::DateTime<Utc>` — `tree::TreeNode`
+/// and its siblings have always carried them in their fields, and the
+/// runtime-tree members take one as a bare argument. A crate that spells those
+/// signatures has to spell *this* chrono: `tinymemory-api` is deliberately
+/// dependency-light and adds no crate of its own, so it names the type through
+/// here, and anything else that does the same is guaranteed the exact crate
+/// this one serializes with rather than whichever `chrono = "0.4"` its own
+/// lockfile happened to resolve.
+pub use chrono;

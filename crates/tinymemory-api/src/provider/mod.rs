@@ -92,9 +92,13 @@ pub use tinymemory_bus::provider::{diagnosis, types};
 
 pub use audit::{audit_provider, CapabilityAudit};
 pub use chunks::{
-    ChunkDetail, ChunkEmbedding, ChunkListRow, ChunkQuery, MemoryChunks, SourceTotal,
+    ChunkDetail, ChunkEmbedding, ChunkListRow, ChunkQuery, ChunkScore, ChunkScoreSignals,
+    MemoryChunks, SourceIngestQuery, SourceIngestStatus, SourceTotal, DEFAULT_DROP_THRESHOLD,
 };
-pub use content::{MemoryDocuments, MemoryIngest, MemoryTree};
+pub use content::{
+    MemoryDocuments, MemoryIngest, MemoryTree, RootSummary, SummaryContext, SummaryInput,
+    SummaryOutput,
+};
 pub use diagnosis::{
     DegradedCapabilities, Diagnosis, DiagnosisCounters, DiagnosisFailure, DiagnosisStage,
 };

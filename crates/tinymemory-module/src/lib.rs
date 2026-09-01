@@ -595,9 +595,6 @@ mod exports {
             "IngestDocument",
             "IngestChat",
             "IngestEmail",
-            "IngestLearning",
-            "IngestEvent",
-            "Answer",
             "PutDocument",
             "GetDocument",
             "ListDocuments",
@@ -676,6 +673,31 @@ mod exports {
             "ExtractEntities",
             "EmbedText",
             "EmbedderSlug",
+            // The summariser door, and the roots folding leaves behind.
+            "Summarise",
+            "RootSummaries",
+            // The three doors a host opens once it stops linking the engine
+            // itself: the cheap degradation poll beside the full diagnosis, the
+            // scorer's verdict on one chunk, and per-configured-source ingest
+            // progress — none of which any earlier member can answer.
+            "DegradedState",
+            "ChunkScore",
+            "SourceIngestStatus",
+            // The final round of the shed: the markdown time tree node by
+            // node — the shapes the host's tree-summarizer RPCs report — and
+            // the compiled flavoured-root profile read.
+            "RuntimeBufferWrite",
+            "RuntimeReadNode",
+            "RuntimeReadChildren",
+            "RuntimeTreeStatus",
+            "RuntimeSummarize",
+            "RuntimeRebuild",
+            "FlavourProfile",
+            // Granular ingestion and agentic retrieval, appended so all
+            // previously released TinyBus member slots stay stable.
+            "IngestLearning",
+            "IngestEvent",
+            "Answer",
         ],
         signals = [],
         // The host's embedder is deliberately NOT declared as `requires`. That

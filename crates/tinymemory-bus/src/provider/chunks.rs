@@ -29,6 +29,19 @@
 //! there, just filed under a name the caller did not ask for. That is a real
 //! failure mode with a real precedent, and it is silent; see
 //! `docs/specs/2026-08-13-memory-module-port.md` §3.
+//!
+//! # Two of these reads are diagnostic rather than retrieval
+//!
+//! [`ChunkScore`] and [`SourceIngestStatus`] answer "why is this here" and "how
+//! far has this got", not "what is relevant". They are in this family because
+//! both are keyed by the chunk tier — one by a chunk id, the other by the
+//! prefix its ingest key carries — and because a caller that has the chunks
+//! surface is exactly the caller with a browser to render them in.
+//!
+//! Neither is derivable from the reads above it. A score row lives in a table
+//! of its own; a pending count spans three. That is the whole reason they are
+//! members rather than arithmetic a host does over a chunk page, and each
+//! type's own docs give the specific version of the argument.
 
 use serde::{Deserialize, Serialize};
 
@@ -279,3 +292,234 @@ pub struct SourceTotal {
     /// [`StoreStats`]: crate::provider::types::StoreStats
     pub most_recent_ms: i64,
 }
+
+/// The admission score below which the engine's default policy tombstones a
+/// chunk, so a caller can draw the same line the scorer drew.
+///
+/// # Why the number crosses at all
+///
+/// A browser rendering [`ChunkScore::total`] as a bar wants to show where the
+/// keep/drop boundary sits, and a host-side copy of `0.3` is the kind of copy
+/// that goes wrong silently: the driver retunes, every row on the screen keeps
+/// its label, and only the line drawn under them is stale. There is nothing to
+/// notice, because the rows still render.
+///
+/// # It is the default, not the effective threshold
+///
+/// A driver whose scoring policy was tuned admits at its own number, and this
+/// constant does not follow it. [`ChunkScore::dropped`] is the verdict the
+/// engine actually reached for that chunk; this is the reference line a gauge
+/// is drawn against. A caller that recomputes `dropped` from `total` against
+/// this constant will disagree with the driver on a tuned store — and the
+/// driver is the one that was there.
+pub const DEFAULT_DROP_THRESHOLD: f32 = 0.3;
+
+/// The per-signal breakdown behind a chunk's admission score.
+///
+/// Every field is one term of the weighted sum that produced
+/// [`ChunkScore::total`], carried unweighted: the caller sees what each signal
+/// measured, not what the policy paid for it. That is the useful half for
+/// "why was this dropped" — a chunk that failed on length and a chunk that
+/// failed on a source it does not trust have the same total and different
+/// stories.
+///
+/// # Two fields read back empty, by construction
+///
+/// [`Self::llm_importance`] is an admission-time input that the engine's score
+/// table has no column for, so a stored row answers `0.0` for it however
+/// strongly the extractor rated the chunk. It is carried anyway rather than
+/// dropped from the shape, because a driver that *does* persist it should have
+/// somewhere to put it, and because a field that is absent from the type reads
+/// to the next caller as a signal that does not exist rather than as one this
+/// store does not keep. The same applies to
+/// [`ChunkScore::llm_importance_reason`].
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ChunkScoreSignals {
+    /// Length signal derived from the chunk's token count.
+    #[serde(default)]
+    pub token_count: f32,
+    /// Lexical-diversity signal derived from the count of distinct words.
+    #[serde(default)]
+    pub unique_words: f32,
+    /// Contribution from structural or front-matter metadata on the source.
+    #[serde(default)]
+    pub metadata_weight: f32,
+    /// Contribution from the source's provenance or authority.
+    #[serde(default)]
+    pub source_weight: f32,
+    /// Direct-engagement signal from user interaction with the chunk.
+    #[serde(default)]
+    pub interaction: f32,
+    /// Signal proportional to the density of extracted entities in the chunk.
+    #[serde(default)]
+    pub entity_density: f32,
+    /// LLM-derived importance rating in `[0.0, 1.0]`.
+    ///
+    /// `0.0` both when no LLM signal was available and when the driver does not
+    /// persist one — see the type's own note. A caller must not read a zero
+    /// here as "the model found this unimportant".
+    #[serde(default)]
+    pub llm_importance: f32,
+}
+
+/// One chunk's admission decision and the signals it was reached from.
+///
+/// The row the scorer wrote when it decided whether to keep the chunk. It is a
+/// **diagnostic** read — "why is this here", or "why is this not" — and not
+/// part of any ranking: [`crate::provider::retrieval`] owns relevance, and this
+/// owns admission, which happened once, at ingest, against the whole store's
+/// policy rather than against a query.
+///
+/// # Why the whole row crosses when a caller reads three fields
+///
+/// The first caller wants [`Self::total`], [`Self::dropped`] and the signals.
+/// The second wants [`Self::reason`] beside them, because "dropped" with no
+/// rationale is a verdict without an argument; the third wants
+/// [`Self::computed_at_ms`], because a score from before the policy changed
+/// explains a row the current policy would have kept. Each of those is a
+/// widening of a shipped wire type, and the alternative — carrying the row the
+/// engine already assembled — costs nothing: the columns are read in one
+/// `query_row` whether or not they are returned.
+///
+/// # A missing row is not a zero score
+///
+/// `MemoryChunks::chunk_score` answers `None` for a chunk the scorer never
+/// wrote a row for, which is a different fact from a chunk that scored `0.0`
+/// and was kept anyway. A caller rendering "score: 0" for both reports a
+/// judgement that was never made.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ChunkScore {
+    /// The chunk this rationale belongs to.
+    pub chunk_id: String,
+    /// The aggregate admission score — the single scalar the keep/drop
+    /// decision was taken on, and the one [`DEFAULT_DROP_THRESHOLD`] is the
+    /// reference line for.
+    pub total: f32,
+    /// The per-signal breakdown that produced [`Self::total`].
+    #[serde(default)]
+    pub signals: ChunkScoreSignals,
+    /// Whether the chunk failed admission and was tombstoned rather than kept.
+    ///
+    /// The driver's own verdict, not a re-derivation. See
+    /// [`DEFAULT_DROP_THRESHOLD`] for why the two can disagree.
+    pub dropped: bool,
+    /// The recorded rationale for the keep or drop, when one was written.
+    ///
+    /// Operator-facing prose in the driver's words, never localised and never
+    /// parsed. `None` means no rationale was recorded, not that there was none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    /// When the score was computed, epoch milliseconds.
+    ///
+    /// Carried because admission is a decision taken *at a time*, under the
+    /// policy in force then. A row scored before a retune is the explanation
+    /// for a chunk today's policy would have judged differently, and without
+    /// this field that explanation is unavailable.
+    pub computed_at_ms: i64,
+    /// The LLM's one-line explanation for its importance rating.
+    ///
+    /// `None` from a driver that does not persist it — which is every driver
+    /// backed by the engine's current score table, for the reason
+    /// [`ChunkScoreSignals::llm_importance`] gives. Carried so a driver that
+    /// keeps it has somewhere to put it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llm_importance_reason: Option<String>,
+}
+
+/// One configured source to ask ingest progress about.
+///
+/// Two identifiers, because they are two different things and conflating them
+/// is the bug this type exists to prevent. [`Self::source_id`] is the id in the
+/// *host's* source registry — the thing a user configured, named and can
+/// disable. [`Self::chunk_id_prefix`] is the key the ingest path stamps on the
+/// chunk rows it writes, which is derived from the first but is not equal to
+/// it: the engine's readers key chunks `mem_src:{source id}:{item}`, and its
+/// connector sync keys them `{toolkit}:{connection id}:{document id}`, which
+/// does not contain the registry id at all.
+///
+/// # Why the host supplies the prefix rather than the driver deriving it
+///
+/// The derivation is host policy over host state. It reads the source's kind,
+/// its toolkit and its connection id out of the registry the host owns, and a
+/// driver asked to redo it would need that registry — which is the coupling
+/// this contract exists to remove. So the host, which already holds the entry,
+/// states the prefix, and the driver answers only the question it can answer
+/// from its own tables: how many rows are under this key.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceIngestQuery {
+    /// The configured source's id, echoed back on the matching
+    /// [`SourceIngestStatus`] so a caller can pair the rows without relying on
+    /// order.
+    pub source_id: String,
+    /// The literal prefix of the chunk rows' ingest key for this source.
+    ///
+    /// A **literal** prefix, matched as text: a driver must treat any pattern
+    /// metacharacter in it as itself. The convention is the one the engine's
+    /// own readers write, `mem_src:{source id}:` and `{toolkit}:{connection
+    /// id}:`, including the trailing separator — without it a source keyed
+    /// `mem_src:src_a:` also counts the chunks of `mem_src:src_ab:`.
+    pub chunk_id_prefix: String,
+}
+
+/// How far one configured source's ingest has got.
+///
+/// # Why this is not [`SourceTotal`]
+///
+/// [`SourceTotal`] is a `GROUP BY` over the chunk rows: it describes the groups
+/// that *exist*. This is a per-question answer about the sources a host has
+/// *configured*, and the two differ in exactly the places a status panel
+/// depends on.
+///
+/// A source that has never synced has no chunk rows, so it forms no group and
+/// is simply absent from `source_totals` — a dashboard built on that loses the
+/// row rather than showing it idle, which reads as "this source is not
+/// configured" instead of "this source has done nothing yet". So a row comes
+/// back for **every** query, zero-filled when the prefix matches nothing.
+///
+/// It also carries [`Self::chunks_pending`], which no grouping of the chunk
+/// table can produce: the predicate spans the embedding sidecar and the
+/// re-embed skip ledger as well as the chunk row's own lifecycle column. A
+/// caller that substituted a chunk count for it would report a store with
+/// nothing in flight, which is the same answer a healthy store gives.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceIngestStatus {
+    /// The configured source id from the query this row answers.
+    pub source_id: String,
+    /// Chunk rows the driver holds under the source's prefix.
+    ///
+    /// Every row, whatever its state — this is "how much has landed", and
+    /// [`Self::chunks_pending`] is the part of it that is not finished yet, not
+    /// a disjoint bucket. A caller showing progress renders
+    /// `synced - pending` of `synced`, never `synced + pending`.
+    pub chunks_synced: u64,
+    /// Chunk rows still in flight: no embedding, not dropped by the lifecycle,
+    /// and not recorded as deliberately skipped for re-embedding.
+    ///
+    /// All three exits are terminal and all three count as resolved. The
+    /// negative form matters: "pending" is *not resolved*, so a driver that
+    /// checks only for a missing embedding reports every dropped and every
+    /// skipped chunk as eternally in flight, and a healthy source then shows
+    /// work that never completes.
+    pub chunks_pending: u64,
+    /// Source time of the newest chunk under the prefix, epoch milliseconds.
+    ///
+    /// `None` when the source has no chunks at all — unlike
+    /// [`SourceTotal::most_recent_ms`], which is not optional precisely because
+    /// a group cannot exist without one. Here the row exists because the source
+    /// was *asked about*, so "never" is a real answer and has to be
+    /// representable.
+    ///
+    /// # Freshness is deliberately not on the wire
+    ///
+    /// An `Active` / `Recent` / `Idle` label is arithmetic over this field and
+    /// the current time — under 30 seconds, under 5 minutes, anything else —
+    /// and putting it here would freeze the driver's clock into the answer. A
+    /// caller rendering a label a minute after the call would show one derived
+    /// from when the driver looked, not from now.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_chunk_at_ms: Option<i64>,
+}
+
+#[cfg(test)]
+#[path = "chunks_tests.rs"]
+mod tests;

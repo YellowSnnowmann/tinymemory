@@ -23,9 +23,10 @@ use tinymemory_api::provider::types::IngestItem;
 use tinymemory_api::types::MemoryTaint;
 
 use super::{
-    advertised_capabilities, audit_entry, diagnosis_failure, facet_type_to_engine,
-    handle_to_contract, handle_to_engine, parse_person_id, refuse_composio_dispatch,
-    scope_to_engine, validate_ingest_item, EngineRuntimeConfig,
+    advertised_capabilities, audit_entry, body_after_front_matter, degraded_capabilities,
+    diagnosis_failure, facet_type_to_engine, handle_to_contract, handle_to_engine,
+    like_prefix_pattern, parse_person_id, refuse_composio_dispatch, scope_to_engine,
+    validate_ingest_item, EngineRuntimeConfig,
 };
 
 fn ingest_item(content: &str, mime: Option<&str>, taint: MemoryTaint) -> IngestItem {
@@ -510,5 +511,97 @@ fn set_memory_sources_json_writes_through_to_the_registry_file() {
     assert_eq!(
         snapshot_only.memory_sources_json().expect("snapshot"),
         entries
+    );
+}
+
+#[test]
+fn a_degradation_snapshot_crosses_every_flag_and_its_cause() {
+    // `Diagnose` and `DegradedState` answer the same question at different
+    // prices, so a caller can reasonably compare them. One mapping, asserted
+    // field by field, is what makes that comparison safe — a transposed pair
+    // here would have the two members disagree about which capability is
+    // reduced, and both would still look like plausible answers.
+    use tinymemory_core::tree::health::{DegradedState, FailureCode, PipelineFailure};
+
+    let degraded = DegradedState {
+        semantic_recall: true,
+        structure: false,
+        storage: true,
+        cause: Some(PipelineFailure::new(FailureCode::StorageUnavailable)),
+    };
+    let crossed = degraded_capabilities(&degraded);
+    assert!(crossed.semantic_recall);
+    assert!(!crossed.structure);
+    assert!(crossed.storage);
+    assert_eq!(
+        crossed.cause.as_ref().map(|failure| failure.code.as_str()),
+        Some(FailureCode::StorageUnavailable.as_str())
+    );
+
+    // Nothing degraded is nothing to explain: a cause carried over a cleared
+    // set of flags would put a remediation on a panel with no fault on it.
+    let clear = degraded_capabilities(&DegradedState::default());
+    assert_eq!(
+        clear,
+        tinymemory_api::provider::DegradedCapabilities::default()
+    );
+    assert_eq!(clear.cause, None);
+}
+
+#[test]
+fn a_chunk_id_prefix_is_matched_literally() {
+    // The contract calls the prefix literal, so the driver has to make `LIKE`
+    // agree. Every generated source id contains an underscore, which is `LIKE`'s
+    // single-character wildcard — left unescaped, `mem_src:src_a:` would also
+    // count another source's chunks, and the count would be wrong in the
+    // direction that looks healthy.
+    assert_eq!(
+        like_prefix_pattern("mem_src:src_a:"),
+        r"mem\_src:src\_a:%",
+        "every underscore is escaped, not left as a wildcard"
+    );
+    assert_eq!(
+        like_prefix_pattern("gmail:conn-1:"),
+        "gmail:conn-1:%",
+        "a prefix with no metacharacter gains only the trailing wildcard"
+    );
+    assert_eq!(
+        like_prefix_pattern("100%_of\\it"),
+        r"100\%\_of\\it%",
+        "the escape character itself is escaped, as the ESCAPE clause requires"
+    );
+    assert_eq!(
+        like_prefix_pattern(""),
+        "%",
+        "an empty prefix matches everything, which is what an empty prefix means"
+    );
+}
+
+#[test]
+fn the_front_matter_strip_decides_built_versus_not_the_way_the_host_did() {
+    // The strip exists for one verdict — is there prose under the compiled
+    // artifact's front-matter — and these are the host's own decision points,
+    // reproduced: a well-formed artifact yields its body, a body of pure
+    // whitespace reads as unbuilt, an opener with no closer never leaks the
+    // delimiter as prose, and content with no front-matter at all is already
+    // the body.
+    assert_eq!(
+        body_after_front_matter("---\nscope: persona/communication\n---\nShort sentences.\n"),
+        "Short sentences.\n"
+    );
+    assert!(
+        body_after_front_matter("---\nscope: x\n---\n \n\t")
+            .trim()
+            .is_empty(),
+        "front-matter over whitespace is not a profile"
+    );
+    assert_eq!(
+        body_after_front_matter("---\nscope: x\nno closer follows"),
+        "scope: x\nno closer follows",
+        "a malformed opener falls back to everything after it, not to the raw artifact"
+    );
+    assert_eq!(
+        body_after_front_matter("plain body, no front matter"),
+        "plain body, no front matter"
     );
 }

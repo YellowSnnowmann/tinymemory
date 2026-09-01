@@ -648,9 +648,6 @@ const EXPECTED_METHODS: &[&str] = &[
     "IngestDocument",
     "IngestChat",
     "IngestEmail",
-    "IngestLearning",
-    "IngestEvent",
-    "Answer",
     "PutDocument",
     "GetDocument",
     "ListDocuments",
@@ -720,6 +717,28 @@ const EXPECTED_METHODS: &[&str] = &[
     "ExtractEntities",
     "EmbedText",
     "EmbedderSlug",
+    // The tree family's summariser door and its root read.
+    "Summarise",
+    "RootSummaries",
+    // The maintenance hot-path read and the two chunk-family doors that
+    // landed beside it.
+    "DegradedState",
+    "ChunkScore",
+    "SourceIngestStatus",
+    // The runtime-tree doors and the flavoured-root profile read — the final
+    // round of the engine shed.
+    "RuntimeBufferWrite",
+    "RuntimeReadNode",
+    "RuntimeReadChildren",
+    "RuntimeTreeStatus",
+    "RuntimeSummarize",
+    "RuntimeRebuild",
+    "FlavourProfile",
+    // Granular ingestion and agentic retrieval, appended after all previously
+    // released wire slots.
+    "IngestLearning",
+    "IngestEvent",
+    "Answer",
 ];
 
 #[tokio::test]
