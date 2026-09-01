@@ -2217,6 +2217,28 @@ impl MemoryService {
             .await
             .map_err(|error| into_bus_error(&error))
     }
+
+    /// Open a bounded manual-override window on the scheduler gate.
+    ///
+    /// The host calls this when the user explicitly asks for maintenance
+    /// while the gate is paused (`mode = off`, signed-out, battery): for
+    /// `seconds`, background claims read `Policy::Normal` and paused sleepers
+    /// are woken, so a user's "process now" runs without turning the gate's
+    /// protection off for anything they did not ask for (openhuman#5935).
+    // async only for the interface macro's member contract — the body is one
+    // synchronous global write, and that is the point: a claim's step-0 read
+    // must never wait on this.
+    #[allow(clippy::unused_async, clippy::unused_async_trait_impl)]
+    async fn override_scheduler_gate(&self, seconds: u64) -> BusResult<()> {
+        // Clamp: a window longer than an hour is the gate turned off with
+        // extra steps, which is the config's job, not this member's.
+        let seconds = seconds.min(3600);
+        tinymemory_core::scheduler_gate::set_manual_override(seconds);
+        log::info!(
+            "[tinymemory:module] scheduler gate manually overridden for {seconds}s (host request)"
+        );
+        Ok(())
+    }
 }
 
 /// The response-size ceiling for a method that returns a list of entries.

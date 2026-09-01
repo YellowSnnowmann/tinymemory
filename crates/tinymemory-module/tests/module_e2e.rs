@@ -739,6 +739,8 @@ const EXPECTED_METHODS: &[&str] = &[
     "IngestLearning",
     "IngestEvent",
     "Answer",
+    // Scheduler-gate round: appended at the wire tail with its declaration.
+    "OverrideSchedulerGate",
 ];
 
 #[tokio::test]

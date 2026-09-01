@@ -70,9 +70,52 @@ pub fn scheduler_gate() -> Option<Arc<dyn SchedulerGate>> {
 }
 
 /// The current scheduling tier, or [`Policy::Normal`] when ungated.
+///
+/// A live manual override (see [`set_manual_override`]) takes precedence over
+/// the gate: user-initiated maintenance is the one thing a pause must not
+/// stop, because the pause exists to protect the user from *background* cost
+/// they did not ask for — work they explicitly requested is the opposite
+/// case.
 #[must_use]
 pub fn current_policy() -> Policy {
+    if manual_override_active() {
+        return Policy::Normal;
+    }
     scheduler_gate().map_or(Policy::Normal, |gate| gate.current_policy())
+}
+
+static MANUAL_OVERRIDE_UNTIL: RwLock<Option<std::time::Instant>> = RwLock::new(None);
+
+fn manual_override_active() -> bool {
+    MANUAL_OVERRIDE_UNTIL
+        .read()
+        .is_some_and(|until| std::time::Instant::now() < until)
+}
+
+/// Clear any live manual override. For tests: the window is a process
+/// global, and a test that opens one must not leak it into its neighbours.
+pub fn clear_manual_override() {
+    *MANUAL_OVERRIDE_UNTIL.write() = None;
+}
+
+/// Open a manual-override window: for `seconds`, [`current_policy`] answers
+/// [`Policy::Normal`] regardless of the installed gate, and paused sleepers
+/// are woken so the window is not spent waiting out a tick.
+///
+/// For user-initiated maintenance under `mode = off` (openhuman#5935): the
+/// off switch stops background work, and this is how a user's explicit
+/// "process now" still runs. The window is bounded — there is no "override
+/// forever", because that would just be the gate turned off with extra steps.
+pub fn set_manual_override(seconds: u64) {
+    // The clamp is this function's contract, not its callers': the window is
+    // bounded to an hour (an unbounded override is the gate turned off with
+    // extra steps), and the bound also makes the expiry arithmetic
+    // infallible — `Instant + 1h` cannot overflow, where an unclamped u64
+    // could panic inside library code.
+    let seconds = seconds.min(3600);
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
+    *MANUAL_OVERRIDE_UNTIL.write() = Some(until);
+    resume_notify().notify_waiters();
 }
 
 /// The resume handle. When ungated this is a `Notify` nobody ever fires, so a
@@ -93,5 +136,24 @@ pub async fn wait_for_capacity() -> Option<Box<dyn Send>> {
     match scheduler_gate() {
         Some(gate) => gate.wait_for_capacity().await,
         None => None,
+    }
+}
+
+#[cfg(test)]
+mod override_tests {
+    use super::{clear_manual_override, current_policy, set_manual_override, Policy};
+
+    #[test]
+    fn a_zero_second_window_is_already_expired_and_the_clamp_holds() {
+        clear_manual_override();
+        // Zero seconds: the window closes the instant it opens — the branch
+        // in `current_policy` must treat an expired window as no window.
+        set_manual_override(0);
+        assert_eq!(current_policy(), Policy::Normal); // ungated baseline
+                                                      // An absurd ask cannot overflow the expiry arithmetic: the clamp is
+                                                      // the function's contract, and this call not panicking is the test.
+        set_manual_override(u64::MAX);
+        assert_eq!(current_policy(), Policy::Normal);
+        clear_manual_override();
     }
 }

@@ -322,6 +322,9 @@ pub mod methods {
     // report.
     /// `Diagnose` — the typed, per-stage pipeline diagnosis.
     pub const DIAGNOSE: &str = "Diagnose";
+    /// `OverrideSchedulerGate` — open a bounded manual-override window on the
+    /// scheduler gate, for user-initiated maintenance while paused.
+    pub const OVERRIDE_SCHEDULER_GATE: &str = "OverrideSchedulerGate";
     /// `DegradedState` — the degradation flags alone, without a diagnosis.
     pub const DEGRADED_STATE: &str = "DegradedState";
 
@@ -370,7 +373,7 @@ pub mod methods {
 /// The order matters: `tinybus`'s `Interface::members()` returns declaration
 /// order, and the module compares the two sequences directly rather than as
 /// sets, so a reordering is caught alongside an addition or a removal.
-pub const METHODS: [&str; 141] = [
+pub const METHODS: [&str; 142] = [
     methods::DRIVER_ID,
     methods::CAPABILITIES,
     methods::HEALTH,
@@ -512,6 +515,7 @@ pub const METHODS: [&str; 141] = [
     methods::INGEST_LEARNING,
     methods::INGEST_EVENT,
     methods::ANSWER,
+    methods::OVERRIDE_SCHEDULER_GATE,
 ];
 
 #[cfg(test)]

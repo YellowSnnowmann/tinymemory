@@ -260,7 +260,7 @@ async fn install_wires_every_seam_this_module_can_supply() {
 
     // The pair `setup` calls, in the order it calls them.
     super::install(connection);
-    super::install_unserved_seams();
+    super::install_seams(None);
 
     assert!(tinymemory_core::events::event_sink().is_some());
     assert!(tinymemory_core::observability::error_reporter().is_some());
@@ -306,4 +306,103 @@ async fn fire_and_forget_notification_tolerates_an_absent_host() {
         queue_depth: 0,
     });
     tokio::task::yield_now().await;
+}
+
+// ── bus scheduler gate (scheduler-gate round) ────────────────────────────────
+
+/// A gate with no poller: `store_policy` driven by hand. Lives here rather
+/// than as an inline `#[cfg(test)]` constructor because the coverage lanes
+/// filter test files by name, and inline test-only code pollutes the
+/// measured production lines (the powerset lane enforces exactly that).
+fn gate_for_test() -> std::sync::Arc<super::BusSchedulerGate> {
+    std::sync::Arc::new(super::BusSchedulerGate {
+        policy: std::sync::RwLock::new(tinymemory_core::scheduler_gate::Policy::Normal),
+        notify: std::sync::Arc::new(tokio::sync::Notify::new()),
+    })
+}
+
+#[test]
+fn wire_to_policy_maps_every_tier_and_reason() {
+    use tinymemory_core::scheduler_gate::{PauseReason, Policy};
+    assert_eq!(
+        super::wire_to_policy("aggressive", None),
+        Policy::Aggressive
+    );
+    assert_eq!(super::wire_to_policy("throttled", None), Policy::Throttled);
+    // "normal" and every unknown tier share one deliberate arm: the pre-gate
+    // behaviour, never a surprise pause.
+    assert_eq!(super::wire_to_policy("normal", None), Policy::Normal);
+    assert_eq!(
+        super::wire_to_policy("something-newer", None),
+        Policy::Normal
+    );
+    for (wire, reason) in [
+        ("user_disabled", PauseReason::UserDisabled),
+        ("on_battery", PauseReason::OnBattery),
+        ("cpu_pressure", PauseReason::CpuPressure),
+        ("signed_out", PauseReason::SignedOut),
+        ("unheard-of", PauseReason::Unknown),
+    ] {
+        assert_eq!(
+            super::wire_to_policy("paused", Some(wire)),
+            Policy::Paused { reason },
+            "reason wire {wire}"
+        );
+    }
+    // A pause with no reason string is still a pause.
+    assert_eq!(
+        super::wire_to_policy("paused", None),
+        Policy::Paused {
+            reason: PauseReason::Unknown
+        }
+    );
+}
+
+#[tokio::test]
+async fn store_policy_wakes_sleepers_only_on_resume() {
+    use tinymemory_core::scheduler_gate::{PauseReason, Policy, SchedulerGate};
+    let gate = gate_for_test();
+    assert_eq!(gate.current_policy(), Policy::Normal);
+
+    gate.store_policy(Policy::Paused {
+        reason: PauseReason::UserDisabled,
+    });
+    assert!(matches!(gate.current_policy(), Policy::Paused { .. }));
+
+    // A sleeper parked on the resume handle wakes when the pause lifts.
+    let notify = gate.resume_notify();
+    let waiter = tokio::spawn(async move { notify.notified().await });
+    tokio::task::yield_now().await;
+    gate.store_policy(Policy::Normal);
+    tokio::time::timeout(std::time::Duration::from_secs(2), waiter)
+        .await
+        .expect("resume must wake the sleeper")
+        .expect("waiter task");
+    assert_eq!(gate.current_policy(), Policy::Normal);
+
+    // Same-policy stores are quiet no-ops.
+    gate.store_policy(Policy::Normal);
+    assert_eq!(gate.current_policy(), Policy::Normal);
+}
+
+#[test]
+fn manual_override_outranks_a_paused_gate_and_is_bounded() {
+    use tinymemory_core::scheduler_gate as core_gate;
+    use tinymemory_core::scheduler_gate::{PauseReason, Policy};
+    core_gate::clear_manual_override();
+    let gate = gate_for_test();
+    gate.store_policy(Policy::Paused {
+        reason: PauseReason::UserDisabled,
+    });
+    core_gate::set_scheduler_gate(gate);
+    assert!(matches!(core_gate::current_policy(), Policy::Paused { .. }));
+
+    // The member's whole contract: user-initiated work wins while the window
+    // is open, and only while it is open.
+    core_gate::set_manual_override(60);
+    assert_eq!(core_gate::current_policy(), Policy::Normal);
+    core_gate::clear_manual_override();
+    assert!(matches!(core_gate::current_policy(), Policy::Paused { .. }));
+
+    core_gate::clear_scheduler_gate();
 }

@@ -994,3 +994,49 @@ fn an_ordinary_tree_node_read_is_not_refused() {
     let children: Vec<TreeNode> = (0..31).map(|_| node.clone()).collect();
     assert!(super::ensure_response_fits(&children, "RuntimeReadChildren").is_ok());
 }
+
+#[tokio::test]
+async fn override_member_opens_a_window_that_outranks_a_paused_gate() {
+    use tinymemory_core::scheduler_gate::{self as gate, PauseReason, Policy};
+
+    // A paused gate stands in for "the host said mode = off".
+    #[derive(Debug)]
+    struct PausedGate;
+    #[async_trait::async_trait]
+    impl gate::SchedulerGate for PausedGate {
+        fn current_policy(&self) -> Policy {
+            Policy::Paused {
+                reason: PauseReason::UserDisabled,
+            }
+        }
+        fn resume_notify(&self) -> std::sync::Arc<tokio::sync::Notify> {
+            std::sync::Arc::new(tokio::sync::Notify::new())
+        }
+        async fn wait_for_capacity(&self) -> Option<Box<dyn Send>> {
+            None
+        }
+    }
+
+    gate::clear_manual_override();
+    gate::set_scheduler_gate(std::sync::Arc::new(PausedGate));
+    assert!(matches!(gate::current_policy(), Policy::Paused { .. }));
+
+    // The member is the host's "process now" lever: through the service impl,
+    // exactly as a bus dispatch would reach it, the window opens and
+    // user-requested work outranks the pause -- clamped, so an absurd ask is
+    // an hour, not forever.
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let connection = test_connection().await;
+    let config = test_config(workspace.path());
+    let opener = test_opener(connection, config);
+    let service = super::MemoryService::root(test_provider(), std::sync::Arc::clone(&opener));
+    service
+        .override_scheduler_gate(7 * 24 * 3600)
+        .await
+        .expect("override member answers");
+    assert_eq!(gate::current_policy(), Policy::Normal);
+
+    gate::clear_manual_override();
+    assert!(matches!(gate::current_policy(), Policy::Paused { .. }));
+    gate::clear_scheduler_gate();
+}

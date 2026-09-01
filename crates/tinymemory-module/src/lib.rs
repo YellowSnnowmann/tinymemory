@@ -146,13 +146,14 @@ async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()
     // back out to the engine repeatedly.
     tinymemory_core::config_loader::set_config_loader(Arc::new(ModuleConfigLoader::new(&config)));
     host::install(connection.clone());
-    // The two seams no bus interface serves, and no local answer can honestly
-    // stand in for. Both degraded in silence rather than with a named cause;
-    // see the section comment on `host::install_unserved_seams` for why they
-    // are stubbed here rather than proxied or synthesised. Installed with the
-    // rest, before the store exists, so nothing can consult a seam this process
-    // has not yet decided about.
-    host::install_unserved_seams();
+    // The scheduler gate is proxied to the host's SchedulerPolicy member — the
+    // host's cron::scheduler_gate policy, polled and cached, so mode=off,
+    // signed-out and battery pauses are honoured inside this process too.
+    // Shutdown stays a stub: no bus interface serves it and no local answer
+    // can honestly stand in for it (see `host::install_seams`). Installed with
+    // the rest, before the store exists, so nothing can consult a seam this
+    // process has not yet decided about.
+    host::install_seams(Some(connection.clone()));
 
     let client = tinymemory_core::store::factories::create_memory_client_with_local_ai(
         &config.memory,
@@ -275,7 +276,7 @@ fn bind_memory_client(config: &ModuleConfig, client: &MemoryClientRef) -> bool {
 ///   `periodic_pause_reason` as step 0 of every tick, precisely so a user who
 ///   switched Memory Tree off, or who is signed out, gets no background fetch.
 ///   This module serves no scheduler gate — see the section comment on
-///   `host::install_unserved_seams` for why it cannot — and the stub in its
+///   `host::install_seams` for why it cannot — and the stub in its
 ///   place always answers `Policy::Normal`, so `periodic_pause_reason` is always
 ///   `None` and it ticks straight through both pauses. The per-source
 ///   `enabled` toggle still applies; the two *global* pauses do not.
@@ -405,7 +406,7 @@ pub(crate) fn claim_sync_loops(workspace: &Path) -> WorkspaceClaim {
 /// [`tinymemory_core::scheduler_gate`] before every claim and registers a
 /// [`tinymemory_core::shutdown`] hook to release in-flight job locks. This
 /// module serves neither seam — see the section comment on
-/// `host::install_unserved_seams` for why neither can be proxied — so both are
+/// `host::install_seams` for why neither can be proxied — so both are
 /// stubs, and the consequences follow:
 ///
 /// - **It runs unthrottled.** `wait_for_capacity` returns immediately, so
@@ -698,6 +699,9 @@ mod exports {
             "IngestLearning",
             "IngestEvent",
             "Answer",
+            // Appended at the wire tail (slot 141) to match the bus table's
+            // append-only order — member order is wire order.
+            "OverrideSchedulerGate",
         ],
         signals = [],
         // The host's embedder is deliberately NOT declared as `requires`. That
