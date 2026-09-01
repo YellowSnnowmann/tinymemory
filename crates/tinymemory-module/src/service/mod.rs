@@ -2225,6 +2225,10 @@ impl MemoryService {
     /// `seconds`, background claims read `Policy::Normal` and paused sleepers
     /// are woken, so a user's "process now" runs without turning the gate's
     /// protection off for anything they did not ask for (openhuman#5935).
+    // async only for the interface macro's member contract — the body is one
+    // synchronous global write, and that is the point: a claim's step-0 read
+    // must never wait on this.
+    #[allow(clippy::unused_async)]
     async fn override_scheduler_gate(&self, seconds: u64) -> BusResult<()> {
         // Clamp: a window longer than an hour is the gate turned off with
         // extra steps, which is the config's job, not this member's.

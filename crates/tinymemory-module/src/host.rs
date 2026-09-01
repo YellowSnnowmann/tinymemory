@@ -472,10 +472,12 @@ impl tinymemory_core::shutdown::ShutdownHost for UnservedShutdownHost {
 pub(crate) fn install_seams(connection: Option<tinybus::Connection>) {
     match connection {
         Some(connection) => {
-            tinymemory_core::scheduler_gate::set_scheduler_gate(BusSchedulerGate::start(connection))
+            tinymemory_core::scheduler_gate::set_scheduler_gate(BusSchedulerGate::start(
+                connection,
+            ));
         }
         None => {
-            tinymemory_core::scheduler_gate::set_scheduler_gate(Arc::new(UnservedSchedulerGate))
+            tinymemory_core::scheduler_gate::set_scheduler_gate(Arc::new(UnservedSchedulerGate));
         }
     }
     tinymemory_core::shutdown::set_shutdown_host(Arc::new(UnservedShutdownHost));
