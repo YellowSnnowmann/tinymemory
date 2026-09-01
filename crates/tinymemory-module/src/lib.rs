@@ -276,7 +276,7 @@ fn bind_memory_client(config: &ModuleConfig, client: &MemoryClientRef) -> bool {
 ///   `periodic_pause_reason` as step 0 of every tick, precisely so a user who
 ///   switched Memory Tree off, or who is signed out, gets no background fetch.
 ///   This module serves no scheduler gate — see the section comment on
-///   `host::install_unserved_seams` for why it cannot — and the stub in its
+///   `host::install_seams` for why it cannot — and the stub in its
 ///   place always answers `Policy::Normal`, so `periodic_pause_reason` is always
 ///   `None` and it ticks straight through both pauses. The per-source
 ///   `enabled` toggle still applies; the two *global* pauses do not.
@@ -406,7 +406,7 @@ pub(crate) fn claim_sync_loops(workspace: &Path) -> WorkspaceClaim {
 /// [`tinymemory_core::scheduler_gate`] before every claim and registers a
 /// [`tinymemory_core::shutdown`] hook to release in-flight job locks. This
 /// module serves neither seam — see the section comment on
-/// `host::install_unserved_seams` for why neither can be proxied — so both are
+/// `host::install_seams` for why neither can be proxied — so both are
 /// stubs, and the consequences follow:
 ///
 /// - **It runs unthrottled.** `wait_for_capacity` returns immediately, so

@@ -331,7 +331,10 @@ impl BusSchedulerGate {
             Ok((tier, reason)) => {
                 let next = wire_to_policy(&tier, reason.as_deref());
                 let (was_paused, changed) = {
-                    let mut slot = self.policy.write().unwrap_or_else(|e| e.into_inner());
+                    let mut slot = self
+                        .policy
+                        .write()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
                     let was = matches!(
                         *slot,
                         tinymemory_core::scheduler_gate::Policy::Paused { .. }
@@ -367,7 +370,10 @@ impl BusSchedulerGate {
 #[async_trait]
 impl tinymemory_core::scheduler_gate::SchedulerGate for BusSchedulerGate {
     fn current_policy(&self) -> tinymemory_core::scheduler_gate::Policy {
-        *self.policy.read().unwrap_or_else(|e| e.into_inner())
+        *self
+            .policy
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
 
     fn resume_notify(&self) -> Arc<tokio::sync::Notify> {
@@ -391,7 +397,6 @@ fn wire_to_policy(tier: &str, reason: Option<&str>) -> tinymemory_core::schedule
     use tinymemory_core::scheduler_gate::{PauseReason, Policy};
     match tier {
         "aggressive" => Policy::Aggressive,
-        "normal" => Policy::Normal,
         "throttled" => Policy::Throttled,
         "paused" => Policy::Paused {
             reason: match reason {
@@ -402,6 +407,8 @@ fn wire_to_policy(tier: &str, reason: Option<&str>) -> tinymemory_core::schedule
                 _ => PauseReason::Unknown,
             },
         },
+        // "normal" lands here with every unknown tier, deliberately in one
+        // arm: an unknown tier degrades to the pre-gate behaviour.
         _ => Policy::Normal,
     }
 }
@@ -455,10 +462,6 @@ impl tinymemory_core::shutdown::ShutdownHost for UnservedShutdownHost {
 /// Kept separate from [`install`] on purpose: that function wires the seams the
 /// host genuinely serves over the bus, and folding these in would blur the
 /// difference between "wired" and "wired to nothing".
-pub(crate) fn install_unserved_seams() {
-    install_seams(None);
-}
-
 /// Install the host seams, bus-backing the scheduler gate when a connection
 /// is available.
 ///

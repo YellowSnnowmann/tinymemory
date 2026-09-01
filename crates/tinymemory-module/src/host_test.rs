@@ -260,7 +260,7 @@ async fn install_wires_every_seam_this_module_can_supply() {
 
     // The pair `setup` calls, in the order it calls them.
     super::install(connection);
-    super::install_unserved_seams();
+    super::install_seams(None);
 
     assert!(tinymemory_core::events::event_sink().is_some());
     assert!(tinymemory_core::observability::error_reporter().is_some());
