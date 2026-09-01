@@ -146,13 +146,14 @@ async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()
     // back out to the engine repeatedly.
     tinymemory_core::config_loader::set_config_loader(Arc::new(ModuleConfigLoader::new(&config)));
     host::install(connection.clone());
-    // The two seams no bus interface serves, and no local answer can honestly
-    // stand in for. Both degraded in silence rather than with a named cause;
-    // see the section comment on `host::install_unserved_seams` for why they
-    // are stubbed here rather than proxied or synthesised. Installed with the
-    // rest, before the store exists, so nothing can consult a seam this process
-    // has not yet decided about.
-    host::install_unserved_seams();
+    // The scheduler gate is proxied to the host's SchedulerPolicy member — the
+    // host's cron::scheduler_gate policy, polled and cached, so mode=off,
+    // signed-out and battery pauses are honoured inside this process too.
+    // Shutdown stays a stub: no bus interface serves it and no local answer
+    // can honestly stand in for it (see `host::install_seams`). Installed with
+    // the rest, before the store exists, so nothing can consult a seam this
+    // process has not yet decided about.
+    host::install_seams(Some(connection.clone()));
 
     let client = tinymemory_core::store::factories::create_memory_client_with_local_ai(
         &config.memory,
@@ -654,6 +655,7 @@ mod exports {
             // Maintenance, typed: the diagnosis an operator or an agent reads,
             // beside the uniform report a scheduler reads.
             "Diagnose",
+            "OverrideSchedulerGate",
             // Source sync this process runs itself. The periodic loops already
             // live here; these are the on-demand half plus what past runs cost.
             "RunConnectionSync",

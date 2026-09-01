@@ -70,9 +70,40 @@ pub fn scheduler_gate() -> Option<Arc<dyn SchedulerGate>> {
 }
 
 /// The current scheduling tier, or [`Policy::Normal`] when ungated.
+///
+/// A live manual override (see [`set_manual_override`]) takes precedence over
+/// the gate: user-initiated maintenance is the one thing a pause must not
+/// stop, because the pause exists to protect the user from *background* cost
+/// they did not ask for — work they explicitly requested is the opposite
+/// case.
 #[must_use]
 pub fn current_policy() -> Policy {
+    if manual_override_active() {
+        return Policy::Normal;
+    }
     scheduler_gate().map_or(Policy::Normal, |gate| gate.current_policy())
+}
+
+static MANUAL_OVERRIDE_UNTIL: RwLock<Option<std::time::Instant>> = RwLock::new(None);
+
+fn manual_override_active() -> bool {
+    MANUAL_OVERRIDE_UNTIL
+        .read()
+        .is_some_and(|until| std::time::Instant::now() < until)
+}
+
+/// Open a manual-override window: for `seconds`, [`current_policy`] answers
+/// [`Policy::Normal`] regardless of the installed gate, and paused sleepers
+/// are woken so the window is not spent waiting out a tick.
+///
+/// For user-initiated maintenance under `mode = off` (openhuman#5935): the
+/// off switch stops background work, and this is how a user's explicit
+/// "process now" still runs. The window is bounded — there is no "override
+/// forever", because that would just be the gate turned off with extra steps.
+pub fn set_manual_override(seconds: u64) {
+    let until = std::time::Instant::now() + std::time::Duration::from_secs(seconds);
+    *MANUAL_OVERRIDE_UNTIL.write() = Some(until);
+    resume_notify().notify_waiters();
 }
 
 /// The resume handle. When ungated this is a `Notify` nobody ever fires, so a

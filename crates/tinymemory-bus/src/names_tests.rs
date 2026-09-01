@@ -99,6 +99,11 @@ fn the_newest_members_are_appended_rather_than_filed_with_their_family() {
     assert_eq!(METHODS[128], methods::DEGRADED_STATE);
     assert_eq!(METHODS[129], methods::CHUNK_SCORE);
     assert_eq!(METHODS[130], methods::SOURCE_INGEST_STATUS);
+    // Scheduler-gate round (openhuman#5935 / tinymemory#126): appended at the
+    // tail — slot 141, after the ingestion round's 138-140 — per this table's
+    // append-only rule.
+    assert_eq!(METHODS[141], methods::OVERRIDE_SCHEDULER_GATE);
+    assert_eq!(methods::OVERRIDE_SCHEDULER_GATE, "OverrideSchedulerGate");
 }
 
 #[test]
@@ -139,7 +144,7 @@ fn the_runtime_tree_doors_hold_the_wire_slots_they_were_released_in() {
     // reason the summariser-door test above gives: member order is wire order,
     // and an assertion measured from the end moves silently under the next
     // append — which is exactly the edit this exists to catch.
-    assert_eq!(METHODS.len(), 141);
+    assert_eq!(METHODS.len(), 142);
     assert_eq!(METHODS[131], methods::RUNTIME_BUFFER_WRITE);
     assert_eq!(METHODS[132], methods::RUNTIME_READ_NODE);
     assert_eq!(METHODS[133], methods::RUNTIME_READ_CHILDREN);

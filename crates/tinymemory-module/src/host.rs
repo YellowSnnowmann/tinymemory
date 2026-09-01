@@ -261,6 +261,152 @@ pub(crate) fn report_unserved_once(
 /// above for why it must not answer anything else — and says so out loud the
 /// first time it is asked.
 #[derive(Debug)]
+/// Scheduler gate answered by the host over the bus.
+///
+/// The host serves `SchedulerPolicy` on its `RuntimeHost` object (the same
+/// object the event sink and error reporter already call), answering the
+/// policy its own `cron::scheduler_gate` computes — mode, battery, CPU
+/// pressure, signed-out. This gate polls it and caches the answer, because
+/// [`SchedulerGate::current_policy`] is a synchronous step-0 read on every
+/// queue claim and every periodic tick, and a bus round-trip per claim would
+/// put the broker on the hot path.
+///
+/// What deliberately does NOT cross the bus: `wait_for_capacity`. The
+/// LLM-slot semaphore is a host-process resource; a permit forged here would
+/// be a lie about a semaphore this process cannot see. Policy pauses are the
+/// consent-bearing half, and they cross. A host that serves no
+/// `SchedulerPolicy` member (older host) degrades to exactly the previous
+/// stub behaviour: `Policy::Normal`, reported once.
+pub(crate) struct BusSchedulerGate {
+    policy: std::sync::RwLock<tinymemory_core::scheduler_gate::Policy>,
+    notify: Arc<tokio::sync::Notify>,
+}
+
+impl BusSchedulerGate {
+    /// Poll cadence while the host answers. Claims read the cache, so this
+    /// bounds how stale a pause can be, not how often anything blocks.
+    const POLL_SECS: u64 = 15;
+    /// Poll cadence after a failed call — an older host answers
+    /// `MemberNotFound` forever, and once a minute keeps the retirement of
+    /// that host observable without spamming its log.
+    const POLL_SECS_UNSERVED: u64 = 60;
+
+    pub(crate) fn start(connection: tinybus::Connection) -> Arc<Self> {
+        let gate = Arc::new(Self {
+            policy: std::sync::RwLock::new(tinymemory_core::scheduler_gate::Policy::Normal),
+            notify: Arc::new(tokio::sync::Notify::new()),
+        });
+        let poller = Arc::clone(&gate);
+        tokio::spawn(async move {
+            loop {
+                let served = poller.refresh(&connection).await;
+                let secs = if served {
+                    Self::POLL_SECS
+                } else {
+                    Self::POLL_SECS_UNSERVED
+                };
+                tokio::time::sleep(std::time::Duration::from_secs(secs)).await;
+            }
+        });
+        gate
+    }
+
+    /// One poll: ask the host, map the wire strings, store, and wake sleepers
+    /// on a pause → not-paused transition. Returns whether the member
+    /// answered.
+    async fn refresh(&self, connection: &tinybus::Connection) -> bool {
+        let reply = match connection.proxy(
+            RUNTIME_HOST_BUS_NAME,
+            RUNTIME_HOST_OBJECT_PATH,
+            RUNTIME_HOST_INTERFACE,
+        ) {
+            Ok(proxy) => {
+                proxy
+                    .call::<(String, Option<String>)>("SchedulerPolicy", ())
+                    .await
+            }
+            Err(error) => Err(error),
+        };
+        match reply {
+            Ok((tier, reason)) => {
+                let next = wire_to_policy(&tier, reason.as_deref());
+                let (was_paused, changed) = {
+                    let mut slot = self.policy.write().unwrap_or_else(|e| e.into_inner());
+                    let was = matches!(
+                        *slot,
+                        tinymemory_core::scheduler_gate::Policy::Paused { .. }
+                    );
+                    let changed = *slot != next;
+                    *slot = next;
+                    (was, changed)
+                };
+                if changed {
+                    log::info!(
+                        "[tinymemory:module] scheduler policy from host: {next:?} — background \
+                         claims honour it from the next tick"
+                    );
+                }
+                let now_paused =
+                    matches!(next, tinymemory_core::scheduler_gate::Policy::Paused { .. });
+                if was_paused && !now_paused {
+                    self.notify.notify_waiters();
+                }
+                true
+            }
+            Err(error) => {
+                report_unserved_once(&GATE_REPORTED, GATE_UNSERVED, "scheduler_gate");
+                log::debug!(
+                    "[tinymemory:module] SchedulerPolicy poll failed; keeping the last policy: {error}"
+                );
+                false
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl tinymemory_core::scheduler_gate::SchedulerGate for BusSchedulerGate {
+    fn current_policy(&self) -> tinymemory_core::scheduler_gate::Policy {
+        *self.policy.read().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn resume_notify(&self) -> Arc<tokio::sync::Notify> {
+        Arc::clone(&self.notify)
+    }
+
+    async fn wait_for_capacity(&self) -> Option<Box<dyn Send>> {
+        // Host-process semaphore; see the struct docs. Policy pauses are
+        // enforced by every claim's step-0 `current_policy` read instead.
+        None
+    }
+}
+
+/// Map the wire tier + pause-reason strings back onto the contract types.
+///
+/// Unknown strings collapse to the safe end of their type: an unknown tier is
+/// `Normal` (the pre-gate behaviour, never a surprise pause), an unknown
+/// pause reason is `PauseReason::Unknown` (still a pause — the host said
+/// stop, and the unknown part is only the label).
+fn wire_to_policy(tier: &str, reason: Option<&str>) -> tinymemory_core::scheduler_gate::Policy {
+    use tinymemory_core::scheduler_gate::{PauseReason, Policy};
+    match tier {
+        "aggressive" => Policy::Aggressive,
+        "normal" => Policy::Normal,
+        "throttled" => Policy::Throttled,
+        "paused" => Policy::Paused {
+            reason: match reason {
+                Some("user_disabled") => PauseReason::UserDisabled,
+                Some("on_battery") => PauseReason::OnBattery,
+                Some("cpu_pressure") => PauseReason::CpuPressure,
+                Some("signed_out") => PauseReason::SignedOut,
+                _ => PauseReason::Unknown,
+            },
+        },
+        _ => Policy::Normal,
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct UnservedSchedulerGate;
 
 #[async_trait]
@@ -310,17 +456,35 @@ impl tinymemory_core::shutdown::ShutdownHost for UnservedShutdownHost {
 /// host genuinely serves over the bus, and folding these in would blur the
 /// difference between "wired" and "wired to nothing".
 pub(crate) fn install_unserved_seams() {
-    tinymemory_core::scheduler_gate::set_scheduler_gate(Arc::new(UnservedSchedulerGate));
+    install_seams(None);
+}
+
+/// Install the host seams, bus-backing the scheduler gate when a connection
+/// is available.
+///
+/// With a connection, the gate is [`BusSchedulerGate`] — the host's policy,
+/// polled and cached — and only `shutdown` remains a stub. Without one (unit
+/// tests, or a caller that has not connected yet), both fall back to the
+/// unserved stubs, which keep the previous unwired behaviour and say so once.
+pub(crate) fn install_seams(connection: Option<tinybus::Connection>) {
+    match connection {
+        Some(connection) => {
+            tinymemory_core::scheduler_gate::set_scheduler_gate(BusSchedulerGate::start(connection))
+        }
+        None => {
+            tinymemory_core::scheduler_gate::set_scheduler_gate(Arc::new(UnservedSchedulerGate))
+        }
+    }
     tinymemory_core::shutdown::set_shutdown_host(Arc::new(UnservedShutdownHost));
-    // One line, once per process — `setup` runs exactly once. It is a warning
-    // rather than a debug line because in module mode this is true on every
-    // boot, and a reader of the log should not have to diff seam lists to find
-    // out that the throttle and the graceful lock release are not in effect.
+    // One line, once per process — `setup` runs exactly once. A warning rather
+    // than a debug line because a reader of the log should not have to diff
+    // seam lists to find out which host behaviours are not in effect here.
     log::warn!(
-        "[tinymemory:module] two host seams are unserved in module mode: scheduler_gate and \
-         shutdown are stubs that keep the unwired behaviour and report once when consulted. \
-         Background-AI throttling, the \"Memory Tree off\" and \"signed out\" pauses on periodic \
-         sync, and graceful queue-lock release are not honoured inside this process"
+        "[tinymemory:module] shutdown is unserved in module mode: a stub keeps the unwired \
+         behaviour and reports once when consulted, so graceful queue-lock release is not \
+         honoured inside this process. The scheduler gate is bus-backed when the host serves \
+         SchedulerPolicy, and degrades to the unwired Policy::Normal stub behaviour when it \
+         does not"
     );
 }
 
