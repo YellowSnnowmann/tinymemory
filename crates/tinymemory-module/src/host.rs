@@ -313,15 +313,6 @@ impl BusSchedulerGate {
         }
     }
 
-    /// A gate with no poller, for tests: `store_policy` is driven by hand.
-    #[cfg(test)]
-    pub(crate) fn new_for_test() -> Arc<Self> {
-        Arc::new(Self {
-            policy: std::sync::RwLock::new(tinymemory_core::scheduler_gate::Policy::Normal),
-            notify: Arc::new(tokio::sync::Notify::new()),
-        })
-    }
-
     /// Poll cadence while the host answers. Claims read the cache, so this
     /// bounds how stale a pause can be, not how often anything blocks.
     const POLL_SECS: u64 = 15;

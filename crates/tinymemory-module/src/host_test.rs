@@ -310,6 +310,17 @@ async fn fire_and_forget_notification_tolerates_an_absent_host() {
 
 // ── bus scheduler gate (scheduler-gate round) ────────────────────────────────
 
+/// A gate with no poller: `store_policy` driven by hand. Lives here rather
+/// than as an inline `#[cfg(test)]` constructor because the coverage lanes
+/// filter test files by name, and inline test-only code pollutes the
+/// measured production lines (the powerset lane enforces exactly that).
+fn gate_for_test() -> std::sync::Arc<super::BusSchedulerGate> {
+    std::sync::Arc::new(super::BusSchedulerGate {
+        policy: std::sync::RwLock::new(tinymemory_core::scheduler_gate::Policy::Normal),
+        notify: std::sync::Arc::new(tokio::sync::Notify::new()),
+    })
+}
+
 #[test]
 fn wire_to_policy_maps_every_tier_and_reason() {
     use tinymemory_core::scheduler_gate::{PauseReason, Policy};
@@ -350,7 +361,7 @@ fn wire_to_policy_maps_every_tier_and_reason() {
 #[tokio::test]
 async fn store_policy_wakes_sleepers_only_on_resume() {
     use tinymemory_core::scheduler_gate::{PauseReason, Policy, SchedulerGate};
-    let gate = super::BusSchedulerGate::new_for_test();
+    let gate = gate_for_test();
     assert_eq!(gate.current_policy(), Policy::Normal);
 
     gate.store_policy(Policy::Paused {
@@ -379,7 +390,7 @@ fn manual_override_outranks_a_paused_gate_and_is_bounded() {
     use tinymemory_core::scheduler_gate as core_gate;
     use tinymemory_core::scheduler_gate::{PauseReason, Policy};
     core_gate::clear_manual_override();
-    let gate = super::BusSchedulerGate::new_for_test();
+    let gate = gate_for_test();
     gate.store_policy(Policy::Paused {
         reason: PauseReason::UserDisabled,
     });
