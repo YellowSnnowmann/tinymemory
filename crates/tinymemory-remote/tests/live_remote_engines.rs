@@ -24,7 +24,7 @@
 
 use std::sync::Arc;
 
-use tinymemory_remote::{supermemory_provider, SupermemoryMemory};
+use tinymemory_remote::{cortex_provider, supermemory_provider, CortexMemory, SupermemoryMemory};
 
 /// Reads one engine's endpoint and key, or `None` when either is unset.
 ///
@@ -45,6 +45,26 @@ async fn live_supermemory_upholds_the_provider_contract() -> anyhow::Result<()> 
         return Ok(());
     };
     let provider = supermemory_provider(SupermemoryMemory::api(&url, &key)?);
+    tinymemory_conformance::assert_provider(Arc::new(provider)).await;
+    Ok(())
+}
+
+/// Runs the full provider contract against a live CortexDB.
+///
+/// Worth more here than for the keyed engines. The Cortex adapter emulates
+/// replacement over an append-only log, so almost everything the contract
+/// checks is reconstructed on the read side against behaviour the double can
+/// only assert from documentation — paging, listing duplicates, the shape of
+/// the destructive selector. Each of those was wrong in the double at some
+/// point, and the offline suite was green throughout.
+///
+/// Skipped without `TINYMEMORY_TEST_CORTEX_URL` and `..._KEY`.
+#[tokio::test]
+async fn live_cortex_upholds_the_provider_contract() -> anyhow::Result<()> {
+    let Some((url, key)) = credentials("CORTEX") else {
+        return Ok(());
+    };
+    let provider = cortex_provider(CortexMemory::api(&url, &key)?);
     tinymemory_conformance::assert_provider(Arc::new(provider)).await;
     Ok(())
 }
