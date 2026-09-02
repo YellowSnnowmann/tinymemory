@@ -595,8 +595,11 @@ async fn the_cognee_double_actually_retains() {
 struct CortexLog {
     /// Every event ever appended, in order. Never mutated — that is the point.
     events: Vec<Value>,
-    /// `idempotency_key` -> the body it was first seen with.
-    idempotency: BTreeMap<String, String>,
+    /// `idempotency_key` -> the body it was first seen with, and the id of the
+    /// event that body produced. The id is stored rather than looked up by
+    /// content, because two keys may legitimately carry identical text and a
+    /// replay must answer with its *own* event.
+    idempotency: BTreeMap<String, (String, String)>,
     next_offset: u64,
     next_id: u64,
 }
@@ -619,7 +622,7 @@ async fn cortex_experience(
         .unwrap_or_default()
         .to_string();
 
-    if let Some(seen) = log.idempotency.get(&key) {
+    if let Some((seen, event_id)) = log.idempotency.get(&key) {
         if seen != &payload {
             // The refusal the whole adapter is designed around.
             return (
@@ -627,23 +630,17 @@ async fn cortex_experience(
                 Json(json!({ "error_code": "IDEMPOTENCY_CONFLICT" })),
             );
         }
-        let replayed = log
-            .events
-            .iter()
-            .find(|e| e.pointer("/content/text").and_then(Value::as_str) == Some(payload.as_str()))
-            .and_then(|e| e.get("id").cloned())
-            .unwrap_or(Value::Null);
         return (
             axum::http::StatusCode::ACCEPTED,
-            Json(json!({ "event_id": replayed, "replayed_from_idempotency": true })),
+            Json(json!({ "event_id": event_id, "replayed_from_idempotency": true })),
         );
     }
 
-    log.idempotency.insert(key, payload.clone());
     log.next_offset += 2;
     log.next_id += 1;
     let offset = log.next_offset;
     let id = format!("evt_{}", log.next_id);
+    log.idempotency.insert(key, (payload.clone(), id.clone()));
     let scope = body
         .get("scope")
         .and_then(Value::as_str)
@@ -1136,5 +1133,77 @@ async fn recall_keeps_the_engine_ranking_when_it_truncates() {
         hits[0].key, "zulu",
         "recall returned the alphabetically first key, not the highest ranked \
          one — the engine's ordering was thrown away before the truncation"
+    );
+}
+
+/// A replay must answer with its own event, not one that happens to match.
+///
+/// Two idempotency keys may legitimately carry identical text — the adapter
+/// mints a fresh key per write, so a re-store of unchanged content is exactly
+/// this shape. A double that resolved a replay by searching content would hand
+/// back the first matching event for both, and the write path waits on the id
+/// it is given: it would be waiting on the wrong record.
+#[tokio::test]
+async fn a_replay_returns_the_event_its_own_key_created() {
+    let endpoint = cortex_backend().await;
+    let client = reqwest::Client::new();
+    let send = |key: &'static str| {
+        let body = json!({
+            "scope": "tm:probe",
+            "idempotency_key": key,
+            "content": { "kind": "message", "role": "user", "text": "identical text" },
+            "context": {},
+        });
+        client
+            .post(format!("{endpoint}/v1/experience"))
+            .json(&body)
+            .send()
+    };
+    let id_of = |v: &Value| {
+        v.get("event_id")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    };
+
+    let first: Value = send("key-a")
+        .await
+        .expect("send")
+        .json()
+        .await
+        .expect("json");
+    let second: Value = send("key-b")
+        .await
+        .expect("send")
+        .json()
+        .await
+        .expect("json");
+    let (a, b) = (id_of(&first), id_of(&second));
+    assert_ne!(a, b, "two keys with the same text must create two events");
+
+    let replay_a: Value = send("key-a")
+        .await
+        .expect("send")
+        .json()
+        .await
+        .expect("json");
+    let replay_b: Value = send("key-b")
+        .await
+        .expect("send")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(
+        replay_a.get("replayed_from_idempotency"),
+        Some(&json!(true))
+    );
+    assert_eq!(
+        id_of(&replay_a),
+        a,
+        "key-a replayed with another key\'s event"
+    );
+    assert_eq!(
+        id_of(&replay_b),
+        b,
+        "key-b replayed with another key\'s event"
     );
 }

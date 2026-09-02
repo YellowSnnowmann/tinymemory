@@ -113,6 +113,12 @@ const SEGMENT_PLAIN: &str = "tm";
 /// asked for and silently drops what does not match.
 const SEGMENT_ENCODED: &str = "tmx";
 
+/// How many `/`-separated segments a CortexDB scope path may hold.
+///
+/// Measured, not read off the grammar: 32 are accepted and 33 are refused with
+/// `422 INVALID_BODY`.
+const MAX_SCOPE_SEGMENTS: usize = 32;
+
 /// How many events one listing page asks for.
 ///
 /// The fold needs every event in a scope, so this bounds one request rather
@@ -300,6 +306,15 @@ impl CortexDialect {
             out.push(encoded);
         }
         anyhow::ensure!(!out.is_empty(), "namespace must not be empty");
+        // Measured against a running engine: 32 segments are accepted, 33 are
+        // refused with `422 INVALID_BODY`. Catching it here keeps the refusal
+        // local and specific, which is the same reason the per-segment checks
+        // above are not left to the wire.
+        anyhow::ensure!(
+            out.len() <= MAX_SCOPE_SEGMENTS,
+            "namespace has {} segments; CortexDB scope paths hold at most {MAX_SCOPE_SEGMENTS}",
+            out.len()
+        );
         Ok(out.join("/"))
     }
 
@@ -615,21 +630,45 @@ impl CortexDialect {
     }
 }
 
-/// A value no other write will reuse.
+/// A fresh idempotency key for every write.
 ///
-/// Not a content hash and not TinyMemory's key: the engine refuses a reused key
-/// carrying a different body, so re-deriving this from the record is exactly
-/// what breaks the second store. Monotonic clock plus a process-local counter
-/// keeps it unique within a run and across runs without adding a dependency to
-/// a vendored crate for one string.
+/// Never TinyMemory's key: reusing that is what produces
+/// `409 IDEMPOTENCY_CONFLICT` on the second store, and the whole append-and-fold
+/// design exists to avoid it.
+///
+/// Three parts, because two are not enough. The counter separates writes within
+/// one process, and the timestamp separates runs of it — but neither separates
+/// two *concurrent* processes, which can read the same nanosecond and start
+/// their counters at the same zero. The salt is per-process entropy from the
+/// standard library, taken once, so independent writers cannot mint the same
+/// key. Getting that wrong is not a silent fault — a reused key carrying a
+/// different body is refused with a 409 — but it is a refusal of a legitimate
+/// write, and it would be maddening to diagnose.
+///
+/// No new dependency: `RandomState` is seeded by the OS per process, which is
+/// exactly the entropy needed here, and a vendored crate should not grow a
+/// dependency for one string.
 fn fresh_idempotency_key() -> String {
+    use std::hash::{BuildHasher, Hasher};
     use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::OnceLock;
+
     static SEQ: AtomicU64 = AtomicU64::new(0);
+    static SALT: OnceLock<u64> = OnceLock::new();
+
+    let salt = *SALT.get_or_init(|| {
+        std::collections::hash_map::RandomState::new()
+            .build_hasher()
+            .finish()
+    });
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or_default();
-    format!("tm-{nanos}-{}", SEQ.fetch_add(1, Ordering::Relaxed))
+    format!(
+        "tm-{salt:016x}-{nanos}-{}",
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    )
 }
 
 /// Percent-encodes everything outside the URI unreserved set.

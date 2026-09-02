@@ -5,6 +5,9 @@
 //! comes back in. Behaviour against a live engine is in
 //! `tests/live_remote_engines.rs`.
 
+// Test-only, and deliberately narrow: `expect` here names the invariant a
+// failing setup step or assertion violated, which is the diagnostic a reader of
+// the failure output needs. Production paths in this crate return `Result`.
 #![allow(clippy::expect_used)]
 
 use super::*;
@@ -132,4 +135,46 @@ fn a_cursor_is_escaped_far_beyond_the_characters_a_scope_carries() {
     assert_eq!(urlencoding("Az09-._~"), "Az09-._~");
     // Encoding is by byte, so multi-byte UTF-8 stays recoverable.
     assert_eq!(urlencoding("é"), "%C3%A9");
+}
+
+#[test]
+fn a_scope_path_deeper_than_the_engine_accepts_is_refused_here() {
+    // Measured against a running engine: 32 segments are accepted, 33 come back
+    // as `422 INVALID_BODY`. Refusing locally keeps the error specific instead
+    // of surfacing as a generic body rejection from the wire.
+    let deep = (0..32)
+        .map(|i| format!("s{i}"))
+        .collect::<Vec<_>>()
+        .join("/");
+    assert!(
+        CortexDialect::scope_of(&deep).is_ok(),
+        "32 segments are within the grammar and must not be refused"
+    );
+
+    let deeper = (0..33)
+        .map(|i| format!("s{i}"))
+        .collect::<Vec<_>>()
+        .join("/");
+    assert!(
+        CortexDialect::scope_of(&deeper).is_err(),
+        "33 segments exceed what the engine accepts and must be refused here"
+    );
+}
+
+#[test]
+fn two_writers_in_one_process_never_mint_the_same_key() {
+    // The counter covers this much; the per-process salt covers the case no
+    // unit test can reach, which is a second process minting concurrently.
+    let keys: std::collections::HashSet<String> =
+        (0..1000).map(|_| fresh_idempotency_key()).collect();
+    assert_eq!(keys.len(), 1000, "an idempotency key was reused");
+
+    // The salt is stable within a process, so a key is greppable back to the
+    // run that wrote it.
+    let salt_of = |k: &str| k.split('-').nth(1).map(str::to_string);
+    assert_eq!(
+        salt_of(&fresh_idempotency_key()),
+        salt_of(&fresh_idempotency_key()),
+        "the salt identifies the process and must not change between writes"
+    );
 }
