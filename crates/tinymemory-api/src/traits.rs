@@ -88,6 +88,17 @@ pub trait Memory: Send + Sync {
     /// yield `Ok(vec![])`, not an error. Result ordering is backend-defined
     /// (typically most-relevant first) but callers must not assume a stable
     /// order across backends.
+    ///
+    /// **`limit` applies to the backend's ordering, never to one the
+    /// implementation imposes.** An implementation that receives more
+    /// candidates than `limit` and reduces them itself must keep the order the
+    /// backend returned them in and take a prefix of it. Sorting — by key, by
+    /// namespace, by anything — and *then* truncating silently discards the
+    /// backend's best hits and returns whichever rows happen to sort first,
+    /// which is the one thing a caller asking for the top `n` cannot detect.
+    /// This bites the append-only backends hardest, because they fold or
+    /// deduplicate before returning and the fold is where an order gets
+    /// imposed.
     async fn recall(
         &self,
         query: &str,
