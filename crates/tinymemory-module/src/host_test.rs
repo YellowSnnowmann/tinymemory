@@ -255,6 +255,9 @@ async fn runtime_callbacks_and_spacy_cross_the_bus_with_their_full_payloads() {
 /// one's `HostSeamsRestore` had already put the globals back.
 #[tokio::test]
 async fn install_wires_every_seam_this_module_can_supply() {
+    // Taken before the capture, so the state this restores on drop is the
+    // state no other test can be moving underneath it. See `seam_lock`.
+    let _seams = crate::seam_lock::hold_global_seams_async().await;
     let _restore = HostSeamsRestore::capture();
     let (connection, _callbacks) = bus_with_runtime_host().await;
 
@@ -389,6 +392,7 @@ async fn store_policy_wakes_sleepers_only_on_resume() {
 fn manual_override_outranks_a_paused_gate_and_is_bounded() {
     use tinymemory_core::scheduler_gate as core_gate;
     use tinymemory_core::scheduler_gate::{PauseReason, Policy};
+    let _seams = crate::seam_lock::hold_global_seams();
     core_gate::clear_manual_override();
     let gate = gate_for_test();
     gate.store_policy(Policy::Paused {
