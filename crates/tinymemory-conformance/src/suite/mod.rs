@@ -429,19 +429,39 @@ pub async fn assert_taint_is_preserved(provider: &dyn MemoryProvider) {
 
 /// `recall` honours its limit and its namespace filter.
 ///
+/// # What this deliberately does not check
+///
+/// That the limit was applied to the *backend's* ordering rather than one the
+/// driver imposed. Checking it here is not possible: the suite cannot know how
+/// a given engine ranks these rows, and a driver that sorts before truncating
+/// is self-consistent, so no black-box comparison of two limits distinguishes
+/// it. A driver that folds or deduplicates before returning — every append-only
+/// backend does — needs its own test for this; see
+/// `recall_keeps_the_engine_ranking_when_it_truncates` in `tinymemory-remote`
+/// for the shape, and [`tinymemory_api::traits::Memory::recall`] for the rule.
+///
+/// The rows below carry *distinct* content for a related reason: identical
+/// content leaves a backend free to order ties however it likes, and an
+/// arbitrary order is one nothing downstream can assert about.
+///
 /// # Panics
 ///
 /// Panics when recall exceeds the limit or crosses a namespace.
 pub async fn assert_recall_respects_limit_and_namespace(provider: &dyn MemoryProvider) {
     let who = provider.driver_id();
     let (mine, theirs) = (ns(provider, "recall-a"), ns(provider, "recall-b"));
+    let rows = [
+        ("r1", "needle filed in the archive room"),
+        ("r2", "needle left beside the mooring rope"),
+        ("r3", "needle found under the zinc roof"),
+    ];
     let keys = ["r1", "r2", "r3"];
-    for key in keys {
+    for (key, content) in rows {
         provider
             .store(
                 &mine,
                 key,
-                "shared needle text",
+                content,
                 MemoryCategory::Core,
                 None,
                 MemoryTaint::Internal,
