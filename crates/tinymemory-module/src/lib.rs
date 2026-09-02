@@ -69,6 +69,8 @@ pub mod config_loader;
 pub mod embedding;
 mod host;
 mod provider;
+#[cfg(test)]
+mod seam_lock;
 mod service;
 
 pub use chat::{CHAT_HOST_BUS_NAME, CHAT_HOST_INTERFACE, CHAT_HOST_OBJECT_PATH};

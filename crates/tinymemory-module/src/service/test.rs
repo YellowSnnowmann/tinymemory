@@ -1017,6 +1017,7 @@ async fn override_member_opens_a_window_that_outranks_a_paused_gate() {
         }
     }
 
+    let _seams = crate::seam_lock::hold_global_seams_async().await;
     gate::clear_manual_override();
     gate::set_scheduler_gate(std::sync::Arc::new(PausedGate));
     assert!(matches!(gate::current_policy(), Policy::Paused { .. }));
