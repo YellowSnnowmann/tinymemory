@@ -31,7 +31,10 @@ use serde_json::{json, Value};
 use tinymemory_api::capabilities::Capability;
 use tinymemory_api::provider::{MemoryCore, MemoryProvider};
 
-use crate::{mem0_provider, Mem0Memory};
+use tinymemory_api::traits::Memory;
+use tinymemory_api::types::MemoryCategory;
+
+use crate::{cortex_provider, mem0_provider, CortexMemory, Mem0Memory};
 
 /// A record as one of the vendor doubles holds it.
 #[derive(Clone, Debug)]
@@ -571,5 +574,636 @@ async fn the_cognee_double_actually_retains() {
     assert!(
         tinymemory_conformance::retains_writes(&provider).await,
         "the Cognee double must retain writes, or the suite passes vacuously"
+    );
+}
+
+// ── CortexDB's native shapes ────────────────────────────────────────────────
+//
+// This double is deliberately the least accommodating of the three. The others
+// model keyed stores, so an adapter bug around replacement would still look
+// like success. CortexDB is an append-only event log, and the whole reason its
+// adapter exists in its current shape is that a key cannot be rewritten — so
+// the double reproduces that constraint exactly, refusing a reused idempotency
+// key carrying a different body with the same `409 IDEMPOTENCY_CONFLICT` the
+// real engine returns.
+//
+// A permissive double here would prove nothing: the suite's upsert assertion
+// would pass because the backend allowed an overwrite, not because the adapter
+// folded the log correctly.
+
+#[derive(Default)]
+struct CortexLog {
+    /// Every event ever appended, in order. Never mutated — that is the point.
+    events: Vec<Value>,
+    /// `idempotency_key` -> the body it was first seen with, and the id of the
+    /// event that body produced. The id is stored rather than looked up by
+    /// content, because two keys may legitimately carry identical text and a
+    /// replay must answer with its *own* event.
+    idempotency: BTreeMap<String, (String, String)>,
+    next_offset: u64,
+    next_id: u64,
+}
+
+type CortexStore = Arc<Mutex<CortexLog>>;
+
+async fn cortex_experience(
+    State(store): State<CortexStore>,
+    Json(body): Json<Value>,
+) -> (axum::http::StatusCode, Json<Value>) {
+    let mut log = store.lock().expect("cortex log");
+    let key = body
+        .get("idempotency_key")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let payload = body
+        .pointer("/content/text")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+
+    if let Some((seen, event_id)) = log.idempotency.get(&key) {
+        if seen != &payload {
+            // The refusal the whole adapter is designed around.
+            return (
+                axum::http::StatusCode::CONFLICT,
+                Json(json!({ "error_code": "IDEMPOTENCY_CONFLICT" })),
+            );
+        }
+        return (
+            axum::http::StatusCode::ACCEPTED,
+            Json(json!({ "event_id": event_id, "replayed_from_idempotency": true })),
+        );
+    }
+
+    log.next_offset += 2;
+    log.next_id += 1;
+    let offset = log.next_offset;
+    let id = format!("evt_{}", log.next_id);
+    log.idempotency.insert(key, (payload.clone(), id.clone()));
+    let scope = body
+        .get("scope")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    log.events.push(json!({
+        "id": id,
+        "scope": scope,
+        "wal_offset": offset,
+        "content": { "kind": "message", "role": "user", "text": payload },
+        "context": { "recorded_at": "2026-09-02T00:00:00Z" },
+    }));
+    // The real id, not a placeholder: `/v1/experience` answers with the id the
+    // event was actually stored under, and the adapter waits on that id
+    // becoming readable before it reports the write as done.
+    (
+        axum::http::StatusCode::ACCEPTED,
+        Json(json!({ "event_id": id, "status": "captured" })),
+    )
+}
+
+async fn cortex_events(
+    State(store): State<CortexStore>,
+    Query(params): Query<BTreeMap<String, String>>,
+) -> Json<Value> {
+    let log = store.lock().expect("cortex log");
+    let scope = params.get("scope").cloned().unwrap_or_default();
+    let cursor: usize = params
+        .get("cursor")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let limit: usize = params
+        .get("limit")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(50);
+    // Newest first, and every record emitted twice, because that is what the
+    // engine does. Both details are load-bearing: an adapter that trusted array
+    // order instead of `wal_offset`, or that assumed `items` held distinct
+    // events, would pass against a tidier double and fail in production. Note
+    // `limit` counts the duplicates, so a page holds half as many records as
+    // its size suggests.
+    let mut stream: Vec<Value> = Vec::new();
+    for event in log
+        .events
+        .iter()
+        .rev()
+        .filter(|e| e.get("scope").and_then(Value::as_str) == Some(scope.as_str()))
+    {
+        stream.push(event.clone());
+        stream.push(event.clone());
+    }
+    let page: Vec<Value> = stream.iter().skip(cursor).take(limit).cloned().collect();
+    let next = cursor + page.len();
+    let has_more = next < stream.len();
+    Json(json!({
+        "items": page,
+        "has_more": has_more,
+        "next_cursor": next.to_string(),
+    }))
+}
+
+/// The destructive endpoint, with the interlocks the real one has.
+///
+/// Three behaviours here are not decoration; each one has caught something:
+///
+/// - the selector's id field is `memory_ids`. An unrecognised field is **not**
+///   rejected — it deserialises to an empty selector, which means "the whole
+///   scope";
+/// - an empty selector without `confirm_all` is refused, which is what keeps
+///   that mistake from being destructive on its own;
+/// - a non-empty selector *with* `confirm_all` is refused as ambiguous, rather
+///   than silently widened to the scope.
+async fn cortex_forget(
+    State(store): State<CortexStore>,
+    Json(body): Json<Value>,
+) -> (axum::http::StatusCode, Json<Value>) {
+    let mut log = store.lock().expect("cortex log");
+    let scope = body
+        .get("scope")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let confirm_all = body
+        .get("confirm_all")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let ids: Vec<String> = body
+        .pointer("/selector/memory_ids")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(Value::as_str)
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+    let narrowed = ["about_subject", "about_entity", "predicate"]
+        .iter()
+        .any(|f| body.pointer(&format!("/selector/{f}")).is_some());
+    let selective = !ids.is_empty() || narrowed;
+
+    if selective && confirm_all {
+        return (
+            axum::http::StatusCode::BAD_REQUEST,
+            Json(json!({ "error_code": "AMBIGUOUS_SELECTOR_CONFIRM_ALL" })),
+        );
+    }
+    if !selective && !confirm_all {
+        return (
+            axum::http::StatusCode::UNPROCESSABLE_ENTITY,
+            Json(json!({ "error_code": "EMPTY_SELECTOR_WITHOUT_CONFIRMATION" })),
+        );
+    }
+
+    let before = log.events.len();
+    if selective {
+        log.events.retain(|e| {
+            !ids.contains(
+                &e.get("id")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+            )
+        });
+    } else {
+        log.events
+            .retain(|e| e.get("scope").and_then(Value::as_str) != Some(scope.as_str()));
+    }
+    // Faithful to the engine: forgetting an event does NOT release its
+    // idempotency key. An adapter that tried delete-then-rewrite would be
+    // refused here, exactly as it is in production.
+    let deleted = before - log.events.len();
+    (
+        axum::http::StatusCode::OK,
+        Json(json!({
+            "deleted": { "events": deleted },
+            "requested": ids.len(),
+            "matched": deleted,
+        })),
+    )
+}
+
+async fn cortex_recall(State(store): State<CortexStore>, Json(body): Json<Value>) -> Json<Value> {
+    let log = store.lock().expect("cortex log");
+    let scope = body
+        .get("scope")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let query = body
+        .get("query")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let hits: Vec<Value> = log
+        .events
+        .iter()
+        .filter(|e| e.get("scope").and_then(Value::as_str) == Some(scope))
+        .filter(|e| {
+            query.is_empty()
+                || e.pointer("/content/text")
+                    .and_then(Value::as_str)
+                    .is_some_and(|t| t.to_lowercase().contains(&query.to_lowercase()))
+        })
+        .map(|e| {
+            // Recall renders content for a reader rather than returning it as
+            // stored: the speaker is prefixed. The listing does not do this,
+            // so the two read paths hand back different bytes for the same
+            // event — which is why the adapter parses both forms.
+            let mut hit = e.clone();
+            if let Some(text) = e.pointer("/content/text").and_then(Value::as_str) {
+                hit["content"]["text"] = json!(format!("[user] {text}"));
+            }
+            hit
+        })
+        .collect();
+    Json(json!({ "layers": { "events": hits } }))
+}
+
+async fn cortex_scopes(State(store): State<CortexStore>) -> Json<Value> {
+    let log = store.lock().expect("cortex log");
+    let mut paths: Vec<String> = log
+        .events
+        .iter()
+        .filter_map(|e| e.get("scope").and_then(Value::as_str))
+        .map(str::to_string)
+        .collect();
+    paths.sort();
+    paths.dedup();
+    Json(json!({
+        "items": paths.into_iter().map(|p| json!({ "path": p })).collect::<Vec<_>>()
+    }))
+}
+
+async fn cortex_backend() -> String {
+    let store: CortexStore = Arc::new(Mutex::new(CortexLog::default()));
+    let app = Router::new()
+        .route("/v1/experience", post(cortex_experience))
+        .route("/v1/events", get(cortex_events))
+        .route("/v1/forget", post(cortex_forget))
+        .route("/v1/recall", post(cortex_recall))
+        .route("/v1/scopes/list", get(cortex_scopes))
+        .route(
+            "/v1/admin/health",
+            get(|| async { Json(json!({ "status": "healthy" })) }),
+        )
+        .with_state(store);
+    serve(app).await
+}
+
+/// The same backend, but with ranked recall broken.
+///
+/// Used to prove that a store still succeeds when the search index cannot be
+/// reached — the write is durable and readable by key, and the settle probe is
+/// explicitly best-effort.
+async fn cortex_backend_with_recall_down() -> String {
+    let store: CortexStore = Arc::new(Mutex::new(CortexLog::default()));
+    let app = Router::new()
+        .route("/v1/experience", post(cortex_experience))
+        .route("/v1/events", get(cortex_events))
+        .route("/v1/forget", post(cortex_forget))
+        .route(
+            "/v1/recall",
+            post(|| async {
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error_code": "INTERNAL" })),
+                )
+            }),
+        )
+        .route("/v1/scopes/list", get(cortex_scopes))
+        .route(
+            "/v1/admin/health",
+            get(|| async { Json(json!({ "status": "healthy" })) }),
+        )
+        .with_state(store);
+    serve(app).await
+}
+
+/// A durable, readable write must not be reported as a failure because the
+/// search index is down.
+///
+/// The write path waits twice: once for the keyed read path, which is required,
+/// and once for ranked recall, which is not. The second wait exists to make
+/// read-after-write hold for `search` in the common case, and it must degrade
+/// to "the index will catch up" rather than turning a successful store into an
+/// error.
+#[tokio::test]
+async fn a_store_succeeds_when_ranked_recall_is_unreachable() {
+    let endpoint = cortex_backend_with_recall_down().await;
+    let memory = CortexMemory::api(&endpoint, "test-key").expect("client");
+
+    memory
+        .store("tenant", "k", "content", MemoryCategory::Core, None)
+        .await
+        .expect("a store must not fail because the settle probe could not be answered");
+
+    assert_eq!(
+        memory
+            .get("tenant", "k")
+            .await
+            .expect("get")
+            .map(|e| e.content)
+            .as_deref(),
+        Some("content"),
+        "the record the store reported as written must be readable by key"
+    );
+}
+
+#[tokio::test]
+async fn cortex_upholds_the_contract() {
+    let endpoint = cortex_backend().await;
+    let provider = cortex_provider(CortexMemory::api(&endpoint, "test-key").expect("client"));
+    tinymemory_conformance::assert_provider(Arc::new(provider)).await;
+}
+
+/// The suite's write-path assertions only run when the driver retains.
+#[tokio::test]
+async fn the_cortex_double_actually_retains() {
+    let endpoint = cortex_backend().await;
+    let provider = cortex_provider(CortexMemory::api(&endpoint, "test-key").expect("client"));
+    assert!(
+        tinymemory_conformance::retains_writes(&provider).await,
+        "the CortexDB double must retain writes, or `assert_provider` skips every \
+         assertion that matters and still reports success"
+    );
+}
+
+/// The double must refuse a reused key with a changed body, or the suite's
+/// upsert assertion passes for the wrong reason.
+///
+/// This is the constraint the adapter is built around. If the double ever
+/// becomes permissive, `cortex_upholds_the_contract` would prove that a keyed
+/// backend upholds the contract — which is true and irrelevant.
+#[tokio::test]
+async fn the_cortex_double_refuses_a_reused_key_with_a_changed_body() {
+    let endpoint = cortex_backend().await;
+    let client = reqwest::Client::new();
+    let send = |text: &str| {
+        let body = json!({
+            "scope": "tm:probe",
+            "idempotency_key": "fixed",
+            "content": { "kind": "message", "role": "user", "text": text },
+            "context": {},
+        });
+        client
+            .post(format!("{endpoint}/v1/experience"))
+            .json(&body)
+            .send()
+    };
+    assert_eq!(send("first").await.expect("send").status(), 202);
+    assert_eq!(
+        send("second").await.expect("send").status(),
+        409,
+        "a permissive double would make the adapter's whole reason for existing untested"
+    );
+}
+
+/// A scope larger than one page must fold completely.
+///
+/// The listing pages with `cursor`/`next_cursor`, and the engine ignores query
+/// parameters it does not recognise rather than refusing them — so a wrong
+/// parameter name does not surface as an error, it silently re-serves page one
+/// until the adapter's page ceiling trips. Because the engine also emits every
+/// record twice and counts the duplicates against `limit`, the boundary arrives
+/// at roughly half the page size. This writes past it.
+#[tokio::test]
+async fn a_scope_past_one_page_folds_completely() {
+    let endpoint = cortex_backend().await;
+    let memory = CortexMemory::api(&endpoint, "test-key").expect("client");
+    for i in 0..140 {
+        memory
+            .store(
+                "paged",
+                &format!("key-{i:03}"),
+                &format!("value {i}"),
+                MemoryCategory::Core,
+                None,
+            )
+            .await
+            .expect("store");
+    }
+    let entries = memory.list(Some("paged"), None, None).await.expect("list");
+    assert_eq!(
+        entries.len(),
+        140,
+        "the fold walked a truncated listing; every distinct record must survive paging"
+    );
+    let found = memory.get("paged", "key-139").await.expect("get");
+    assert_eq!(found.map(|e| e.content).as_deref(), Some("value 139"));
+}
+
+/// Deleting one key must not take the scope with it.
+///
+/// The destructive endpoint has two failure shapes that both end in an empty
+/// selector: an unrecognised selector field, and `confirm_all` sent alongside a
+/// real one. The first is silent. This asserts the adapter lands in neither.
+#[tokio::test]
+async fn deleting_one_key_leaves_its_neighbours_alone() {
+    let endpoint = cortex_backend().await;
+    let memory = CortexMemory::api(&endpoint, "test-key").expect("client");
+    for key in ["alpha", "beta", "gamma"] {
+        memory
+            .store(
+                "tenant",
+                key,
+                &format!("{key} value"),
+                MemoryCategory::Core,
+                None,
+            )
+            .await
+            .expect("store");
+    }
+    // A second version of the doomed key, so the delete has to reach both.
+    memory
+        .store(
+            "tenant",
+            "beta",
+            "beta rewritten",
+            MemoryCategory::Core,
+            None,
+        )
+        .await
+        .expect("store");
+
+    assert!(memory.forget("tenant", "beta").await.expect("forget"));
+
+    assert!(memory.get("tenant", "beta").await.expect("get").is_none());
+    assert_eq!(
+        memory
+            .get("tenant", "alpha")
+            .await
+            .expect("get")
+            .map(|e| e.content)
+            .as_deref(),
+        Some("alpha value"),
+        "a neighbour disappeared: the delete widened to the whole scope"
+    );
+    assert_eq!(
+        memory
+            .get("tenant", "gamma")
+            .await
+            .expect("get")
+            .map(|e| e.content)
+            .as_deref(),
+        Some("gamma value")
+    );
+    let left = memory.list(Some("tenant"), None, None).await.expect("list");
+    assert_eq!(
+        left.len(),
+        2,
+        "expected alpha and gamma to remain, got {left:?}"
+    );
+}
+
+/// A deleted key stays deleted even if the removal half fails.
+///
+/// The tombstone is what makes that true, and it is why `delete` writes one
+/// before touching the destructive endpoint at all.
+#[tokio::test]
+async fn a_tombstone_alone_is_enough_to_hide_a_key() {
+    let endpoint = cortex_backend().await;
+    let memory = CortexMemory::api(&endpoint, "test-key").expect("client");
+    memory
+        .store("tenant", "doomed", "still here", MemoryCategory::Core, None)
+        .await
+        .expect("store");
+
+    // Append the tombstone by hand and never call forget, standing in for a
+    // removal whose second half was lost.
+    let client = reqwest::Client::new();
+    let tombstone = json!({ "k": "doomed", "c": "", "d": true });
+    let sent = client
+        .post(format!("{endpoint}/v1/experience"))
+        .json(&json!({
+            "scope": "tm:tenant",
+            "idempotency_key": "hand-written-tombstone",
+            "content": { "kind": "message", "role": "user", "text": tombstone.to_string() },
+            "context": {},
+        }))
+        .send()
+        .await
+        .expect("send");
+    assert_eq!(sent.status(), 202);
+
+    assert!(
+        memory.get("tenant", "doomed").await.expect("get").is_none(),
+        "the fold ignored a tombstone, so a delete that lost its second half \
+         would resurrect the record"
+    );
+    assert!(memory
+        .list(Some("tenant"), None, None)
+        .await
+        .expect("list")
+        .is_empty());
+}
+
+/// Recall must return what the engine ranked, not what sorts first.
+///
+/// The fold orders by key, which is right for a listing and wrong for a ranked
+/// answer: truncating an alphabetical order to `limit` discards the engine's
+/// best hits and keeps whichever keys happen to sort early. The conformance
+/// suite cannot catch this on its own — its recall fixture stores identical
+/// content under `r1`/`r2`/`r3`, where ranked and alphabetical order coincide.
+#[tokio::test]
+async fn recall_keeps_the_engine_ranking_when_it_truncates() {
+    let endpoint = cortex_backend().await;
+    let memory = CortexMemory::api(&endpoint, "test-key").expect("client");
+    // Stored — and so ranked by the double — in the opposite order to the one
+    // the keys sort in.
+    for key in ["zulu", "alpha"] {
+        memory
+            .store(
+                "ranked",
+                key,
+                "shared needle text",
+                MemoryCategory::Core,
+                None,
+            )
+            .await
+            .expect("store");
+    }
+
+    let opts = tinymemory_api::recall::RecallOpts {
+        namespace: Some("ranked"),
+        ..Default::default()
+    };
+    let hits = memory.recall("needle", 1, opts).await.expect("recall");
+
+    assert_eq!(hits.len(), 1, "the limit must still be honoured");
+    assert_eq!(
+        hits[0].key, "zulu",
+        "recall returned the alphabetically first key, not the highest ranked \
+         one — the engine's ordering was thrown away before the truncation"
+    );
+}
+
+/// A replay must answer with its own event, not one that happens to match.
+///
+/// Two idempotency keys may legitimately carry identical text — the adapter
+/// mints a fresh key per write, so a re-store of unchanged content is exactly
+/// this shape. A double that resolved a replay by searching content would hand
+/// back the first matching event for both, and the write path waits on the id
+/// it is given: it would be waiting on the wrong record.
+#[tokio::test]
+async fn a_replay_returns_the_event_its_own_key_created() {
+    let endpoint = cortex_backend().await;
+    let client = reqwest::Client::new();
+    let send = |key: &'static str| {
+        let body = json!({
+            "scope": "tm:probe",
+            "idempotency_key": key,
+            "content": { "kind": "message", "role": "user", "text": "identical text" },
+            "context": {},
+        });
+        client
+            .post(format!("{endpoint}/v1/experience"))
+            .json(&body)
+            .send()
+    };
+    let id_of = |v: &Value| {
+        v.get("event_id")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    };
+
+    let first: Value = send("key-a")
+        .await
+        .expect("send")
+        .json()
+        .await
+        .expect("json");
+    let second: Value = send("key-b")
+        .await
+        .expect("send")
+        .json()
+        .await
+        .expect("json");
+    let (a, b) = (id_of(&first), id_of(&second));
+    assert_ne!(a, b, "two keys with the same text must create two events");
+
+    let replay_a: Value = send("key-a")
+        .await
+        .expect("send")
+        .json()
+        .await
+        .expect("json");
+    let replay_b: Value = send("key-b")
+        .await
+        .expect("send")
+        .json()
+        .await
+        .expect("json");
+    assert_eq!(
+        replay_a.get("replayed_from_idempotency"),
+        Some(&json!(true))
+    );
+    assert_eq!(
+        id_of(&replay_a),
+        a,
+        "key-a replayed with another key\'s event"
+    );
+    assert_eq!(
+        id_of(&replay_b),
+        b,
+        "key-b replayed with another key\'s event"
     );
 }

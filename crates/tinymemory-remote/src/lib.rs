@@ -11,6 +11,7 @@
 pub mod cognee;
 mod cognee_graph;
 mod common;
+pub mod cortex;
 mod graph_provider;
 pub mod mem0;
 mod mem0_graph;
@@ -20,6 +21,7 @@ pub mod supermemory;
 pub use agentmemory::{AgentMemoryMemory, AGENTMEMORY_API_ENDPOINT, AGENTMEMORY_DRIVER_ID};
 pub use cognee::{CogneeMemory, COGNEE_DRIVER_ID};
 pub use cognee_graph::CogneeGraph;
+pub use cortex::{CortexMemory, CORTEX_API_ENDPOINT, CORTEX_DRIVER_ID};
 pub use graph_provider::GraphMemoryProvider;
 pub use mem0::{Mem0Memory, MEM0_API_ENDPOINT, MEM0_DRIVER_ID};
 pub use mem0_graph::Mem0Graph;
@@ -46,6 +48,12 @@ pub fn mem0_provider(memory: Mem0Memory) -> Mem0Provider {
 #[must_use]
 pub fn cognee_provider(memory: CogneeMemory) -> MemoryTraitProvider {
     MemoryTraitProvider::new(Arc::new(memory), COGNEE_DRIVER_ID)
+}
+
+/// Wrap a CortexDB HTTP backend as a bound TinyMemory provider.
+#[must_use]
+pub fn cortex_provider(memory: CortexMemory) -> MemoryTraitProvider {
+    MemoryTraitProvider::new(Arc::new(memory), CORTEX_DRIVER_ID)
 }
 
 /// Wrap an AgentMemory HTTP backend as a bound TinyMemory provider.
