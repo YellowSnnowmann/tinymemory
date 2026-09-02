@@ -452,15 +452,23 @@ impl CortexDialect {
         let query: String = text.chars().take(RECALL_QUERY_CAP).collect();
         let settle_by = std::time::Instant::now() + RECALL_SETTLE_TIMEOUT;
         while std::time::Instant::now() < settle_by {
-            let answer: Value = self
+            let probe = self
                 .client
-                .json(
+                .json::<Value>(
                     Method::POST,
                     "v1/recall",
                     Some(&json!({ "scope": scope, "query": query })),
                     Attempts::RetryTransient,
                 )
-                .await?;
+                .await;
+            let Ok(answer) = probe else {
+                // Best-effort means best-effort. A probe that could not be
+                // answered says nothing about the write, which is durable and
+                // already readable by key — propagating this would report a
+                // successful store as a failure, which is the one thing this
+                // phase is documented not to do.
+                break;
+            };
             if Self::carries(answer.pointer("/layers/events"), event_id) {
                 break;
             }
@@ -624,17 +632,23 @@ fn fresh_idempotency_key() -> String {
     format!("tm-{nanos}-{}", SEQ.fetch_add(1, Ordering::Relaxed))
 }
 
-/// Percent-encodes the characters a scope path carries that a query string
-/// would otherwise read as structure.
+/// Percent-encodes everything outside the URI unreserved set.
+///
+/// A scope only ever carries `:` and `/`, so an escape list would do for that.
+/// The cursor is the reason this is general: it is opaque engine output, and a
+/// `+`, `&`, `=`, `#` or `?` in one would silently reshape the query string
+/// rather than fail. Encoding by byte also keeps multi-byte UTF-8 correct.
 fn urlencoding(value: &str) -> String {
-    value
-        .chars()
-        .map(|c| match c {
-            ':' => "%3A".to_string(),
-            '/' => "%2F".to_string(),
-            other => other.to_string(),
-        })
-        .collect()
+    let mut out = String::with_capacity(value.len());
+    for byte in value.as_bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
+                out.push(char::from(*byte));
+            }
+            other => out.push_str(&format!("%{other:02X}")),
+        }
+    }
+    out
 }
 
 #[async_trait]
@@ -821,7 +835,25 @@ impl Dialect for CortexDialect {
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
+        // `fold` orders by key. That is right for a listing and wrong here:
+        // the engine ranked these, and truncating an alphabetical order would
+        // discard its best hits and keep whichever keys sort first. Restore the
+        // ranking, by each key's first appearance in the answer, before the cap.
+        let mut rank: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+        for (position, event) in events.iter().enumerate() {
+            let Some(envelope) = event
+                .pointer("/content/text")
+                .and_then(Value::as_str)
+                .and_then(Self::envelope_of)
+            else {
+                continue;
+            };
+            // First appearance wins: a key may have several versions in the
+            // answer, and the best-ranked one is the one that places it.
+            rank.entry(envelope.k).or_insert(position);
+        }
         let mut hits = Self::fold(namespace, &events);
+        hits.sort_by_key(|hit| rank.get(hit.key.as_str()).copied().unwrap_or(usize::MAX));
         hits.truncate(limit);
         Ok(hits)
     }

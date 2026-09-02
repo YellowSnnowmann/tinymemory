@@ -117,3 +117,19 @@ fn taint_survives_the_envelope() {
     let folded = CortexDialect::fold("oc/acme/facts", &events);
     assert_eq!(folded[0].taint, MemoryTaint::ExternalSync);
 }
+
+#[test]
+fn a_cursor_is_escaped_far_beyond_the_characters_a_scope_carries() {
+    // A scope only ever holds `:` and `/`, so an escape list would cover it.
+    assert_eq!(
+        urlencoding("tm:oc/tm:acme-1/tm:facts"),
+        "tm%3Aoc%2Ftm%3Aacme-1%2Ftm%3Afacts"
+    );
+    // The cursor is opaque engine output, and these are the characters that
+    // would silently reshape a query string rather than fail.
+    assert_eq!(urlencoding("a+b&c=d#e?f"), "a%2Bb%26c%3Dd%23e%3Ff");
+    // Unreserved characters must survive untouched, or every request grows.
+    assert_eq!(urlencoding("Az09-._~"), "Az09-._~");
+    // Encoding is by byte, so multi-byte UTF-8 stays recoverable.
+    assert_eq!(urlencoding("é"), "%C3%A9");
+}

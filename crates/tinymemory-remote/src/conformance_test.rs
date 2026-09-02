@@ -852,6 +852,65 @@ async fn cortex_backend() -> String {
     serve(app).await
 }
 
+/// The same backend, but with ranked recall broken.
+///
+/// Used to prove that a store still succeeds when the search index cannot be
+/// reached — the write is durable and readable by key, and the settle probe is
+/// explicitly best-effort.
+async fn cortex_backend_with_recall_down() -> String {
+    let store: CortexStore = Arc::new(Mutex::new(CortexLog::default()));
+    let app = Router::new()
+        .route("/v1/experience", post(cortex_experience))
+        .route("/v1/events", get(cortex_events))
+        .route("/v1/forget", post(cortex_forget))
+        .route(
+            "/v1/recall",
+            post(|| async {
+                (
+                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error_code": "INTERNAL" })),
+                )
+            }),
+        )
+        .route("/v1/scopes/list", get(cortex_scopes))
+        .route(
+            "/v1/admin/health",
+            get(|| async { Json(json!({ "status": "healthy" })) }),
+        )
+        .with_state(store);
+    serve(app).await
+}
+
+/// A durable, readable write must not be reported as a failure because the
+/// search index is down.
+///
+/// The write path waits twice: once for the keyed read path, which is required,
+/// and once for ranked recall, which is not. The second wait exists to make
+/// read-after-write hold for `search` in the common case, and it must degrade
+/// to "the index will catch up" rather than turning a successful store into an
+/// error.
+#[tokio::test]
+async fn a_store_succeeds_when_ranked_recall_is_unreachable() {
+    let endpoint = cortex_backend_with_recall_down().await;
+    let memory = CortexMemory::api(&endpoint, "test-key").expect("client");
+
+    memory
+        .store("tenant", "k", "content", MemoryCategory::Core, None)
+        .await
+        .expect("a store must not fail because the settle probe could not be answered");
+
+    assert_eq!(
+        memory
+            .get("tenant", "k")
+            .await
+            .expect("get")
+            .map(|e| e.content)
+            .as_deref(),
+        Some("content"),
+        "the record the store reported as written must be readable by key"
+    );
+}
+
 #[tokio::test]
 async fn cortex_upholds_the_contract() {
     let endpoint = cortex_backend().await;
@@ -1038,4 +1097,44 @@ async fn a_tombstone_alone_is_enough_to_hide_a_key() {
         .await
         .expect("list")
         .is_empty());
+}
+
+/// Recall must return what the engine ranked, not what sorts first.
+///
+/// The fold orders by key, which is right for a listing and wrong for a ranked
+/// answer: truncating an alphabetical order to `limit` discards the engine's
+/// best hits and keeps whichever keys happen to sort early. The conformance
+/// suite cannot catch this on its own — its recall fixture stores identical
+/// content under `r1`/`r2`/`r3`, where ranked and alphabetical order coincide.
+#[tokio::test]
+async fn recall_keeps_the_engine_ranking_when_it_truncates() {
+    let endpoint = cortex_backend().await;
+    let memory = CortexMemory::api(&endpoint, "test-key").expect("client");
+    // Stored — and so ranked by the double — in the opposite order to the one
+    // the keys sort in.
+    for key in ["zulu", "alpha"] {
+        memory
+            .store(
+                "ranked",
+                key,
+                "shared needle text",
+                MemoryCategory::Core,
+                None,
+            )
+            .await
+            .expect("store");
+    }
+
+    let opts = tinymemory_api::recall::RecallOpts {
+        namespace: Some("ranked"),
+        ..Default::default()
+    };
+    let hits = memory.recall("needle", 1, opts).await.expect("recall");
+
+    assert_eq!(hits.len(), 1, "the limit must still be honoured");
+    assert_eq!(
+        hits[0].key, "zulu",
+        "recall returned the alphabetically first key, not the highest ranked \
+         one — the engine's ordering was thrown away before the truncation"
+    );
 }
