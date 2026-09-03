@@ -1041,3 +1041,111 @@ async fn override_member_opens_a_window_that_outranks_a_paused_gate() {
     assert!(matches!(gate::current_policy(), Policy::Paused { .. }));
     gate::clear_scheduler_gate();
 }
+
+/// openhuman#6012: the backfill reaches core *through this port*, with a real
+/// store underneath — not only in `tinymemory-core`'s own suite.
+///
+/// Worth having here for two independent reasons. The module workspace runs
+/// only its own tests, so core's backfill suite never executes in this lane
+/// while the coverage gate still measures core's production source. And more to
+/// the point: nothing else exercises service → provider → core for this member,
+/// which is the path a host actually calls.
+///
+/// The document is written straight through the store client, deliberately.
+/// Storing it with `accept_source_items` would tree it on the way in — that is
+/// what #134 fixed — and then there would be nothing left for a backfill to do.
+/// A document in the namespace store with no tree row *is* the state this
+/// feature exists to repair.
+#[tokio::test]
+async fn the_backfill_door_files_a_stored_connector_document_through_the_port() {
+    use tinymemory_api::provider::types::BackfillTreesRequest;
+
+    let workspace = tempfile::tempdir().expect("tempdir");
+    let connection = test_connection().await;
+    let mut config = test_config(workspace.path());
+    // The source registry is written beside the host's config file, so the
+    // default's absent path has to be given a real one or the walk finds no
+    // namespaces to sweep.
+    config.config_path = Some(workspace.path().join("config.toml"));
+    let _embedding_host = EmbeddingHostRestore::install(connection, &config);
+
+    let client = std::sync::Arc::new(
+        tinymemory_core::store::MemoryClient::from_workspace_dir(workspace.path().to_path_buf())
+            .expect("open the workspace store"),
+    );
+
+    // One connected account, so the namespace is derivable and the legacy
+    // `skill-` one is unambiguous rather than skipped.
+    let host = tinymemory_tinycortex::engine::EngineRuntimeConfig::from(&config);
+    let source: tinymemory_core::sources::MemorySourceEntry =
+        serde_json::from_value(serde_json::json!({
+            "id": "src_gmail",
+            "kind": "composio",
+            "label": "Gmail",
+            "enabled": true,
+            "toolkit": "gmail",
+            "connection_id": "conn-1",
+        }))
+        .expect("a valid composio source entry");
+    tinymemory_core::sources::registry::replace_sources_in(&host, &[source])
+        .expect("write the source registry");
+
+    client
+        .put_doc(tinymemory_api::types::NamespaceDocumentInput {
+            namespace: "source:gmail:conn-1".to_string(),
+            key: "msg-1".to_string(),
+            title: "Quarterly planning".into(),
+            content: "Let's finalise the Q3 roadmap and align on the launch date.".into(),
+            source_type: "composio".into(),
+            priority: "medium".into(),
+            tags: vec!["gmail".into()],
+            metadata: serde_json::json!({}),
+            category: "core".into(),
+            session_id: None,
+            document_id: None,
+            taint: tinymemory_api::types::MemoryTaint::ExternalSync,
+        })
+        .await
+        .expect("store a connector document the way the sync path stored one");
+
+    let service = super::MemoryService::new(std::sync::Arc::new(crate::provider::provider(
+        &config,
+        std::sync::Arc::clone(&client),
+    )));
+
+    let report = service
+        .backfill_connector_trees(BackfillTreesRequest {
+            limit: None,
+            dry_run: false,
+        })
+        .await
+        .expect("the backfill door answers");
+
+    assert_eq!(
+        report.ingested, 1,
+        "the stored document must reach the tree through this port: {report:?}"
+    );
+    assert_eq!(
+        report.already_present, 0,
+        "nothing was treed before this ran: {report:?}"
+    );
+
+    // Idempotence, asserted here as well as in core, because it is the property
+    // that makes this safe for a host to offer as a button someone can press
+    // twice.
+    let again = service
+        .backfill_connector_trees(BackfillTreesRequest {
+            limit: None,
+            dry_run: false,
+        })
+        .await
+        .expect("a second pass answers");
+    assert_eq!(
+        again.ingested, 0,
+        "a second pass must write nothing: {again:?}"
+    );
+    assert_eq!(
+        again.already_present, 1,
+        "and must say why it wrote nothing: {again:?}"
+    );
+}
