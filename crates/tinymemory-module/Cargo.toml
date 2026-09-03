@@ -77,11 +77,15 @@ log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # The interface macro requires every method to be `async fn`, so a runtime has
-# to exist.
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync"] }
+# to exist. `time` is for the per-hook deadline in `host::run_shutdown_hooks`;
+# it compiled without it only because another crate in the graph happened to
+# enable the feature, which is not something to depend on.
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+# `test-util` gives the paused clock the shutdown-deadline test advances, so it
+# asserts the timeout without waiting out a real five seconds.
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time", "test-util"] }
 # The host-side contract. A dev-dependency, not a normal one: the module serves
 # `tinymemory-api` types directly and needs nothing from this crate to run. What
 # it needs is the assertion — that the members it serves are exactly the ones

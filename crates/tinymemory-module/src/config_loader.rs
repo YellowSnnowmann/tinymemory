@@ -35,9 +35,12 @@
 //! setting after this module loaded gets the old value from anything in this
 //! process until the host reloads the module.
 //!
-//! That is a real degradation and it is reported once per process the first
-//! time anything consults this loader — `report_unserved_once`, the same
-//! latch-and-report the scheduler-gate and shutdown stubs use. Closing it
+//! That is a real limit and it is logged once per process the first time
+//! anything consults this loader — `warn_degraded_once`, which keeps the log
+//! line the scheduler-gate stub emits but leaves the error reporter alone. It
+//! is a documented design limit rather than something gone wrong, and the host
+//! is the one that handed this module the frozen snapshot, so reporting it as a
+//! defect only pages someone about a decision already made. Closing it
 //! properly means a host-pushed config signal (this module declares
 //! `signals = []`), not a bus *pull*: a pull would re-introduce the two-answers
 //! problem above while still being stale between ticks.
@@ -79,7 +82,7 @@ use tinymemory_core::Config;
 use tinymemory_tinycortex::engine::EngineRuntimeConfig;
 
 use crate::config::ModuleConfig;
-use crate::host::report_unserved_once;
+use crate::host::warn_degraded_once;
 
 /// Latched so the degradation is named once per process rather than once per
 /// call — `ProviderContext::execute` reloads on *every* Composio action, and an
@@ -152,7 +155,7 @@ impl ConfigLoader for ModuleConfigLoader {
     /// is no read to fail. The `Result` is the contract's, shaped for a host
     /// that reads a file.
     async fn load(&self) -> Result<Box<Config>, String> {
-        report_unserved_once(&LOADER_REPORTED, CONFIG_LOADER_FROZEN, "config_loader");
+        warn_degraded_once(&LOADER_REPORTED, CONFIG_LOADER_FROZEN);
         let owned: Box<Config> = Box::new((*self.snapshot).clone());
         Ok(owned)
     }
@@ -174,7 +177,7 @@ impl ConfigLoader for ModuleConfigLoader {
     /// another user's store. The paths are compared rather than the values
     /// because `config_path` is what the contract itself calls the anchor.
     async fn reload_snapshot(&self, snapshot: &Config) -> Result<Arc<Config>, String> {
-        report_unserved_once(&LOADER_REPORTED, CONFIG_LOADER_FROZEN, "config_loader");
+        warn_degraded_once(&LOADER_REPORTED, CONFIG_LOADER_FROZEN);
         if snapshot.config_path() != self.snapshot.config_path() {
             return Err(FOREIGN_SNAPSHOT.to_string());
         }

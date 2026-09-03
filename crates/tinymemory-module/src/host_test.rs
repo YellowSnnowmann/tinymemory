@@ -7,6 +7,22 @@ use tinymemory_api::host::{
     ErrorReporter, MemoryEvent, MemoryEventSink, SpacyEntity, SpacyResponse,
 };
 
+/// Empty the shutdown-hook bank without running anything.
+///
+/// The bank is process-wide, so a test that asserts on what ran needs a known
+/// starting point — otherwise a hook another test registered would count. Pair
+/// it with `seam_lock::hold_global_seams_async`, which is what stops two such
+/// tests interleaving.
+///
+/// Lives here rather than beside the bank because production sources carry no
+/// test-only executable code; a child module still reaches its ancestor's
+/// private statics.
+fn drain_banked_hooks() {
+    if let Ok(mut hooks) = super::BANKED_HOOKS.lock() {
+        hooks.clear();
+    }
+}
+
 struct HostSeamsRestore {
     event_sink: Option<std::sync::Arc<dyn MemoryEventSink>>,
     error_reporter: Option<std::sync::Arc<dyn ErrorReporter>>,
@@ -275,9 +291,8 @@ async fn install_wires_every_seam_this_module_can_supply() {
 }
 
 #[test]
-fn the_unserved_stubs_answer_exactly_what_an_unwired_seam_answered() {
+fn the_unserved_scheduler_gate_answers_exactly_what_an_unwired_seam_answered() {
     use tinymemory_core::scheduler_gate::SchedulerGate;
-    use tinymemory_core::shutdown::ShutdownHost;
 
     // Loud, not different. A stub that answered anything else would change
     // scheduling as a side effect of loading the module — and with no channel
@@ -287,9 +302,142 @@ fn the_unserved_stubs_answer_exactly_what_an_unwired_seam_answered() {
         super::UnservedSchedulerGate.current_policy(),
         tinymemory_core::scheduler_gate::Policy::Normal
     );
-    // Registering with nowhere to run reports and drops; it must never panic.
-    let hook: tinymemory_core::shutdown::ShutdownHook = Box::new(|| Box::pin(async {}));
-    super::UnservedShutdownHost.register(hook);
+}
+
+/// A registered hook is banked and runs when the module is shut down.
+///
+/// This is the whole point of the seam: the engine's one hook releases the
+/// in-flight job locks, and before it was banked it was dropped, so a clean
+/// restart always waited out the lease instead of re-claiming the work.
+#[tokio::test]
+async fn a_registered_hook_is_banked_and_runs_on_shutdown() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tinymemory_core::shutdown::ShutdownHost;
+
+    // Declared before any statement: the module crate denies items appearing
+    // after statements, and a process-wide counter is what lets the assertions
+    // below distinguish "ran once" from "ran twice".
+    static RUNS: AtomicUsize = AtomicUsize::new(0);
+
+    let _seams = crate::seam_lock::hold_global_seams_async().await;
+    drain_banked_hooks();
+    RUNS.store(0, Ordering::SeqCst);
+
+    super::ModuleShutdownHost.register(Box::new(|| {
+        Box::pin(async {
+            RUNS.fetch_add(1, Ordering::SeqCst);
+        })
+    }));
+    assert_eq!(
+        RUNS.load(Ordering::SeqCst),
+        0,
+        "registering must not run it"
+    );
+
+    super::run_shutdown_hooks().await;
+    assert_eq!(RUNS.load(Ordering::SeqCst), 1, "the banked hook ran");
+
+    // Draining is what makes the `Shutdown` member idempotent, which its
+    // contract requires: a second call must not release the same locks twice.
+    super::run_shutdown_hooks().await;
+    assert_eq!(
+        RUNS.load(Ordering::SeqCst),
+        1,
+        "a second shutdown runs nothing"
+    );
+}
+
+/// One bad hook costs its own deadline, not the shutdown.
+///
+/// Both a panic and a wedge degrade to where a dropped hook already left the
+/// work — lease expiry at the next startup — so neither may take the rest of
+/// the shutdown sequence down with it.
+#[tokio::test]
+async fn a_panicking_hook_does_not_stop_the_others() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tinymemory_core::shutdown::ShutdownHost;
+
+    static SURVIVORS: AtomicUsize = AtomicUsize::new(0);
+
+    let _seams = crate::seam_lock::hold_global_seams_async().await;
+    drain_banked_hooks();
+    SURVIVORS.store(0, Ordering::SeqCst);
+
+    super::ModuleShutdownHost.register(Box::new(|| Box::pin(async { panic!("hook exploded") })));
+    super::ModuleShutdownHost.register(Box::new(|| {
+        Box::pin(async {
+            SURVIVORS.fetch_add(1, Ordering::SeqCst);
+        })
+    }));
+
+    super::run_shutdown_hooks().await;
+    assert_eq!(
+        SURVIVORS.load(Ordering::SeqCst),
+        1,
+        "the hook after the panicking one still ran"
+    );
+}
+
+/// A hook that never finishes is cancelled at its deadline, and the next one
+/// still runs.
+///
+/// The deadline is the guard against a wedged hook outliving the bus call that
+/// triggered the shutdown, so it is worth asserting rather than assuming. On a
+/// paused clock the timeout fires the moment the runtime goes idle, so this
+/// costs no real time and cannot flake on a loaded machine.
+///
+/// It also pins the cancellation: the hook must not still be running when this
+/// returns, because the caller releases the store next.
+#[tokio::test(start_paused = true)]
+async fn a_hook_that_never_finishes_is_cancelled_at_its_deadline() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use tinymemory_core::shutdown::ShutdownHost;
+
+    static STARTED: AtomicUsize = AtomicUsize::new(0);
+    static FINISHED: AtomicUsize = AtomicUsize::new(0);
+    static AFTER: AtomicUsize = AtomicUsize::new(0);
+
+    let _seams = crate::seam_lock::hold_global_seams_async().await;
+    drain_banked_hooks();
+    STARTED.store(0, Ordering::SeqCst);
+    FINISHED.store(0, Ordering::SeqCst);
+    AFTER.store(0, Ordering::SeqCst);
+
+    super::ModuleShutdownHost.register(Box::new(|| {
+        Box::pin(async {
+            STARTED.fetch_add(1, Ordering::SeqCst);
+            std::future::pending::<()>().await;
+            FINISHED.fetch_add(1, Ordering::SeqCst);
+        })
+    }));
+    super::ModuleShutdownHost.register(Box::new(|| {
+        Box::pin(async {
+            AFTER.fetch_add(1, Ordering::SeqCst);
+        })
+    }));
+
+    super::run_shutdown_hooks().await;
+
+    assert_eq!(STARTED.load(Ordering::SeqCst), 1, "the stalled hook ran");
+    assert_eq!(
+        FINISHED.load(Ordering::SeqCst),
+        0,
+        "it was cancelled rather than awaited to completion"
+    );
+    assert_eq!(
+        AFTER.load(Ordering::SeqCst),
+        1,
+        "one hook exceeding its deadline does not skip the rest"
+    );
+}
+
+#[tokio::test]
+async fn shutting_down_with_nothing_banked_is_a_no_op() {
+    let _seams = crate::seam_lock::hold_global_seams_async().await;
+    drain_banked_hooks();
+    // Reached whenever a host shuts a driver down before the queue ever
+    // started, which is ordinary rather than an error.
+    super::run_shutdown_hooks().await;
 }
 
 #[tokio::test]
