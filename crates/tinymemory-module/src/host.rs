@@ -197,11 +197,19 @@ pub(crate) fn install(connection: Connection) {
 // syncing within seconds. That half is benign; the paragraph above is not, and
 // closing it needs the same `SchedulerGate` bus interface named below.
 //
-// Note also what is deliberately *not* built here: a module-local registry that
-// banked shutdown hooks and drained them on the module's own `Shutdown` method.
-// Nothing calls `MemoryProvider::shutdown()` on the way out of the host process,
-// so those hooks would still never run — and they would stop reporting. That
-// trades a loud gap for a quiet one.
+// The module-local registry this paragraph used to argue against now exists —
+// see `ModuleShutdownHost` — and the argument is worth recording because it was
+// right about the part that has not changed. Banking hooks and draining them on
+// the module's own `Shutdown` method is only useful if something calls it, and
+// at the time of writing nothing in the host does on the way out.
+//
+// What tipped it is that banking is not worse than dropping in the case the
+// paragraph worried about, and is better in every other: a dropped hook never
+// runs, a banked one runs the moment the host wires the call. The objection was
+// really to going quiet, not to banking, so the gap is still announced at
+// `install_seams` — now naming the precise condition ("only when the host calls
+// Shutdown") instead of a flat "unserved" that a host-side fix would leave
+// stale. See tinyhumansai/tinymemory#133 for the host half.
 
 /// Latched so the gap is reported once per process, not once per job claim —
 /// `wait_for_capacity` is consulted before every claim, and an unlatched report
@@ -209,8 +217,19 @@ pub(crate) fn install(connection: Connection) {
 /// storage-failure reports.
 static GATE_REPORTED: AtomicBool = AtomicBool::new(false);
 
-/// Latched for the same reason: one hook dropped means every later one is too.
-static SHUTDOWN_REPORTED: AtomicBool = AtomicBool::new(false);
+/// Log a degradation once per process, without reporting it as a defect.
+///
+/// The sibling of [`report_unserved_once`] for a gap that is a documented
+/// design limit rather than something gone wrong. Both keep the log line; only
+/// this one leaves the error reporter alone, so a limit the host already knows
+/// about — it is the host that hands this module the frozen snapshot — stops
+/// arriving as a classified error on the host's side.
+pub(crate) fn warn_degraded_once(latch: &AtomicBool, message: &'static str) {
+    if latch.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    log::warn!("[tinymemory:module] {message}");
+}
 
 /// What the missing scheduler gate costs, in the terms a reader of the log needs.
 const GATE_UNSERVED: &str = "scheduler gate unserved in module mode: background memory work in \
@@ -218,11 +237,6 @@ const GATE_UNSERVED: &str = "scheduler gate unserved in module mode: background 
                              throttle (user toggle, AC power, CPU pressure, signed-out) — and \
                              the periodic sync loops here therefore also ignore the \
                              \"Memory Tree off\" and \"signed out\" pauses that would stop them";
-
-/// What the missing shutdown host costs.
-const SHUTDOWN_UNSERVED: &str = "shutdown host unserved in module mode: a memory shutdown hook \
-                                 was dropped, so in-flight queue job locks are not released on a \
-                                 clean exit and the next launch waits out the lease instead";
 
 /// Log and report a seam degradation once per process.
 ///
@@ -448,18 +462,113 @@ impl tinymemory_core::scheduler_gate::SchedulerGate for UnservedSchedulerGate {
 /// receive the same handle for a wait on it to mean anything.
 static IDLE_NOTIFY: std::sync::OnceLock<Arc<tokio::sync::Notify>> = std::sync::OnceLock::new();
 
-/// The host's shutdown sequencer, which this module has no way to reach.
-#[derive(Debug)]
-pub(crate) struct UnservedShutdownHost;
+/// Hooks the engine registered, waiting for this module's `Shutdown` member.
+///
+/// A plain `Mutex` because [`ShutdownHost::register`] is synchronous and the
+/// engine registers from wherever the queue starts; the lock is held only long
+/// enough to push or to take the list.
+static BANKED_HOOKS: std::sync::Mutex<Vec<tinymemory_core::shutdown::ShutdownHook>> =
+    std::sync::Mutex::new(Vec::new());
 
-impl tinymemory_core::shutdown::ShutdownHost for UnservedShutdownHost {
+/// Longest any one hook may hold up the module's shutdown.
+///
+/// The bus call that triggers a shutdown carries the caller's deadline, so a
+/// hook that wedges must not be able to outlast it — the caller would time out
+/// and learn nothing. Releasing job locks is a handful of local SQLite writes;
+/// anything past this is stuck, not slow, and the lease-expiry path at the next
+/// startup is what it degrades to.
+const HOOK_DEADLINE: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// Banks the engine's shutdown hooks so [`run_shutdown_hooks`] can await them.
+///
+/// # Why this is banked here rather than dropped
+///
+/// The engine registers exactly one hook today: `queue::worker` releasing the
+/// in-flight job locks so a clean restart re-claims that work immediately
+/// instead of waiting out the lease. Dropping it guaranteed the slow path on
+/// every launch.
+///
+/// This module does have a moment to await them — the `Shutdown` member it
+/// already serves. What it does **not** have is a guarantee that anyone calls
+/// it: a host that exits without shutting the driver down still leaves the
+/// locks to expire, which is why [`install_seams`] keeps saying so out loud.
+/// Banking is strictly better than dropping either way — the hook runs when the
+/// host asks, instead of never — but it is only half of the fix, and the other
+/// half lives in the host.
+#[derive(Debug)]
+pub(crate) struct ModuleShutdownHost;
+
+impl tinymemory_core::shutdown::ShutdownHost for ModuleShutdownHost {
     fn register(&self, hook: tinymemory_core::shutdown::ShutdownHook) {
-        // Dropped, not banked: there is no moment inside this module at which it
-        // could be awaited. The hard-kill path is what remains — leases expire
-        // and startup recovery reclaims them — so this is a degradation, not a
-        // loss of data, and the report is classified accordingly.
-        drop(hook);
-        report_unserved_once(&SHUTDOWN_REPORTED, SHUTDOWN_UNSERVED, "shutdown_host");
+        match BANKED_HOOKS.lock() {
+            Ok(mut hooks) => hooks.push(hook),
+            // A poisoned lock means a previous holder panicked mid-push. The
+            // hook is dropped rather than recovered: shutdown is best-effort
+            // and the lease still expires, so this must not panic a caller.
+            Err(_) => log::warn!(
+                "[tinymemory:module] shutdown hook dropped: the hook registry is poisoned; \
+                 in-flight job locks will be reclaimed by lease expiry instead"
+            ),
+        }
+    }
+}
+
+/// Empty the bank without running anything.
+///
+/// The bank is process-wide, so a test that asserts on what ran needs a known
+/// starting point — otherwise a hook another test registered would count. Pair
+/// it with `seam_lock::hold_global_seams_async`, which is what stops two such
+/// tests interleaving.
+#[cfg(test)]
+pub(crate) fn drain_banked_hooks_for_test() {
+    if let Ok(mut hooks) = BANKED_HOOKS.lock() {
+        hooks.clear();
+    }
+}
+
+/// Run and clear every banked shutdown hook.
+///
+/// Draining is what makes this idempotent, which the `Shutdown` member's
+/// contract requires: a second call finds nothing banked and releases nothing
+/// twice.
+///
+/// Each hook runs in its own task under [`HOOK_DEADLINE`], so one that panics
+/// or wedges costs its own deadline and not the whole shutdown. Both outcomes
+/// degrade to the same place a dropped hook did — lease expiry at the next
+/// startup — so neither is worth failing the call over.
+pub(crate) async fn run_shutdown_hooks() {
+    // The guard is confined to this block deliberately. A `std::sync`
+    // `MutexGuard` is not `Send`, so merely being in scope across the awaits
+    // below would make this whole future non-`Send` — and the bus member that
+    // calls it has to be. Taking the list here also means a hook that registers
+    // another one cannot deadlock against a lock this function still holds.
+    let hooks = {
+        let Ok(mut banked) = BANKED_HOOKS.lock() else {
+            log::warn!("[tinymemory:module] shutdown hooks skipped: the hook registry is poisoned");
+            return;
+        };
+        std::mem::take(&mut *banked)
+    };
+    if hooks.is_empty() {
+        return;
+    }
+    let total = hooks.len();
+    log::info!("[tinymemory:module] running {total} banked shutdown hook(s)");
+    for hook in hooks {
+        // Spawned so a panic inside a hook surfaces as a `JoinError` here
+        // rather than unwinding through the bus call.
+        let task = tokio::spawn(async move { hook().await });
+        match tokio::time::timeout(HOOK_DEADLINE, task).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => log::warn!(
+                "[tinymemory:module] a shutdown hook panicked: {error}; its work is left to \
+                 lease expiry at the next startup"
+            ),
+            Err(_) => log::warn!(
+                "[tinymemory:module] a shutdown hook exceeded {HOOK_DEADLINE:?} and was \
+                 abandoned; its work is left to lease expiry at the next startup"
+            ),
+        }
     }
 }
 
@@ -486,16 +595,22 @@ pub(crate) fn install_seams(connection: Option<tinybus::Connection>) {
             tinymemory_core::scheduler_gate::set_scheduler_gate(Arc::new(UnservedSchedulerGate));
         }
     }
-    tinymemory_core::shutdown::set_shutdown_host(Arc::new(UnservedShutdownHost));
+    tinymemory_core::shutdown::set_shutdown_host(Arc::new(ModuleShutdownHost));
     // One line, once per process — `setup` runs exactly once. A warning rather
     // than a debug line because a reader of the log should not have to diff
     // seam lists to find out which host behaviours are not in effect here.
+    //
+    // Shutdown is half-served and the wording says which half: the hooks are
+    // banked and this module runs them, but only if the host calls `Shutdown`.
+    // A host that exits without doing so still leaves the locks to expire, and
+    // that is not something this process can detect or fix from in here.
     log::warn!(
-        "[tinymemory:module] shutdown is unserved in module mode: a stub keeps the unwired \
-         behaviour and reports once when consulted, so graceful queue-lock release is not \
-         honoured inside this process. The scheduler gate is bus-backed when the host serves \
-         SchedulerPolicy, and degrades to the unwired Policy::Normal stub behaviour when it \
-         does not"
+        "[tinymemory:module] shutdown hooks are banked and run on this module's Shutdown \
+         member, so graceful queue-lock release is honoured only when the host shuts the \
+         driver down before exiting; a host that exits without calling Shutdown still leaves \
+         in-flight locks to lease expiry. The scheduler gate is bus-backed when the host \
+         serves SchedulerPolicy, and degrades to the unwired Policy::Normal stub behaviour \
+         when it does not"
     );
 }
 

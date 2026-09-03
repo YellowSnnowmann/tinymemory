@@ -368,6 +368,11 @@ impl MemoryService {
     /// module: `TinyBus` never unloads a library, so a host that shuts the
     /// driver down and rebinds gets a fresh engine inside the same mapped image.
     async fn shutdown(&self) -> BusResult<()> {
+        // Hooks first. The one the engine registers releases in-flight job
+        // locks, which is a write to the very store `provider.shutdown()` is
+        // about to release; run it the other way round and the release has
+        // nothing left to write through.
+        crate::host::run_shutdown_hooks().await;
         self.provider
             .shutdown()
             .await

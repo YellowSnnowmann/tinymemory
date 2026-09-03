@@ -151,10 +151,12 @@ async fn setup(connection: Connection, mut config: ModuleConfig) -> BusResult<()
     // The scheduler gate is proxied to the host's SchedulerPolicy member — the
     // host's cron::scheduler_gate policy, polled and cached, so mode=off,
     // signed-out and battery pauses are honoured inside this process too.
-    // Shutdown stays a stub: no bus interface serves it and no local answer
-    // can honestly stand in for it (see `host::install_seams`). Installed with
-    // the rest, before the store exists, so nothing can consult a seam this
-    // process has not yet decided about.
+    // Shutdown banks the engine's hooks and runs them on this module's own
+    // `Shutdown` member, so graceful queue-lock release works whenever the host
+    // shuts the driver down before exiting (see `host::install_seams`).
+    // Installed with the rest, before the store exists, so nothing can consult
+    // a seam this process has not yet decided about — and so a hook registered
+    // by the queue pool below always finds the bank already there.
     host::install_seams(Some(connection.clone()));
 
     let client = tinymemory_core::store::factories::create_memory_client_with_local_ai(
