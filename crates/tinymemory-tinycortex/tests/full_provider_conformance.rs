@@ -752,6 +752,21 @@ async fn document_source_graph_goals_and_tool_rule_state_transitions_round_trip(
         .await
         .expect("accept source item");
     assert_eq!(outcome.written, 1);
+    // openhuman#6007's gate, asserted at the non-connector source: a kind that
+    // is not `composio` must reach the document store and NOTHING in the memory
+    // tree. OpenHuman keys a non-Composio source's ingest `mem_src:{id}:` and
+    // derives a toolkit-shaped prefix only for Composio, so treeing this row
+    // would write chunks that no status or graph surface can count — the same
+    // invisible-write bug #6007 fixes, wearing a different source kind.
+    assert_eq!(
+        tinymemory_core::store::chunks::count_chunks(&provider_config(
+            workspace.path(),
+            serde_json::Value::Null
+        ))
+        .expect("count chunks"),
+        0,
+        "a non-connector source must not write memory-tree chunks (openhuman#6007)"
+    );
     assert_eq!(
         source
             .forget_source("drive-1")
@@ -3903,4 +3918,101 @@ async fn the_flavour_door_answers_none_until_a_body_exists_then_serves_the_whole
         "the artifact crosses whole: front-matter intact, byte for byte"
     );
     assert!(served.starts_with("---\n"));
+}
+
+/// openhuman#6007: a connector sync must land in the memory tree, not only in the
+/// namespace document store.
+///
+/// The tree is what tree-backed recall, the Memory Tree graph and the source
+/// row's ingest status all read; none of them look at `memory_docs`. Before this
+/// fix a Gmail sync wrote thousands of documents and vector chunks and every
+/// tree-backed surface still reported zero — "Gmail synced nothing", with the
+/// data sitting right there. This is the #5473 guarantee restored on the
+/// *connector* path, which the migration to `accept_source_items` bypassed.
+///
+/// The identity is asserted exactly, not loosely, because it is what OpenHuman
+/// counts a Composio source's ingest by (`source_id_prefix` →
+/// `"{toolkit}:{connection_id}:"`) and a drift is silent in both directions.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_connector_sync_reaches_the_memory_tree_and_is_forgotten_with_its_source() {
+    use tinymemory_api::provider::types::SourceItem;
+    use tinymemory_api::provider::MemoryProvider;
+    use tinymemory_api::types::MemoryTaint;
+
+    let workspace = tempfile::tempdir().expect("workspace");
+    let provider = provider_over(workspace.path());
+    let config = provider_config(workspace.path(), serde_json::Value::Null);
+    let source = provider.as_sources().expect("SourceSink");
+
+    // Precondition, so the counts below are attributable to this sync rather
+    // than to pre-existing state.
+    assert_eq!(
+        tinymemory_core::store::chunks::count_chunks(&config).expect("count chunks"),
+        0,
+        "a fresh workspace must start with an empty memory tree"
+    );
+
+    let outcome = source
+        .accept_source_items(
+            "gmail:conn-1",
+            "composio",
+            vec![SourceItem {
+                item_id: "msg-1".into(),
+                title: "Quarterly planning".into(),
+                content: "Let's finalise the Q3 roadmap and align on the launch date.".into(),
+                mime: Some("text/plain".into()),
+                url: Some("https://example.invalid/msg-1".into()),
+                updated_at_ms: Some(42),
+                tags: vec!["gmail".into()],
+            }],
+            MemoryTaint::ExternalSync,
+        )
+        .await
+        .expect("accept a connector item");
+    assert_eq!(
+        outcome.written, 1,
+        "`written` counts namespace documents; the tree is a secondary index over \
+         them and must not inflate the caller's written count"
+    );
+
+    // The per-item key is `{toolkit}:{connection_id}:{item_id}` so each message
+    // admits independently instead of colliding on one dedup key, and the shared
+    // `path_scope` is `{toolkit}:{connection_id}` — the platform prefix tree
+    // retrieval resolves by (`gmail:` → email).
+    let treed = tinymemory_core::store::chunks::list_chunks(
+        &config,
+        &tinymemory_core::store::chunks::ListChunksQuery {
+            source_id: Some("gmail:conn-1:msg-1".into()),
+            limit: Some(8),
+            ..Default::default()
+        },
+    )
+    .expect("list chunks by source id");
+    assert!(
+        !treed.is_empty(),
+        "a connector sync must add memory-tree chunks keyed by the deterministic \
+         per-item connector source id (openhuman#6007)"
+    );
+    assert!(
+        treed
+            .iter()
+            .all(|chunk| chunk.metadata.path_scope.as_deref() == Some("gmail:conn-1")),
+        "connector chunks must carry the `{{toolkit}}:{{connection_id}}` tree scope so \
+         query_source resolves them (gmail → email)"
+    );
+
+    // Forgetting the source must take the per-item rows with it. The delete that
+    // already existed matches a source id EXACTLY, so without the prefix sweep a
+    // user who disconnects Gmail keeps every synced message retrievable in the
+    // tree — the documents go and the memories stay.
+    source
+        .forget_source("gmail:conn-1")
+        .await
+        .expect("forget the connector source");
+    assert_eq!(
+        tinymemory_core::store::chunks::count_chunks(&config).expect("count chunks"),
+        0,
+        "forgetting a connector source must remove its per-item tree rows too \
+         (openhuman#6007)"
+    );
 }

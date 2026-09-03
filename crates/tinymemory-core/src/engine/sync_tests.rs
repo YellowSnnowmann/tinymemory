@@ -545,10 +545,16 @@ async fn tree_ingest_failure_is_tolerated_and_skill_store_is_retained() {
     // ingest resolves its store path elsewhere), this fires rather than the
     // test silently passing without exercising the tolerance path.
     assert!(
-        adapter
-            .ingest_document_into_memory_tree(&*config, &document)
-            .await
-            .is_err(),
+        super::ingest_connector_item_into_tree(
+            &*config,
+            &document.toolkit,
+            &document.connection_id,
+            &document.document_id,
+            &document.title,
+            &document.content,
+        )
+        .await
+        .is_err(),
         "the broken tree-ingest workspace must make ingest fail"
     );
 
@@ -704,4 +710,55 @@ async fn blank_scope_item_is_skipped_for_memory_tree_ingest() {
         0,
         "an item without a toolkit/connection scope must be skipped for tree ingest"
     );
+}
+
+/// The shared funnel's blank-scope guard, on the half the sink-path test above
+/// cannot reach.
+///
+/// [`blank_scope_item_is_skipped_for_memory_tree_ingest`] covers a blank
+/// *toolkit* through `SkillDocSink::store`. A blank *connection_id* is the other
+/// way to form an unreachable scope (`"gmail:"`), and no sink path can produce
+/// one — a `SkillDocument` always carries its connection. Since openhuman#6007
+/// the funnel is also called directly by the connector path's
+/// `accept_source_items`, whose `source_id` is split at the first colon, so both
+/// halves are now reachable from a caller and the guard belongs to the funnel
+/// rather than to either call site.
+///
+/// A skip is `Ok`, not an error: the caller's own store holds the item, and
+/// failing the sync over an item that simply cannot be scoped would stall the
+/// whole connection.
+#[tokio::test]
+async fn the_shared_funnel_skips_either_blank_scope_half() {
+    use tinymemory_api::host::test_support::TestHostConfig;
+    use tinymemory_api::host::MemoryHostConfig;
+
+    crate::test_seams::init();
+    let workspace = tempfile::tempdir().expect("workspace");
+    let mut host = TestHostConfig::default();
+    host.workspace_dir = workspace.path().join("workspace");
+    let config = host.to_arc();
+
+    for (toolkit, connection_id, blank_half) in [
+        ("   ", "conn-1", "toolkit"),
+        ("gmail", "   ", "connection_id"),
+    ] {
+        super::ingest_connector_item_into_tree(
+            &*config,
+            toolkit,
+            connection_id,
+            "msg-1",
+            "Quarterly planning",
+            "Let's finalise the Q3 roadmap.",
+        )
+        .await
+        .unwrap_or_else(|error| {
+            panic!("a blank {blank_half} must be skipped, not an error: {error:#}")
+        });
+
+        assert_eq!(
+            crate::store::chunks::store::count_chunks(&*config).expect("count chunks"),
+            0,
+            "a blank {blank_half} forms an unreachable tree scope and must write no chunks"
+        );
+    }
 }

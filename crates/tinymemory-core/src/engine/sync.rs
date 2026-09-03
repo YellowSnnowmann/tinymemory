@@ -94,68 +94,127 @@ impl HostSyncAdapter {
         self.tree_ingest_failures
             .load(std::sync::atomic::Ordering::Relaxed)
     }
+}
 
-    /// Reconnect a synced Composio document to the memory tree (#5473).
-    ///
-    /// The TinyCortex migration (#4794) dropped the per-provider tree-ingest
-    /// half of the connector sync: synced items reached the `skill-<toolkit>`
-    /// document store but never `mem_tree_chunks`, so connector memories fell
-    /// out of tree-backed recall. This routes each synced item through the
-    /// engine's document ingest — the same L0-chunk path local folder sources
-    /// use via [`LocalDocumentSink`] — additively alongside the skill store.
-    ///
-    /// Scope naming matches the tree retrieval contract: the tree scope
-    /// (`path_scope`) is `"{toolkit}:{connection_id}"` so `query_source` resolves
-    /// it by platform prefix (`gmail:` → email, `slack:` → chat, …), while the
-    /// per-item `source_id` carries the document id so each message admits
-    /// independently rather than colliding on one dedup key.
-    ///
-    /// `ingest_document` writes the L0 chunk rows synchronously and enqueues the
-    /// summary seal on the async extract worker. Retrieval (`query_source`) reads
-    /// sealed summaries, so an item becomes retrievable once its buffer seals —
-    /// on the token threshold or the time-based `flush_stale_buffers` — and the
-    /// seal degrades to a fallback summary when no LLM is available.
-    async fn ingest_document_into_memory_tree(
-        &self,
-        config: &Config,
-        document: &SkillDocument,
-    ) -> anyhow::Result<()> {
-        let toolkit = document.toolkit.trim().to_ascii_lowercase();
-        let connection_id = document.connection_id.trim();
-        // A blank toolkit/connection would yield a scope with no platform prefix
-        // (`":conn"`), which no retrieval kind matches; skip rather than write an
-        // unreachable tree. The skill store still holds the item.
-        if toolkit.is_empty() || connection_id.is_empty() {
-            tracing::debug!(
-                document_id = %document.document_id,
-                "[tinycortex:sync] skipping memory-tree ingest: item has no toolkit/connection scope"
-            );
-            return Ok(());
-        }
-        let tree_scope = format!("{toolkit}:{connection_id}");
-        let source_id = format!("{tree_scope}:{}", document.document_id);
-        let owner = format!("{toolkit}-sync:{connection_id}");
-        let input = tinycortex::memory::ingest::canonicalize::document::DocumentInput {
-            provider: format!("composio:{toolkit}"),
-            title: document.title.clone(),
-            body: document.content.clone(),
-            modified_at: chrono::Utc::now(),
-            source_ref: Some(document.document_id.clone()),
-        };
-        crate::ingest_pipeline::ingest_document_with_scope(
-            config,
-            &source_id,
-            &owner,
-            vec![toolkit],
-            input,
-            Some(tree_scope),
-        )
-        .await
-        .map(|_| ())
-        .map_err(|error| {
-            anyhow::anyhow!("memory-tree ingest failed for source `{source_id}`: {error}")
-        })
+/// Reconnect one synced connector item to the memory tree (#5473).
+///
+/// The TinyCortex migration (#4794) dropped the per-provider tree-ingest half of
+/// the connector sync: synced items reached the `skill-<toolkit>` document store
+/// but never `mem_tree_chunks`, so connector memories fell out of tree-backed
+/// recall. This routes each synced item through the engine's document ingest —
+/// the same L0-chunk path local folder sources use via [`LocalDocumentSink`] —
+/// additively alongside whichever store holds the item.
+///
+/// A `pub` free function rather than a method, because owning these rules in ONE
+/// place is the actual fix for openhuman#6007. #5473 put them on
+/// [`HostSyncAdapter`], the *old* `SkillDocSink` path's adapter. The connector
+/// migration then built a second ingest path — `MemorySourceSink::accept_source_items`
+/// in `tinymemory-tinycortex` — which wrote namespace documents and vector chunks
+/// but never learned the tree half, so Gmail synced, embedded, and stayed
+/// invisible to every tree-backed surface. A fix that patched only that second
+/// call site would leave the same trap for a third. Both paths now call this.
+///
+/// Scope naming matches the tree retrieval contract: the tree scope
+/// (`path_scope`) is `"{toolkit}:{connection_id}"` so `query_source` resolves it
+/// by platform prefix (`gmail:` → email, `slack:` → chat, …), while the per-item
+/// `source_id` carries the item id so each message admits independently rather
+/// than colliding on one dedup key. That pair is *also* the literal prefix
+/// OpenHuman counts a Composio source's ingest by (`"{toolkit}:{connection_id}:"`,
+/// its `source_id_prefix`), so a drift here empties the source row's status and
+/// the memory graph together — silently, because the documents and vectors are
+/// still written.
+///
+/// `ingest_document_with_scope` writes the L0 chunk rows synchronously and
+/// enqueues the summary seal on the async extract worker. Retrieval
+/// (`query_source`) reads sealed summaries, so an item becomes retrievable once
+/// its buffer seals — on the token threshold or the time-based
+/// `flush_stale_buffers` — and the seal degrades to a fallback summary when no
+/// LLM is available. Chunk rows existing while recall is still thin is that
+/// latency, not a second bug.
+pub async fn ingest_connector_item_into_tree(
+    config: &Config,
+    toolkit: &str,
+    connection_id: &str,
+    item_id: &str,
+    title: &str,
+    content: &str,
+) -> anyhow::Result<()> {
+    let toolkit = toolkit.trim().to_ascii_lowercase();
+    let connection_id = connection_id.trim();
+    // A blank toolkit/connection would yield a scope with no platform prefix
+    // (`":conn"`), which no retrieval kind matches; skip rather than write an
+    // unreachable tree. The caller's own store still holds the item.
+    if toolkit.is_empty() || connection_id.is_empty() {
+        tracing::debug!(
+            item_id = %item_id,
+            "[tinycortex:sync] skipping memory-tree ingest: item has no toolkit/connection scope"
+        );
+        return Ok(());
     }
+    let tree_scope = format!("{toolkit}:{connection_id}");
+    let source_id = format!("{tree_scope}:{item_id}");
+    let owner = format!("{toolkit}-sync:{connection_id}");
+    let input = tinycortex::memory::ingest::canonicalize::document::DocumentInput {
+        provider: format!("composio:{toolkit}"),
+        title: title.to_string(),
+        body: content.to_string(),
+        modified_at: chrono::Utc::now(),
+        source_ref: Some(item_id.to_string()),
+    };
+    crate::ingest_pipeline::ingest_document_with_scope(
+        config,
+        &source_id,
+        &owner,
+        vec![toolkit],
+        input,
+        Some(tree_scope),
+    )
+    .await
+    .map(|_| ())
+    .map_err(|error| anyhow::anyhow!("memory-tree ingest failed for source `{source_id}`: {error}"))
+}
+
+/// [`ingest_connector_item_into_tree`] plus the failure policy every connector
+/// sync path needs, so no path has to reach for `crate::corruption` itself.
+///
+/// The tree is a secondary index over a store that has *already* committed, so an
+/// ordinary failure here must NOT abort the sync run. Most providers do not
+/// tolerate scope errors, so a propagated error becomes a run-aborting `Err` in
+/// the orchestrator, and one deterministically-poisonous item then stalls the
+/// whole connection and re-fetches the page — real Composio spend — on every
+/// retry. Count it, warn, and continue: the per-item source gate re-attempts the
+/// item on a later sync, and an operator rebuild can backfill.
+///
+/// Corruption is the exception (openhuman#5820). A malformed `chunks.db` fails
+/// every later item identically, so it escalates through the shared recovery and
+/// aborts the run — there is nothing per-item about it. That split belongs to
+/// `crate::corruption::escalate_or_count`, which stays `pub(crate)` deliberately:
+/// callers reach the *policy* through this function rather than the primitive, so
+/// a new call site cannot quietly implement a weaker one.
+pub async fn ingest_connector_item_tolerated(
+    config: &Config,
+    toolkit: &str,
+    connection_id: &str,
+    item_id: &str,
+    title: &str,
+    content: &str,
+    counter: &std::sync::atomic::AtomicU32,
+) -> anyhow::Result<()> {
+    if let Err(error) =
+        ingest_connector_item_into_tree(config, toolkit, connection_id, item_id, title, content)
+            .await
+    {
+        let rendered = format!("{error:#}");
+        crate::corruption::escalate_or_count("connector tree ingest", config, error, counter)?;
+        tracing::warn!(
+            toolkit = %toolkit,
+            connection_id = %connection_id,
+            item_id = %item_id,
+            error = %rendered,
+            "[tinycortex:sync] memory-tree ingest failed; the item's own store write is retained"
+        );
+    }
+    Ok(())
 }
 
 /// Read persisted sync audit records for best-effort RPC and reporting surfaces.
@@ -491,41 +550,25 @@ impl SkillDocSink for HostSyncAdapter {
             .await
             .map_err(anyhow::Error::msg)?;
 
-        // #5473: additively reconnect the synced item to the memory tree. This
-        // is a best-effort secondary index over the skill store, which is the
-        // source of truth and has already committed above. An ordinary failure
-        // here must NOT abort the connector sync: most providers do not
-        // tolerate scope errors, so the orchestrator turns a `store` error
-        // into a run-aborting `Err` — propagating would let one
-        // deterministically-poisonous item stall the whole connection and
-        // re-fetch the page (Composio spend) on every retry. Log, count, and
-        // continue; the per-item source gate re-attempts the item on a later
-        // sync, and an operator rebuild can backfill. Corruption is the
-        // exception (openhuman#5820): a malformed `chunks.db` fails every
-        // later item identically, so it escalates through the shared recovery
-        // and aborts the run — there is nothing per-item about it.
+        // #5473: additively reconnect the synced item to the memory tree. The
+        // skill store above is the source of truth and has already committed;
+        // `ingest_connector_item_tolerated` owns both the scope rules and the
+        // best-effort-except-corruption policy, so this path and the connector
+        // path in `tinymemory-tinycortex` cannot drift apart again (openhuman#6007).
+        //
         // The config-less adapter (`sync_context`) has no ingest pipeline and is
         // not on the connector sync path, so it skips tree ingest entirely.
         if let Some(config) = self.config.as_deref() {
-            if let Err(error) = self
-                .ingest_document_into_memory_tree(config, &document)
-                .await
-            {
-                let rendered = format!("{error:#}");
-                crate::corruption::escalate_or_count(
-                    "connector tree ingest",
-                    config,
-                    error,
-                    &self.tree_ingest_failures,
-                )?;
-                tracing::warn!(
-                    toolkit = %document.toolkit,
-                    connection_id = %document.connection_id,
-                    document_id = %document.document_id,
-                    error = %rendered,
-                    "[tinycortex:sync] memory-tree ingest failed; skill store retained"
-                );
-            }
+            ingest_connector_item_tolerated(
+                config,
+                &document.toolkit,
+                &document.connection_id,
+                &document.document_id,
+                &document.title,
+                &document.content,
+                &self.tree_ingest_failures,
+            )
+            .await?;
         }
         Ok(())
     }
