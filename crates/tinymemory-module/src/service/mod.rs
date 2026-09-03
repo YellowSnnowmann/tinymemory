@@ -368,11 +368,19 @@ impl MemoryService {
     /// module: `TinyBus` never unloads a library, so a host that shuts the
     /// driver down and rebinds gets a fresh engine inside the same mapped image.
     async fn shutdown(&self) -> BusResult<()> {
-        // Hooks first. The one the engine registers releases in-flight job
-        // locks, which is a write to the very store `provider.shutdown()` is
-        // about to release; run it the other way round and the release has
-        // nothing left to write through.
-        crate::host::run_shutdown_hooks().await;
+        // Only the root object drains the hooks, and `opener` is what marks it:
+        // `OpenStore` hands back objects with `None` there. The bank is
+        // process-wide — the engine's hook releases the job locks for the whole
+        // queue, not for one subtree — so draining it when a single profile's
+        // store shuts down would run the release early and leave nothing banked
+        // for the shutdown that actually ends the process.
+        //
+        // Hooks before `provider.shutdown()`: releasing a lock is a write to the
+        // very store the provider is about to release, and the other order
+        // leaves it nothing to write through.
+        if self.opener.is_some() {
+            crate::host::run_shutdown_hooks().await;
+        }
         self.provider
             .shutdown()
             .await
