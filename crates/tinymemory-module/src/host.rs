@@ -513,19 +513,6 @@ impl tinymemory_core::shutdown::ShutdownHost for ModuleShutdownHost {
     }
 }
 
-/// Empty the bank without running anything.
-///
-/// The bank is process-wide, so a test that asserts on what ran needs a known
-/// starting point — otherwise a hook another test registered would count. Pair
-/// it with `seam_lock::hold_global_seams_async`, which is what stops two such
-/// tests interleaving.
-#[cfg(test)]
-pub(crate) fn drain_banked_hooks_for_test() {
-    if let Ok(mut hooks) = BANKED_HOOKS.lock() {
-        hooks.clear();
-    }
-}
-
 /// Run and clear every banked shutdown hook.
 ///
 /// Draining is what makes this idempotent, which the `Shutdown` member's
@@ -557,17 +544,31 @@ pub(crate) async fn run_shutdown_hooks() {
     for hook in hooks {
         // Spawned so a panic inside a hook surfaces as a `JoinError` here
         // rather than unwinding through the bus call.
-        let task = tokio::spawn(async move { hook().await });
-        match tokio::time::timeout(HOOK_DEADLINE, task).await {
+        let mut task = tokio::spawn(async move { hook().await });
+        // `&mut` so the handle survives the timeout. Passing it by value would
+        // hand ownership to `timeout`, which drops it on expiry — and dropping
+        // a `JoinHandle` **detaches** the task rather than cancelling it. The
+        // hook would then still be running, still holding the store, while
+        // `provider.shutdown()` released the backend underneath it.
+        match tokio::time::timeout(HOOK_DEADLINE, &mut task).await {
             Ok(Ok(())) => {}
             Ok(Err(error)) => log::warn!(
                 "[tinymemory:module] a shutdown hook panicked: {error}; its work is left to \
                  lease expiry at the next startup"
             ),
-            Err(_) => log::warn!(
-                "[tinymemory:module] a shutdown hook exceeded {HOOK_DEADLINE:?} and was \
-                 abandoned; its work is left to lease expiry at the next startup"
-            ),
+            Err(_) => {
+                task.abort();
+                // `abort` only requests cancellation, so await the handle to
+                // know the task has actually stopped touching the store before
+                // this returns and the caller tears the backend down. The
+                // result is a `Cancelled` join error and carries nothing worth
+                // reporting past the warning below.
+                let _ = task.await;
+                log::warn!(
+                    "[tinymemory:module] a shutdown hook exceeded {HOOK_DEADLINE:?} and was \
+                     cancelled; its work is left to lease expiry at the next startup"
+                );
+            }
         }
     }
 }
