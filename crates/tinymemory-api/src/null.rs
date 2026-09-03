@@ -58,8 +58,9 @@ use crate::health::MemoryHealth;
 use crate::learning::LearningCandidate;
 use crate::operations::{AnswerRequest, AnswerResponse, RawMemoryEvent};
 use crate::provider::types::{
-    DiffReport, EntityHit, ExportPage, ExportRecord, FlushOutcome, ImportOutcome, IngestItem,
-    IngestOutcome, MaintenanceReport, ResetOutcome, SnapshotRef, SourceItem, SourceScope,
+    BackfillTreesOutcome, BackfillTreesRequest, DiffReport, EntityHit, ExportPage, ExportRecord,
+    FlushOutcome, ImportOutcome, IngestItem, IngestOutcome, MaintenanceReport, ResetOutcome,
+    SnapshotRef, SourceItem, SourceScope,
 };
 use crate::provider::{
     AddressBookSeedOutcome, ChunkDetail, ChunkEmbedding, ChunkQuery, CodingSessionIngestReport,
@@ -540,6 +541,13 @@ impl MemoryMaintenance for NullMemoryProvider {
     // nothing, so "flushed nothing" and "reset nothing" would read as work
     // done rather than as a driver that cannot do it.
     async fn flush_pending(&self) -> Result<FlushOutcome, MemoryError> {
+        unsupported(Capability::Maintenance)
+    }
+
+    async fn backfill_connector_trees(
+        &self,
+        _request: BackfillTreesRequest,
+    ) -> Result<BackfillTreesOutcome, MemoryError> {
         unsupported(Capability::Maintenance)
     }
 

@@ -694,6 +694,10 @@ const EXPECTED_METHODS: &[&str] = &[
     "LatestQueueFailure",
     "BackfillInProgress",
     "FlushPending",
+    // openhuman#6012. Compared as a set (`BTreeSet`), so this sits with its
+    // family rather than at the tail — unlike `tinymemory_bus::METHODS` and the
+    // `#[tinybus::interface]` impl block, which are positional and append-only.
+    "BackfillConnectorTrees",
     "ResetDerivedIndex",
     "PurgeAll",
     "RecallNamespaceRecent",

@@ -131,8 +131,8 @@ pub use sync::{
     SyncAuditEntry, SyncFreshness, SyncRunOutcome,
 };
 pub use types::{
-    ChangeKind, ChunkEntityOccurrence, DiffReport, EntityHit, EntityOccurrence, EntityRef,
-    ExportPage, ExportRecord, FlushOutcome, ForgetOutcome, ForgetSelector, ImportOutcome,
-    IngestItem, IngestOutcome, MaintenanceReport, PurgeOutcome, ResetOutcome, SnapshotRef,
-    SourceChange, SourceItem, SourceScope,
+    BackfillTreesOutcome, BackfillTreesRequest, ChangeKind, ChunkEntityOccurrence, DiffReport,
+    EntityHit, EntityOccurrence, EntityRef, ExportPage, ExportRecord, FlushOutcome, ForgetOutcome,
+    ForgetSelector, ImportOutcome, IngestItem, IngestOutcome, MaintenanceReport, PurgeOutcome,
+    ResetOutcome, SnapshotRef, SourceChange, SourceItem, SourceScope,
 };

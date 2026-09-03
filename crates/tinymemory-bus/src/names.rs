@@ -212,6 +212,10 @@ pub mod methods {
     pub const RECALL_NAMESPACE_RECENT: &str = "RecallNamespaceRecent";
     /// `FlushPending` — flush buffered work old enough to be written out.
     pub const FLUSH_PENDING: &str = "FlushPending";
+    /// `BackfillConnectorTrees` — file already-stored connector documents into
+    /// the memory tree, for records synced before the routing fix
+    /// (openhuman#6007) reached them.
+    pub const BACKFILL_CONNECTOR_TREES: &str = "BackfillConnectorTrees";
     /// `ResetDerivedIndex` — drop derived state and schedule its rebuild.
     pub const RESET_DERIVED_INDEX: &str = "ResetDerivedIndex";
     /// `PurgeAll` — erase every row the driver holds.
@@ -373,7 +377,7 @@ pub mod methods {
 /// The order matters: `tinybus`'s `Interface::members()` returns declaration
 /// order, and the module compares the two sequences directly rather than as
 /// sets, so a reordering is caught alongside an addition or a removal.
-pub const METHODS: [&str; 142] = [
+pub const METHODS: [&str; 143] = [
     methods::DRIVER_ID,
     methods::CAPABILITIES,
     methods::HEALTH,
@@ -516,6 +520,11 @@ pub const METHODS: [&str; 142] = [
     methods::INGEST_EVENT,
     methods::ANSWER,
     methods::OVERRIDE_SCHEDULER_GATE,
+    // Connector-backfill round (openhuman#6012): appended at the tail, per
+    // this table's append-only rule — filing it beside `FlushPending`, where
+    // its family lives, would renumber every member after it and invoke the
+    // wrong method on a host built against an earlier release.
+    methods::BACKFILL_CONNECTOR_TREES,
 ];
 
 #[cfg(test)]

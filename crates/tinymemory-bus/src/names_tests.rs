@@ -104,6 +104,12 @@ fn the_newest_members_are_appended_rather_than_filed_with_their_family() {
     // append-only rule.
     assert_eq!(METHODS[141], methods::OVERRIDE_SCHEDULER_GATE);
     assert_eq!(methods::OVERRIDE_SCHEDULER_GATE, "OverrideSchedulerGate");
+    // Connector-backfill round (openhuman#6012): slot 142. Its family sits at
+    // 137 (`FlushPending`), and filing it there is exactly what this test
+    // exists to catch — it renumbers 137 onward and a host built against
+    // v1.13.8 then invokes the wrong member.
+    assert_eq!(METHODS[142], methods::BACKFILL_CONNECTOR_TREES);
+    assert_eq!(methods::BACKFILL_CONNECTOR_TREES, "BackfillConnectorTrees");
 }
 
 #[test]
@@ -144,7 +150,7 @@ fn the_runtime_tree_doors_hold_the_wire_slots_they_were_released_in() {
     // reason the summariser-door test above gives: member order is wire order,
     // and an assertion measured from the end moves silently under the next
     // append — which is exactly the edit this exists to catch.
-    assert_eq!(METHODS.len(), 142);
+    assert_eq!(METHODS.len(), 143);
     assert_eq!(METHODS[131], methods::RUNTIME_BUFFER_WRITE);
     assert_eq!(METHODS[132], methods::RUNTIME_READ_NODE);
     assert_eq!(METHODS[133], methods::RUNTIME_READ_CHILDREN);

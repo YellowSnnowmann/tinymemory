@@ -31,6 +31,7 @@
 /// why its return types are shaped the way they are.
 pub type Config = dyn tinymemory_api::host::MemoryHostConfig;
 
+pub mod backfill;
 pub mod chat;
 pub mod chat_host;
 pub mod config_loader;

@@ -781,6 +781,49 @@ pub struct FlushOutcome {
     pub stale_buffers: u64,
 }
 
+/// What one connector-tree backfill pass examined and wrote (#6012).
+///
+/// Four counters rather than one, because "did nothing" has three very
+/// different causes a caller has to be able to tell apart: the tree already
+/// held everything (`already_present`), nothing could be addressed
+/// (`skipped`), or there was nothing to look at (`scanned: 0`). Collapsing
+/// them would make an account whose scope could not be resolved read exactly
+/// like one that is fully backfilled.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BackfillTreesOutcome {
+    /// Documents examined this pass.
+    pub scanned: u64,
+    /// Documents that produced new memory-tree rows.
+    pub ingested: u64,
+    /// Documents the tree already held. Not a failure: this is what makes a
+    /// repeated pass readable as "nothing left to do".
+    pub already_present: u64,
+    /// Documents left alone — no resolvable scope, or a tolerated failure.
+    /// Never filed under a guess.
+    pub skipped: u64,
+    /// Whether the pass stopped on its limit with documents still unexamined.
+    /// The caller resumes by calling again; there is no cursor to carry.
+    pub more_pending: bool,
+    /// Bounded, human-readable reasons behind `skipped`.
+    pub notes: Vec<String>,
+}
+
+/// How much of the backfill to attempt, and whether to write at all.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BackfillTreesRequest {
+    /// Documents to examine at most. `None` leaves the bound to the driver.
+    ///
+    /// A bound rather than a cursor because the work is idempotent: the pass
+    /// re-reads what it already treed and the ingest gate answers
+    /// `already_ingested`, so resuming is just calling again.
+    pub limit: Option<u64>,
+    /// Report what a real pass would examine, and write nothing.
+    ///
+    /// The honest way to show an operator the size of the job before they pay
+    /// for it — a full pass is one read and one embedding per document.
+    pub dry_run: bool,
+}
+
 /// What resetting the derived index deleted, requeued and scheduled.
 ///
 /// Three numbers rather than a `MaintenanceReport`'s two, because they are not

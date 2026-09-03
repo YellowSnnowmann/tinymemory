@@ -21,8 +21,9 @@ use crate::error::MemoryError;
 use crate::goals::GoalsDoc;
 use crate::provider::diagnosis::{DegradedCapabilities, Diagnosis};
 use crate::provider::types::{
-    FlushOutcome, ForgetOutcome, ForgetSelector, IngestOutcome, MaintenanceReport, PurgeOutcome,
-    QueueFailure, QueueStats, ResetOutcome, SourceItem, StoreStats,
+    BackfillTreesOutcome, BackfillTreesRequest, FlushOutcome, ForgetOutcome, ForgetSelector,
+    IngestOutcome, MaintenanceReport, PurgeOutcome, QueueFailure, QueueStats, ResetOutcome,
+    SourceItem, StoreStats,
 };
 use crate::tool_memory::ToolMemoryRule;
 use crate::types::MemoryTaint;
@@ -336,6 +337,40 @@ pub trait MemoryMaintenance: Send + Sync {
     /// Backend failures only.
     async fn flush_pending(&self) -> Result<FlushOutcome, MemoryError> {
         Ok(FlushOutcome::default())
+    }
+
+    /// Re-file already-stored connector documents into the memory tree (#6012).
+    ///
+    /// openhuman#6007 fixed the routing for items synced *from now on*. It could
+    /// not fix the records already stored: the per-item sync gate treats an
+    /// ingested document as done, so re-syncing fetches nothing and creates no
+    /// tree rows. Those memories stay fully embedded in the document store and
+    /// invisible to every tree-backed surface until something re-files them.
+    ///
+    /// Idempotent, and by construction rather than by bookkeeping — the ingest
+    /// gate answers `already_ingested` for a document the tree already holds, so
+    /// a second pass writes nothing and an interrupted pass loses nothing. That
+    /// is also why `limit` bounds cost rather than carrying a cursor.
+    ///
+    /// Expensive on purpose to call explicitly: a pass is one read and one set
+    /// of chunk embeddings per document. A driver must not run this on its own
+    /// initiative — spending a user's embedding budget unasked is its own bug
+    /// (openhuman#5324).
+    ///
+    /// Defaulted to an empty outcome, matching [`Self::flush_pending`]: a driver
+    /// with no connector documents has nothing to re-file, which is a fact about
+    /// it rather than a refusal. A driver that stores nothing at all should
+    /// override and refuse instead, so "backfilled nothing" cannot read as work
+    /// done.
+    ///
+    /// # Errors
+    ///
+    /// Backend failures only.
+    async fn backfill_connector_trees(
+        &self,
+        _request: BackfillTreesRequest,
+    ) -> Result<BackfillTreesOutcome, MemoryError> {
+        Ok(BackfillTreesOutcome::default())
     }
 
     /// Drop everything derived from stored content and schedule its

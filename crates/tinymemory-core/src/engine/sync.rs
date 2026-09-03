@@ -131,6 +131,14 @@ impl HostSyncAdapter {
 /// `flush_stale_buffers` — and the seal degrades to a fallback summary when no
 /// LLM is available. Chunk rows existing while recall is still thin is that
 /// latency, not a second bug.
+///
+/// Answers `Ok(None)` when the item was skipped for want of a scope, and
+/// `Ok(Some(result))` when it reached the pipeline. Callers that only care
+/// whether it failed drop the payload; the backfill (#6012) reads
+/// `already_ingested` off it to tell a document it has just treed from one the
+/// tree already held. That distinction has to come from here rather than from a
+/// second call site re-deriving the scope rules, because re-deriving them is
+/// what caused openhuman#6007 in the first place.
 pub async fn ingest_connector_item_into_tree(
     config: &Config,
     toolkit: &str,
@@ -138,7 +146,7 @@ pub async fn ingest_connector_item_into_tree(
     item_id: &str,
     title: &str,
     content: &str,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<crate::ingest_pipeline::IngestResult>> {
     let toolkit = toolkit.trim().to_ascii_lowercase();
     let connection_id = connection_id.trim();
     // A blank toolkit/connection would yield a scope with no platform prefix
@@ -149,7 +157,7 @@ pub async fn ingest_connector_item_into_tree(
             item_id = %item_id,
             "[tinycortex:sync] skipping memory-tree ingest: item has no toolkit/connection scope"
         );
-        return Ok(());
+        return Ok(None);
     }
     let tree_scope = format!("{toolkit}:{connection_id}");
     let source_id = format!("{tree_scope}:{item_id}");
@@ -170,7 +178,7 @@ pub async fn ingest_connector_item_into_tree(
         Some(tree_scope),
     )
     .await
-    .map(|_| ())
+    .map(Some)
     .map_err(|error| anyhow::anyhow!("memory-tree ingest failed for source `{source_id}`: {error}"))
 }
 
@@ -203,6 +211,7 @@ pub async fn ingest_connector_item_tolerated(
     if let Err(error) =
         ingest_connector_item_into_tree(config, toolkit, connection_id, item_id, title, content)
             .await
+            .map(|_| ())
     {
         let rendered = format!("{error:#}");
         crate::corruption::escalate_or_count("connector tree ingest", config, error, counter)?;

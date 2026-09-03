@@ -646,6 +646,12 @@ mod exports {
             "LatestQueueFailure",
             "BackfillInProgress",
             "FlushPending",
+            // Re-files connector documents stored before the routing fix
+            // (openhuman#6007) into the memory tree. Declared beside its
+            // family here because this list is compared as a SET; the
+            // wire-order table in `tinymemory_bus::METHODS` is the one
+            // that is append-only.
+            "BackfillConnectorTrees",
             "ResetDerivedIndex",
             "PurgeAll",
             "RecallNamespaceRecent",
