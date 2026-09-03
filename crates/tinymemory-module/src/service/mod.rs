@@ -169,10 +169,10 @@ use tinymemory_api::health::MemoryHealth;
 use tinymemory_api::learning::LearningCandidate;
 use tinymemory_api::operations::{AnswerRequest, AnswerResponse, RawMemoryEvent};
 use tinymemory_api::provider::types::{
-    ChunkEntityOccurrence, DiffReport, EntityHit, EntityOccurrence, ExportPage, ExportRecord,
-    FlushOutcome, ForgetOutcome, ForgetSelector, ImportOutcome, IngestItem, IngestOutcome,
-    MaintenanceReport, PurgeOutcome, QueueFailure, QueueStats, ResetOutcome, SnapshotRef,
-    SourceItem, SourceScope, StoreStats,
+    BackfillTreesOutcome, BackfillTreesRequest, ChunkEntityOccurrence, DiffReport, EntityHit,
+    EntityOccurrence, ExportPage, ExportRecord, FlushOutcome, ForgetOutcome, ForgetSelector,
+    ImportOutcome, IngestItem, IngestOutcome, MaintenanceReport, PurgeOutcome, QueueFailure,
+    QueueStats, ResetOutcome, SnapshotRef, SourceItem, SourceScope, StoreStats,
 };
 // `MemoryCore`, `MemoryRecall` and `MemoryPortability` are deliberately not
 // imported: they are supertraits of `MemoryProvider`, so their methods are
@@ -1022,16 +1022,6 @@ impl MemoryService {
     async fn flush_pending(&self) -> BusResult<FlushOutcome> {
         require_family!(self, as_maintenance, Capability::Maintenance)
             .flush_pending()
-            .await
-            .map_err(|error| into_bus_error(&error))
-    }
-
-    async fn backfill_connector_trees(
-        &self,
-        request: BackfillTreesRequest,
-    ) -> BusResult<BackfillTreesOutcome> {
-        require_family!(self, as_maintenance, Capability::Maintenance)
-            .backfill_connector_trees(request)
             .await
             .map_err(|error| into_bus_error(&error))
     }
@@ -2248,6 +2238,22 @@ impl MemoryService {
             "[tinymemory:module] scheduler gate manually overridden for {seconds}s (host request)"
         );
         Ok(())
+    }
+
+    // Appended at the tail, not filed beside `flush_pending` where its family
+    // sits. `#[tinybus::interface]` derives member order from this block, and
+    // `the_served_members_are_exactly_the_published_contract` compares that
+    // order positionally against `tinymemory_bus::METHODS` — which is
+    // append-only for the same reason: a member inserted mid-list renumbers
+    // every member after it (openhuman#6012).
+    async fn backfill_connector_trees(
+        &self,
+        request: BackfillTreesRequest,
+    ) -> BusResult<BackfillTreesOutcome> {
+        require_family!(self, as_maintenance, Capability::Maintenance)
+            .backfill_connector_trees(request)
+            .await
+            .map_err(|error| into_bus_error(&error))
     }
 }
 
