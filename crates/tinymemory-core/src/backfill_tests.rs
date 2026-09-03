@@ -148,9 +148,14 @@ async fn a_stored_document_is_filed_into_the_tree_and_never_twice() {
 
     // The identity has to match what the sync path writes, because that is the
     // prefix OpenHuman counts a Composio source's ingest by.
+    // Named through `crate::store::chunks`, not `tinycortex::…`. This file sits
+    // outside `src/engine/`, which is the seam, and `engine-containment.sh`
+    // fails a core file outside it that reaches the engine in code. The sibling
+    // in `engine/sync_tests.rs` may spell it the other way because it is inside
+    // the seam — copying an import across that boundary is what broke here.
     let treed = crate::store::chunks::store::list_chunks(
         &*config,
-        &tinycortex::memory::chunks::ListChunksQuery {
+        &crate::store::chunks::ListChunksQuery {
             source_id: Some("gmail:conn-1:msg-1".into()),
             limit: Some(8),
             ..Default::default()
