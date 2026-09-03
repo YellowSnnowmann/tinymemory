@@ -32,10 +32,10 @@ use tinymemory_api::host::{
 };
 use tinymemory_api::mandatory::MemoryTraitProvider;
 use tinymemory_api::provider::types::{
-    ChunkEntityOccurrence, EntityHit, EntityOccurrence, EntityRef, ExportPage, ExportRecord,
-    FlushOutcome, ForgetOutcome, ForgetSelector, ImportOutcome, IngestItem, IngestOutcome,
-    MaintenanceReport, PurgeOutcome, QueueFailure, QueueStats, ResetOutcome, SourceItem,
-    SourceScope, StoreStats,
+    BackfillTreesOutcome, BackfillTreesRequest, ChunkEntityOccurrence, EntityHit, EntityOccurrence,
+    EntityRef, ExportPage, ExportRecord, FlushOutcome, ForgetOutcome, ForgetSelector,
+    ImportOutcome, IngestItem, IngestOutcome, MaintenanceReport, PurgeOutcome, QueueFailure,
+    QueueStats, ResetOutcome, SourceItem, SourceScope, StoreStats,
 };
 // Diff-family value types, used only by the `MemoryDiff` impl below — which is
 // compiled out without the git-backed snapshot store.
@@ -2690,6 +2690,33 @@ impl MemoryMaintenance for TinycortexProvider {
             },
         )
         .await
+    }
+
+    async fn backfill_connector_trees(
+        &self,
+        request: BackfillTreesRequest,
+    ) -> Result<BackfillTreesOutcome, MemoryError> {
+        // The walk, the registry read and the scope rules all live in
+        // `tinymemory-core`, next to the funnel the connector sync uses. This
+        // adapter only carries the shape across: a backfilled row and a
+        // freshly-synced one have to be the same row, and they can only stay
+        // that way while one function writes both (openhuman#6007).
+        let report = tinymemory_core::backfill::backfill_connector_trees(
+            &self.config,
+            &self.client,
+            request.limit,
+            request.dry_run,
+        )
+        .await
+        .map_err(|error| Self::other("backfill connector trees", error))?;
+        Ok(BackfillTreesOutcome {
+            scanned: report.scanned,
+            ingested: report.ingested,
+            already_present: report.already_present,
+            skipped: report.skipped,
+            more_pending: report.more_pending,
+            notes: report.notes,
+        })
     }
 
     async fn reset_derived_index(&self) -> Result<ResetOutcome, MemoryError> {

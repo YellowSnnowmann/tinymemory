@@ -742,7 +742,7 @@ async fn the_shared_funnel_skips_either_blank_scope_half() {
         ("   ", "conn-1", "toolkit"),
         ("gmail", "   ", "connection_id"),
     ] {
-        super::ingest_connector_item_into_tree(
+        let outcome = super::ingest_connector_item_into_tree(
             &*config,
             toolkit,
             connection_id,
@@ -754,6 +754,13 @@ async fn the_shared_funnel_skips_either_blank_scope_half() {
         .unwrap_or_else(|error| {
             panic!("a blank {blank_half} must be skipped, not an error: {error:#}")
         });
+        // `None` IS the skip contract (#6012): the backfill tells "skipped for
+        // want of a scope" from "ingested" by this, so a skip that started
+        // answering `Some` would silently be counted as work done.
+        assert!(
+            outcome.is_none(),
+            "a blank {blank_half} must report a skip (`None`), not an ingest"
+        );
 
         assert_eq!(
             crate::store::chunks::store::count_chunks(&*config).expect("count chunks"),
