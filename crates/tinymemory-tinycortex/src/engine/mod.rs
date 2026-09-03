@@ -335,6 +335,12 @@ pub struct TinycortexProvider {
     mandatory: MemoryTraitProvider,
     client: MemoryClientRef,
     config: EngineRuntimeConfig,
+    /// Items whose namespace-document write committed but whose (non-corrupt)
+    /// memory-tree ingest failed — the tolerated warns in
+    /// [`MemorySourceSink::accept_source_items`] (openhuman#6007). The same
+    /// counter `HostSyncAdapter` keeps for the old sink path, so the shared
+    /// funnel's corruption escalation has somewhere to record a tolerated miss.
+    tree_ingest_failures: std::sync::atomic::AtomicU32,
 }
 
 impl TinycortexProvider {
@@ -351,6 +357,7 @@ impl TinycortexProvider {
             mandatory,
             client,
             config,
+            tree_ingest_failures: std::sync::atomic::AtomicU32::new(0),
         }
     }
 
@@ -2147,6 +2154,35 @@ fn parse_source_kind(
     tinymemory_core::store::chunks::SourceKind::parse(kind).map_err(MemoryError::Invalid)
 }
 
+/// The source kind OpenHuman's connector sync labels its batches with, and the
+/// only kind whose items are keyed for the memory tree.
+const COMPOSIO_SOURCE_KIND: &str = "composio";
+
+/// The `{toolkit}:{connection_id}` halves of a connector-keyed source id, for a
+/// source whose items belong in the memory tree (openhuman#6007).
+///
+/// Both conditions, not either. The kind gate is the load-bearing half:
+/// OpenHuman derives a toolkit-shaped ingest prefix (`source_id_prefix`) only for
+/// `SourceKind::Composio` and keys every other kind `mem_src:{id}:`, so treeing a
+/// non-Composio source would write rows that no status or graph surface can count
+/// — the same invisible-write bug this fixes, wearing a different source kind.
+/// The shape gate is the `":conn"` guard the shared funnel documents: a blank half
+/// yields a scope with no platform prefix, which no retrieval kind resolves.
+///
+/// `split_once` splits on the FIRST colon deliberately, so a connection id that
+/// contains one lands wholly in `connection_id` and the derived per-item key stays
+/// `{toolkit}:{connection_id}:{item_id}` — the literal prefix OpenHuman counts by.
+fn connector_tree_scope<'a>(source_kind: &str, source_id: &'a str) -> Option<(&'a str, &'a str)> {
+    if source_kind != COMPOSIO_SOURCE_KIND {
+        return None;
+    }
+    let (toolkit, connection_id) = source_id.split_once(':')?;
+    if toolkit.trim().is_empty() || connection_id.trim().is_empty() {
+        return None;
+    }
+    Some((toolkit, connection_id))
+}
+
 #[async_trait]
 impl MemorySourceSink for TinycortexProvider {
     async fn accept_source_items(
@@ -2159,6 +2195,9 @@ impl MemorySourceSink for TinycortexProvider {
         let items_len = items.len();
         let namespace = format!("source:{source_id}");
         let mut outcome = IngestOutcome::default();
+        // Resolved once: whether a source's items belong in the memory tree is a
+        // property of the source, not of the item.
+        let tree_scope = connector_tree_scope(source_kind, source_id);
         for item in items {
             if item.item_id.trim().is_empty() {
                 return Err(MemoryError::Invalid(
@@ -2170,6 +2209,12 @@ impl MemorySourceSink for TinycortexProvider {
             } else {
                 item.title.clone()
             };
+            // Captured before these fields move into `NamespaceDocumentInput`,
+            // because the tree ingest below has to receive the same body the
+            // document store does. Only a tree-scoped source pays the clones —
+            // `tree_scope` is `None` for every other kind.
+            let tree_item =
+                tree_scope.map(|_| (item.item_id.clone(), title.clone(), item.content.clone()));
             let input = NamespaceDocumentInput {
                 namespace: namespace.clone(),
                 key: item.item_id,
@@ -2195,6 +2240,44 @@ impl MemorySourceSink for TinycortexProvider {
                 Ok(id) => {
                     outcome.written = outcome.written.saturating_add(1);
                     outcome.ids.push(id);
+                    // openhuman#6007: the namespace document is the source of
+                    // truth and has just committed — now feed the same item to
+                    // the memory tree, which is what tree-backed recall, the
+                    // Memory Tree graph and the source row's ingest status all
+                    // read. None of those look at `memory_docs`, so a sync
+                    // without this writes documents and embeddings and still
+                    // reports zero: exactly the "Gmail synced nothing" report.
+                    //
+                    // This restores the #5473 reconnect that the connector
+                    // migration bypassed; the funnel is shared with the old sink
+                    // path so the two cannot drift apart again.
+                    //
+                    // Best-effort by contract — see the policy on
+                    // `ingest_connector_item_tolerated`. Only store corruption
+                    // returns `Err`, and aborting is right there: it fails every
+                    // later item identically.
+                    if let (Some((toolkit, connection_id)), Some((item_id, title, content))) =
+                        (tree_scope, tree_item)
+                    {
+                        tinymemory_core::engine::ingest_connector_item_tolerated(
+                            &self.config,
+                            toolkit,
+                            connection_id,
+                            &item_id,
+                            &title,
+                            &content,
+                            &self.tree_ingest_failures,
+                        )
+                        .await
+                        .map_err(|error| {
+                            MemoryError::Other(anyhow::anyhow!(
+                                "memory-tree store is corrupt after {} of {} item(s) \
+                                 were written: {error:#}",
+                                outcome.written,
+                                items_len
+                            ))
+                        })?;
+                    }
                 }
                 // A write failure is NOT `skipped`. The contract defines that
                 // field as "units the driver recognised as already present"
@@ -2236,11 +2319,30 @@ impl MemorySourceSink for TinycortexProvider {
         let source_id = source_id.to_string();
         let chunks = blocking(self.config.clone(), "clear source chunks", move |config| {
             use tinymemory_core::store::chunks::{
-                delete_chunks_by_source, delete_orphaned_source_tree, SourceKind,
+                delete_chunks_by_source, delete_chunks_by_source_prefix,
+                delete_orphaned_source_tree, SourceKind,
             };
             let removed = delete_chunks_by_source(config, SourceKind::Document, &source_id)?;
+            // openhuman#6007: connector items are treed under a PER-ITEM key
+            // (`{toolkit}:{connection_id}:{item_id}`), and the delete above
+            // matches a source id *exactly*. Without this sweep, forgetting a
+            // Composio source clears its documents and leaves every synced
+            // message retrievable in the tree — a user who disconnects Gmail
+            // would keep getting answers out of their mail. Unconditional on
+            // purpose: the prefix matches nothing for a source that never had
+            // per-item rows, and gating it on the id's shape could drift out of
+            // step with the write gate, which is the direction that leaks.
+            //
+            // The bare-id `delete_orphaned_source_tree` below still lands: the
+            // items' shared `path_scope` IS this source id, so the summary tree
+            // over them is keyed by it.
+            let per_item = delete_chunks_by_source_prefix(
+                config,
+                SourceKind::Document,
+                &format!("{source_id}:"),
+            )?;
             delete_orphaned_source_tree(config, SourceKind::Document, &source_id)?;
-            Ok(removed)
+            Ok(removed.saturating_add(per_item))
         })
         .await?;
         Ok(u64::try_from(documents.saturating_add(chunks)).unwrap_or(u64::MAX))
